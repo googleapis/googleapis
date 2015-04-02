@@ -1,11 +1,15 @@
 # Google APIs
 
-This repository contains the original interface definitions of public
-Google APIs. Reading the original interface definitions can provide a
-better understanding of these APIs and help you to utilize them more
+This repository contains the original interface definitions for a
+small (but growing) set of Google APIs built on a next-generation API
+serving stack. Reading the original interface definitions can provide
+a better understanding of these APIs and help you to utilize them more
 efficiently. You can also use these interface definitions with open
 source tools to generate client libraries or other artifacts such as
 documentation.
+
+For more details on all Google APIs and developer tools, see the [Google
+Developers](https://developers.google.com/products/) site.
 
 # Overview
 
