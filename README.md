@@ -11,7 +11,7 @@ documentation.
 For more details on all Google APIs and developer tools, see the [Google
 Developers](https://developers.google.com/products/) site.
 
-# Overview
+## Overview
 
 Google APIs are typically deployed as API services that are hosted
 under different DNS names. One API service may implement multiple APIs
@@ -37,7 +37,12 @@ a high-performance binary RPC protocol over HTTP/2. It offers many
 useful features, including request/response multiplex and full-duplex
 streaming.
 
-# Repository Structure
+## Discussions
+
+You may use the [Google APIs](https://groups.google.com/group/googleapis)
+mailing list for general discussions about this repository.
+
+## Repository Structure
 
 This repository uses a directory hierarchy that reflects the Google
 API product structure. In general, every API has its own root
@@ -50,7 +55,7 @@ languages.
 **NOTE:** the major version of an API is used to indicate breaking
 change to the API.
 
-# Generate gRPC Source Code
+## Generate gRPC Source Code
 
 To generate gRPC source code for Google APIs in this repository, you
 first need to install both Protocol Buffers and gRPC on your local
