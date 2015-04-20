@@ -13,9 +13,13 @@ OUTPUT ?= ./gens
 LANGUAGE ?= cpp
 
 # Compile the entire repository
+#
+# NOTE: if the "protoc" command is not in the PATH or the protobuf include
+# directory is not "/usr/local/include", you need to modify this file.
 all:
 	mkdir -p $(OUTPUT)
 	find google -type f -name '*.proto' | xargs protoc \
+	--proto_path=.:/usr/local/include \
 	--$(LANGUAGE)_out=$(OUTPUT) --grpc_out=$(OUTPUT) \
 	--plugin=protoc-gen-grpc=/usr/local/bin/grpc_$(LANGUAGE)_plugin
 
