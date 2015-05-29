@@ -18,7 +18,7 @@ LANGUAGE ?= cpp
 # directory is not "/usr/local/include", you need to modify this file.
 #
 
-DEPS:= $(shell find . -type f -name '*.proto' | sed 's/proto$$/pb.go/')
+DEPS:= $(shell find google -type f -name '*.proto' | sed 's/proto$$/pb.go/')
 FLAGS+= --proto_path=.:/usr/local/include
 ifeq ($(LANGUAGE),go)
 	FLAGS+= --$(LANGUAGE)_out=plugins=grpc:$(OUTPUT)
