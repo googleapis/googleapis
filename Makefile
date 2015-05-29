@@ -18,7 +18,6 @@ LANGUAGE ?= cpp
 # directory is not "/usr/local/include", you need to modify this file.
 #
 
-DEPS:= $(shell find google -type f -name '*.proto' | sed 's/proto$$/pb.go/')
 FLAGS+= --proto_path=.:/usr/local/include
 ifeq ($(LANGUAGE),go)
 	FLAGS+= --$(LANGUAGE)_out=plugins=grpc:$(OUTPUT)
@@ -27,11 +26,25 @@ else
 	FLAGS+=	--plugin=protoc-gen-grpc=/usr/local/bin/grpc_$(LANGUAGE)_plugin
 endif
 
-all: $(DEPS)
+ifeq ($(LANGUAGE),go)
+SUFFIX:= pb.go
+endif
+ifeq ($(LANGUAGE),cpp)
+SUFFIX:= pb.cc
+endif
 
-%.pb.go:  %.proto
+DEPS:= $(shell find . -type f -name '*.proto' | sed "s/proto$$/$(SUFFIX)/")
+
+all: supported_lang $(DEPS)
+
+supported_lang:
+ifndef SUFFIX
+	$(error unsupported language: [$(LANGUAGE)])
+endif
+
+%.$(SUFFIX):  %.proto
 	mkdir -p $(OUTPUT)
-	protoc $(FLAGS) $<
+	protoc $(FLAGS) $(dir $<)*.proto
 
 clean:
 	rm $(patsubst %,$(OUTPUT)/%,$(DEPS)) 2> /dev/null
