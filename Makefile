@@ -16,12 +16,23 @@ LANGUAGE ?= cpp
 #
 # NOTE: if the "protoc" command is not in the PATH or the protobuf include
 # directory is not "/usr/local/include", you need to modify this file.
-all:
+#
+
+DEPS:= $(shell find . -type f -name '*.proto' | sed 's/proto$$/pb.go/')
+FLAGS+= --proto_path=.:/usr/local/include
+ifeq ($(LANGUAGE),go)
+	FLAGS+= --$(LANGUAGE)_out=plugins=grpc:$(OUTPUT)
+else
+	FLAGS+= --$(LANGUAGE)_out=$(OUTPUT) --grpc_out=$(OUTPUT)
+	FLAGS+=	--plugin=protoc-gen-grpc=/usr/local/bin/grpc_$(LANGUAGE)_plugin
+endif
+
+all: $(DEPS)
+
+%.pb.go:  %.proto
 	mkdir -p $(OUTPUT)
-	find google -type f -name '*.proto' | xargs protoc \
-	--proto_path=.:/usr/local/include \
-	--$(LANGUAGE)_out=$(OUTPUT) --grpc_out=$(OUTPUT) \
-	--plugin=protoc-gen-grpc=/usr/local/bin/grpc_$(LANGUAGE)_plugin
+	protoc $(FLAGS) $<
 
 clean:
-	rm -rf $(OUTPUT)
+	rm $(patsubst %,$(OUTPUT)/%,$(DEPS)) 2> /dev/null
+	rm -rd $(OUTPUT)
