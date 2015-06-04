@@ -27,19 +27,13 @@ else
 endif
 
 ifeq ($(LANGUAGE),go)
-SUFFIX:= .pb.go
+SUFFIX:= pb.go
 endif
 ifeq ($(LANGUAGE),cpp)
-SUFFIX:= .pb.cc
-endif
-ifeq ($(LANGUAGE),py)
-SUFFIX:= _pb2.py
-endif
-ifeq ($(LANGUAGE),java)
-SUFFIX:= .java
+SUFFIX:= pb.cc
 endif
 
-DEPS:= $(shell find . -type f -name '*.proto' | sed "s/\.proto$$/$(SUFFIX)/")
+DEPS:= $(shell find google -type f -name '*.proto' | sed "s/proto$$/$(SUFFIX)/")
 
 all: supported_lang $(DEPS)
 
@@ -48,7 +42,7 @@ ifndef SUFFIX
 	$(error unsupported language: [$(LANGUAGE)])
 endif
 
-%$(SUFFIX):  %.proto
+%.$(SUFFIX):  %.proto
 	mkdir -p $(OUTPUT)
 	protoc $(FLAGS) $(dir $<)*.proto
 
