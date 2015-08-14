@@ -12,13 +12,15 @@ OUTPUT ?= ./gens
 # Choose the target language.
 LANGUAGE ?= cpp
 
+# Choose the proto include directory.
+PROTOINCLUDE ?= /usr/local/include
+
 # Compile the entire repository
 #
-# NOTE: if the "protoc" command is not in the PATH or the protobuf include
-# directory is not "/usr/local/include", you need to modify this file.
+# NOTE: if "protoc" command is not in the PATH, you need to modify this file.
 #
 
-FLAGS+= --proto_path=.:/usr/local/include
+FLAGS+= --proto_path=.:$(PROTOINCLUDE)
 ifeq ($(LANGUAGE),go)
 	FLAGS+= --$(LANGUAGE)_out=plugins=grpc:$(OUTPUT)
 else
@@ -33,7 +35,7 @@ ifeq ($(LANGUAGE),cpp)
 SUFFIX:= pb.cc
 endif
 
-DEPS:= $(shell find google -type f -name '*.proto' | sed "s/proto$$/$(SUFFIX)/")
+DEPS:= $(shell find google $(PROTOINCLUDE)/google/protobuf -type f -name '*.proto' | sed "s/proto$$/$(SUFFIX)/")
 
 all: supported_lang $(DEPS)
 
@@ -42,9 +44,12 @@ ifndef SUFFIX
 	$(error unsupported language: [$(LANGUAGE)])
 endif
 
+ifdef OUTPUT
+  mkdir -p $(OUTPUT)
+endif
+
 %.$(SUFFIX):  %.proto
-	mkdir -p $(OUTPUT)
-	protoc $(FLAGS) $(dir $<)*.proto
+	protoc $(FLAGS) $*.proto
 
 clean:
 	rm $(patsubst %,$(OUTPUT)/%,$(DEPS)) 2> /dev/null
