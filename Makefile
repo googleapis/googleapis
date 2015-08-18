@@ -12,6 +12,9 @@ OUTPUT ?= ./gens
 # Choose the target language.
 LANGUAGE ?= cpp
 
+# Choose grpc plugin
+GPRCPLUGIN ?= /usr/local/bin/grpc_$(LANGUAGE)_plugin
+
 # Choose the proto include directory.
 PROTOINCLUDE ?= /usr/local/include
 
@@ -25,27 +28,21 @@ ifeq ($(LANGUAGE),go)
 	FLAGS+= --$(LANGUAGE)_out=plugins=grpc:$(OUTPUT)
 else
 	FLAGS+= --$(LANGUAGE)_out=$(OUTPUT) --grpc_out=$(OUTPUT)
-	FLAGS+=	--plugin=protoc-gen-grpc=/usr/local/bin/grpc_$(LANGUAGE)_plugin
+	FLAGS+=	--plugin=protoc-gen-grpc=$(GPRCPLUGIN)
 endif
 
 ifeq ($(LANGUAGE),go)
 SUFFIX:= pb.go
-endif
-ifeq ($(LANGUAGE),cpp)
+else
 SUFFIX:= pb.cc
 endif
 
 DEPS:= $(shell find google $(PROTOINCLUDE)/google/protobuf -type f -name '*.proto' | sed "s/proto$$/$(SUFFIX)/")
 
-all: supported_lang $(DEPS)
-
-supported_lang:
-ifndef SUFFIX
-	$(error unsupported language: [$(LANGUAGE)])
-endif
+all: $(DEPS)
 
 ifdef OUTPUT
-  mkdir -p $(OUTPUT)
+	mkdir -p $(OUTPUT)
 endif
 
 %.$(SUFFIX):  %.proto
