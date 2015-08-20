@@ -41,11 +41,8 @@ DEPS:= $(shell find google $(PROTOINCLUDE)/google/protobuf -type f -name '*.prot
 
 all: $(DEPS)
 
-ifdef OUTPUT
-	mkdir -p $(OUTPUT)
-endif
-
 %.$(SUFFIX):  %.proto
+	mkdir -p $(OUTPUT)
 	protoc $(FLAGS) $*.proto
 
 clean:
