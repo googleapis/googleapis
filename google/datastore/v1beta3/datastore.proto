@@ -27,7 +27,10 @@ option java_package = "com.google.datastore.v1beta3";
 
 // Each RPC normalizes the partition IDs of the keys in its input entities,
 // and always returns entities with keys with normalized partition IDs.
-// This applies to all keys and entities, including those in values.
+// This applies to all keys and entities, including those in values, except keys
+// with both an empty path and an empty or unset partition ID. Normalization of
+// input keys sets the project ID (if not already set) to the project ID from
+// the request.
 //
 service Datastore {
   // Look up entities by key.
@@ -65,8 +68,7 @@ service Datastore {
 
 // The request for [google.datastore.v1beta3.Datastore.Lookup][google.datastore.v1beta3.Datastore.Lookup].
 message LookupRequest {
-  // Project ID against which to make the request. Not required if the request
-  // is made over HTTP.
+  // Project ID against which to make the request.
   string project_id = 8;
 
   // Options for this lookup request.
@@ -96,15 +98,13 @@ message LookupResponse {
 
 // The request for [google.datastore.v1beta3.Datastore.RunQuery][google.datastore.v1beta3.Datastore.RunQuery].
 message RunQueryRequest {
-  // Project ID against which to make the request. Not required if the request
-  // is made over HTTP.
+  // Project ID against which to make the request.
   string project_id = 8;
 
   // Entities are partitioned into subsets, identified by a partition ID.
   // Queries are scoped to a single partition.
   // This partition ID is normalized with the standard default context
-  // partition ID, but all other partition IDs in `RunQueryRequest` are
-  // normalized with this partition ID as the context partition ID.
+  // partition ID.
   PartitionId partition_id = 2;
 
   // The options for this query.
@@ -131,8 +131,7 @@ message RunQueryResponse {
 
 // The request for [google.datastore.v1beta3.Datastore.BeginTransaction][google.datastore.v1beta3.Datastore.BeginTransaction].
 message BeginTransactionRequest {
-  // Project ID against which to make the request. Not required if the request
-  // is made over HTTP.
+  // Project ID against which to make the request.
   string project_id = 8;
 }
 
@@ -144,8 +143,7 @@ message BeginTransactionResponse {
 
 // The request for [google.datastore.v1beta3.Datastore.Rollback][google.datastore.v1beta3.Datastore.Rollback].
 message RollbackRequest {
-  // Project ID against which to make the request. Not required if the request
-  // is made over HTTP.
+  // Project ID against which to make the request.
   string project_id = 8;
 
   // The transaction identifier, returned by a call to
@@ -173,19 +171,30 @@ message CommitRequest {
     NON_TRANSACTIONAL = 2;
   }
 
-  // Project ID against which to make the request. Not required if the request
-  // is made over HTTP.
+  // Project ID against which to make the request.
   string project_id = 8;
 
   // The type of commit to perform. Defaults to `TRANSACTIONAL`.
   Mode mode = 5;
 
-  // The transaction identifier, returned by a call to
-  // [google.datastore.v1beta3.Datastore.BeginTransaction][google.datastore.v1beta3.Datastore.BeginTransaction].
   // Must be set when mode is `TRANSACTIONAL`.
-  bytes transaction = 1;
+  oneof transaction_selector {
+    // The transaction in which to write.
+    bytes transaction = 1;
+  }
 
   // The mutations to perform.
+  //
+  // When mode is `TRANSACTIONAL`, mutations affecting a single entity are
+  // applied in order. The following sequences of mutations affecting a single
+  // entity are not permitted in a single `Commit` request:
+  // - `insert` followed by `insert`
+  // - `update` followed by `insert`
+  // - `upsert` followed by `insert`
+  // - `delete` followed by `update`
+  //
+  // When mode is `NON_TRANSACTIONAL`, no two mutations may affect a single
+  // entity.
   repeated Mutation mutations = 6;
 }
 
@@ -201,8 +210,7 @@ message CommitResponse {
 
 // The request for [google.datastore.v1beta3.Datastore.AllocateIds][google.datastore.v1beta3.Datastore.AllocateIds].
 message AllocateIdsRequest {
-  // Project ID against which to make the request. Not required if the request
-  // is made over HTTP.
+  // Project ID against which to make the request.
   string project_id = 8;
 
   // A list of keys with incomplete key paths for which to allocate IDs.
@@ -275,7 +283,7 @@ message ReadOptions {
     // Cannot be set to `STRONG` for global queries.
     ReadConsistency read_consistency = 1;
 
-    // The transaction identifier to use.
+    // The transaction in which to read.
     bytes transaction = 2;
   }
 }
