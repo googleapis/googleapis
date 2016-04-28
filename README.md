@@ -50,7 +50,8 @@ directory, and each major version of the API has its own subdirectory.
 The proto package names exactly match the directory: this makes it
 easy to locate the proto definitions and ensures that the generated
 client libraries have idiomatic namespaces in most programming
-languages.
+languages. Alongside the API directories live the configuration files
+for the [GAPIC toolkit](https://github.com/googleapis/toolkit).
 
 **NOTE:** the major version of an API is used to indicate breaking
 change to the API.
