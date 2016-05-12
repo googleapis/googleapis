@@ -1,4 +1,4 @@
-// Copyright (c) 2015, Google Inc.
+// Copyright 2016 Google Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,10 +16,19 @@ syntax = "proto3";
 
 package google.api;
 
+option cc_enable_arenas = true;
 option java_multiple_files = true;
 option java_outer_classname = "HttpProto";
 option java_package = "com.google.api";
 
+
+// Defines the HTTP configuration for a service. It contains a list of
+// [HttpRule][google.api.HttpRule], each specifying the mapping of an RPC method
+// to one or more HTTP REST API methods.
+message Http {
+  // A list of HTTP rules for configuring the HTTP REST API methods.
+  repeated HttpRule rules = 1;
+}
 
 // `HttpRule` defines the mapping of an RPC method to one or more HTTP
 // REST APIs.  The mapping determines what portions of the request
@@ -36,11 +45,15 @@ option java_package = "com.google.api";
 // ```proto
 // service Messaging {
 //   rpc GetMessage(GetMessageRequest) returns (Message) {
-//     option (google.api.http).get = "/v1/messages/{message_id}";
+//     option (google.api.http).get = "/v1/messages/{message_id}/{sub.subfield}";
 //   }
 // }
 // message GetMessageRequest {
+//   message SubMessage {
+//     string subfield = 1;
+//   }
 //   string message_id = 1; // mapped to the URL
+//   SubMessage sub = 2;    // `sub.subfield` is url-mapped
 // }
 // message Message {
 //   string text = 1; // content of the resource
@@ -52,7 +65,7 @@ option java_package = "com.google.api";
 //
 // HTTP | RPC
 // -----|-----
-// `GET /v1/messages/123456`  | `GetMessage(message_id: "123456")`
+// `GET /v1/messages/123456/foo`  | `GetMessage(message_id: "123456" sub: SubMessage(subfield: "foo"))`
 //
 // In general, not only fields but also field paths can be referenced
 // from a path pattern. Fields mapped to the path pattern cannot be
@@ -64,8 +77,12 @@ option java_package = "com.google.api";
 //
 // ```proto
 // message GetMessageRequest {
+//   message SubMessage {
+//     string subfield = 1;
+//   }
 //   string message_id = 1; // mapped to the URL
 //   int64 revision = 2;    // becomes a parameter
+//   SubMessage sub = 3;    // `sub.subfield` becomes a parameter
 // }
 // ```
 //
@@ -73,7 +90,7 @@ option java_package = "com.google.api";
 //
 // HTTP | RPC
 // -----|-----
-// `GET /v1/messages/123456?revision=2` | `GetMessage(message_id: "123456" revision: 2)`
+// `GET /v1/messages/123456?revision=2&sub.subfield=foo` | `GetMessage(message_id: "123456" revision: 2 sub: SubMessage(subfield: "foo"))`
 //
 // Note that fields which are mapped to HTTP parameters must have a
 // primitive type or a repeated primitive type. Message types are not
@@ -90,6 +107,7 @@ option java_package = "com.google.api";
 //     option (google.api.http) = {
 //       put: "/v1/messages/{message_id}"
 //       body: "message"
+//     };
 //   }
 // }
 // message UpdateMessageRequest {
@@ -117,10 +135,11 @@ option java_package = "com.google.api";
 //     option (google.api.http) = {
 //       put: "/v1/messages/{message_id}"
 //       body: "*"
+//     };
 //   }
 // }
 // message Message {
-//   string message_id = 2;
+//   string message_id = 1;
 //   string text = 2;
 // }
 // ```
@@ -148,6 +167,7 @@ option java_package = "com.google.api";
 //       additional_bindings {
 //         get: "/v1/users/{user_id}/messages/{message_id}"
 //       }
+//     };
 //   }
 // }
 // message GetMessageRequest {
@@ -165,6 +185,7 @@ option java_package = "com.google.api";
 // `GET /v1/users/me/messages/123456` | `GetMessage(user_id: "me" message_id: "123456")`
 //
 // # Rules for HTTP mapping
+//
 // The rules for mapping HTTP path, query parameters, and body fields
 // to the request message are as follows:
 //
@@ -188,18 +209,33 @@ option java_package = "com.google.api";
 //     FieldPath = IDENT { "." IDENT } ;
 //     Verb     = ":" LITERAL ;
 //
-// `*` matches a single path component, `**` zero or more path components, and
-// `LITERAL` a constant.  A `Variable` can match an entire path as specified
-// again by a template; this nested template must not contain further variables.
-// If no template is given with a variable, it matches a single path component.
-// The notation `{var}` is henceforth equivalent to `{var=*}`. NOTE: the field
-// paths in variables and in the `body` must not refer to repeated fields.
+// The syntax `*` matches a single path segment. It follows the semantics of
+// [RFC 6570](https://tools.ietf.org/html/rfc6570) Section 3.2.2 Simple String
+// Expansion.
+//
+// The syntax `**` matches zero or more path segments. It follows the semantics
+// of [RFC 6570](https://tools.ietf.org/html/rfc6570) Section 3.2.3 Reserved
+// Expansion.
+//
+// The syntax `LITERAL` matches literal text in the URL path.
+//
+// The syntax `Variable` matches the entire path as specified by its template;
+// this nested template must not contain further variables. If a variable
+// matches a single path segment, its template may be omitted, e.g. `{var}`
+// is equivalent to `{var=*}`.
+//
+// NOTE: the field paths in variables and in the `body` must not refer to
+// repeated fields or map fields.
 //
 // Use CustomHttpPattern to specify any HTTP method that is not included in the
-// pattern field, such as HEAD, or "*" to leave the HTTP method unspecified for
+// `pattern` field, such as HEAD, or "*" to leave the HTTP method unspecified for
 // a given URL path rule. The wild-card rule is useful for services that provide
 // content to Web (HTML) clients.
 message HttpRule {
+  // Selects methods to which this rule applies.
+  //
+  // Refer to [selector][google.api.DocumentationRule.selector] for syntax details.
+  string selector = 1;
 
   // Determines the URL pattern is matched by this rules. This pattern can be
   // used with any of the {get|put|post|delete|patch} methods. A custom method
