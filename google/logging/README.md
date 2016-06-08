@@ -1,2 +1,3 @@
 # Introduction
-The Google logging service.
+
+The Stackdriver Logging service.
