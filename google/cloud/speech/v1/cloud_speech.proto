@@ -1,4 +1,4 @@
-// Copyright (c) 2015, Google Inc.
+// Copyright 2016 Google Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,10 +26,12 @@ option java_package = "com.google.cloud.speech.v1";
 
 // Service that implements Google Cloud Speech API.
 service Speech {
-  // Perform bidirectional streaming speech recognition on audio using gRPC.
+  // Perform bidirectional streaming speech-recognition: receive results while
+  // sending audio.
   rpc Recognize(stream RecognizeRequest) returns (stream RecognizeResponse);
 
-  // Perform non-streaming speech recognition on audio using HTTPS.
+  // Perform non-streaming speech-recognition: receive results after all audio
+  // has been sent and processed.
   rpc NonStreamingRecognize(RecognizeRequest) returns (NonStreamingRecognizeResponse) {
     option (google.api.http) = { post: "/v1/speech:recognize" body: "*" };
   }
@@ -37,12 +39,13 @@ service Speech {
 
 // `RecognizeRequest` is the only message type sent by the client.
 //
-// `NonStreamingRecognize` sends only one `RecognizeRequest` message and it
-// must contain both an `initial_request` and an 'audio_request`.
+// When using the REST API or the gRPC `NonStreamingRecognize` API, only one
+// `RecognizeRequest` message is sent, and it must contain both an
+// `initial_request` and an 'audio_request`.
 //
-// Streaming `Recognize` sends one or more `RecognizeRequest` messages. The
-// first message must contain an `initial_request` and may contain an
-// 'audio_request`. Any subsequent messages must not contain an
+// When using the gRPC Streaming `Recognize` API, one or more `RecognizeRequest`
+// messages are sent. The first message must contain an `initial_request` and
+// may contain an 'audio_request`. Any subsequent messages must not contain an
 // `initial_request` and must contain an 'audio_request`.
 message RecognizeRequest {
   // The `initial_request` message provides information to the recognizer
@@ -53,38 +56,42 @@ message RecognizeRequest {
   // `initial_request`.
   InitialRecognizeRequest initial_request = 1;
 
-  // The audio data to be recognized. For `NonStreamingRecognize`, all the
+  // The audio data to be recognized. For REST or `NonStreamingRecognize`, all
   // audio data must be contained in the first (and only) `RecognizeRequest`
-  // message. For streaming `Recognize`, sequential chunks of audio data are
-  // sent in sequential `RecognizeRequest` messages.
+  // message. For gRPC streaming `Recognize`, sequential chunks of audio data
+  // are sent in sequential `RecognizeRequest` messages.
   AudioRequest audio_request = 2;
 }
 
 // The `InitialRecognizeRequest` message provides information to the recognizer
 // that specifies how to process the request.
 message InitialRecognizeRequest {
-  // Audio encoding of the data sent in the audio message.
+  // Audio encoding of the data sent in the audio message. All encodings support
+  // only 1 channel (mono) audio. Only `FLAC` includes a header that describes
+  // the bytes of audio that follow the header. The other encodings are raw
+  // audio bytes with no header.
+  //
+  // For best results, the audio source should be captured and transmitted using
+  // a lossless encoding (`FLAC` or `LINEAR16`). Recognition accuracy may be
+  // reduced if lossy codecs (such as AMR, AMR_WB and MULAW) are used to capture
+  // or transmit the audio, particularly if background noise is present.
   enum AudioEncoding {
     // Not specified. Will return result [google.rpc.Code.INVALID_ARGUMENT][google.rpc.Code.INVALID_ARGUMENT].
     ENCODING_UNSPECIFIED = 0;
 
     // Uncompressed 16-bit signed little-endian samples.
-    // This is the simplest encoding format, useful for getting started.
-    // However, because it is uncompressed, it is not recommended for deployed
-    // clients.
     LINEAR16 = 1;
 
-    // This is the recommended encoding format because it uses lossless
-    // compression; therefore recognition accuracy is not compromised by a lossy
-    // codec.
+    // This is the recommended encoding because it uses lossless compression;
+    // therefore recognition accuracy is not compromised by a lossy codec.
     //
-    // The stream FLAC format is specified at:
+    // The stream FLAC (Free Lossless Audio Codec) encoding is specified at:
     // http://flac.sourceforge.net/documentation.html.
     // Only 16-bit samples are supported.
     // Not all fields in STREAMINFO are supported.
     FLAC = 2;
 
-    // 8-bit samples that compand 14-bit audio samples using PCMU/mu-law.
+    // 8-bit samples that compand 14-bit audio samples using G.711 PCMU/mu-law.
     MULAW = 3;
 
     // Adaptive Multi-Rate Narrowband codec. `sample_rate` must be 8000 Hz.
@@ -98,13 +105,17 @@ message InitialRecognizeRequest {
   AudioEncoding encoding = 1;
 
   // [Required] Sample rate in Hertz of the audio data sent in all
-  // AudioRequest messages.
-  // 16000 is optimal. Valid values are: 8000-48000.
+  // AudioRequest messages. Valid values are: 8000-48000.
+  // 16000 is optimal. For best results, set the sampling rate of the audio
+  // source to 16000 Hz. If that's not possible, use the native sample rate of
+  // the audio source (instead of re-sampling).
   int32 sample_rate = 2;
 
   // [Optional] The language of the supplied audio as a BCP-47 language tag.
   // Example: "en-GB"  https://www.rfc-editor.org/rfc/bcp/bcp47.txt
-  // If omitted, defaults to "en-US".
+  // If omitted, defaults to "en-US". See
+  // [Language Support](/speech/docs/best-practices#language_support) for
+  // a list of the currently supported language codes.
   string language_code = 3;
 
   // [Optional] Maximum number of recognition hypotheses to be returned.
@@ -129,11 +140,11 @@ message InitialRecognizeRequest {
   // and set the `is_final` flag to `true`.
   //
   // If `true`, the recognizer will continue recognition (even if the user
-  // pauses speaking) until the client sends an `end_of_data` message or when
-  // the maximum time limit has been reached. Multiple
-  // `SpeechRecognitionResult`s with the `is_final` flag set to `true` may be
-  // returned to indicate that the recognizer will not return any further
-  // hypotheses for this portion of the transcript.
+  // pauses speaking) until the client closes the output stream (gRPC API) or
+  // completes the POST data (REST API) or when the maximum time limit has been
+  // reached. Multiple `SpeechRecognitionResult`s with the `is_final` flag set
+  // to `true` may be returned to indicate that the recognizer will not return
+  // any further hypotheses for that portion of the transcript.
   bool continuous = 6;
 
   // [Optional] If this parameter is `true`, interim results may be returned as
@@ -159,11 +170,23 @@ message InitialRecognizeRequest {
   // (other URI formats return [google.rpc.Code.INVALID_ARGUMENT][google.rpc.Code.INVALID_ARGUMENT]). For
   // more information, see [Request URIs](/storage/docs/reference-uris).
   string output_uri = 9;
+
+  // [Optional] A means to provide context to assist the speech recognition.
+  SpeechContext speech_context = 10;
 }
 
-// Contains audio data in the format specified in the `InitialRecognizeRequest`.
-// Either `content` or `uri` must be supplied. Supplying both or neither
-// returns [google.rpc.Code.INVALID_ARGUMENT][google.rpc.Code.INVALID_ARGUMENT].
+// Provides "hints" to the speech recognizer to favor specific words and phrases
+// in the results.
+message SpeechContext {
+  // [Optional] A list of up to 50 phrases of up to 100 characters each to
+  // provide words and phrases "hints" to the speech recognition so that it is
+  // more likely to recognize them.
+  repeated string phrases = 1;
+}
+
+// Contains audio data in the encoding specified in the
+// `InitialRecognizeRequest`. Either `content` or `uri` must be supplied.
+// Supplying both or neither returns [google.rpc.Code.INVALID_ARGUMENT][google.rpc.Code.INVALID_ARGUMENT].
 message AudioRequest {
   // The audio data bytes encoded as specified in
   // `InitialRecognizeRequest`. Note: as with all bytes fields, protobuffers
