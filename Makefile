@@ -23,19 +23,15 @@ PROTOINCLUDE ?= /usr/local/include
 # NOTE: if "protoc" command is not in the PATH, you need to modify this file.
 #
 
-FLAGS+= --proto_path=.:$(PROTOINCLUDE)
 ifeq ($(LANGUAGE),go)
-	FLAGS+= --$(LANGUAGE)_out=plugins=grpc:$(OUTPUT)
-else
-	FLAGS+= --$(LANGUAGE)_out=$(OUTPUT) --grpc_out=$(OUTPUT)
-	FLAGS+=	--plugin=protoc-gen-grpc=$(GPRCPLUGIN)
+$(error Go source files are not generated from this repository. See: https://github.com/google/go-genproto)
 endif
 
-ifeq ($(LANGUAGE),go)
-SUFFIX:= pb.go
-else
+FLAGS+= --proto_path=.:$(PROTOINCLUDE)
+FLAGS+= --$(LANGUAGE)_out=$(OUTPUT) --grpc_out=$(OUTPUT)
+FLAGS+=	--plugin=protoc-gen-grpc=$(GPRCPLUGIN)
+
 SUFFIX:= pb.cc
-endif
 
 DEPS:= $(shell find google $(PROTOINCLUDE)/google/protobuf -type f -name '*.proto' | sed "s/proto$$/$(SUFFIX)/")
 
