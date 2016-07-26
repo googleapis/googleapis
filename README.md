@@ -64,8 +64,8 @@ machine. Then you can run `make all` in this directory to generate
 the code.
 
 ### Go gRPC Source Code
-It is somewhat difficult to generate Go gRPC source code
-from this repository, since Go has different directory structure.
+It is difficult to generate Go gRPC source code from this repository,
+since Go has different directory structure.
 Please use [this repository](https://github.com/google/go-genproto) instead.
 
 **NOTE:** The Makefile needs more improvements.
