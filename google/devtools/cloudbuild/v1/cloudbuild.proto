@@ -1,0 +1,351 @@
+// Copyright 2016 Google Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.devtools.cloudbuild.v1;
+
+import "google/api/annotations.proto";
+import "google/devtools/source/v1/source_context.proto";
+import "google/longrunning/operations.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option java_multiple_files = true;
+option java_package = "com.google.cloudbuild.v1";
+option objc_class_prefix = "GCB";
+
+
+// Manages container image build requests in the cloud.
+//
+// The main concept used by this API is a Build, which describes the location of
+// the source to build, how to build the source into a container image, and what
+// tag to apply to the built image when it is pushed to Google Container
+// Registry.
+//
+// A user can list previously-requested builds or get builds by their ID to
+// determine the status of the build.
+service CloudBuild {
+  // Starts a build with the specified configuration.
+  //
+  // The long-running Operation returned by this method will include the ID of
+  // the build, which can be passed to GetBuild to determine its status (e.g.,
+  // success or failure).
+  rpc CreateBuild(CreateBuildRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = { post: "/v1/projects/{project_id}/builds" body: "build" };
+  }
+
+  // Returns information about a previously requested build.
+  //
+  // The Build that is returned includes its status (e.g., success or failure,
+  // or in-progress), and timing information.
+  rpc GetBuild(GetBuildRequest) returns (Build) {
+    option (google.api.http) = { get: "/v1/projects/{project_id}/builds/{id}" };
+  }
+
+  // Lists previously requested builds.
+  //
+  // Previously requested builds may still be in-progress, or may have finished
+  // successfully or unsuccessfully.
+  rpc ListBuilds(ListBuildsRequest) returns (ListBuildsResponse) {
+    option (google.api.http) = { get: "/v1/projects/{project_id}/builds" };
+  }
+
+  // Cancels a requested build in progress.
+  rpc CancelBuild(CancelBuildRequest) returns (Build) {
+    option (google.api.http) = { post: "/v1/projects/{project_id}/builds/{id}:cancel" body: "*" };
+  }
+}
+
+// StorageSource describes the location of the source in an archive file in
+// Google Cloud Storage.
+message StorageSource {
+  // Google Cloud Storage bucket containing source (see
+  // [Bucket Name
+  // Requirements](https://cloud.google.com/storage/docs/bucket-naming#requirements)).
+  string bucket = 1;
+
+  // Google Cloud Storage object containing source.
+  //
+  // This object must be a gzipped archive file (.tar.gz) containing source to
+  // build.
+  string object = 2;
+
+  // Google Cloud Storage generation for the object. If the generation is
+  // omitted, the latest generation will be used.
+  int64 generation = 3;
+}
+
+// Source describes the location of the source in a supported storage
+// service.
+message Source {
+  // Describes location of source.
+  oneof source {
+    // If provided, get the source from this location in in Google Cloud
+    // Storage.
+    StorageSource storage_source = 2;
+  }
+}
+
+// BuiltImage describes an image built by the pipeline.
+message BuiltImage {
+  // Name used to push the container image to Google Container Registry, as
+  // presented to `docker push`.
+  string name = 1;
+
+  // Docker Registry 2.0 digest.
+  string digest = 3;
+}
+
+// BuildStep describes a step to perform in the build pipeline.
+message BuildStep {
+  // Name of the container image to use for creating this stage in the
+  // pipeline, as presented to `docker pull`.
+  string name = 1;
+
+  // Additional environment variables to set for this step's container.
+  repeated string env = 2;
+
+  // Command-line arguments to use when running this step's container.
+  repeated string args = 3;
+
+  // Working directory (relative to project source root) to use when running
+  // this operation's container.
+  string dir = 4;
+}
+
+// Results describes the artifacts created by the build pipeline.
+message Results {
+  // Images that were built as a part of the build.
+  repeated BuiltImage images = 2;
+}
+
+// A build resource in the Container Builder API.
+//
+// At a high level, a Build describes where to find source code, how to build
+// it (for example, the builder image to run on the source), and what tag to
+// apply to the built image when it is pushed to Google Container Registry.
+message Build {
+  // Possible status of a build.
+  enum Status {
+    // Status of the build is unknown.
+    STATUS_UNKNOWN = 0;
+
+    // Build has been received and is being queued.
+    QUEUING = 8;
+
+    // Build is queued; work has not yet begun.
+    QUEUED = 1;
+
+    // Build is being executed.
+    WORKING = 2;
+
+    // Build finished successfully.
+    SUCCESS = 3;
+
+    // Build failed to complete successfully.
+    FAILURE = 4;
+
+    // Build failed due to an internal cause.
+    INTERNAL_ERROR = 5;
+
+    // Build took longer than was allowed.
+    TIMEOUT = 6;
+
+    // Build was canceled by a user.
+    CANCELLED = 7;
+  }
+
+  // Unique identifier of the build.
+  // @OutputOnly
+  string id = 1;
+
+  // ID of the project.
+  // @OutputOnly.
+  string project_id = 16;
+
+  // Status of the build.
+  // @OutputOnly
+  Status status = 2;
+
+  // Customer-readable message about the current status.
+  // @OutputOnly
+  string status_detail = 24;
+
+  // Describes where to find the source files to build.
+  Source source = 3;
+
+  // Describes the operations to be performed on the workspace.
+  repeated BuildStep steps = 11;
+
+  // Results of the build.
+  // @OutputOnly
+  Results results = 10;
+
+  // Time at which the build was created.
+  // @OutputOnly
+  google.protobuf.Timestamp create_time = 6;
+
+  // Time at which execution of the build was started.
+  // @OutputOnly
+  google.protobuf.Timestamp start_time = 7;
+
+  // Time at which execution of the build was finished.
+  // @OutputOnly
+  google.protobuf.Timestamp finish_time = 8;
+
+  // Amount of time that this build should be allowed to run, to second
+  // granularity. If this amount of time elapses, work on the build will cease
+  // and the build status will be TIMEOUT.
+  //
+  // Default time is ten minutes.
+  google.protobuf.Duration timeout = 12;
+
+  // List of images expected to be built and pushed to Google Container
+  // Registry. If an image is listed here and the image is not produced by
+  // one of the build steps, the build will fail. Any images present when
+  // the build steps are complete will be pushed to Container Registry.
+  repeated string images = 13;
+
+  // Google Cloud Storage bucket where logs should be written (see
+  // [Bucket Name
+  // Requirements](https://cloud.google.com/storage/docs/bucket-naming#requirements)).
+  // Logs file names will be of the format `${logs_bucket}/log-${build_id}.txt`.
+  string logs_bucket = 19;
+
+  // A permanent fixed identifier for source.
+  // @OutputOnly
+  SourceProvenance source_provenance = 21;
+
+  // Special options for this build.
+  BuildOptions options = 23;
+}
+
+// Metadata for build operations.
+message BuildOperationMetadata {
+  // The build that the operation is tracking.
+  Build build = 1;
+}
+
+// Provenance of the source. Ways to find the original source, or verify that
+// some source was used for this build.
+message SourceProvenance {
+  // A copy of the build's source.storage_source, if exists, with any
+  // generations resolved.
+  StorageSource resolved_storage_source = 3;
+
+  // Hash(es) of the build source, which can be used to verify that the original
+  // source integrity was maintained in the build. Note that FileHashes will
+  // only be populated if BuildOptions has requested a SourceProvenanceHash.
+  //
+  // The keys to this map are file paths used as build source and the values
+  // contain the hash values for those files.
+  //
+  // If the build source came in a single package such as a gzipped tarfile
+  // (.tar.gz), the FileHash will be for the single path to that file.
+  // @OutputOnly
+  map<string, FileHashes> file_hashes = 4;
+}
+
+// Container message for hashes of byte content of files, used in
+// SourceProvenance messages to verify integrity of source input to the build.
+message FileHashes {
+  // Collection of file hashes.
+  repeated Hash file_hash = 1;
+}
+
+// Container message for hash values.
+message Hash {
+  // Specifies the hash algorithm, if any.
+  enum HashType {
+    // No hash requested.
+    NONE = 0;
+
+    // Use a sha256 hash.
+    SHA256 = 1;
+  }
+
+  // The type of hash that was performed.
+  HashType type = 1;
+
+  // The hash value.
+  bytes value = 2;
+}
+
+// Request to create a new build.
+message CreateBuildRequest {
+  // ID of the project.
+  string project_id = 1;
+
+  // Build resource to create.
+  Build build = 2;
+}
+
+// Request to get a build.
+message GetBuildRequest {
+  // ID of the project.
+  string project_id = 1;
+
+  // ID of the build.
+  string id = 2;
+}
+
+// Request to list builds.
+message ListBuildsRequest {
+  // ID of the project.
+  string project_id = 1;
+
+  // Number of results to return in the list.
+  int32 page_size = 2;
+
+  // Token to provide to skip to a particular spot in the list.
+  string page_token = 3;
+}
+
+// Response including listed builds.
+message ListBuildsResponse {
+  // Builds will be sorted by create_time, descending.
+  repeated Build builds = 1;
+
+  // Token to receive the next page of results.
+  string next_page_token = 2;
+}
+
+// Request to cancel an ongoing build.
+message CancelBuildRequest {
+  // ID of the project.
+  string project_id = 1;
+
+  // ID of the build.
+  string id = 2;
+}
+
+// Optional arguments to enable specific features of builds.
+message BuildOptions {
+  // Specifies the manner in which the build should be verified, if at all.
+  enum VerifyOption {
+    // Not a verifiable build. (default)
+    NOT_VERIFIED = 0;
+
+    // Verified build.
+    VERIFIED = 1;
+  }
+
+  // Requested hash for SourceProvenance.
+  repeated Hash.HashType source_provenance_hash = 1;
+
+  // Options for a verifiable build with details uploaded to the Analysis API.
+  VerifyOption requested_verify_option = 2;
+}
