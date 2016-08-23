@@ -37,7 +37,7 @@ found. Currently, package delivery is only being done for Python.
 ### [Cloud Vision](https://cloud.google.com/vision/)
 - [GAX](https://pypi.python.org/pypi/gax-google-cloud-vision-v1)
 - [gRPC](https://pypi.python.org/pypi/grpc-google-cloud-vision-v1)
-- Documentation: TBD
+- [Documentation](http://pythonhosted.org/gax-google-cloud-vision-v1/)
 
 ### [Stackdriver Debugger](https://cloud.google.com/debugger/)
 - TBD
