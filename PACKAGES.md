@@ -9,6 +9,11 @@ found. Currently, package delivery is only being done for Python.
 ### Common
 - [GAX core library](https://pypi.python.org/pypi/google-gax) ([source](https://github.com/googleapis/gax-python))
 - [gRPC for common protos](https://pypi.python.org/pypi/googleapis-common-protos) ([source](https://github.com/googleapis/googleapis))
+- [Long-running
+  operations](https://github.com/googleapis/googleapis/blob/master/google/longrunning/operations.proto)
+  - GAX: TBD
+  - gRPC: TBD
+  - Documentation: TBD
 
 ### [Cloud Bigtable](https://cloud.google.com/bigtable/)
 - TBD
