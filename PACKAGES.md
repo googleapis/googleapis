@@ -11,8 +11,8 @@ found. Currently, package delivery is only being done for Python.
 - [gRPC for common protos](https://pypi.python.org/pypi/googleapis-common-protos) ([source](https://github.com/googleapis/googleapis))
 - [Long-running
   operations](https://github.com/googleapis/googleapis/blob/master/google/longrunning/operations.proto)
-  - [GAX](https://pypi.python.org/pypi/grpc-google-longrunning-v2)
-  - gRPC: TBD
+  - GAX: TBD
+  - [gRPC](https://pypi.python.org/pypi/grpc-google-longrunning-v2)
   - Documentation: TBD
 
 ### [Cloud Bigtable](https://cloud.google.com/bigtable/)
