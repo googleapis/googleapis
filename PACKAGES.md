@@ -35,6 +35,7 @@ found. Currently, package delivery is only being done for Python.
 - [Documentation](http://pythonhosted.org/gax-google-pubsub-v1/)
 
 ### [Cloud Speech](https://cloud.google.com/speech/)
+- *NOTE: v1 is the wrong version, and these will soon be replaced by v1beta1*
 - [GAX](https://pypi.python.org/pypi/gax-google-cloud-speech-v1)
 - [gRPC](https://pypi.python.org/pypi/grpc-google-cloud-speech-v1)
 - Documentation: TBD
