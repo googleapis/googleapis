@@ -12,7 +12,7 @@ found. Currently, package delivery is only being done for Python.
 - [Long-running
   operations](https://github.com/googleapis/googleapis/blob/master/google/longrunning/operations.proto)
   - GAX: TBD
-  - gRPC: TBD
+  - gRPC: See [gRPC for common protos](https://pypi.python.org/pypi/googleapis-common-protos)
   - Documentation: TBD
 
 ### [Cloud Bigtable](https://cloud.google.com/bigtable/)
