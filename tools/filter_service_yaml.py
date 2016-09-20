@@ -49,43 +49,61 @@ for line in fileinput.input():
 
 dom = ruamel.yaml.round_trip_load(input_str)
 
-# List obtained by:
-# cat logging.yaml | grep -Eo ^[a-z]+: > logging.sections
-# cat pubsub.yaml | grep -Eo ^[a-z]+: > pubsub.sections
-# cat pubsub.sections logging.sections | sort | uniq > accepted.sections
-#
-# TODO(jcanizales): Turn this list into a dictionary, so subsections can be
-# recursively filtered (e.g. authentication > rules > selector). Alternatively,
-# instantiate a default message of service.proto (or its descriptor) and walk
-# it. But the open-source service.proto includes fields like
-# producer_project_id, which I'm not sure an API producer would like to be
-# published.
-#
-# TODO(jcanizales): No "http" section??
-accepted_sections = [
-    'apis',
-    'authentication',
-    'config_version',
-    'context',
-    'documentation',
-    'name',
-    'title',
-    'type',
-]
+# Obtained by inspecting the service configs in the googleapis GitHub repo.
+# A value of None means anything within that key is allowed. A dictionary value
+# is a sub-filter for the accepted keys within.
+accepted_sections = {
+    'type': None,
+    'config_version': None,
+    'name': None,
+    'title': None,
 
-for k in dom.keys():
-    if not k in accepted_sections:
-        del dom[k]
+    'documentation': {
+        'summary': None,
+        'rules': {
+            'selector': None,
+            'description': None,
+        },
+    },
 
-# Until we have smarter filtering, do these ad-hoc:
-accepted_auth_subsections = [
-    'selector',
-    'oauth',
-]
-for auth_rule in dom['authentication']['rules']:
-    for k in auth_rule.keys():
-        if not k in accepted_auth_subsections:
-            del auth_rule[k]
+    'apis': {
+        'name': None,
+    },
+
+    'http': {
+        'rules': None,
+    },
+
+    'authentication': {
+        'rules': {
+            'selector': None,
+            'oauth': {
+                'canonical_scopes': None,
+            },
+        },
+    },
+
+    'context': {
+        'rules': {
+            'selector': None,
+            'requested': None,
+        },
+    },
+}
+
+def filter_object(object, filter):
+    for k in object.keys():
+        if not k in filter.keys():
+            del object[k]
+            continue
+        if filter[k]: # the key has restrictions
+            if isinstance(object[k], list):
+                for element in object[k]:
+                    filter_object(element, filter[k])
+            else:
+                filter_object(object[k], filter[k])
+
+filter_object(dom, accepted_sections)
 
 # Reorder config_version and name if they got out of place by merging inputs.
 dom.insert(1, 'config_version', dom['config_version'])
