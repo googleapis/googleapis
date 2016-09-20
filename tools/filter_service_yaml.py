@@ -77,10 +77,6 @@ for k in dom.keys():
     if not k in accepted_sections:
         del dom[k]
 
-# If the original service config didn't specify a config version, specify one.
-if not 'config_version' in dom.keys():
-    dom.insert(1, 'config_version', 2, comment="(assumed)")
-
 # Until we have smarter filtering, do these ad-hoc:
 accepted_auth_subsections = [
     'selector',
@@ -90,6 +86,10 @@ for auth_rule in dom['authentication']['rules']:
     for k in auth_rule.keys():
         if not k in accepted_auth_subsections:
             del auth_rule[k]
+
+# Reorder config_version and name if they got out of place by merging inputs.
+dom.insert(1, 'config_version', dom['config_version'])
+dom.insert(2, 'name', dom['name'])
 
 # TODO(jcanizales): Set indent=4, block_seq_indent=2 as specified in
 # http://yaml.readthedocs.io/en/latest/detail.html#indentation-of-block-sequences
