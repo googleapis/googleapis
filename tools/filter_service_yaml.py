@@ -9,15 +9,17 @@
 # and a nice layout.
 #
 # Example usage:
-# cat pubsub.yaml | sed 's/>$/|/g' | sed '/^[[:blank:]]*#/d;s/#.*//' | filter_service_yaml.py > filtered.yaml
-#
-# The first sed filter replaces yaml's ">" with "|", which ruamel doesn't handle
-# well.
-#
-# The second one removes comments from the input. ruamel.yaml turns out to be
-# quite arbitrary in what comments it preserves and which it doesn't. E.g. it
-# sometimes doesn't preserve the comments attached to top-level keys, and
-# sometimes it preserves comments attached to keys we've deleted.
+# filter_service_yaml.py base.yaml override.yaml > filtered.yaml
+
+import fileinput
+import re
+import ruamel.yaml
+import sys
+
+# We remove comments from the input. ruamel.yaml turns out to be quite arbitrary
+# in what comments it preserves and which it doesn't. E.g. it sometimes doesn't
+# preserve the comments attached to top-level keys, and sometimes it preserves
+# comments attached to keys we've deleted.
 # I think it's precisely because we're deleting some of those keys, and that
 # disrupts ruamel's data structure.
 # This is a secondary problem right now: Because nobody's aware that the service
@@ -25,14 +27,22 @@
 #
 # TODO(jcanizales): Change API tutorials and documentation to use
 # "internal-only" markers in some comments, as is done with proto files.
-#
-# TODO(jcanizales): Do the regex replacing here after reading the input.
 
-import fileinput
-import ruamel.yaml
-import sys
+full_line_comment = re.compile('^\s*#')
+end_of_line_comment = re.compile('\s*#.*')
+yaml_line_continuation = re.compile('>\s*$')
 
-input_str = "".join(fileinput.input())
+input_str = ""
+for line in fileinput.input():
+    # Remove comments
+    if full_line_comment.match(line):
+        continue
+    line = re.sub(end_of_line_comment, '', line)
+
+    # Replace yaml's ">" with "|", as ruamel doesn't handle the former.
+    line = re.sub(yaml_line_continuation, '|\n', line)
+    
+    input_str += line
 
 # TODO(jcanizales): Abort with a nice error message if the file doesn't exist or
 # is empty.
