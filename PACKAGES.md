@@ -32,7 +32,8 @@ found. Currently, package delivery is only being done for Python.
 ### [Cloud Pub/Sub](https://cloud.google.com/pubsub/)
 - [GAPIC](https://pypi.python.org/pypi/gapic-google-pubsub-v1)
 - [gRPC](https://pypi.python.org/pypi/grpc-google-pubsub-v1)
-- [Documentation](http://pythonhosted.org/gapic-google-pubsub-v1/)
+- [Documentation](http://pythonhosted.org/gax-google-pubsub-v1/):
+  For old `gax` namespace... will be updated soon for `gapic` namespace.
 
 ### [Cloud Speech](https://cloud.google.com/speech/)
 - *NOTE: v1 is the wrong version, and these will soon be replaced by v1beta1*
@@ -43,7 +44,8 @@ found. Currently, package delivery is only being done for Python.
 ### [Cloud Vision](https://cloud.google.com/vision/)
 - [GAPIC](https://pypi.python.org/pypi/gapic-google-cloud-vision-v1)
 - [gRPC](https://pypi.python.org/pypi/grpc-google-cloud-vision-v1)
-- [Documentation](http://pythonhosted.org/gapic-google-cloud-vision-v1/)
+- [Documentation](http://pythonhosted.org/gax-google-cloud-vision-v1/):
+  For old `gax` namespace... will be updated soon for `gapic` namespace.
 
 ### [Stackdriver Debugger](https://cloud.google.com/debugger/)
 - TBD
@@ -54,7 +56,8 @@ found. Currently, package delivery is only being done for Python.
 ### [Stackdriver Logging](https://cloud.google.com/logging/)
 - [GAPIC](https://pypi.python.org/pypi/gapic-google-logging-v2)
 - [gRPC](https://pypi.python.org/pypi/grpc-google-logging-v2)
-- [Documentation](http://pythonhosted.org/gapic-google-logging-v2/)
+- [Documentation](http://pythonhosted.org/gax-google-logging-v2/):
+  For old `gax` namespace... will be updated soon for `gapic` namespace.
 
 ### [Stackdriver Monitoring](https://cloud.google.com/monitoring/)
 - TBD
