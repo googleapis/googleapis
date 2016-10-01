@@ -9,20 +9,28 @@ found. Currently, package delivery is only being done for Python.
 ### Common
 - [GAX core library](https://pypi.python.org/pypi/google-gax) ([source](https://github.com/googleapis/gax-python))
 - [gRPC for common protos](https://pypi.python.org/pypi/googleapis-common-protos) ([source](https://github.com/googleapis/googleapis))
-- [Long-running
-  operations](https://github.com/googleapis/googleapis/blob/master/google/longrunning/operations.proto)
-  - GAPIC: TBD
-  - gRPC: See [gRPC for common protos](https://pypi.python.org/pypi/googleapis-common-protos)
+- [Long-running operations](https://github.com/googleapis/googleapis/blob/master/google/longrunning/operations.proto)
+  - [GAPIC](https://pypi.python.org/pypi/gapic-google-longrunning)
+  - gRPC: Part of [gRPC for common protos](https://pypi.python.org/pypi/googleapis-common-protos)
   - Documentation: TBD
 
 ### [Cloud Bigtable](https://cloud.google.com/bigtable/)
-- TBD
+- GAPIC: TBD
+- gRPC: TBD
+- Documentation: TBD
 
 ### [Cloud Datastore](https://cloud.google.com/datastore/)
-- TBD
+- GAPIC: TBD
+- gRPC: TBD
+- Documentation: TBD
 
 ### [Cloud Identity and Access Management (IAM)](https://cloud.google.com/iam/)
-- TBD
+- Admin API
+  - [GAPIC](https://pypi.python.org/pypi/gapic-google-iam-admin-v1)
+  - [gRPC](https://pypi.python.org/pypi/grpc-google-iam-admin-v1)
+  - Documentation: TBD
+- Policy Mixin (used by Pub/Sub and others)
+  - [gRPC](https://pypi.python.org/pypi/grpc-google-iam-v1)
 
 ### [Cloud Natural Language](https://cloud.google.com/natural-language/)
 - [GAPIC](https://pypi.python.org/pypi/gapic-google-cloud-language-v1beta1)
@@ -48,10 +56,14 @@ found. Currently, package delivery is only being done for Python.
   For old `gax` namespace... will be updated soon for `gapic` namespace.
 
 ### [Stackdriver Debugger](https://cloud.google.com/debugger/)
-- TBD
+- GAPIC: TBD
+- gRPC: TBD
+- Documentation: TBD
 
 ### [Stackdriver Error Reporting](https://cloud.google.com/error-reporting/)
-- TBD
+- GAPIC: TBD
+- gRPC: TBD
+- Documentation: TBD
 
 ### [Stackdriver Logging](https://cloud.google.com/logging/)
 - [GAPIC](https://pypi.python.org/pypi/gapic-google-logging-v2)
@@ -60,7 +72,11 @@ found. Currently, package delivery is only being done for Python.
   For old `gax` namespace... will be updated soon for `gapic` namespace.
 
 ### [Stackdriver Monitoring](https://cloud.google.com/monitoring/)
-- TBD
+- [GAPIC](https://pypi.python.org/pypi/gapic-google-monitoring-v3)
+- [gRPC](https://pypi.python.org/pypi/grpc-google-monitoring-v3)
+- Documentation: TBD
 
 ### [Stackdriver Trace](https://cloud.google.com/trace/)
-- TBD
+- GAPIC: TBD
+- gRPC: TBD
+- Documentation: TBD
