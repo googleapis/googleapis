@@ -116,7 +116,7 @@ example, `versioning-*` suppresses all warnings related to the
 `versioning` group.
 
 Suppression directives attached to parent elements apply to all
-childs. For example, the above suppression when attached to the
+children. For example, the above suppression when attached to the
 service suppresses the specified warning for all rpcs in the
 service. To globally suppress a warning, attach it to the overview
 documentation of the service configuration:
