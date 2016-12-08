@@ -22,6 +22,7 @@ import "google/protobuf/timestamp.proto";
 
 option cc_enable_arenas = true;
 option csharp_namespace = "Google.Cloud.PubSub.V1";
+option go_package = "google.golang.org/genproto/googleapis/pubsub/v1;pubsub";
 option java_multiple_files = true;
 option java_outer_classname = "PubsubProto";
 option java_package = "com.google.pubsub.v1";
@@ -90,6 +91,20 @@ service Subscriber {
   rpc Pull(PullRequest) returns (PullResponse) {
     option (google.api.http) = { post: "/v1/{subscription=projects/*/subscriptions/*}:pull" body: "*" };
   }
+
+  // (EXPERIMENTAL) StreamingPull is an experimental feature. This RPC will
+  // respond with UNIMPLEMENTED errors unless you have been invited to test
+  // this feature. Contact cloud-pubsub@google.com with any questions.
+  //
+  // Establishes a stream with the server, which sends messages down to the
+  // client. The client streams acknowledgements and ack deadline modifications
+  // back to the server. The server will close the stream and return the status
+  // on any error. The server may close the stream with status `OK` to reassign
+  // server-side resources, in which case, the client should re-establish the
+  // stream. `UNAVAILABLE` may also be returned in the case of a transient error
+  // (e.g., a server restart). These should also be retried by the client. Flow
+  // control can be achieved by configuring the underlying RPC channel.
+  rpc StreamingPull(stream StreamingPullRequest) returns (stream StreamingPullResponse);
 
   // Modifies the `PushConfig` for a specified subscription.
   //
@@ -451,4 +466,55 @@ message AcknowledgeRequest {
   // The acknowledgment ID for the messages being acknowledged that was returned
   // by the Pub/Sub system in the `Pull` response. Must not be empty.
   repeated string ack_ids = 2;
+}
+
+// Request for the `StreamingPull` streaming RPC method. This request is used to
+// establish the initial stream as well as to stream acknowledgements and ack
+// deadline modifications from the client to the server.
+message StreamingPullRequest {
+  // The subscription for which to initialize the new stream. This must be
+  // provided in the first request on the stream, and must not be set in
+  // subsequent requests from client to server.
+  // Format is `projects/{project}/subscriptions/{sub}`.
+  string subscription = 1;
+
+  // List of acknowledgement IDs for acknowledging previously received messages
+  // (received on this stream or a different stream). If an ack ID has expired,
+  // the corresponding message may be redelivered later. Acknowledging a message
+  // more than once will not result in an error. If the acknowledgement ID is
+  // malformed, the stream will be aborted with status `INVALID_ARGUMENT`.
+  repeated string ack_ids = 2;
+
+  // The list of new ack deadlines for the IDs listed in
+  // `modify_deadline_ack_ids`. The size of this list must be the same as the
+  // size of `modify_deadline_ack_ids`. If it differs the stream will be aborted
+  // with `INVALID_ARGUMENT`. Each element in this list is applied to the
+  // element in the same position in `modify_deadline_ack_ids`. The new ack
+  // deadline is with respect to the time this request was sent to the Pub/Sub
+  // system. Must be >= 0. For example, if the value is 10, the new ack deadline
+  // will expire 10 seconds after this request is received. If the value is 0,
+  // the message is immediately made available for another streaming or
+  // non-streaming pull request. If the value is < 0 (an error), the stream will
+  // be aborted with status `INVALID_ARGUMENT`.
+  repeated int32 modify_deadline_seconds = 3;
+
+  // List of acknowledgement IDs whose deadline will be modified based on the
+  // corresponding element in `modify_deadline_seconds`. This field can be used
+  // to indicate that more time is needed to process a message by the
+  // subscriber, or to make the message available for redelivery if the
+  // processing was interrupted.
+  repeated string modify_deadline_ack_ids = 4;
+
+  // The ack deadline to use for the stream. This must be provided in the
+  // first request on the stream, but it can also be updated on subsequent
+  // requests from client to server. The minimum deadline you can specify is 10
+  // seconds. The maximum deadline you can specify is 600 seconds (10 minutes).
+  int32 stream_ack_deadline_seconds = 5;
+}
+
+// Response for the `StreamingPull` method. This response is used to stream
+// messages from the server to the client.
+message StreamingPullResponse {
+  // Received Pub/Sub messages. This will not be empty.
+  repeated ReceivedMessage received_messages = 1;
 }
