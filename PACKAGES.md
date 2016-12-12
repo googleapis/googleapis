@@ -67,7 +67,7 @@ found. Currently, package delivery is only being done for Python.
 ### [Stackdriver Logging](https://cloud.google.com/logging/)
 - [GAPIC](https://pypi.python.org/pypi/gapic-google-cloud-logging-v2)
 - [gRPC](https://pypi.python.org/pypi/grpc-google-cloud-logging-v2)
-- [Documentation](http://gapic-google-cloud-logging-v2.readthedocs.io/en/latest/)
+- [Documentation](http://gapic-google-cloud-logging-v2.readthedocs.io)
 
 ### [Stackdriver Monitoring](https://cloud.google.com/monitoring/)
 - [GAPIC](https://pypi.python.org/pypi/gapic-google-monitoring-v3)
