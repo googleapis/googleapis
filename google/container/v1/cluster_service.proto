@@ -1,4 +1,4 @@
-// Copyright (c) 2015, Google Inc.
+// Copyright 2016 Google Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ syntax = "proto3";
 package google.container.v1;
 
 import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
 
 option go_package = "google.golang.org/genproto/googleapis/container/v1;container";
 option java_multiple_files = true;
@@ -26,7 +27,8 @@ option java_package = "com.google.container.v1";
 
 // Google Container Engine Cluster Manager v1
 service ClusterManager {
-  // Lists all clusters owned by a project in either the specified zone or all zones.
+  // Lists all clusters owned by a project in either the specified zone or all
+  // zones.
   rpc ListClusters(ListClustersRequest) returns (ListClustersResponse) {
     option (google.api.http) = { get: "/v1/projects/{project_id}/zones/{zone}/clusters" };
   }
@@ -81,15 +83,52 @@ service ClusterManager {
     option (google.api.http) = { get: "/v1/projects/{project_id}/zones/{zone}/operations/{operation_id}" };
   }
 
+  // Cancels the specified operation.
+  rpc CancelOperation(CancelOperationRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { post: "/v1/projects/{project_id}/zones/{zone}/operations/{operation_id}:cancel" body: "*" };
+  }
+
   // Returns configuration info about the Container Engine service.
   rpc GetServerConfig(GetServerConfigRequest) returns (ServerConfig) {
     option (google.api.http) = { get: "/v1/projects/{project_id}/zones/{zone}/serverconfig" };
+  }
+
+  // Lists the node pools for a cluster.
+  rpc ListNodePools(ListNodePoolsRequest) returns (ListNodePoolsResponse) {
+    option (google.api.http) = { get: "/v1/projects/{project_id}/zones/{zone}/clusters/{cluster_id}/nodePools" };
+  }
+
+  // Retrieves the node pool requested.
+  rpc GetNodePool(GetNodePoolRequest) returns (NodePool) {
+    option (google.api.http) = { get: "/v1/projects/{project_id}/zones/{zone}/clusters/{cluster_id}/nodePools/{node_pool_id}" };
+  }
+
+  // Creates a node pool for a cluster.
+  rpc CreateNodePool(CreateNodePoolRequest) returns (Operation) {
+    option (google.api.http) = { post: "/v1/projects/{project_id}/zones/{zone}/clusters/{cluster_id}/nodePools" body: "*" };
+  }
+
+  // Deletes a node pool from a cluster.
+  rpc DeleteNodePool(DeleteNodePoolRequest) returns (Operation) {
+    option (google.api.http) = { delete: "/v1/projects/{project_id}/zones/{zone}/clusters/{cluster_id}/nodePools/{node_pool_id}" };
+  }
+
+  // Roll back the previously Aborted or Failed NodePool upgrade.
+  // This will be an no-op if the last upgrade successfully completed.
+  rpc RollbackNodePoolUpgrade(RollbackNodePoolUpgradeRequest) returns (Operation) {
+    option (google.api.http) = { post: "/v1/projects/{project_id}/zones/{zone}/clusters/{cluster_id}/nodePools/{node_pool_id}:rollback" body: "*" };
+  }
+
+  // Sets the NodeManagement options for a node pool.
+  rpc SetNodePoolManagement(SetNodePoolManagementRequest) returns (Operation) {
+    option (google.api.http) = { post: "/v1/projects/{project_id}/zones/{zone}/clusters/{cluster_id}/nodePools/{node_pool_id}/setManagement" body: "*" };
   }
 }
 
 // Parameters that describe the nodes in a cluster.
 message NodeConfig {
-  // The name of a Google Compute Engine [machine type](/compute/docs/machine-types) (e.g.
+  // The name of a Google Compute Engine [machine
+  // type](/compute/docs/machine-types) (e.g.
   // `n1-standard-1`).
   //
   // If unspecified, the default machine type is
@@ -118,6 +157,10 @@ message NodeConfig {
   // Monitoring are enabled, in which case their required scopes will be added.
   repeated string oauth_scopes = 3;
 
+  // The Google Cloud Platform Service Account to be used by the node VMs. If
+  // no Service Account is specified, the "default" service account is used.
+  string service_account = 9;
+
   // The metadata key/value pairs assigned to instances in the cluster.
   //
   // Keys must conform to the regexp [a-zA-Z0-9-_]+ and be less than 128 bytes
@@ -132,6 +175,39 @@ message NodeConfig {
   //
   // The total size of all keys and values must be less than 512 KB.
   map<string, string> metadata = 4;
+
+  // The image type to use for this node. Note that for a given image type,
+  // the latest version of it will be used.
+  string image_type = 5;
+
+  // The map of Kubernetes labels (key/value pairs) to be applied to each node.
+  // These will added in addition to any default label(s) that
+  // Kubernetes may apply to the node.
+  // In case of conflict in label keys, the applied set may differ depending on
+  // the Kubernetes version -- it's best to assume the behavior is undefined
+  // and conflicts should be avoided.
+  // For more information, including usage and the valid values, see:
+  // http://kubernetes.io/v1.1/docs/user-guide/labels.html
+  map<string, string> labels = 6;
+
+  // The number of local SSD disks to be attached to the node.
+  //
+  // The limit for this value is dependant upon the maximum number of
+  // disks available on a machine per zone. See:
+  // https://cloud.google.com/compute/docs/disks/local-ssd#local_ssd_limits
+  // for more information.
+  int32 local_ssd_count = 7;
+
+  // The list of instance tags applied to all nodes. Tags are used to identify
+  // valid sources or targets for network firewalls and are specified by
+  // the client during cluster or node pool creation. Each tag within the list
+  // must comply with RFC1035.
+  repeated string tags = 8;
+
+  // Whether the nodes are created as preemptible VM instances. See:
+  // https://cloud.google.com/compute/docs/instances/preemptible for more
+  // inforamtion about preemptible VM instances.
+  bool preemptible = 10;
 }
 
 // The authentication information for accessing the master endpoint.
@@ -201,7 +277,8 @@ message Cluster {
     // The PROVISIONING state indicates the cluster is being created.
     PROVISIONING = 1;
 
-    // The RUNNING state indicates the cluster has been created and is fully usable.
+    // The RUNNING state indicates the cluster has been created and is fully
+    // usable.
     RUNNING = 2;
 
     // The RECONCILING state indicates that some work is actively being done on
@@ -286,9 +363,26 @@ message Cluster {
 
   // The name of the Google Compute Engine
   // [subnetwork](/compute/docs/subnetworks) to which the
-  // cluster is connected.  Specification of subnetworks is an alpha feature,
-  // and require that the Google Compute Engine alpha API be enabled.
+  // cluster is connected.
   string subnetwork = 11;
+
+  // The node pools associated with this cluster.
+  // This field should not be set if "node_config" or "initial_node_count" are
+  // specified.
+  repeated NodePool node_pools = 12;
+
+  // The list of Google Compute Engine
+  // [locations](/compute/docs/zones#available) in which the cluster's nodes
+  // should be located.
+  repeated string locations = 13;
+
+  // Kubernetes alpha features are enabled on this cluster. This includes alpha
+  // API groups (e.g. v1alpha1) and features that may not be production ready in
+  // the kubernetes version of the master and nodes.
+  // The cluster has no SLA for uptime and master/node upgrades are disabled.
+  // Alpha enabled clusters are automatically deleted thirty days after
+  // creation.
+  bool enable_kubernetes_alpha = 14;
 
   // [Output only] Server-defined URL for the resource.
   string self_link = 100;
@@ -309,7 +403,6 @@ message Cluster {
   // [Output only] The software version of the master endpoint and kubelets used
   // in the cluster when it was first created. The version can be upgraded over
   // time.
-  //
   string initial_cluster_version = 103;
 
   // [Output only] The current software version of the master endpoint.
@@ -332,7 +425,8 @@ message Cluster {
   string status_message = 108;
 
   // [Output only] The size of the address space on each node for hosting
-  // containers. This is provisioned from within the `container_ipv4_cidr` range.
+  // containers. This is provisioned from within the `container_ipv4_cidr`
+  // range.
   int32 node_ipv4_cidr_size = 109;
 
   // [Output only] The IP address range of the Kubernetes services in
@@ -349,6 +443,10 @@ message Cluster {
 
   // [Output only] The number of nodes currently in the cluster.
   int32 current_node_count = 112;
+
+  // [Output only] The time the cluster will be automatically
+  // deleted in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  string expire_time = 113;
 }
 
 // ClusterUpdate describes an update to the cluster. Exactly one update can
@@ -369,6 +467,31 @@ message ClusterUpdate {
 
   // Configurations for the various addons available to run in the cluster.
   AddonsConfig desired_addons_config = 6;
+
+  // The node pool to be upgraded. This field is mandatory if
+  // "desired_node_version", "desired_image_family" or
+  // "desired_node_pool_autoscaling" is specified and there is more than one
+  // node pool on the cluster.
+  string desired_node_pool_id = 7;
+
+  // The desired image type for the node pool.
+  // NOTE: Set the "desired_node_pool" field as well.
+  string desired_image_type = 8;
+
+  // Autoscaler configuration for the node pool specified in
+  // desired_node_pool_id. If there is only one pool in the
+  // cluster and desired_node_pool_id is not provided then
+  // the change applies to that single node pool.
+  NodePoolAutoscaling desired_node_pool_autoscaling = 9;
+
+  // The desired list of Google Compute Engine
+  // [locations](/compute/docs/zones#available) in which the cluster's nodes
+  // should be located. Changing the locations a cluster is in will result
+  // in nodes being either created or removed from the cluster, depending on
+  // whether locations are being added or removed.
+  //
+  // This list must always include the cluster's primary zone.
+  repeated string desired_locations = 10;
 
   // The Kubernetes version to change the master to. The only valid value is the
   // latest supported version. Use "-" to have the server automatically select
@@ -392,6 +515,9 @@ message Operation {
 
     // The operation is done, either cancelled or completed.
     DONE = 3;
+
+    // The operation is aborting.
+    ABORTING = 4;
   }
 
   // Operation type.
@@ -422,6 +548,9 @@ message Operation {
 
     // Node pool delete.
     DELETE_NODE_POOL = 8;
+
+    // Set node pool management.
+    SET_NODE_POOL_MANAGEMENT = 9;
   }
 
   // The server-assigned ID for the operation.
@@ -462,7 +591,8 @@ message CreateClusterRequest {
   // resides.
   string zone = 2;
 
-  // A [cluster resource](/container-engine/reference/rest/v1/projects.zones.clusters)
+  // A [cluster
+  // resource](/container-engine/reference/rest/v1/projects.zones.clusters)
   Cluster cluster = 3;
 }
 
@@ -563,6 +693,20 @@ message ListOperationsRequest {
   string zone = 2;
 }
 
+// CancelOperationRequest cancels a single operation.
+message CancelOperationRequest {
+  // The Google Developers Console [project ID or project
+  // number](https://support.google.com/cloud/answer/6158840).
+  string project_id = 1;
+
+  // The name of the Google Compute Engine
+  // [zone](/compute/docs/zones#available) in which the operation resides.
+  string zone = 2;
+
+  // The server-assigned `name` of the operation.
+  string operation_id = 3;
+}
+
 // ListOperationsResponse is the result of ListOperationsRequest.
 message ListOperationsResponse {
   // A list of operations in the project in the specified zone.
@@ -591,4 +735,244 @@ message ServerConfig {
 
   // List of valid node upgrade target versions.
   repeated string valid_node_versions = 3;
+
+  // Default image type.
+  string default_image_type = 4;
+
+  // List of valid image types.
+  repeated string valid_image_types = 5;
+
+  // List of valid master versions.
+  repeated string valid_master_versions = 6;
+}
+
+// CreateNodePoolRequest creates a node pool for a cluster.
+message CreateNodePoolRequest {
+  // The Google Developers Console [project ID or project
+  // number](https://developers.google.com/console/help/new/#projectnumber).
+  string project_id = 1;
+
+  // The name of the Google Compute Engine
+  // [zone](/compute/docs/zones#available) in which the cluster
+  // resides.
+  string zone = 2;
+
+  // The name of the cluster.
+  string cluster_id = 3;
+
+  // The node pool to create.
+  NodePool node_pool = 4;
+}
+
+// DeleteNodePoolRequest deletes a node pool for a cluster.
+message DeleteNodePoolRequest {
+  // The Google Developers Console [project ID or project
+  // number](https://developers.google.com/console/help/new/#projectnumber).
+  string project_id = 1;
+
+  // The name of the Google Compute Engine
+  // [zone](/compute/docs/zones#available) in which the cluster
+  // resides.
+  string zone = 2;
+
+  // The name of the cluster.
+  string cluster_id = 3;
+
+  // The name of the node pool to delete.
+  string node_pool_id = 4;
+}
+
+// ListNodePoolsRequest lists the node pool(s) for a cluster.
+message ListNodePoolsRequest {
+  // The Google Developers Console [project ID or project
+  // number](https://developers.google.com/console/help/new/#projectnumber).
+  string project_id = 1;
+
+  // The name of the Google Compute Engine
+  // [zone](/compute/docs/zones#available) in which the cluster
+  // resides.
+  string zone = 2;
+
+  // The name of the cluster.
+  string cluster_id = 3;
+}
+
+// GetNodePoolRequest retrieves a node pool for a cluster.
+message GetNodePoolRequest {
+  // The Google Developers Console [project ID or project
+  // number](https://developers.google.com/console/help/new/#projectnumber).
+  string project_id = 1;
+
+  // The name of the Google Compute Engine
+  // [zone](/compute/docs/zones#available) in which the cluster
+  // resides.
+  string zone = 2;
+
+  // The name of the cluster.
+  string cluster_id = 3;
+
+  // The name of the node pool.
+  string node_pool_id = 4;
+}
+
+// NodePool contains the name and configuration for a cluster's node pool.
+// Node pools are a set of nodes (i.e. VM's), with a common configuration and
+// specification, under the control of the cluster master. They may have a set
+// of Kubernetes labels applied to them, which may be used to reference them
+// during pod scheduling. They may also be resized up or down, to accommodate
+// the workload.
+message NodePool {
+  // The current status of the node pool instance.
+  enum Status {
+    // Not set.
+    STATUS_UNSPECIFIED = 0;
+
+    // The PROVISIONING state indicates the node pool is being created.
+    PROVISIONING = 1;
+
+    // The RUNNING state indicates the node pool has been created
+    // and is fully usable.
+    RUNNING = 2;
+
+    // The RUNNING_WITH_ERROR state indicates the node pool has been created
+    // and is partially usable. Some error state has occurred and some
+    // functionality may be impaired. Customer may need to reissue a request
+    // or trigger a new update.
+    RUNNING_WITH_ERROR = 3;
+
+    // The RECONCILING state indicates that some work is actively being done on
+    // the node pool, such as upgrading node software. Details can
+    // be found in the `statusMessage` field.
+    RECONCILING = 4;
+
+    // The STOPPING state indicates the node pool is being deleted.
+    STOPPING = 5;
+
+    // The ERROR state indicates the node pool may be unusable. Details
+    // can be found in the `statusMessage` field.
+    ERROR = 6;
+  }
+
+  // The name of the node pool.
+  string name = 1;
+
+  // The node configuration of the pool.
+  NodeConfig config = 2;
+
+  // The initial node count for the pool. You must ensure that your
+  // Compute Engine <a href="/compute/docs/resource-quotas">resource quota</a>
+  // is sufficient for this number of instances. You must also have available
+  // firewall and routes quota.
+  int32 initial_node_count = 3;
+
+  // [Output only] Server-defined URL for the resource.
+  string self_link = 100;
+
+  // [Output only] The version of the Kubernetes of this node.
+  string version = 101;
+
+  // [Output only] The resource URLs of [instance
+  // groups](/compute/docs/instance-groups/) associated with this
+  // node pool.
+  repeated string instance_group_urls = 102;
+
+  // [Output only] The status of the nodes in this pool instance.
+  Status status = 103;
+
+  // [Output only] Additional information about the current status of this
+  // node pool instance, if available.
+  string status_message = 104;
+
+  // Autoscaler configuration for this NodePool. Autoscaler is enabled
+  // only if a valid configuration is present.
+  NodePoolAutoscaling autoscaling = 4;
+
+  // NodeManagement configuration for this NodePool.
+  NodeManagement management = 5;
+}
+
+// NodeManagement defines the set of node management services turned on for the
+// node pool.
+message NodeManagement {
+  // Whether the nodes will be automatically upgraded.
+  bool auto_upgrade = 1;
+
+  // Specifies the Auto Upgrade knobs for the node pool.
+  AutoUpgradeOptions upgrade_options = 10;
+}
+
+// AutoUpgradeOptions defines the set of options for the user to control how
+// the Auto Upgrades will proceed.
+message AutoUpgradeOptions {
+  // [Output only] This field is set when upgrades are about to commence
+  // with the approximate start time for the upgrades, in
+  // [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  string auto_upgrade_start_time = 1;
+
+  // [Output only] This field is set when upgrades are about to commence
+  // with the description of the upgrade.
+  string description = 2;
+}
+
+// SetNodePoolManagementRequest sets the node management properties of a node
+// pool.
+message SetNodePoolManagementRequest {
+  // The Google Developers Console [project ID or project
+  // number](https://support.google.com/cloud/answer/6158840).
+  string project_id = 1;
+
+  // The name of the Google Compute Engine
+  // [zone](/compute/docs/zones#available) in which the cluster
+  // resides.
+  string zone = 2;
+
+  // The name of the cluster to update.
+  string cluster_id = 3;
+
+  // The name of the node pool to update.
+  string node_pool_id = 4;
+
+  // NodeManagement configuration for the node pool.
+  NodeManagement management = 5;
+}
+
+// RollbackNodePoolUpgradeRequest rollbacks the previously Aborted or Failed
+// NodePool upgrade. This will be an no-op if the last upgrade successfully
+// completed.
+message RollbackNodePoolUpgradeRequest {
+  // The Google Developers Console [project ID or project
+  // number](https://support.google.com/cloud/answer/6158840).
+  string project_id = 1;
+
+  // The name of the Google Compute Engine
+  // [zone](/compute/docs/zones#available) in which the cluster
+  // resides.
+  string zone = 2;
+
+  // The name of the cluster to rollback.
+  string cluster_id = 3;
+
+  // The name of the node pool to rollback.
+  string node_pool_id = 4;
+}
+
+// ListNodePoolsResponse is the result of ListNodePoolsRequest.
+message ListNodePoolsResponse {
+  // A list of node pools for a cluster.
+  repeated NodePool node_pools = 1;
+}
+
+// NodePoolAutoscaling contains information required by cluster autoscaler to
+// adjust the size of the node pool to the current cluster usage.
+message NodePoolAutoscaling {
+  // Is autoscaling enabled for this node pool.
+  bool enabled = 1;
+
+  // Minimum number of nodes in the NodePool. Must be >= 1 and <=
+  // max_node_count.
+  int32 min_node_count = 2;
+
+  // Maximum number of nodes in the NodePool. Must be >= min_node_count. There
+  // has to enough quota to scale up the cluster.
+  int32 max_node_count = 3;
 }
