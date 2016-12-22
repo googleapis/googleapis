@@ -80,10 +80,9 @@ service PipelinesV1Alpha2 {
     option (google.api.http) = { get: "/v1alpha2/pipelines:getControllerConfig" };
   }
 
-  // Sets status of a given operation. All timestamps are sent on each
-  // call, and the whole series of events is replaced, in case
-  // intermediate calls are lost. Should only be called by VMs created
-  // by the Pipelines Service and not by end users.
+  // Sets status of a given operation. Any new timestamps (as determined by
+  // description) are appended to TimestampEvents. Should only be called by VMs
+  // created by the Pipelines Service and not by end users.
   rpc SetOperationStatus(SetOperationStatusRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = { put: "/v1alpha2/pipelines:setOperationStatus" body: "*" };
   }
@@ -192,7 +191,8 @@ message RunPipelineArgs {
   // `projectId` is used.
   ServiceAccount service_account = 4;
 
-  // Client-specified pipeline operation identifier.
+  // This field is deprecated. Use `labels` instead. Client-specified pipeline
+  // operation identifier.
   string client_id = 5;
 
   // Specifies resource requirements/overrides for the pipeline run.
@@ -206,6 +206,20 @@ message RunPipelineArgs {
   // failed, copying input or output files failed, etc). While the VM is up, one
   // can ssh into the VM to debug. Default is 0; maximum allowed value is 1 day.
   google.protobuf.Duration keep_vm_alive_on_failure_duration = 8;
+
+  // Labels to apply to this pipeline run. Labels will also be applied to
+  // compute resources (VM, disks) created by this pipeline run. When listing
+  // operations, operations can [filtered by labels]
+  // [google.longrunning.ListOperationsRequest.filter].
+  // Label keys may not be empty; label values may be empty. Non-empty labels
+  // must be 1-63 characters long, and comply with [RFC1035]
+  // (https://www.ietf.org/rfc/rfc1035.txt).
+  // Specifically, the name must be 1-63 characters long and match the regular
+  // expression `[a-z]([-a-z0-9]*[a-z0-9])?` which means the first
+  // character must be a lowercase letter, and all following characters must be
+  // a dash, lowercase letter, or digit, except the last character, which cannot
+  // be a dash.
+  map<string, string> labels = 9;
 }
 
 // The request to run a pipeline. If `pipelineId` is specified, it
@@ -344,12 +358,14 @@ message ServiceAccount {
   // which uses the compute service account associated with the project.
   string email = 1;
 
-  // List of scopes to be enabled for this service account on the
-  // pipeline virtual machine.
+  // List of scopes to be enabled for this service account on the VM.
   // The following scopes are automatically included:
-  // * https://www.googleapis.com/auth/genomics
+  //
   // * https://www.googleapis.com/auth/compute
   // * https://www.googleapis.com/auth/devstorage.full_control
+  // * https://www.googleapis.com/auth/genomics
+  // * https://www.googleapis.com/auth/logging.write
+  // * https://www.googleapis.com/auth/monitoring.write
   repeated string scopes = 2;
 }
 
@@ -407,19 +423,9 @@ message PipelineResources {
     // for more details.
     string source = 4;
 
-    // Specifies whether or not to delete the disk when the pipeline
-    // completes. This field is applicable only for newly created disks. See
-    // https://cloud.google.com/compute/docs/reference/latest/instances#resource
-    // for more details.
-    // By default, `autoDelete` is `false`. `autoDelete` will be enabled if set
-    // to `true` at create time or run time.
+    // Deprecated. Disks created by the Pipelines API will be deleted at the end
+    // of the pipeline run, regardless of what this field is set to.
     bool auto_delete = 6;
-
-    // Specifies how a sourced-base persistent disk will be mounted. See
-    // https://cloud.google.com/compute/docs/disks/persistent-disks#use_multi_instances
-    // for more details.
-    // Can only be set at create time.
-    bool read_only = 7;
 
     // Required at create time and cannot be overridden at run time.
     // Specifies the path in the docker container where files on
@@ -433,10 +439,9 @@ message PipelineResources {
   // The minimum number of cores to use. Defaults to 1.
   int32 minimum_cpu_cores = 1;
 
-  // At create time means that preemptible machines may be
-  // used for the run. At run time, means they should be used. Cannot
-  // be true at run time if false at create time.
-  // Defaults to `false`.
+  // Whether to use preemptible VMs. Defaults to `false`. In order to use this,
+  // must be true for both create time and run time. Cannot be true at run time
+  // if false at create time.
   bool preemptible = 2;
 
   // The minimum amount of RAM to use. Defaults to 3.75 (GB)
@@ -451,6 +456,19 @@ message PipelineResources {
 
   // The size of the boot disk. Defaults to 10 (GB).
   int32 boot_disk_size_gb = 6;
+
+  // Whether to assign an external IP to the instance. This is an experimental
+  // feature that may go away. Defaults to false.
+  // Corresponds to `--no_address` flag for [gcloud compute instances create]
+  // (https://cloud.google.com/sdk/gcloud/reference/compute/instances/create).
+  // In order to use this, must be true for both create time and run time.
+  // Cannot be true at run time if false at create time. If you need to ssh into
+  // a private IP VM for debugging, you can ssh to a public VM and then ssh into
+  // the private VM's Internal IP.  If noAddress is set, this pipeline run may
+  // only load docker images from Google Container Registry and not Docker Hub.
+  // ** Note: To use this option, your project must be in Google Access for
+  // Private IPs Early Access Program.**
+  bool no_address = 7;
 }
 
 // Parameters facilitate setting and delivering data into the
@@ -580,12 +598,17 @@ message PipelineParameter {
 
 // The Docker execuctor specification.
 message DockerExecutor {
-  // Required. Image name from either Docker Hub or Google Container Repository.
+  // Required. Image name from either Docker Hub or Google Container Registry.
   // Users that run pipelines must have READ access to the image.
   string image_name = 1;
 
-  // Required. The command string to run. Parameters that do not have
-  // `localCopy` specified should be used as environment variables, while
-  // those that do can be accessed at the defined paths.
+  // Required. The command or newline delimited script to run. The command
+  // string will be executed within a bash shell.
+  //
+  // If the command exits with a non-zero exit code, output parameter
+  // de-localization will be skipped and the pipeline operation's
+  // [`error`][google.longrunning.Operation.error] field will be populated.
+  //
+  // Maximum command string length is 16384.
   string cmd = 2;
 }
