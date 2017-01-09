@@ -18,6 +18,9 @@ GPRCPLUGIN ?= /usr/local/bin/grpc_$(LANGUAGE)_plugin
 # Choose the proto include directory.
 PROTOINCLUDE ?= /usr/local/include
 
+# Choose protoc binary
+PROTOC ?= protoc
+
 # Compile the entire repository
 #
 # NOTE: if "protoc" command is not in the PATH, you need to modify this file.
@@ -39,7 +42,7 @@ all: $(DEPS)
 
 %.$(SUFFIX):  %.proto
 	mkdir -p $(OUTPUT)
-	protoc $(FLAGS) $*.proto
+	$(PROTOC) $(FLAGS) $*.proto
 
 clean:
 	rm $(patsubst %,$(OUTPUT)/%,$(DEPS)) 2> /dev/null
