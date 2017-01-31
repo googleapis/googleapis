@@ -1,218 +1,256 @@
-// Copyright 2016 Google Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 syntax = "proto3";
 
 package google.cloud.vision.v1;
 
 import "google/api/annotations.proto";
 import "google/cloud/vision/v1/geometry.proto";
+import "google/cloud/vision/v1/image_context_search_extension.proto";
+import "google/cloud/vision/v1/product_search.proto";
+import "google/cloud/vision/v1/query_annotation.proto";
+import "google/cloud/vision/v1/text_annotation.proto";
+import "google/cloud/vision/v1/web_annotation.proto";
 import "google/rpc/status.proto";
 import "google/type/color.proto";
 import "google/type/latlng.proto";
 
-option go_package = "google.golang.org/genproto/googleapis/cloud/vision/v1;vision";
-option cc_enable_arenas = true;
 option java_multiple_files = true;
-option java_outer_classname = "ImageAnnotatorProto";
 option java_package = "com.google.cloud.vision.v1";
+option java_outer_classname = "ImageAnnotatorProto";
+option cc_enable_arenas = true;
 
-// Service that performs Google Cloud Vision API detection tasks, such as face,
-// landmark, logo, label, and text detection, over client images, and returns
-// detected entities from the images.
+// Service that performs Google Cloud Vision API detection tasks over client
+// images, such as face, landmark, logo, label, and text detection. The
+// ImageAnnotator service returns detected entities from the images.
 service ImageAnnotator {
   // Run image detection and annotation for a batch of images.
-  rpc BatchAnnotateImages(BatchAnnotateImagesRequest) returns (BatchAnnotateImagesResponse) {
-    option (google.api.http) = { post: "/v1/images:annotate" body: "*" };
+  rpc BatchAnnotateImages(BatchAnnotateImagesRequest)
+      returns (BatchAnnotateImagesResponse) {
+    option (google.api.http) = {
+      post: "/v1/images:annotate" body: "*"
+    };
+    option security_label = "read";
+    option duplicate_suppression = true;
+    option fail_fast = true;
+    option protocol = TCP;
   }
 }
 
-// The <em>Feature</em> indicates what type of image detection task to perform.
 // Users describe the type of Google Cloud Vision API tasks to perform over
-// images by using <em>Feature</em>s. Features encode the Cloud Vision API
+// images by using *Feature*s. Each Feature indicates a type of image
+// detection task to perform. Features encode the Cloud Vision API
 // vertical to operate on and the number of top-scoring results to return.
+// (-- TODO(amancuso): Please explain to user what "vertical" means here (and
+// when used elsewhere in the proto comments) or perhaps
+// use a different term or statement to make the point. --)
+// (-- Next available proto field ID: 13 --)
 message Feature {
   // Type of image feature.
   enum Type {
-    // Unspecified feature type.
-    TYPE_UNSPECIFIED = 0;
-
-    // Run face detection.
-    FACE_DETECTION = 1;
-
-    // Run landmark detection.
-    LANDMARK_DETECTION = 2;
-
-    // Run logo detection.
-    LOGO_DETECTION = 3;
-
-    // Run label detection.
-    LABEL_DETECTION = 4;
-
-    // Run OCR.
-    TEXT_DETECTION = 5;
-
-    // Run various computer vision models to compute image safe-search properties.
-    SAFE_SEARCH_DETECTION = 6;
-
-    // Compute a set of properties about the image (such as the image's dominant colors).
-    IMAGE_PROPERTIES = 7;
-  }
+    TYPE_UNSPECIFIED = 0;       // Unspecified feature type.
+    FACE_DETECTION = 1;         // Run face detection.
+    LANDMARK_DETECTION = 2;     // Run landmark detection.
+    LOGO_DETECTION = 3;         // Run logo detection.
+    LABEL_DETECTION = 4;        // Run label detection.
+    TEXT_DETECTION = 5;         // Run OCR.
+    // Run dense text document OCR. Takes precedence when both
+    // DOCUMENT_TEXT_DETECTION and TEXT_DETECTION are present.
+    DOCUMENT_TEXT_DETECTION = 11
+        [(google.api.value_visibility).restriction = "TRUSTED_TESTER"];
+    SAFE_SEARCH_DETECTION = 6;  // Run computer vision models to compute image safe-search properties.
+    IMAGE_PROPERTIES = 7;       // Compute a set of image properties, such as the image's dominant colors.
+    SUGGESTION_DETECTION = 8 [
+      (google.api.value_visibility).restriction =
+          "GOOGLE_SNAPPY_VISION_SEARCH"
+    ];  // Run models that may offer image-related suggestions.
+    CROP_HINTS = 9 [(google.api.value_visibility).restriction =
+                        "TRUSTED_TESTER"];  // Run crop hints.
+    WEB_ANNOTATION = 10 [(google.api.value_visibility).restriction =
+                             "TRUSTED_TESTER"];  // Run web annotation.
+    PRODUCT_SEARCH = 12
+        [(google.api.value_visibility).restriction =
+             "PRODUCT_SEARCH_TRUSTED_TESTER"];  // Run product search.
+  };
 
   // The feature type.
   Type type = 1;
 
   // Maximum number of results of this type.
   int32 max_results = 2;
-}
+};
 
 // External image source (Google Cloud Storage image location).
 message ImageSource {
-  // Google Cloud Storage image URI. It must be in the following form:
-  // `gs://bucket_name/object_name`. For more
-  // details, please see: https://cloud.google.com/storage/docs/reference-uris.
-  // NOTE: Cloud Storage object versioning is not supported!
+  // NOTE: For new code `image_uri` below is preferred.
+  // Google Cloud Storage image URI, which must be in the following form:
+  // `gs://bucket_name/object_name` (for details, see
+  // [Google Cloud Storage Request
+  // URIs](https://cloud.google.com/storage/docs/reference-uris)).
+  // NOTE: Cloud Storage object versioning is not supported.
   string gcs_image_uri = 1;
-}
+
+  // Image URI which supports:
+  // 1) Google Cloud Storage image URI, which must be in the following form:
+  // `gs://bucket_name/object_name` (for details, see
+  // [Google Cloud Storage Request
+  // URIs](https://cloud.google.com/storage/docs/reference-uris)).
+  // NOTE: Cloud Storage object versioning is not supported.
+  // 2) Publicly accessible image HTTP/HTTPS URL.
+  // This is preferred over the legacy `gcs_image_uri` above. When both
+  // `gcs_image_uri` and `image_uri` are specified, `image_uri` takes
+  // precedence.
+  string image_uri = 2
+      [(google.api.field_visibility).restriction = "TRUSTED_TESTER"];
+};
 
 // Client image to perform Google Cloud Vision API tasks over.
 message Image {
   // Image content, represented as a stream of bytes.
   // Note: as with all `bytes` fields, protobuffers use a pure binary
   // representation, whereas JSON representations use base64.
-  bytes content = 1;
+  bytes content = 1 [ctype = CORD];
 
-  // Google Cloud Storage image location. If both 'content' and 'source'
-  // are filled for an image, 'content' takes precedence and it will be
-  // used for performing the image annotation request.
+  // Google Cloud Storage image location. If both `content` and `source`
+  // are provided for an image, `content` takes precedence and is
+  // used to perform the image annotation request.
   ImageSource source = 2;
-}
+};
+
+// A bucketized representation of likelihood, which is intended to give clients
+// highly stable results across model upgrades.
+enum Likelihood {
+  // Unknown likelihood.
+  UNKNOWN = 0;
+
+  // It is very unlikely that the image belongs to the specified vertical.
+  // (-- TODO(amancuso): If the use of "vertical" is important, please provide a
+  // parenthetical whenever used to explain what it means in the context of
+  // image annotation --)
+  VERY_UNLIKELY = 1;
+
+  // It is unlikely that the image belongs to the specified vertical.
+  UNLIKELY = 2;
+
+  // It is possible that the image belongs to the specified vertical.
+  POSSIBLE = 3;
+
+  // It is likely that the image belongs to the specified vertical.
+  LIKELY = 4;
+
+  // It is very likely that the image belongs to the specified vertical.
+  VERY_LIKELY = 5;
+};
 
 // A face annotation object contains the results of face detection.
+// (-- TODO(amancuso): Previous message preamble comments are of the form
+// "Object that contains the results of face detection." I prefer the full
+// sentence approach used here, but in any case they should all be of the
+// same form. --)
 message FaceAnnotation {
+  // The bounding polygon around the face. The coordinates of the bounding box
+  // are in the original image's scale, as returned in `ImageParams`.
+  // The bounding box is computed to "frame" the face in accordance with human
+  // expectations. It is based on the landmarker results.
+  // Note that one or more x and/or y coordinates may not be generated in the
+  // `BoundingPoly` (the polygon will be unbounded) if only a partial face
+  // appears in the image to be annotated.
+  // (-- TODO(amancuso): Please explain "landmarker" above and when used below.
+  // if you you mean the Landmark message results, I suggest you say something
+  // like "...  based on face-specific `Landmark` results" to make the context
+  // clearer. --)
+  BoundingPoly bounding_poly = 1;
+
+  // The `fd_bounding_poly` bounding polygon is tighter than the
+  // `boundingPoly`, and encloses only the skin part of the face. Typically, it
+  // is used to eliminate the face from any image analysis that detects the
+  // "amount of skin" visible in an image. It is not based on the
+  // landmarker results, only on the initial face detection, hence
+  // the <code>fd</code> (face detection) prefix.
+  // (-- TODO(amancuso): See previous "landmarker" comment. --)
+  BoundingPoly fd_bounding_poly = 2;
+
   // A face-specific landmark (for example, a face feature).
-  // Landmark positions may fall outside the bounds of the image
-  // when the face is near one or more edges of the image.
-  // Therefore it is NOT guaranteed that 0 <= x < width or 0 <= y < height.
+  // (-- TODO(amancuso): From the comments below, it seems that all
+  // Landmarks in this context are face features. If so, I suggest changing this
+  // to "A face-specific landmark (a face feature). --)
   message Landmark {
+    // Landmark positions may fall outside the bounds of the image
+    // if the face is near one or more edges of the image.
+    // Therefore it is NOT guaranteed that `0 <= x < width` or
+    // `0 <= y < height`.
+
     // Face landmark (feature) type.
-    // Left and right are defined from the vantage of the viewer of the image,
-    // without considering mirror projections typical of photos. So, LEFT_EYE,
-    // typically is the person's right eye.
+    // Left and right are defined from the vantage of the viewer of the image
+    // without considering mirror projections typical of photos. So, `LEFT_EYE`,
+    // typically, is the person's right eye.
     enum Type {
       // Unknown face landmark detected. Should not be filled.
       UNKNOWN_LANDMARK = 0;
-
       // Left eye.
       LEFT_EYE = 1;
-
       // Right eye.
       RIGHT_EYE = 2;
-
       // Left of left eyebrow.
       LEFT_OF_LEFT_EYEBROW = 3;
-
       // Right of left eyebrow.
       RIGHT_OF_LEFT_EYEBROW = 4;
-
       // Left of right eyebrow.
       LEFT_OF_RIGHT_EYEBROW = 5;
-
       // Right of right eyebrow.
       RIGHT_OF_RIGHT_EYEBROW = 6;
-
       // Midpoint between eyes.
       MIDPOINT_BETWEEN_EYES = 7;
-
       // Nose tip.
       NOSE_TIP = 8;
-
       // Upper lip.
       UPPER_LIP = 9;
-
       // Lower lip.
       LOWER_LIP = 10;
-
       // Mouth left.
       MOUTH_LEFT = 11;
-
       // Mouth right.
       MOUTH_RIGHT = 12;
-
       // Mouth center.
       MOUTH_CENTER = 13;
-
       // Nose, bottom right.
       NOSE_BOTTOM_RIGHT = 14;
-
       // Nose, bottom left.
       NOSE_BOTTOM_LEFT = 15;
-
       // Nose, bottom center.
       NOSE_BOTTOM_CENTER = 16;
-
       // Left eye, top boundary.
       LEFT_EYE_TOP_BOUNDARY = 17;
-
       // Left eye, right corner.
       LEFT_EYE_RIGHT_CORNER = 18;
-
       // Left eye, bottom boundary.
       LEFT_EYE_BOTTOM_BOUNDARY = 19;
-
       // Left eye, left corner.
       LEFT_EYE_LEFT_CORNER = 20;
-
       // Right eye, top boundary.
       RIGHT_EYE_TOP_BOUNDARY = 21;
-
       // Right eye, right corner.
       RIGHT_EYE_RIGHT_CORNER = 22;
-
       // Right eye, bottom boundary.
       RIGHT_EYE_BOTTOM_BOUNDARY = 23;
-
       // Right eye, left corner.
       RIGHT_EYE_LEFT_CORNER = 24;
-
       // Left eyebrow, upper midpoint.
       LEFT_EYEBROW_UPPER_MIDPOINT = 25;
-
       // Right eyebrow, upper midpoint.
       RIGHT_EYEBROW_UPPER_MIDPOINT = 26;
-
       // Left ear tragion.
       LEFT_EAR_TRAGION = 27;
-
       // Right ear tragion.
       RIGHT_EAR_TRAGION = 28;
-
       // Left eye pupil.
       LEFT_EYE_PUPIL = 29;
-
       // Right eye pupil.
       RIGHT_EYE_PUPIL = 30;
-
       // Forehead glabella.
       FOREHEAD_GLABELLA = 31;
-
       // Chin gnathion.
       CHIN_GNATHION = 32;
-
       // Chin left gonion.
       CHIN_LEFT_GONION = 33;
-
       // Chin right gonion.
       CHIN_RIGHT_GONION = 34;
     }
@@ -224,41 +262,21 @@ message FaceAnnotation {
     Position position = 4;
   }
 
-  // The bounding polygon around the face. The coordinates of the bounding box
-  // are in the original image's scale, as returned in ImageParams.
-  // The bounding box is computed to "frame" the face in accordance with human
-  // expectations. It is based on the landmarker results.
-  // Note that one or more x and/or y coordinates may not be generated in the
-  // BoundingPoly (the polygon will be unbounded) if only a partial face appears in
-  // the image to be annotated.
-  BoundingPoly bounding_poly = 1;
-
-  // This bounding polygon is tighter than the previous
-  // <code>boundingPoly</code>, and
-  // encloses only the skin part of the face. Typically, it is used to
-  // eliminate the face from any image analysis that detects the
-  // "amount of skin" visible in an image. It is not based on the
-  // landmarker results, only on the initial face detection, hence
-  // the <code>fd</code> (face detection) prefix.
-  BoundingPoly fd_bounding_poly = 2;
-
   // Detected face landmarks.
   repeated Landmark landmarks = 3;
 
-  // Roll angle. Indicates the amount of clockwise/anti-clockwise rotation of
-  // the
-  // face relative to the image vertical, about the axis perpendicular to the
-  // face. Range [-180,180].
+  // Roll angle, which indicates the amount of clockwise/anti-clockwise rotation
+  // of the face relative to the image vertical about the axis perpendicular to
+  // the face. Range [-180,180].
   float roll_angle = 4;
 
-  // Yaw angle. Indicates the leftward/rightward angle that the face is
-  // pointing, relative to the vertical plane perpendicular to the image. Range
+  // Yaw angle, which indicates the leftward/rightward angle that the face is
+  // pointing relative to the vertical plane perpendicular to the image. Range
   // [-180,180].
   float pan_angle = 5;
 
-  // Pitch angle. Indicates the upwards/downwards angle that the face is
-  // pointing
-  // relative to the image's horizontal plane. Range [-180,180].
+  // Pitch angle, which indicates the upwards/downwards angle that the face is
+  // pointing relative to the image's horizontal plane. Range [-180,180].
   float tilt_angle = 6;
 
   // Detection confidence. Range [0, 1].
@@ -266,6 +284,14 @@ message FaceAnnotation {
 
   // Face landmarking confidence. Range [0, 1].
   float landmarking_confidence = 8;
+
+  // START probabilities for various image attributes.
+  // (-- TODO(amancuso): This free-floating comment apparently isn't included
+  // in the rendered in the API docs (see the currently staged doc at:
+  // https://cloud-dot-devsite.googleplex.com/vision-whitelist/reference/rest/v1/images/annotate#faceannotation.
+  // If you want to explain that each following likelihoods apply to the facial
+  // landmark results, you may want to add a comment to each likelihood field
+  // below (e.g., "likelihood of joy in the detected facial landmark.") --)
 
   // Joy likelihood.
   Likelihood joy_likelihood = 9;
@@ -287,100 +313,134 @@ message FaceAnnotation {
 
   // Headwear likelihood.
   Likelihood headwear_likelihood = 15;
-}
+
+  // END likelihoods for various image attributes.
+  // (-- TODO(amancuso): This comment will not be rendered in the API docs. --)
+};
 
 // Detected entity location information.
 message LocationInfo {
-  // Lat - long location coordinates.
+  // lat/long location coordinates.
   google.type.LatLng lat_lng = 1;
-}
+};
 
-// Arbitrary name/value pair.
+// A `Property` consists of a user-supplied name/value pair.
 message Property {
   // Name of the property.
   string name = 1;
 
   // Value of the property.
   string value = 2;
-}
+};
 
 // Set of detected entity features.
 message EntityAnnotation {
-  // Opaque entity ID. Some IDs might be available in Knowledge Graph(KG).
-  // For more details on KG please see:
-  // https://developers.google.com/knowledge-graph/
-  string mid = 1;
+  // Opaque entity ID. Some IDs may be available in
+  // [Google Knowledge Graph Search API](https://developers.google.com/knowledge-graph/).
+  string mid = 1 [enforce_utf8 = false];
 
   // The language code for the locale in which the entity textual
-  // <code>description</code> (next field) is expressed.
-  string locale = 2;
+  // `description` is expressed.
+  string locale = 2 [enforce_utf8 = false];
 
-  // Entity textual description, expressed in its <code>locale</code> language.
-  string description = 3;
+  // Entity textual description, expressed in its `locale` language.
+  string description = 3 [enforce_utf8 = false];
 
   // Overall score of the result. Range [0, 1].
   float score = 4;
 
   // The accuracy of the entity detection in an image.
-  // For example, for an image containing 'Eiffel Tower,' this field represents
-  // the confidence that there is a tower in the query image. Range [0, 1].
+  // For example, for an image in which the "Eiffel Tower" entity is detected,
+  // this field represents the confidence that there is a tower in the query
+  // image. Range [0, 1].
   float confidence = 5;
 
   // The relevancy of the ICA (Image Content Annotation) label to the
-  // image. For example, the relevancy of 'tower' to an image containing
-  // 'Eiffel Tower' is likely higher than an image containing a distant towering
-  // building, though the confidence that there is a tower may be the same.
-  // Range [0, 1].
+  // image. For example, the relevancy of "tower" is likely higher to an image
+  // containing the detected "Eiffel Tower" than to an image containing a
+  // detected distant towering building, even though the confidence that
+  // there is a tower in each image may be the same. Range [0, 1].
   float topicality = 6;
 
-  // Image region to which this entity belongs. Not filled currently
+  // Image region to which this entity belongs. Currently not produced
   // for `LABEL_DETECTION` features. For `TEXT_DETECTION` (OCR), `boundingPoly`s
   // are produced for the entire text detected in an image region, followed by
   // `boundingPoly`s for each word within the detected text.
   BoundingPoly bounding_poly = 7;
 
   // The location information for the detected entity. Multiple
-  // <code>LocationInfo</code> elements can be present since one location may
-  // indicate the location of the scene in the query image, and another the
-  // location of the place where the query image was taken. Location information
-  // is usually present for landmarks.
+  // `LocationInfo` elements can be present because one location may
+  // indicate the location of the scene in the image, and another location
+  // may indicate the location of the place where the image was taken.
+  // Location information is usually present for landmarks.
   repeated LocationInfo locations = 8;
 
-  // Some entities can have additional optional <code>Property</code> fields.
-  // For example a different kind of score or string that qualifies the entity.
+  // Some entities may have optional user-supplied `Property` (name/value)
+  // fields, such a score or string that qualifies the entity.
+  // (-- TODO(amancuso): Based on Property field information earlier, I provided
+  // context that optional Property fields are user-supplied). --)
   repeated Property properties = 9;
-}
+};
 
-// Set of features pertaining to the image, computed by various computer vision
+// Set of features pertaining to the image, computed by computer vision
 // methods over safe-search verticals (for example, adult, spoof, medical,
 // violence).
+// (-- TODO(amancuso): Here's that "vertical" term again, which, in this context
+// (safe-search verticals) and unlike other uses of this term in other fields,
+// doesn't obviously signify the vertical dimension in an image. Please clarify
+// or rephrase. --)
 message SafeSearchAnnotation {
-  // Represents the adult contents likelihood for the image.
+  // Represents the adult content likelihood for the image.
   Likelihood adult = 1;
 
-  // Spoof likelihood. The likelihood that an obvious modification
+  // Spoof likelihood. The likelihood that an modification
   // was made to the image's canonical version to make it appear
   // funny or offensive.
+  // (-- TODO(amancuso): Removed "obvious" from comment since obviousness lies
+  // in the perception of the observer, and in this case it it the Image
+  // Annotator that is making the call. Also, field preambles should use a
+  // consistent format (either with or without a identifier tag (such as
+  // "Adult Content Likehood.", "Spoof likelihood.", "Medical Content
+  // Likelihood.", etc.) --)
   Likelihood spoof = 2;
 
-  // Likelihood this is a medical image.
+  // Likelihood that this is a medical image.
   Likelihood medical = 3;
 
   // Violence likelihood.
   Likelihood violence = 4;
-}
 
-// Rectangle determined by min and max LatLng pairs.
+  // (--GOOGLE_INTERNAL:
+  // Raw scores for safe-search annotations are only visibile to clients
+  // for small scale experiments (e.g. snapchat will use these raw scores
+  // to test calibration of triggering on their end and define a desired
+  // bucket resolution for Likelihood). The range is [0.0, 1.0). --)
+
+  // Raw adult score.
+  float adult_score = 5
+      [(google.api.field_visibility).restriction = "RAW_SAFE_SEARCH_SCORES"];
+  // Raw spoof score.
+  float spoof_score = 6
+      [(google.api.field_visibility).restriction = "RAW_SAFE_SEARCH_SCORES"];
+  // Raw medical score.
+  float medical_score = 7
+      [(google.api.field_visibility).restriction = "RAW_SAFE_SEARCH_SCORES"];
+  // Raw violence score.
+  float violence_score = 8
+      [(google.api.field_visibility).restriction = "RAW_SAFE_SEARCH_SCORES"];
+};
+
+// Rectangle determined by min and max `LatLng` pairs.
 message LatLongRect {
   // Min lat/long pair.
   google.type.LatLng min_lat_lng = 1;
 
   // Max lat/long pair.
   google.type.LatLng max_lat_lng = 2;
-}
+};
 
-// Color information consists of RGB channels, score and fraction of
-// image the color occupies in the image.
+// Color information consists of RGB channels, score, and the fraction of
+// the image that the color occupies in the image.
 message ColorInfo {
   // RGB components of the color.
   google.type.Color color = 1;
@@ -388,26 +448,62 @@ message ColorInfo {
   // Image-specific score for this color. Value in range [0, 1].
   float score = 2;
 
-  // Stores the fraction of pixels the color occupies in the image.
+  // The fraction of pixels the color occupies in the image.
   // Value in range [0, 1].
   float pixel_fraction = 3;
 }
 
 // Set of dominant colors and their corresponding scores.
 message DominantColorsAnnotation {
-  // RGB color values, with their score and pixel fraction.
+  // RGB color values with their score and pixel fraction.
   repeated ColorInfo colors = 1;
 }
 
-// Stores image properties (e.g. dominant colors).
+// Stores image properties, such as dominant colors.
 message ImageProperties {
   // If present, dominant colors completed successfully.
   DominantColorsAnnotation dominant_colors = 1;
 }
 
-// Image context.
+// Single crop hint that is used to generate a new crop when serving an image.
+message CropHint {
+  option (google.api.message_visibility).restriction = "TRUSTED_TESTER";
+
+  // The bounding polygon for the crop region. The coordinates of the bounding
+  // box are in the original image's scale, as returned in `ImageParams`.
+  BoundingPoly bounding_poly = 1;
+
+  // Confidence of this being a salient region.  Range [0, 1].
+  float confidence = 2;
+
+  // Fraction of importance of this salient region with respect to the original
+  // image.
+  float importance_fraction = 3;
+}
+
+// Set of crop hints that are used to generate new crops when serving images.
+message CropHintsAnnotation {
+  option (google.api.message_visibility).restriction = "TRUSTED_TESTER";
+
+  repeated CropHint crop_hints = 1;
+}
+
+// Parameters for crop hints annotation request.
+message CropHintsParams {
+  option (google.api.message_visibility).restriction = "TRUSTED_TESTER";
+
+  // Aspect ratios in floats, representing the ratio of the width to the height
+  // of the image. For example, if the desired aspect ratio is 4/3, the
+  // corresponding float value should be 1.33333.  If not specified, the
+  // best possible crop is returned. The number of provided aspect ratios is
+  // limited to a maximum of 16; any aspect ratios provided after the 16th are
+  // ignored.
+  repeated float aspect_ratios = 1;
+}
+
+// Image context and/or feature-specific parameters.
 message ImageContext {
-  // Lat/long rectangle that specifies the location of the image.
+  // lat/long rectangle that specifies the location of the image.
   LatLongRect lat_long_rect = 1;
 
   // List of languages to use for TEXT_DETECTION. In most cases, an empty value
@@ -417,10 +513,22 @@ message ImageContext {
   // setting a hint will help get better results (although it will be a
   // significant hindrance if the hint is wrong). Text detection returns an
   // error if one or more of the specified languages is not one of the
-  // [supported
-  // languages](/translate/v2/translate-reference#supported_languages).
+  // [supported languages](/vision/docs/languages).
   repeated string language_hints = 2;
-}
+
+  // Image context that can be used for the search intent.
+  ImageContextSearchExtension image_context_search_extension = 3
+      [(google.api.field_visibility).restriction =
+           "GOOGLE_SNAPPY_VISION_SEARCH"];
+
+  // Parameters for crop hints annotation request.
+  CropHintsParams crop_hints_params = 4
+      [(google.api.field_visibility).restriction = "TRUSTED_TESTER"];
+
+  ProductSearchParams product_search_params = 5
+      [(google.api.field_visibility).restriction =
+           "PRODUCT_SEARCH_TRUSTED_TESTER"];
+};
 
 // Request for performing Google Cloud Vision API tasks over a user-provided
 // image, with user-requested features.
@@ -433,67 +541,76 @@ message AnnotateImageRequest {
 
   // Additional context that may accompany the image.
   ImageContext image_context = 3;
-}
+};
 
 // Response to an image annotation request.
 message AnnotateImageResponse {
-  // If present, face detection completed successfully.
+  // If present, face detection has completed successfully.
   repeated FaceAnnotation face_annotations = 1;
 
-  // If present, landmark detection completed successfully.
+  // If present, landmark detection has completed successfully.
   repeated EntityAnnotation landmark_annotations = 2;
 
-  // If present, logo detection completed successfully.
+  // If present, logo detection has completed successfully.
   repeated EntityAnnotation logo_annotations = 3;
 
-  // If present, label detection completed successfully.
+  // If present, label detection has completed successfully.
   repeated EntityAnnotation label_annotations = 4;
 
-  // If present, text (OCR) detection completed successfully.
+  // If present, text (OCR) detection or document (OCR) text detection has
+  // completed successfully.
   repeated EntityAnnotation text_annotations = 5;
 
-  // If present, safe-search annotation completed successfully.
+  // If present, text (OCR) detection or document (OCR) text detection has
+  // completed successfully.
+  // This annotation provides the structural hierarchy for the OCR detected
+  // text.
+  TextAnnotation full_text_annotation = 12
+      [(google.api.field_visibility).restriction = "TRUSTED_TESTER"];
+
+  // If present, safe-search annotation has completed successfully.
   SafeSearchAnnotation safe_search_annotation = 6;
 
   // If present, image properties were extracted successfully.
   ImageProperties image_properties_annotation = 8;
 
+  // If present, query annotation has completed successfully.
+  QueryAnnotation query_annotation = 10
+      [(google.api.field_visibility).restriction =
+           "GOOGLE_SNAPPY_VISION_SEARCH"];
+
+  // If present, crop hints have completed successfully.
+  CropHintsAnnotation crop_hints_annotation = 11
+      [(google.api.field_visibility).restriction = "TRUSTED_TESTER"];
+
+  // If present, web annotation has completed successfully.
+  WebAnnotation web_annotation = 13
+      [(google.api.field_visibility).restriction = "TRUSTED_TESTER"];
+
+  // If present, product-search has completed successfully.
+  ProductSearchResults product_search_results = 14
+      [(google.api.field_visibility).restriction =
+           "PRODUCT_SEARCH_TRUSTED_TESTER"];
+
   // If set, represents the error message for the operation.
-  // Note that filled-in mage annotations are guaranteed to be
-  // correct, even when <code>error</code> is non-empty.
+  // Note that filled-in image annotations are guaranteed to be
+  // correct, even when `error` is set.
   google.rpc.Status error = 9;
-}
+};
 
 // Multiple image annotation requests are batched into a single service call.
 message BatchAnnotateImagesRequest {
   // Individual image annotation requests for this batch.
   repeated AnnotateImageRequest requests = 1;
-}
+
+  // User for this batch annotate image request.
+  string user = 2
+      [(google.api.field_visibility).restriction = "GOOGLE_INTERNAL",
+       enforce_utf8 = false];
+};
 
 // Response to a batch image annotation request.
 message BatchAnnotateImagesResponse {
   // Individual responses to image annotation requests within the batch.
   repeated AnnotateImageResponse responses = 1;
-}
-
-// A bucketized representation of likelihood meant to give our clients highly
-// stable results across model upgrades.
-enum Likelihood {
-  // Unknown likelihood.
-  UNKNOWN = 0;
-
-  // The image very unlikely belongs to the vertical specified.
-  VERY_UNLIKELY = 1;
-
-  // The image unlikely belongs to the vertical specified.
-  UNLIKELY = 2;
-
-  // The image possibly belongs to the vertical specified.
-  POSSIBLE = 3;
-
-  // The image likely belongs to the vertical specified.
-  LIKELY = 4;
-
-  // The image very likely belongs to the vertical specified.
-  VERY_LIKELY = 5;
-}
+};
