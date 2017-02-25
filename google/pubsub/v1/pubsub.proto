@@ -1,4 +1,4 @@
-// Copyright 2016 Google Inc.
+// Copyright 2017 Google Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,7 +17,9 @@ syntax = "proto3";
 package google.pubsub.v1;
 
 import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
 option cc_enable_arenas = true;
@@ -48,6 +50,12 @@ service Subscriber {
   // Gets the configuration details of a subscription.
   rpc GetSubscription(GetSubscriptionRequest) returns (Subscription) {
     option (google.api.http) = { get: "/v1/{subscription=projects/*/subscriptions/*}" };
+  }
+
+  // Updates an existing subscription. Note that certain properties of a
+  // subscription, such as its topic, are not modifiable.
+  rpc UpdateSubscription(UpdateSubscriptionRequest) returns (Subscription) {
+    option (google.api.http) = { patch: "/v1/{subscription.name=projects/*/subscriptions/*}" body: "*" };
   }
 
   // Lists matching subscriptions.
@@ -114,6 +122,39 @@ service Subscriber {
   // continuously through the call regardless of changes to the `PushConfig`.
   rpc ModifyPushConfig(ModifyPushConfigRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = { post: "/v1/{subscription=projects/*/subscriptions/*}:modifyPushConfig" body: "*" };
+  }
+
+  // Lists the existing snapshots.
+  rpc ListSnapshots(ListSnapshotsRequest) returns (ListSnapshotsResponse) {
+    option (google.api.http) = { get: "/v1/{project=projects/*}/snapshots" };
+  }
+
+  // Creates a snapshot from the requested subscription.
+  // If the snapshot already exists, returns `ALREADY_EXISTS`.
+  // If the requested subscription doesn't exist, returns `NOT_FOUND`.
+  //
+  // If the name is not provided in the request, the server will assign a random
+  // name for this snapshot on the same project as the subscription, conforming
+  // to the
+  // [resource name format](https://cloud.google.com/pubsub/docs/overview#names).
+  // The generated name is populated in the returned Snapshot object.
+  // Note that for REST API requests, you must specify a name in the request.
+  rpc CreateSnapshot(CreateSnapshotRequest) returns (Snapshot) {
+    option (google.api.http) = { put: "/v1/{name=projects/*/snapshots/*}" body: "*" };
+  }
+
+  // Removes an existing snapshot. All messages retained in the snapshot
+  // are immediately dropped. After a snapshot is deleted, a new one may be
+  // created with the same name, but the new one has no association with the old
+  // snapshot or its subscription, unless the same subscription is specified.
+  rpc DeleteSnapshot(DeleteSnapshotRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v1/{snapshot=projects/*/snapshots/*}" };
+  }
+
+  // Seeks an existing subscription to a point in time or to a given snapshot,
+  // whichever is provided in the request.
+  rpc Seek(SeekRequest) returns (SeekResponse) {
+    option (google.api.http) = { post: "/v1/{subscription=projects/*/subscriptions/*}:seek" body: "*" };
   }
 }
 
@@ -313,6 +354,20 @@ message Subscription {
   // If the subscriber never acknowledges the message, the Pub/Sub
   // system will eventually redeliver the message.
   int32 ack_deadline_seconds = 5;
+
+  // Indicates whether to retain acknowledged messages. If true, then
+  // messages are not expunged from the subscription's backlog, even if they are
+  // acknowledged, until they fall out of the `message_retention_duration`
+  // window.
+  bool retain_acked_messages = 7;
+
+  // How long to retain unacknowledged messages in the subscription's backlog,
+  // from the moment a message is published.
+  // If `retain_acked_messages` is true, then this also configures the retention
+  // of acknowledged messages, and thus configures how far back in time a `Seek`
+  // can be done. Defaults to 7 days. Cannot be more than 7 days or less than 10
+  // minutes.
+  google.protobuf.Duration message_retention_duration = 8;
 }
 
 // Configuration for a push delivery endpoint.
@@ -327,11 +382,10 @@ message PushConfig {
   // control different aspects of the message delivery.
   //
   // The currently supported attribute is `x-goog-version`, which you can
-  // use to change the format of the push message. This attribute
+  // use to change the format of the pushed message. This attribute
   // indicates the version of the data expected by the endpoint. This
-  // controls the shape of the envelope (i.e. its fields and metadata).
-  // The endpoint version is based on the version of the Pub/Sub
-  // API.
+  // controls the shape of the pushed message (i.e., its fields and metadata).
+  // The endpoint version is based on the version of the Pub/Sub API.
   //
   // If not present during the `CreateSubscription` call, it will default to
   // the version of the API used to make such call. If not present during a
@@ -360,6 +414,16 @@ message GetSubscriptionRequest {
   // The name of the subscription to get.
   // Format is `projects/{project}/subscriptions/{sub}`.
   string subscription = 1;
+}
+
+// Request for the UpdateSubscription method.
+message UpdateSubscriptionRequest {
+  // The updated subscription object.
+  Subscription subscription = 1;
+
+  // Indicates which fields in the provided subscription to update.
+  // Must be specified and non-empty.
+  google.protobuf.FieldMask update_mask = 2;
 }
 
 // Request for the `ListSubscriptions` method.
@@ -517,4 +581,107 @@ message StreamingPullRequest {
 message StreamingPullResponse {
   // Received Pub/Sub messages. This will not be empty.
   repeated ReceivedMessage received_messages = 1;
+}
+
+// Request for the `CreateSnapshot` method.
+message CreateSnapshotRequest {
+  // Optional user-provided name for this snapshot.
+  // If the name is not provided in the request, the server will assign a random
+  // name for this snapshot on the same project as the subscription.
+  // Note that for REST API requests, you must specify a name.
+  // Format is `projects/{project}/snapshots/{snap}`.
+  string name = 1;
+
+  // The subscription whose backlog the snapshot retains.
+  // Specifically, the created snapshot is guaranteed to retain:
+  //  (a) The existing backlog on the subscription. More precisely, this is
+  //      defined as the messages in the subscription's backlog that are
+  //      unacknowledged upon the successful completion of the
+  //      `CreateSnapshot` request; as well as:
+  //  (b) Any messages published to the subscription's topic following the
+  //      successful completion of the CreateSnapshot request.
+  // Format is `projects/{project}/subscriptions/{sub}`.
+  string subscription = 2;
+}
+
+// A snapshot resource.
+message Snapshot {
+  // The name of the snapshot.
+  string name = 1;
+
+  // The name of the topic from which this snapshot is retaining messages.
+  string topic = 2;
+
+  // The snapshot is guaranteed to exist up until this time.
+  // A newly-created snapshot expires no later than 7 days from the time of its
+  // creation. Its exact lifetime is determined at creation by the existing
+  // backlog in the source subscription. Specifically, the lifetime of the
+  // snapshot is `7 days - (age of oldest unacked message in the subscription)`.
+  // For example, consider a subscription whose oldest unacked message is 3 days
+  // old. If a snapshot is created from this subscription, the snapshot -- which
+  // will always capture this 3-day-old backlog as long as the snapshot
+  // exists -- will expire in 4 days.
+  google.protobuf.Timestamp expiration_time = 3;
+}
+
+// Request for the `ListSnapshots` method.
+message ListSnapshotsRequest {
+  // The name of the cloud project that snapshots belong to.
+  // Format is `projects/{project}`.
+  string project = 1;
+
+  // Maximum number of snapshots to return.
+  int32 page_size = 2;
+
+  // The value returned by the last `ListSnapshotsResponse`; indicates that this
+  // is a continuation of a prior `ListSnapshots` call, and that the system
+  // should return the next page of data.
+  string page_token = 3;
+}
+
+// Response for the `ListSnapshots` method.
+message ListSnapshotsResponse {
+  // The resulting snapshots.
+  repeated Snapshot snapshots = 1;
+
+  // If not empty, indicates that there may be more snapshot that match the
+  // request; this value should be passed in a new `ListSnapshotsRequest`.
+  string next_page_token = 2;
+}
+
+// Request for the `DeleteSnapshot` method.
+message DeleteSnapshotRequest {
+  // The name of the snapshot to delete.
+  // Format is `projects/{project}/snapshots/{snap}`.
+  string snapshot = 1;
+}
+
+// Request for the `Seek` method.
+message SeekRequest {
+  // The subscription to affect.
+  string subscription = 1;
+
+  oneof target {
+    // The time to seek to.
+    // Messages retained in the subscription that were published before this
+    // time are marked as acknowledged, and messages retained in the
+    // subscription that were published after this time are marked as
+    // unacknowledged. Note that this operation affects only those messages
+    // retained in the subscription (configured by the combination of
+    // `message_retention_duration` and `retain_acked_messages`). For example,
+    // if `time` corresponds to a point before the message retention
+    // window (or to a point before the system's notion of the subscription
+    // creation time), only retained messages will be marked as unacknowledged,
+    // and already-expunged messages will not be restored.
+    google.protobuf.Timestamp time = 2;
+
+    // The snapshot to seek to. The snapshot's topic must be the same as that of
+    // the provided subscription.
+    // Format is `projects/{project}/snapshots/{snap}`.
+    string snapshot = 3;
+  }
+}
+
+message SeekResponse {
+
 }
