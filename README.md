@@ -35,6 +35,12 @@ a high-performance binary RPC protocol over HTTP/2. It offers many
 useful features, including request/response multiplex and full-duplex
 streaming.
 
+## API Design
+
+All APIs published in this repository follow Google's
+[API Design Guide](https://cloud.google.com/apis/design). Please refer
+to the Design Guide when you have general questions about Google APIs.
+
 ## Discussions
 
 Please use GitHub Issues to discuss bugs and features related to this
