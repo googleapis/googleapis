@@ -67,6 +67,11 @@ entire repository. It is not for generating linkable client library
 for a specific API. Please see other repositories under
 https://github.com/googleapis for generating linkable client libraries.
 
+### Using bazel with gRPC
+Bazel build now works for a subset of the repository. You can use build
+targets from this repo as dependency into your grpc code. For example,
+this works:  ```bazel build //google/monitoring/v3:metric_service```
+
 ### Go gRPC Source Code
 It is difficult to generate Go gRPC source code from this repository,
 since Go has different directory structure.
