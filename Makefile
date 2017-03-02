@@ -13,7 +13,7 @@ OUTPUT ?= ./gens
 LANGUAGE ?= cpp
 
 # Choose grpc plugin
-GPRCPLUGIN ?= /usr/local/bin/grpc_$(LANGUAGE)_plugin
+GRPCPLUGIN ?= /usr/local/bin/grpc_$(LANGUAGE)_plugin
 
 # Choose the proto include directory.
 PROTOINCLUDE ?= /usr/local/include
@@ -32,7 +32,7 @@ endif
 
 FLAGS+= --proto_path=.:$(PROTOINCLUDE)
 FLAGS+= --$(LANGUAGE)_out=$(OUTPUT) --grpc_out=$(OUTPUT)
-FLAGS+=	--plugin=protoc-gen-grpc=$(GPRCPLUGIN)
+FLAGS+=	--plugin=protoc-gen-grpc=$(GRPCPLUGIN)
 
 SUFFIX:= pb.cc
 
