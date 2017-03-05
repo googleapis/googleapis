@@ -22,11 +22,11 @@ define the API interface and the structure of the payload messages. The
 same interface definition is used for both REST and RPC versions of the
 API, which can be accessed over different wire protocols.
 
-There are two ways of accessing Google APIs:
+There are several ways of accessing Google APIs:
 
-1.  JSON over HTTP: You can access Google APIs directly using JSON
+1.  JSON over HTTP: You can access all Google APIs directly using JSON
 over HTTP, using
-[Google API client libraries](https://developers.google.com/api-client-libraries)
+[Google API client library](https://developers.google.com/api-client-library)
 or third-party API client libraries.
 
 2.  Protocol Buffers over gRPC: You can access Google APIs published
@@ -34,6 +34,11 @@ in this repository through [GRPC](https://github.com/grpc), which is
 a high-performance binary RPC protocol over HTTP/2. It offers many
 useful features, including request/response multiplex and full-duplex
 streaming.
+
+3.  [Google Cloud Client Libraries](https://cloud.google.com/apis/docs/cloud-client-libraries):
+You can use these libraries to access Google Cloud APIs. They are based
+on gRPC for better performance and provide idiomatic client surface for
+better developer experience.
 
 ## Discussions
 
