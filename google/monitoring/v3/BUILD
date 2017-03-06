@@ -1,7 +1,7 @@
 
 package(default_visibility = ["//visibility:public"])
 
-load("//bazel:grpc_build_system.bzl", "grpc_proto_library")
+load("@submodule_grpc//bazel:grpc_build_system.bzl", "grpc_proto_library")
 
 grpc_proto_library(name = "metric",
     srcs = ["metric.proto"],
@@ -10,6 +10,7 @@ grpc_proto_library(name = "metric",
       "//google/api:monitored_resource",
       ":common",
     ],
+    use_external = True,
 )
 
 grpc_proto_library(
@@ -19,6 +20,7 @@ grpc_proto_library(
       "//google/api:distribution",
       "//google/api:annotations",
     ],
+    use_external = True,
 )
 
 grpc_proto_library(
@@ -33,5 +35,6 @@ grpc_proto_library(
       "//google/rpc:status",
       ":common",
       ":metric",
-    ]
+    ],
+    use_external = True,
 )

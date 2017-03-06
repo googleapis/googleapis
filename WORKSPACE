@@ -27,12 +27,7 @@ local_repository(
     path = "third_party/zlib",
 )
 
-
 # Protobuf
-bind(
-    name = "_cc_wkt_protos_only",
-    actual = "@submodule_protobuf//:cc_wkt_protos",
-)
 bind(
     name = "protobuf",
     actual = "@submodule_protobuf//:protobuf",
@@ -73,23 +68,6 @@ bind(
 git_repository(
     name = "submodule_grpc",
     remote = "https://github.com/grpc/grpc",
-    tag = "v1.1.0",
-)
-
-# mongoose
-git_repository(
-    name   = "mongoose_repo",
-    commit = "4120a97945b41195a6223a600dae8e3b19bed19e",
-    remote = "https://github.com/makdharma/mongoose.git"
-)
-
-# gflags
-bind(
-    name = "gflags",
-    actual = "@com_github_gflags_gflags//:gflags",
-)
-
-local_repository(
-    name = "com_github_gflags_gflags",
-    path = "third_party/gflags",
+    # TODO(makdharma): replace with version when bazel file fix is released
+    commit = "437cc199abff8eb69a4212d42c89dbb7703eb17d",
 )

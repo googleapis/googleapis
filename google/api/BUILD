@@ -1,26 +1,45 @@
 
 package(default_visibility = ["//visibility:public"])
 
-load("//bazel:grpc_build_system.bzl", "grpc_proto_library")
+load("@submodule_grpc//bazel:grpc_build_system.bzl", "grpc_proto_library")
 
-grpc_proto_library(name = "http", srcs = ["http.proto"],)
-grpc_proto_library(name = "label", srcs = ["label.proto"],)
+grpc_proto_library(
+      name = "http",
+      srcs = [
+          "http.proto",
+      ],
+      use_external = True,
+)
+
+grpc_proto_library(
+    name = "label",
+    srcs = [
+        "label.proto",
+    ],
+    use_external = True,
+)
+
 grpc_proto_library(
     name = "distribution",
     srcs = ["distribution.proto"],
     deps = [
       ":annotations",
+      #TODO (makdharma): Get rid of local copies of well known protos when
+      #                  gRPC build support is available.
       "//google/protobuf:any",
       "//google/protobuf:timestamp",
       "//google/protobuf:duration",
     ],
+    use_external = True,
 )
+
 grpc_proto_library(
     name = "metric",
     srcs = ["metric.proto"],
     deps = [
       "//google/api:label",
     ],
+    use_external = True,
 )
 
 grpc_proto_library(
@@ -29,7 +48,8 @@ grpc_proto_library(
     deps = [
       ":http",
       "//google/protobuf:descriptor",
-    ]
+    ],
+    use_external = True,
 )
 
 grpc_proto_library(
@@ -38,6 +58,7 @@ grpc_proto_library(
     deps = [
       ":label",
     ],
+    use_external = True,
 )
 
 grpc_proto_library(
@@ -47,4 +68,5 @@ grpc_proto_library(
       ":http",
       ":metric",
     ],
+    use_external = True,
 )
