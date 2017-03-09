@@ -6,8 +6,6 @@ load("@submodule_grpc//bazel:grpc_build_system.bzl", "grpc_proto_library")
 grpc_proto_library(
     name = "status",
     srcs = ["status.proto"],
-    deps = [
-      "//google/protobuf:any",
-    ],
+    well_known_protos = "@submodule_protobuf//:well_known_protos",
     use_external = True,
 )

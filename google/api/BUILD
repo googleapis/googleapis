@@ -24,12 +24,8 @@ grpc_proto_library(
     srcs = ["distribution.proto"],
     deps = [
       ":annotations",
-      #TODO (makdharma): Get rid of local copies of well known protos when
-      #                  gRPC build support is available.
-      "//google/protobuf:any",
-      "//google/protobuf:timestamp",
-      "//google/protobuf:duration",
     ],
+    well_known_protos = "@submodule_protobuf//:well_known_protos",
     use_external = True,
 )
 
@@ -47,8 +43,8 @@ grpc_proto_library(
     srcs = ["annotations.proto"],
     deps = [
       ":http",
-      "//google/protobuf:descriptor",
     ],
+    well_known_protos = "@submodule_protobuf//:well_known_protos",
     use_external = True,
 )
 
@@ -57,16 +53,6 @@ grpc_proto_library(
     srcs = ["monitored_resource.proto"],
     deps = [
       ":label",
-    ],
-    use_external = True,
-)
-
-grpc_proto_library(
-    name = "all",
-    srcs = [],
-    deps = [
-      ":http",
-      ":metric",
     ],
     use_external = True,
 )

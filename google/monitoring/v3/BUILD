@@ -10,6 +10,7 @@ grpc_proto_library(name = "metric",
       "//google/api:monitored_resource",
       ":common",
     ],
+    well_known_protos = "@submodule_protobuf//:well_known_protos",
     use_external = True,
 )
 
@@ -20,6 +21,7 @@ grpc_proto_library(
       "//google/api:distribution",
       "//google/api:annotations",
     ],
+    well_known_protos = "@submodule_protobuf//:well_known_protos",
     use_external = True,
 )
 
@@ -31,10 +33,10 @@ grpc_proto_library(
       "//google/api:metric",
       "//google/api:monitored_resource",
       "//google/api:label",
-      "//google/protobuf:empty",
       "//google/rpc:status",
       ":common",
       ":metric",
     ],
+    well_known_protos = "@submodule_protobuf//:well_known_protos",
     use_external = True,
 )
