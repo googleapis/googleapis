@@ -14,36 +14,35 @@
 
 syntax = "proto3";
 
-package google.cloud.speech.v1beta1;
+package google.cloud.speech.v1;
 
 import "google/api/annotations.proto";
 import "google/longrunning/operations.proto";
+import "google/protobuf/any.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 
-option go_package = "google.golang.org/genproto/googleapis/cloud/speech/v1beta1;speech";
+option go_package = "google.golang.org/genproto/googleapis/cloud/speech/v1;speech";
 option java_multiple_files = true;
 option java_outer_classname = "SpeechProto";
-option java_package = "com.google.cloud.speech.v1beta1";
+option java_package = "com.google.cloud.speech.v1";
 
 
 // Service that implements Google Cloud Speech API.
 service Speech {
   // Performs synchronous speech recognition: receive results after all audio
   // has been sent and processed.
-  rpc SyncRecognize(SyncRecognizeRequest) returns (SyncRecognizeResponse) {
-    option (google.api.http) = { post: "/v1beta1/speech:syncrecognize" body: "*" };
+  rpc Recognize(RecognizeRequest) returns (RecognizeResponse) {
+    option (google.api.http) = { post: "/v1/speech:recognize" body: "*" };
   }
 
   // Performs asynchronous speech recognition: receive results via the
-  // [google.longrunning.Operations]
-  // (/speech/reference/rest/v1beta1/operations#Operation)
-  // interface. Returns either an
+  // google.longrunning.Operations interface. Returns either an
   // `Operation.error` or an `Operation.response` which contains
-  // an `AsyncRecognizeResponse` message.
-  rpc AsyncRecognize(AsyncRecognizeRequest) returns (google.longrunning.Operation) {
-    option (google.api.http) = { post: "/v1beta1/speech:asyncrecognize" body: "*" };
+  // a `LongRunningRecognizeResponse` message.
+  rpc LongRunningRecognize(LongRunningRecognizeRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = { post: "/v1/speech:longrunningrecognize" body: "*" };
   }
 
   // Performs bidirectional streaming speech recognition: receive results while
@@ -51,8 +50,8 @@ service Speech {
   rpc StreamingRecognize(stream StreamingRecognizeRequest) returns (stream StreamingRecognizeResponse);
 }
 
-// The top-level message sent by the client for the `SyncRecognize` method.
-message SyncRecognizeRequest {
+// The top-level message sent by the client for the `Recognize` method.
+message RecognizeRequest {
   // *Required* Provides information to the recognizer that specifies how to
   // process the request.
   RecognitionConfig config = 1;
@@ -61,8 +60,9 @@ message SyncRecognizeRequest {
   RecognitionAudio audio = 2;
 }
 
-// The top-level message sent by the client for the `AsyncRecognize` method.
-message AsyncRecognizeRequest {
+// The top-level message sent by the client for the `LongRunningRecognize`
+// method.
+message LongRunningRecognizeRequest {
   // *Required* Provides information to the recognizer that specifies how to
   // process the request.
   RecognitionConfig config = 1;
@@ -110,8 +110,9 @@ message StreamingRecognitionConfig {
   //
   // If `true`, the recognizer will detect a single spoken utterance. When it
   // detects that the user has paused or stopped speaking, it will return an
-  // `END_OF_UTTERANCE` event and cease recognition. It will return no more than
-  // one `StreamingRecognitionResult` with the `is_final` flag set to `true`.
+  // `END_OF_SINGLE_UTTERANCE` event and cease recognition. It will return no
+  // more than one `StreamingRecognitionResult` with the `is_final` flag set to
+  // `true`.
   bool single_utterance = 2;
 
   // *Optional* If `true`, interim results (tentative hypotheses) may be
@@ -131,34 +132,52 @@ message RecognitionConfig {
   //
   // For best results, the audio source should be captured and transmitted using
   // a lossless encoding (`FLAC` or `LINEAR16`). Recognition accuracy may be
-  // reduced if lossy codecs (such as AMR, AMR_WB and MULAW) are used to capture
-  // or transmit the audio, particularly if background noise is present.
+  // reduced if lossy codecs, which include the other codecs listed in
+  // this section, are used to capture or transmit the audio, particularly if
+  // background noise is present.
   enum AudioEncoding {
-    // Not specified. Will return result [google.rpc.Code.INVALID_ARGUMENT][google.rpc.Code.INVALID_ARGUMENT].
+    // Not specified. Will return result [google.rpc.Code.INVALID_ARGUMENT][].
     ENCODING_UNSPECIFIED = 0;
 
     // Uncompressed 16-bit signed little-endian samples (Linear PCM).
-    // This is the only encoding that may be used by `AsyncRecognize`.
     LINEAR16 = 1;
 
-    // This is the recommended encoding for `SyncRecognize` and
-    // `StreamingRecognize` because it uses lossless compression; therefore
-    // recognition accuracy is not compromised by a lossy codec.
-    //
-    // The stream FLAC (Free Lossless Audio Codec) encoding is specified at:
-    // http://flac.sourceforge.net/documentation.html.
-    // 16-bit and 24-bit samples are supported.
-    // Not all fields in STREAMINFO are supported.
+    // [`FLAC`](https://xiph.org/flac/documentation.html) (Free Lossless Audio
+    // Codec) is the recommended encoding because it is
+    // lossless--therefore recognition is not compromised--and
+    // requires only about half the bandwidth of `LINEAR16`. `FLAC` stream
+    // encoding supports 16-bit and 24-bit samples, however, not all fields in
+    // `STREAMINFO` are supported.
     FLAC = 2;
 
     // 8-bit samples that compand 14-bit audio samples using G.711 PCMU/mu-law.
     MULAW = 3;
 
-    // Adaptive Multi-Rate Narrowband codec. `sample_rate` must be 8000 Hz.
+    // Adaptive Multi-Rate Narrowband codec. `sample_rate_hertz` must be 8000.
     AMR = 4;
 
-    // Adaptive Multi-Rate Wideband codec. `sample_rate` must be 16000 Hz.
+    // Adaptive Multi-Rate Wideband codec. `sample_rate_hertz` must be 16000.
     AMR_WB = 5;
+
+    // Opus encoded audio frames in Ogg container
+    // ([OggOpus](https://wiki.xiph.org/OggOpus)).
+    // `sample_rate_hertz` must be 16000.
+    OGG_OPUS = 6;
+
+    // Although the use of lossy encodings is not recommended, if a very low
+    // bitrate encoding is required, `OGG_OPUS` is highly preferred over
+    // Speex encoding. The [Speex](https://speex.org/)  encoding supported by
+    // Cloud Speech API has a header byte in each block, as in MIME type
+    // `audio/x-speex-with-header-byte`.
+    // It is a variant of the RTP Speex encoding defined in
+    // [RFC 5574](https://tools.ietf.org/html/rfc5574).
+    // The stream is a sequence of blocks, one block per RTP packet. Each block
+    // starts with a byte containing the length of the block, in bytes, followed
+    // by one or more frames of Speex data, padded to an integral number of
+    // bytes (octets) as specified in RFC 5574. In other words, each RTP header
+    // is replaced with a single byte containing the block length. Only Speex
+    // wideband is supported. `sample_rate_hertz` must be 16000.
+    SPEEX_WITH_HEADER_BYTE = 7;
   }
 
   // *Required* Encoding of audio data sent in all `RecognitionAudio` messages.
@@ -169,12 +188,12 @@ message RecognitionConfig {
   // 16000 is optimal. For best results, set the sampling rate of the audio
   // source to 16000 Hz. If that's not possible, use the native sample rate of
   // the audio source (instead of re-sampling).
-  int32 sample_rate = 2;
+  int32 sample_rate_hertz = 2;
 
-  // *Optional* The language of the supplied audio as a BCP-47 language tag.
-  // Example: "en-GB"  https://www.rfc-editor.org/rfc/bcp/bcp47.txt
-  // If omitted, defaults to "en-US". See
-  // [Language Support](https://cloud.google.com/speech/docs/languages)
+  // *Required* The language of the supplied audio as a
+  // [BCP-47](https://www.rfc-editor.org/rfc/bcp/bcp47.txt) language tag.
+  // Example: "en-US".
+  // See [Language Support](https://cloud.google.com/speech/docs/languages)
   // for a list of the currently supported language codes.
   string language_code = 3;
 
@@ -193,7 +212,7 @@ message RecognitionConfig {
   bool profanity_filter = 5;
 
   // *Optional* A means to provide context to assist the speech recognition.
-  SpeechContext speech_context = 6;
+  repeated SpeechContext speech_contexts = 6;
 }
 
 // Provides "hints" to the speech recognizer to favor specific words and phrases
@@ -210,7 +229,7 @@ message SpeechContext {
 
 // Contains audio data in the encoding specified in the `RecognitionConfig`.
 // Either `content` or `uri` must be supplied. Supplying both or neither
-// returns [google.rpc.Code.INVALID_ARGUMENT][google.rpc.Code.INVALID_ARGUMENT]. See
+// returns [google.rpc.Code.INVALID_ARGUMENT][]. See
 // [audio limits](https://cloud.google.com/speech/limits#content).
 message RecognitionAudio {
   oneof audio_source {
@@ -223,35 +242,36 @@ message RecognitionAudio {
     // `RecognitionConfig`. Currently, only Google Cloud Storage URIs are
     // supported, which must be specified in the following format:
     // `gs://bucket_name/object_name` (other URI formats return
-    // [google.rpc.Code.INVALID_ARGUMENT][google.rpc.Code.INVALID_ARGUMENT]). For more information, see
+    // [google.rpc.Code.INVALID_ARGUMENT][]). For more information, see
     // [Request URIs](https://cloud.google.com/storage/docs/reference-uris).
     string uri = 2;
   }
 }
 
-// The only message returned to the client by `SyncRecognize`. It
+// The only message returned to the client by the `Recognize` method. It
 // contains the result as zero or more sequential `SpeechRecognitionResult`
 // messages.
-message SyncRecognizeResponse {
+message RecognizeResponse {
   // *Output-only* Sequential list of transcription results corresponding to
   // sequential portions of audio.
   repeated SpeechRecognitionResult results = 2;
 }
 
-// The only message returned to the client by `AsyncRecognize`. It contains the
-// result as zero or more sequential `SpeechRecognitionResult` messages. It is
-// included in the `result.response` field of the `Operation` returned by the
-// `GetOperation` call of the `google::longrunning::Operations` service.
-message AsyncRecognizeResponse {
+// The only message returned to the client by the `LongRunningRecognize` method.
+// It contains the result as zero or more sequential `SpeechRecognitionResult`
+// messages. It is included in the `result.response` field of the `Operation`
+// returned by the `GetOperation` call of the `google::longrunning::Operations`
+// service.
+message LongRunningRecognizeResponse {
   // *Output-only* Sequential list of transcription results corresponding to
   // sequential portions of audio.
   repeated SpeechRecognitionResult results = 2;
 }
 
-// Describes the progress of a long-running `AsyncRecognize` call. It is
+// Describes the progress of a long-running `LongRunningRecognize` call. It is
 // included in the `metadata` field of the `Operation` returned by the
 // `GetOperation` call of the `google::longrunning::Operations` service.
-message AsyncRecognizeMetadata {
+message LongRunningRecognizeMetadata {
   // Approximate percentage of audio processed thus far. Guaranteed to be 100
   // when the audio is fully processed and the results are available.
   int32 progress_percent = 1;
@@ -270,92 +290,65 @@ message AsyncRecognizeMetadata {
 // Here's an example of a series of ten `StreamingRecognizeResponse`s that might
 // be returned while processing audio:
 //
-// 1. endpointer_type: START_OF_SPEECH
+// 1. results { alternatives { transcript: "tube" } stability: 0.01 }
 //
-// 2. results { alternatives { transcript: "tube" } stability: 0.01 }
-//    result_index: 0
+// 2. results { alternatives { transcript: "to be a" } stability: 0.01 }
 //
-// 3. results { alternatives { transcript: "to be a" } stability: 0.01 }
-//    result_index: 0
-//
-// 4. results { alternatives { transcript: "to be" } stability: 0.9 }
+// 3. results { alternatives { transcript: "to be" } stability: 0.9 }
 //    results { alternatives { transcript: " or not to be" } stability: 0.01 }
-//    result_index: 0
 //
-// 5. results { alternatives { transcript: "to be or not to be"
+// 4. results { alternatives { transcript: "to be or not to be"
 //                             confidence: 0.92 }
 //              alternatives { transcript: "to bee or not to bee" }
 //              is_final: true }
-//    result_index: 0
 //
-// 6. results { alternatives { transcript: " that's" } stability: 0.01 }
-//    result_index: 1
+// 5. results { alternatives { transcript: " that's" } stability: 0.01 }
 //
-// 7. results { alternatives { transcript: " that is" } stability: 0.9 }
+// 6. results { alternatives { transcript: " that is" } stability: 0.9 }
 //    results { alternatives { transcript: " the question" } stability: 0.01 }
-//    result_index: 1
 //
-// 8. endpointer_type: END_OF_SPEECH
+// 7. speech_event_type: END_OF_SINGLE_UTTERANCE
 //
-// 9. results { alternatives { transcript: " that is the question"
+// 8. results { alternatives { transcript: " that is the question"
 //                             confidence: 0.98 }
 //              alternatives { transcript: " that was the question" }
 //              is_final: true }
-//    result_index: 1
-//
-// 10. endpointer_type: END_OF_AUDIO
 //
 // Notes:
 //
-// - Only two of the above responses #5 and #9 contain final results, they are
+// - Only two of the above responses #4 and #8 contain final results; they are
 //   indicated by `is_final: true`. Concatenating these together generates the
 //   full transcript: "to be or not to be that is the question".
 //
-// - The others contain interim `results`. #4 and #7 contain two interim
-//   `results`, the first portion has a high stability and is less likely to
-//   change, the second portion has a low stability and is very likely to
+// - The others contain interim `results`. #3 and #6 contain two interim
+//   `results`: the first portion has a high stability and is less likely to
+//   change; the second portion has a low stability and is very likely to
 //   change. A UI designer might choose to show only high stability `results`.
 //
 // - The specific `stability` and `confidence` values shown above are only for
 //   illustrative purposes. Actual values may vary.
 //
-// - The `result_index` indicates the portion of audio that has had final
-//   results returned, and is no longer being processed. For example, the
-//   `results` in #6 and later correspond to the portion of audio after
-//   "to be or not to be".
+// - In each response, only one of these fields will be set:
+//     `error`,
+//     `speech_event_type`, or
+//     one or more (repeated) `results`.
 message StreamingRecognizeResponse {
-  // Indicates the type of endpointer event.
-  enum EndpointerType {
-    // No endpointer event specified.
-    ENDPOINTER_EVENT_UNSPECIFIED = 0;
+  // Indicates the type of speech event.
+  enum SpeechEventType {
+    // No speech event specified.
+    SPEECH_EVENT_UNSPECIFIED = 0;
 
-    // Speech has been detected in the audio stream, and the service is
-    // beginning to process it.
-    START_OF_SPEECH = 1;
-
-    // Speech has ceased to be detected in the audio stream. (For example, the
-    // user may have paused after speaking.) If `single_utterance` is `false`,
-    // the service will continue to process audio, and if subsequent speech is
-    // detected, will send another START_OF_SPEECH event.
-    END_OF_SPEECH = 2;
-
-    // This event is sent after the client has half-closed the input stream gRPC
-    // connection and the server has received all of the audio. (The server may
-    // still be processing the audio and may subsequently return additional
-    // results.)
-    END_OF_AUDIO = 3;
-
-    // This event is only sent when `single_utterance` is `true`. It indicates
-    // that the server has detected the end of the user's speech utterance and
-    // expects no additional speech. Therefore, the server will not process
-    // additional audio (although it may subsequently return additional
-    // results). The client should stop sending additional audio data,
-    // half-close the gRPC connection, and wait for any additional results
-    // until the server closes the gRPC connection.
-    END_OF_UTTERANCE = 4;
+    // This event indicates that the server has detected the end of the user's
+    // speech utterance and expects no additional speech. Therefore, the server
+    // will not process additional audio (although it may subsequently return
+    // additional results). The client should stop sending additional audio
+    // data, half-close the gRPC connection, and wait for any additional results
+    // until the server closes the gRPC connection. This event is only sent if
+    // `single_utterance` was set to `true`, and is not used otherwise.
+    END_OF_SINGLE_UTTERANCE = 1;
   }
 
-  // *Output-only* If set, returns a [google.rpc.Status][google.rpc.Status] message that
+  // *Output-only* If set, returns a [google.rpc.Status][] message that
   // specifies the error for the operation.
   google.rpc.Status error = 1;
 
@@ -365,13 +358,8 @@ message StreamingRecognizeResponse {
   // followed by zero or more `is_final=false` results.
   repeated StreamingRecognitionResult results = 2;
 
-  // *Output-only* Indicates the lowest index in the `results` array that has
-  // changed. The repeated `StreamingRecognitionResult` results overwrite past
-  // results at this index and higher.
-  int32 result_index = 3;
-
-  // *Output-only* Indicates the type of endpointer event.
-  EndpointerType endpointer_type = 4;
+  // *Output-only* Indicates the type of speech event.
+  SpeechEventType speech_event_type = 4;
 }
 
 // A streaming speech recognition result corresponding to a portion of the audio
