@@ -60,6 +60,13 @@ service ClusterManager {
     option (google.api.http) = { put: "/v1/projects/{project_id}/zones/{zone}/clusters/{cluster_id}" body: "*" };
   }
 
+  // Used to set master auth materials. Currently supports :-
+  // Changing the admin password of a specific cluster.
+  // This can be either via password generation or explicitly set the password.
+  rpc SetMasterAuth(SetMasterAuthRequest) returns (Operation) {
+    option (google.api.http) = { post: "/v1/projects/{project_id}/zones/{zone}/clusters/{cluster_id}:setMasterAuth" body: "*" };
+  }
+
   // Deletes the cluster, including the Kubernetes endpoint and all worker
   // nodes.
   //
@@ -122,6 +129,26 @@ service ClusterManager {
   // Sets the NodeManagement options for a node pool.
   rpc SetNodePoolManagement(SetNodePoolManagementRequest) returns (Operation) {
     option (google.api.http) = { post: "/v1/projects/{project_id}/zones/{zone}/clusters/{cluster_id}/nodePools/{node_pool_id}/setManagement" body: "*" };
+  }
+
+  // Sets labels on a cluster.
+  rpc SetLabels(SetLabelsRequest) returns (Operation) {
+    option (google.api.http) = { post: "/v1/projects/{project_id}/zones/{zone}/clusters/{cluster_id}/resourceLabels" body: "*" };
+  }
+
+  // Enables or disables the ABAC authorization mechanism on a cluster.
+  rpc SetLegacyAbac(SetLegacyAbacRequest) returns (Operation) {
+    option (google.api.http) = { post: "/v1/projects/{project_id}/zones/{zone}/clusters/{cluster_id}/legacyAbac" body: "*" };
+  }
+
+  // Start master IP rotation.
+  rpc StartIPRotation(StartIPRotationRequest) returns (Operation) {
+    option (google.api.http) = { post: "/v1/projects/{project_id}/zones/{zone}/clusters/{cluster_id}:startIpRotation" body: "*" };
+  }
+
+  // Completes master IP rotation.
+  rpc CompleteIPRotation(CompleteIPRotationRequest) returns (Operation) {
+    option (google.api.http) = { post: "/v1/projects/{project_id}/zones/{zone}/clusters/{cluster_id}:completeIpRotation" body: "*" };
   }
 }
 
@@ -206,7 +233,7 @@ message NodeConfig {
 
   // Whether the nodes are created as preemptible VM instances. See:
   // https://cloud.google.com/compute/docs/instances/preemptible for more
-  // inforamtion about preemptible VM instances.
+  // information about preemptible VM instances.
   bool preemptible = 10;
 }
 
@@ -215,11 +242,14 @@ message NodeConfig {
 // certificates.
 message MasterAuth {
   // The username to use for HTTP basic authentication to the master endpoint.
+  // For clusters v1.6.0 and later, you can disable basic authentication by
+  // providing an empty username.
   string username = 1;
 
   // The password to use for HTTP basic authentication to the master endpoint.
   // Because the master endpoint is open to the Internet, you should create a
-  // strong password.
+  // strong password.  If a password is provided for cluster creation, username
+  // must be non-empty.
   string password = 2;
 
   // [Output only] Base64-encoded public certificate that is the root of
@@ -265,6 +295,16 @@ message HorizontalPodAutoscaling {
   // When enabled, it ensures that a Heapster pod is running in the cluster,
   // which is also used by the Cloud Monitoring service.
   bool disabled = 1;
+}
+
+// Configuration for the legacy Attribute Based Access Control authorization
+// mode.
+message LegacyAbac {
+  // Whether the ABAC authorizer is enabled for this cluster. When enabled,
+  // identities in the system, including service accounts, nodes, and
+  // controllers, will have statically granted permissions beyond those
+  // provided by the RBAC configuration or IAM.
+  bool enabled = 1;
 }
 
 // A Google Container Engine cluster.
@@ -384,6 +424,16 @@ message Cluster {
   // creation.
   bool enable_kubernetes_alpha = 14;
 
+  // The resource labels for the cluster to use to annotate any related
+  // Google Compute Engine resources.
+  map<string, string> resource_labels = 15;
+
+  // The fingerprint of the set of labels for this cluster.
+  string label_fingerprint = 16;
+
+  // Configuration for the legacy ABAC authorization mode.
+  LegacyAbac legacy_abac = 18;
+
   // [Output only] Server-defined URL for the resource.
   string self_link = 100;
 
@@ -400,9 +450,10 @@ message Cluster {
   // password information.
   string endpoint = 102;
 
-  // [Output only] The software version of the master endpoint and kubelets used
-  // in the cluster when it was first created. The version can be upgraded over
-  // time.
+  // The initial Kubernetes version for this cluster.  Valid versions are those
+  // found in validMasterVersions returned by getServerConfig.  The version can
+  // be upgraded over time; such upgrades are reflected in
+  // currentMasterVersion and currentNodeVersion.
   string initial_cluster_version = 103;
 
   // [Output only] The current software version of the master endpoint.
@@ -551,6 +602,18 @@ message Operation {
 
     // Set node pool management.
     SET_NODE_POOL_MANAGEMENT = 9;
+
+    // Automatic node pool repair.
+    AUTO_REPAIR_NODES = 10;
+
+    // Automatic node upgrade.
+    AUTO_UPGRADE_NODES = 11;
+
+    // Set labels.
+    SET_LABELS = 12;
+
+    // Set/generate master auth materials
+    SET_MASTER_AUTH = 13;
   }
 
   // The server-assigned ID for the operation.
@@ -627,6 +690,39 @@ message UpdateClusterRequest {
 
   // A description of the update.
   ClusterUpdate update = 4;
+}
+
+// SetMasterAuthRequest updates the admin password of a cluster.
+message SetMasterAuthRequest {
+  // operation type - what type of key rotation are we performing
+  enum Action {
+    // Operation is unknown and will error out
+    UNKNOWN = 0;
+
+    // Set the password to a user generated value.
+    SET_PASSWORD = 1;
+
+    // Generate a new password and set it to that.
+    GENERATE_PASSWORD = 2;
+  }
+
+  // The Google Developers Console [project ID or project
+  // number](https://support.google.com/cloud/answer/6158840).
+  string project_id = 1;
+
+  // The name of the Google Compute Engine
+  // [zone](/compute/docs/zones#available) in which the cluster
+  // resides.
+  string zone = 2;
+
+  // The name of the cluster to upgrade.
+  string cluster_id = 3;
+
+  // The exact form of action to be taken on the master auth
+  Action action = 4;
+
+  // A description of the update.
+  MasterAuth update = 5;
 }
 
 // DeleteClusterRequest deletes a cluster.
@@ -983,4 +1079,82 @@ message NodePoolAutoscaling {
   // Maximum number of nodes in the NodePool. Must be >= min_node_count. There
   // has to enough quota to scale up the cluster.
   int32 max_node_count = 3;
+}
+
+// SetLabelsRequest sets the Google Cloud Platform labels on a Google Container
+// Engine cluster, which will in turn set them for Google Compute Engine
+// resources used by that cluster
+message SetLabelsRequest {
+  // The Google Developers Console [project ID or project
+  // number](https://developers.google.com/console/help/new/#projectnumber).
+  string project_id = 1;
+
+  // The name of the Google Compute Engine
+  // [zone](/compute/docs/zones#available) in which the cluster
+  // resides.
+  string zone = 2;
+
+  // The name of the cluster.
+  string cluster_id = 3;
+
+  // The labels to set for that cluster.
+  map<string, string> resource_labels = 4;
+
+  // The fingerprint of the previous set of labels for this resource,
+  // used to detect conflicts. The fingerprint is initially generated by
+  // Container Engine and changes after every request to modify or update
+  // labels. You must always provide an up-to-date fingerprint hash when
+  // updating or changing labels. Make a <code>get()</code> request to the
+  // resource to get the latest fingerprint.
+  string label_fingerprint = 5;
+}
+
+// SetLegacyAbacRequest enables or disables the ABAC authorization mechanism for
+// a cluster.
+message SetLegacyAbacRequest {
+  // The Google Developers Console [project ID or project
+  // number](https://support.google.com/cloud/answer/6158840).
+  string project_id = 1;
+
+  // The name of the Google Compute Engine
+  // [zone](/compute/docs/zones#available) in which the cluster
+  // resides.
+  string zone = 2;
+
+  // The name of the cluster to update.
+  string cluster_id = 3;
+
+  // Whether ABAC authorization will be enabled in the cluster.
+  bool enabled = 4;
+}
+
+// StartIPRotationRequest creates a new IP for the cluster and then performs
+// a node upgrade on each node pool to point to the new IP.
+message StartIPRotationRequest {
+  // The Google Developers Console [project ID or project
+  // number](https://developers.google.com/console/help/new/#projectnumber).
+  string project_id = 1;
+
+  // The name of the Google Compute Engine
+  // [zone](/compute/docs/zones#available) in which the cluster
+  // resides.
+  string zone = 2;
+
+  // The name of the cluster.
+  string cluster_id = 3;
+}
+
+// CompleteIPRotationRequest moves the cluster master back into single-IP mode.
+message CompleteIPRotationRequest {
+  // The Google Developers Console [project ID or project
+  // number](https://developers.google.com/console/help/new/#projectnumber).
+  string project_id = 1;
+
+  // The name of the Google Compute Engine
+  // [zone](/compute/docs/zones#available) in which the cluster
+  // resides.
+  string zone = 2;
+
+  // The name of the cluster.
+  string cluster_id = 3;
 }
