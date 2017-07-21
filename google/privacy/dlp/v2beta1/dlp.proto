@@ -19,8 +19,12 @@ package google.privacy.dlp.v2beta1;
 import "google/api/annotations.proto";
 import "google/longrunning/operations.proto";
 import "google/privacy/dlp/v2beta1/storage.proto";
+import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
+import "google/type/date.proto";
+import "google/type/timeofday.proto";
 
+option csharp_namespace = "Google.Cloud.Dlp.V2Beta1";
 option go_package = "google.golang.org/genproto/googleapis/privacy/dlp/v2beta1;dlp";
 option java_multiple_files = true;
 option java_outer_classname = "DlpProto";
@@ -34,19 +38,20 @@ option java_package = "com.google.privacy.dlp.v2beta1";
 // The service also includes methods for sensitive data redaction and
 // scheduling of data scans on Google Cloud Platform based data sets.
 service DlpService {
-  // Find potentially sensitive info in a list of strings.
+  // Finds potentially sensitive info in a list of strings.
   // This method has limits on input size, processing time, and output size.
   rpc InspectContent(InspectContentRequest) returns (InspectContentResponse) {
     option (google.api.http) = { post: "/v2beta1/content:inspect" body: "*" };
   }
 
-  // Redact potentially sensitive info from a list of strings.
+  // Redacts potentially sensitive info from a list of strings.
   // This method has limits on input size, processing time, and output size.
   rpc RedactContent(RedactContentRequest) returns (RedactContentResponse) {
     option (google.api.http) = { post: "/v2beta1/content:redact" body: "*" };
   }
 
-  // Schedule a job scanning content in a Google Cloud Platform data repository.
+  // Schedules a job scanning content in a Google Cloud Platform data
+  // repository.
   rpc CreateInspectOperation(CreateInspectOperationRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = { post: "/v2beta1/inspect/operations" body: "*" };
   }
@@ -71,22 +76,22 @@ service DlpService {
 // When used with redactContent only info_types and min_likelihood are currently
 // used.
 message InspectConfig {
-  // Restrict what info_types to look for. The values must correspond to
+  // Restricts what info_types to look for. The values must correspond to
   // InfoType values returned by ListInfoTypes or found in documentation.
   // Empty info_types runs all enabled detectors.
   repeated InfoType info_types = 1;
 
-  // Only return findings equal or above this threshold.
+  // Only returns findings equal or above this threshold.
   Likelihood min_likelihood = 2;
 
-  // Limit the number of findings per content item.
+  // Limits the number of findings per content item.
   int32 max_findings = 3;
 
-  // When true, a contextual quote from the data that triggered a finding will
-  // be included in the response; see Finding.quote.
+  // When true, a contextual quote from the data that triggered a finding is
+  // included in the response; see Finding.quote.
   bool include_quote = 4;
 
-  // When true, exclude type information of the findings.
+  // When true, excludes type information of the findings.
   bool exclude_types = 6;
 }
 
@@ -187,13 +192,33 @@ message ImageLocation {
 message RedactContentRequest {
   message ReplaceConfig {
     // Type of information to replace. Only one ReplaceConfig per info_type
-    // should be provided. If ReplaceConfig does not have an info_type, we'll
-    // match it against all info_types that are found but not specified in
+    // should be provided. If ReplaceConfig does not have an info_type, the DLP
+    // API matches it against all info_types that are found but not specified in
     // another ReplaceConfig.
     InfoType info_type = 1;
 
     // Content replacing sensitive information of given type. Max 256 chars.
     string replace_with = 2;
+  }
+
+  // Configuration for determing how redaction of images should occur.
+  message ImageRedactionConfig {
+    // Type of information to redact from images.
+    oneof target {
+      // Only one per info_type should be provided per request. If not
+      // specified, and redact_all_text is false, the DLP API will redacts all
+      // text that it matches against all info_types that are found, but not
+      // specified in another ImageRedactionConfig.
+      InfoType info_type = 1;
+
+      // If true, all text found in the image, regardless if it matches an
+      // info_type, is redacted.
+      bool redact_all_text = 2;
+    }
+
+    // The color to use when redacting content from an image. If not specified,
+    // the default is black.
+    Color redaction_color = 3;
   }
 
   // Configuration for the inspector.
@@ -202,11 +227,27 @@ message RedactContentRequest {
   // The list of items to inspect. Up to 100 are allowed per request.
   repeated ContentItem items = 2;
 
-  // The strings to replace findings with. Must specify at least one.
+  // The strings to replace findings text findings with. Must specify at least
+  // one of these or one ImageRedactionConfig if redacting images.
   repeated ReplaceConfig replace_configs = 3;
+
+  // The configuration for specifying what content to redact from images.
+  repeated ImageRedactionConfig image_redaction_configs = 4;
 }
 
-// Results of deidentifying a list of items.
+// Represents a color in the RGB color space.
+message Color {
+  // The amount of red in the color as a value in the interval [0, 1].
+  float red = 1;
+
+  // The amount of green in the color as a value in the interval [0, 1].
+  float green = 2;
+
+  // The amount of blue in the color as a value in the interval [0, 1].
+  float blue = 3;
+}
+
+// Results of redacting a list of items.
 message RedactContentResponse {
   // The redacted content.
   repeated ContentItem items = 1;
@@ -225,7 +266,7 @@ message InspectContentRequest {
 
 // Results of inspecting a list of items.
 message InspectContentResponse {
-  // Each content_item from the request will have a result in this list, in the
+  // Each content_item from the request has a result in this list, in the
   // same order as the request.
   repeated InspectResult results = 1;
 }
@@ -242,27 +283,29 @@ message CreateInspectOperationRequest {
   // Optional location to store findings. The bucket must already exist and
   // the Google APIs service account for DLP must have write permission to
   // write to the given bucket.
-  // Results will be split over multiple csv files with each file name matching
-  // the pattern "[operation_id] + [count].csv".
-  // The operation_id will match the identifier for the Operation,
-  // and the [count] is a counter used for tracking the number of files written.
-  // The CSV file(s) contain the following columns regardless of storage type
-  // scanned: id, info_type, likelihood, byte size of finding, quote, time_stamp
-  // For cloud storage the next two columns are: file_path, start_offset
-  // For datastore the next two columns are: project_id, namespace_id, path,
-  //     column_name, offset.
+  // <p>Results are split over multiple csv files with each file name matching
+  // the pattern "[operation_id]_[count].csv", for example
+  // `3094877188788974909_1.csv`. The `operation_id` matches the
+  // identifier for the Operation, and the `count` is a counter used for
+  // tracking the number of files written. <p>The CSV file(s) contain the
+  // following columns regardless of storage type scanned: <li>id <li>info_type
+  // <li>likelihood <li>byte size of finding <li>quote <li>time_stamp<br/>
+  // <p>For Cloud Storage the next columns are: <li>file_path
+  // <li>start_offset<br/>
+  // <p>For Cloud Datastore the next columns are: <li>project_id
+  // <li>namespace_id <li>path <li>column_name <li>offset
   OutputStorageConfig output_config = 3;
 }
 
 // Cloud repository for storing output.
 message OutputStorageConfig {
   oneof type {
-    // The path to a Google Storage location to store output.
+    // The path to a Google Cloud Storage location to store output.
     CloudStoragePath storage_path = 2;
   }
 }
 
-// Stats regarding a specific InfoType.
+// Statistics regarding a specific InfoType.
 message InfoTypeStatistics {
   // The type of finding this stat is for.
   InfoType info_type = 1;
@@ -310,13 +353,22 @@ message ListInspectFindingsRequest {
   string name = 1;
 
   // Maximum number of results to return.
-  // If 0, the implementation will select a reasonable value.
+  // If 0, the implementation selects a reasonable value.
   int32 page_size = 2;
 
   // The value returned by the last `ListInspectFindingsResponse`; indicates
   // that this is a continuation of a prior `ListInspectFindings` call, and that
   // the system should return the next page of data.
   string page_token = 3;
+
+  // Restricts findings to items that match. Supports info_type and likelihood.
+  // <p>Examples:<br/>
+  // <li>info_type=EMAIL_ADDRESS
+  // <li>info_type=PHONE_NUMBER,EMAIL_ADDRESS
+  // <li>likelihood=VERY_LIKELY
+  // <li>likelihood=VERY_LIKELY,LIKELY
+  // <li>info_type=EMAIL_ADDRESS,likelihood=VERY_LIKELY,LIKELY
+  string filter = 4;
 }
 
 // Response to the ListInspectFindings request.
@@ -386,7 +438,7 @@ message ListRootCategoriesResponse {
 // Categorization of results based on how likely they are to represent a match,
 // based on the number of elements they contain which imply a match.
 enum Likelihood {
-  // Default value; information with all likelihoods will be included.
+  // Default value; information with all likelihoods is included.
   LIKELIHOOD_UNSPECIFIED = 0;
 
   // Few matching elements.
