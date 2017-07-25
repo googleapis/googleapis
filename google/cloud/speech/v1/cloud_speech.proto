@@ -23,6 +23,7 @@ import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 
+option cc_enable_arenas = true;
 option go_package = "google.golang.org/genproto/googleapis/cloud/speech/v1;speech";
 option java_multiple_files = true;
 option java_outer_classname = "SpeechProto";
@@ -77,6 +78,7 @@ message LongRunningRecognizeRequest {
 // All subsequent messages must contain `audio` data and must not contain a
 // `streaming_config` message.
 message StreamingRecognizeRequest {
+  // The streaming request, which is either a streaming config or audio content.
   oneof streaming_request {
     // Provides information to the recognizer that specifies how to process the
     // request. The first `StreamingRecognizeRequest` message must contain a
@@ -126,9 +128,9 @@ message StreamingRecognitionConfig {
 // request.
 message RecognitionConfig {
   // Audio encoding of the data sent in the audio message. All encodings support
-  // only 1 channel (mono) audio. Only `FLAC` includes a header that describes
-  // the bytes of audio that follow the header. The other encodings are raw
-  // audio bytes with no header.
+  // only 1 channel (mono) audio. Only `FLAC` and `WAV` include a header that
+  // describes the bytes of audio that follow the header. The other encodings
+  // are raw audio bytes with no header.
   //
   // For best results, the audio source should be captured and transmitted using
   // a lossless encoding (`FLAC` or `LINEAR16`). Recognition accuracy may be
@@ -136,7 +138,7 @@ message RecognitionConfig {
   // this section, are used to capture or transmit the audio, particularly if
   // background noise is present.
   enum AudioEncoding {
-    // Not specified. Will return result [google.rpc.Code.INVALID_ARGUMENT][].
+    // Not specified. Will return result [google.rpc.Code.INVALID_ARGUMENT][google.rpc.Code.INVALID_ARGUMENT].
     ENCODING_UNSPECIFIED = 0;
 
     // Uncompressed 16-bit signed little-endian samples (Linear PCM).
@@ -213,6 +215,12 @@ message RecognitionConfig {
 
   // *Optional* A means to provide context to assist the speech recognition.
   repeated SpeechContext speech_contexts = 6;
+
+  // *Optional* If `true`, the top result includes a list of words and
+  // the start and end time offsets (timestamps) for those words. If
+  // `false`, no word-level time offset information is returned. The default is
+  // `false`.
+  bool enable_word_time_offsets = 8;
 }
 
 // Provides "hints" to the speech recognizer to favor specific words and phrases
@@ -229,9 +237,11 @@ message SpeechContext {
 
 // Contains audio data in the encoding specified in the `RecognitionConfig`.
 // Either `content` or `uri` must be supplied. Supplying both or neither
-// returns [google.rpc.Code.INVALID_ARGUMENT][]. See
+// returns [google.rpc.Code.INVALID_ARGUMENT][google.rpc.Code.INVALID_ARGUMENT]. See
 // [audio limits](https://cloud.google.com/speech/limits#content).
 message RecognitionAudio {
+  // The audio source, which is either inline content or a Google Cloud
+  // Storage uri.
   oneof audio_source {
     // The audio data bytes encoded as specified in
     // `RecognitionConfig`. Note: as with all bytes fields, protobuffers use a
@@ -242,7 +252,7 @@ message RecognitionAudio {
     // `RecognitionConfig`. Currently, only Google Cloud Storage URIs are
     // supported, which must be specified in the following format:
     // `gs://bucket_name/object_name` (other URI formats return
-    // [google.rpc.Code.INVALID_ARGUMENT][]). For more information, see
+    // [google.rpc.Code.INVALID_ARGUMENT][google.rpc.Code.INVALID_ARGUMENT]). For more information, see
     // [Request URIs](https://cloud.google.com/storage/docs/reference-uris).
     string uri = 2;
   }
@@ -307,16 +317,14 @@ message LongRunningRecognizeMetadata {
 // 6. results { alternatives { transcript: " that is" } stability: 0.9 }
 //    results { alternatives { transcript: " the question" } stability: 0.01 }
 //
-// 7. speech_event_type: END_OF_SINGLE_UTTERANCE
-//
-// 8. results { alternatives { transcript: " that is the question"
+// 7. results { alternatives { transcript: " that is the question"
 //                             confidence: 0.98 }
 //              alternatives { transcript: " that was the question" }
 //              is_final: true }
 //
 // Notes:
 //
-// - Only two of the above responses #4 and #8 contain final results; they are
+// - Only two of the above responses #4 and #7 contain final results; they are
 //   indicated by `is_final: true`. Concatenating these together generates the
 //   full transcript: "to be or not to be that is the question".
 //
@@ -348,7 +356,7 @@ message StreamingRecognizeResponse {
     END_OF_SINGLE_UTTERANCE = 1;
   }
 
-  // *Output-only* If set, returns a [google.rpc.Status][] message that
+  // *Output-only* If set, returns a [google.rpc.Status][google.rpc.Status] message that
   // specifies the error for the operation.
   google.rpc.Status error = 1;
 
@@ -388,6 +396,8 @@ message StreamingRecognitionResult {
 message SpeechRecognitionResult {
   // *Output-only* May contain one or more recognition hypotheses (up to the
   // maximum specified in `max_alternatives`).
+  // These alternatives are ordered in terms of accuracy, with the top (first)
+  // alternative being the most probable, as ranked by the recognizer.
   repeated SpeechRecognitionAlternative alternatives = 1;
 }
 
@@ -400,8 +410,34 @@ message SpeechRecognitionAlternative {
   // indicates an estimated greater likelihood that the recognized words are
   // correct. This field is typically provided only for the top hypothesis, and
   // only for `is_final=true` results. Clients should not rely on the
-  // `confidence` field as it is not guaranteed to be accurate, or even set, in
-  // any of the results.
+  // `confidence` field as it is not guaranteed to be accurate or consistent.
   // The default of 0.0 is a sentinel value indicating `confidence` was not set.
   float confidence = 2;
+
+  // *Output-only* A list of word-specific information for each recognized word.
+  repeated WordInfo words = 3;
+}
+
+// Word-specific information for recognized words. Word information is only
+// included in the response when certain request parameters are set, such
+// as `enable_word_time_offsets`.
+message WordInfo {
+  // *Output-only* Time offset relative to the beginning of the audio,
+  // and corresponding to the start of the spoken word.
+  // This field is only set if `enable_word_time_offsets=true` and only
+  // in the top hypothesis.
+  // This is an experimental feature and the accuracy of the time offset can
+  // vary.
+  google.protobuf.Duration start_time = 1;
+
+  // *Output-only* Time offset relative to the beginning of the audio,
+  // and corresponding to the end of the spoken word.
+  // This field is only set if `enable_word_time_offsets=true` and only
+  // in the top hypothesis.
+  // This is an experimental feature and the accuracy of the time offset can
+  // vary.
+  google.protobuf.Duration end_time = 2;
+
+  // *Output-only* The word corresponding to this set of information.
+  string word = 3;
 }
