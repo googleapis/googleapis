@@ -31,7 +31,8 @@ option java_package = "com.google.pubsub.v1";
 
 
 // The service that an application uses to manipulate subscriptions and to
-// consume messages from a subscription via the `Pull` method.
+// consume messages from a subscription via the `Pull` method or by
+// establishing a bi-directional stream using the `StreamingPull` method.
 service Subscriber {
   // Creates a subscription to a given topic.
   // If the subscription already exists, returns `ALREADY_EXISTS`.
@@ -44,36 +45,23 @@ service Subscriber {
   // The generated name is populated in the returned Subscription object.
   // Note that for REST API requests, you must specify a name in the request.
   rpc CreateSubscription(Subscription) returns (Subscription) {
-    option (google.api.http) = {
-      put: "/v1/{name=projects/*/subscriptions/*}"
-      body: "*" };
+    option (google.api.http) = { put: "/v1/{name=projects/*/subscriptions/*}" body: "*" };
   }
 
   // Gets the configuration details of a subscription.
   rpc GetSubscription(GetSubscriptionRequest) returns (Subscription) {
-    option (google.api.http) = {
-      get: "/v1/{subscription=projects/*/subscriptions/*}"
-    };
+    option (google.api.http) = { get: "/v1/{subscription=projects/*/subscriptions/*}" };
   }
 
   // Updates an existing subscription. Note that certain properties of a
   // subscription, such as its topic, are not modifiable.
-  // NOTE:  The style guide requires body: "subscription" instead of body: "*".
-  // Keeping the latter for internal consistency in V1, however it should be
-  // corrected in V2.  See
-  // https://cloud.google.com/apis/design/standard_methods#update for details.
   rpc UpdateSubscription(UpdateSubscriptionRequest) returns (Subscription) {
-    option (google.api.http) = {
-      patch: "/v1/{subscription.name=projects/*/subscriptions/*}"
-      body: "*"
-    };
+    option (google.api.http) = { patch: "/v1/{subscription.name=projects/*/subscriptions/*}" body: "*" };
   }
 
   // Lists matching subscriptions.
   rpc ListSubscriptions(ListSubscriptionsRequest) returns (ListSubscriptionsResponse) {
-    option (google.api.http) = {
-      get: "/v1/{project=projects/*}/subscriptions"
-    };
+    option (google.api.http) = { get: "/v1/{project=projects/*}/subscriptions" };
   }
 
   // Deletes an existing subscription. All messages retained in the subscription
@@ -82,9 +70,7 @@ service Subscriber {
   // the same name, but the new one has no association with the old
   // subscription or its topic unless the same topic is specified.
   rpc DeleteSubscription(DeleteSubscriptionRequest) returns (google.protobuf.Empty) {
-    option (google.api.http) = {
-      delete: "/v1/{subscription=projects/*/subscriptions/*}"
-    };
+    option (google.api.http) = { delete: "/v1/{subscription=projects/*/subscriptions/*}" };
   }
 
   // Modifies the ack deadline for a specific message. This method is useful
@@ -93,10 +79,7 @@ service Subscriber {
   // processing was interrupted. Note that this does not modify the
   // subscription-level `ackDeadlineSeconds` used for subsequent messages.
   rpc ModifyAckDeadline(ModifyAckDeadlineRequest) returns (google.protobuf.Empty) {
-    option (google.api.http) = {
-      post: "/v1/{subscription=projects/*/subscriptions/*}:modifyAckDeadline"
-      body: "*"
-    };
+    option (google.api.http) = { post: "/v1/{subscription=projects/*/subscriptions/*}:modifyAckDeadline" body: "*" };
   }
 
   // Acknowledges the messages associated with the `ack_ids` in the
@@ -107,10 +90,7 @@ service Subscriber {
   // but such a message may be redelivered later. Acknowledging a message more
   // than once will not result in an error.
   rpc Acknowledge(AcknowledgeRequest) returns (google.protobuf.Empty) {
-    option (google.api.http) = {
-      post: "/v1/{subscription=projects/*/subscriptions/*}:acknowledge"
-      body: "*"
-    };
+    option (google.api.http) = { post: "/v1/{subscription=projects/*/subscriptions/*}:acknowledge" body: "*" };
   }
 
   // Pulls messages from the server. Returns an empty list if there are no
@@ -118,16 +98,9 @@ service Subscriber {
   // there are too many concurrent pull requests pending for the given
   // subscription.
   rpc Pull(PullRequest) returns (PullResponse) {
-    option (google.api.http) = {
-      post: "/v1/{subscription=projects/*/subscriptions/*}:pull"
-      body: "*"
-    };
+    option (google.api.http) = { post: "/v1/{subscription=projects/*/subscriptions/*}:pull" body: "*" };
   }
 
-  // (EXPERIMENTAL) StreamingPull is an experimental feature. This RPC will
-  // respond with UNIMPLEMENTED errors unless you have been invited to test
-  // this feature. Contact cloud-pubsub@google.com with any questions.
-  //
   // Establishes a stream with the server, which sends messages down to the
   // client. The client streams acknowledgements and ack deadline modifications
   // back to the server. The server will close the stream and return the status
@@ -145,45 +118,36 @@ service Subscriber {
   // attributes of a push subscription. Messages will accumulate for delivery
   // continuously through the call regardless of changes to the `PushConfig`.
   rpc ModifyPushConfig(ModifyPushConfigRequest) returns (google.protobuf.Empty) {
-    option (google.api.http) = {
-      post: "/v1/{subscription=projects/*/subscriptions/*}:modifyPushConfig"
-      body: "*" };
+    option (google.api.http) = { post: "/v1/{subscription=projects/*/subscriptions/*}:modifyPushConfig" body: "*" };
   }
 
   // Lists the existing snapshots.
   rpc ListSnapshots(ListSnapshotsRequest) returns (ListSnapshotsResponse) {
-    option (google.api.http) = {
-      get: "/v1/{project=projects/*}/snapshots"
-    };
+    option (google.api.http) = { get: "/v1/{project=projects/*}/snapshots" };
   }
 
   // Creates a snapshot from the requested subscription.
   // If the snapshot already exists, returns `ALREADY_EXISTS`.
   // If the requested subscription doesn't exist, returns `NOT_FOUND`.
+  // If the backlog in the subscription is too old -- and the resulting snapshot
+  // would expire in less than 1 hour -- then `FAILED_PRECONDITION` is returned.
+  // See also the `Snapshot.expire_time` field.
   //
   // If the name is not provided in the request, the server will assign a random
   // name for this snapshot on the same project as the subscription, conforming
   // to the
-  // [resource name format](https://cloud.google.com/pubsub/docs/overview#names).
-  // The generated name is populated in the returned Snapshot object.
-  // Note that for REST API requests, you must specify a name in the request.
+  // [resource name
+  // format](https://cloud.google.com/pubsub/docs/overview#names). The generated
+  // name is populated in the returned Snapshot object. Note that for REST API
+  // requests, you must specify a name in the request.
   rpc CreateSnapshot(CreateSnapshotRequest) returns (Snapshot) {
-    option (google.api.http) = {
-      put: "/v1/{name=projects/*/snapshots/*}"
-      body: "*"
-    };
+    option (google.api.http) = { put: "/v1/{name=projects/*/snapshots/*}" body: "*" };
   }
 
-  // Updates an existing snapshot. Note that certain properties of a snapshot
-  // are not modifiable.
-  // NOTE:  The style guide requires body: "snapshot" instead of body: "*".
-  // Keeping the latter for internal consistency in V1, however it should be
-  // corrected in V2.  See
-  // https://cloud.google.com/apis/design/standard_methods#update for details.
+  // Updates an existing snapshot. Note that certain properties of a
+  // snapshot are not modifiable.
   rpc UpdateSnapshot(UpdateSnapshotRequest) returns (Snapshot) {
-    option (google.api.http) = {
-      patch: "/v1/{snapshot.name=projects/*/snapshots/*}"
-      body: "*" };
+    option (google.api.http) = { patch: "/v1/{snapshot.name=projects/*/snapshots/*}" body: "*" };
   }
 
   // Removes an existing snapshot. All messages retained in the snapshot
@@ -191,18 +155,13 @@ service Subscriber {
   // created with the same name, but the new one has no association with the old
   // snapshot or its subscription, unless the same subscription is specified.
   rpc DeleteSnapshot(DeleteSnapshotRequest) returns (google.protobuf.Empty) {
-    option (google.api.http) = {
-      delete: "/v1/{snapshot=projects/*/snapshots/*}"
-    };
+    option (google.api.http) = { delete: "/v1/{snapshot=projects/*/snapshots/*}" };
   }
 
   // Seeks an existing subscription to a point in time or to a given snapshot,
   // whichever is provided in the request.
   rpc Seek(SeekRequest) returns (SeekResponse) {
-    option (google.api.http) = {
-      post: "/v1/{subscription=projects/*/subscriptions/*}:seek"
-      body: "*"
-    };
+    option (google.api.http) = { post: "/v1/{subscription=projects/*/subscriptions/*}:seek" body: "*" };
   }
 }
 
@@ -211,53 +170,35 @@ service Subscriber {
 service Publisher {
   // Creates the given topic with the given name.
   rpc CreateTopic(Topic) returns (Topic) {
-    option (google.api.http) = {
-      put: "/v1/{name=projects/*/topics/*}"
-      body: "*"
-    };
+    option (google.api.http) = { put: "/v1/{name=projects/*/topics/*}" body: "*" };
   }
 
-  // Updates an existing topic. Note that certain properties of a topic are not
-  // modifiable.  Options settings follow the style guide:
-  // NOTE:  The style guide requires body: "topic" instead of body: "*".
-  // Keeping the latter for internal consistency in V1, however it should be
-  // corrected in V2.  See
-  // https://cloud.google.com/apis/design/standard_methods#update for details.
+  // Updates an existing topic. Note that certain properties of a
+  // topic are not modifiable.
   rpc UpdateTopic(UpdateTopicRequest) returns (Topic) {
-    option (google.api.http) = {
-      patch: "/v1/{topic.name=projects/*/topics/*}"
-      body: "*" };
+    option (google.api.http) = { patch: "/v1/{topic.name=projects/*/topics/*}" body: "*" };
   }
 
   // Adds one or more messages to the topic. Returns `NOT_FOUND` if the topic
   // does not exist. The message payload must not be empty; it must contain
   //  either a non-empty data field, or at least one attribute.
   rpc Publish(PublishRequest) returns (PublishResponse) {
-    option (google.api.http) = {
-      post: "/v1/{topic=projects/*/topics/*}:publish"
-      body: "*"
-    };
+    option (google.api.http) = { post: "/v1/{topic=projects/*/topics/*}:publish" body: "*" };
   }
 
   // Gets the configuration of a topic.
   rpc GetTopic(GetTopicRequest) returns (Topic) {
-    option (google.api.http) = {
-      get: "/v1/{topic=projects/*/topics/*}"
-    };
+    option (google.api.http) = { get: "/v1/{topic=projects/*/topics/*}" };
   }
 
   // Lists matching topics.
   rpc ListTopics(ListTopicsRequest) returns (ListTopicsResponse) {
-    option (google.api.http) = {
-      get: "/v1/{project=projects/*}/topics"
-    };
+    option (google.api.http) = { get: "/v1/{project=projects/*}/topics" };
   }
 
   // Lists the name of the subscriptions for this topic.
   rpc ListTopicSubscriptions(ListTopicSubscriptionsRequest) returns (ListTopicSubscriptionsResponse) {
-    option (google.api.http) = {
-      get: "/v1/{topic=projects/*/topics/*}/subscriptions"
-    };
+    option (google.api.http) = { get: "/v1/{topic=projects/*/topics/*}/subscriptions" };
   }
 
   // Deletes the topic with the given name. Returns `NOT_FOUND` if the topic
@@ -266,9 +207,7 @@ service Publisher {
   // configuration or subscriptions. Existing subscriptions to this topic are
   // not deleted, but their `topic` field is set to `_deleted-topic_`.
   rpc DeleteTopic(DeleteTopicRequest) returns (google.protobuf.Empty) {
-    option (google.api.http) = {
-      delete: "/v1/{topic=projects/*/topics/*}"
-    };
+    option (google.api.http) = { delete: "/v1/{topic=projects/*/topics/*}" };
   }
 }
 
@@ -430,7 +369,8 @@ message Subscription {
   // For pull subscriptions, this value is used as the initial value for the ack
   // deadline. To override this value for a given message, call
   // `ModifyAckDeadline` with the corresponding `ack_id` if using
-  // pull.
+  // non-streaming pull or send the `ack_id` in a
+  // `StreamingModifyAckDeadlineRequest` if using streaming pull.
   // The minimum custom deadline you can specify is 10 seconds.
   // The maximum custom deadline you can specify is 600 seconds (10 minutes).
   // If this parameter is 0, a default value of 10 seconds is used.
@@ -560,7 +500,7 @@ message ModifyPushConfigRequest {
   // An empty `pushConfig` indicates that the Pub/Sub system should
   // stop pushing messages from the given subscription and allow
   // messages to be pulled and acknowledged - effectively pausing
-  // the subscription if `Pull` is not called.
+  // the subscription if `Pull` or `StreamingPull` is not called.
   PushConfig push_config = 2;
 }
 
@@ -692,6 +632,9 @@ message CreateSnapshotRequest {
   //      successful completion of the CreateSnapshot request.
   // Format is `projects/{project}/subscriptions/{sub}`.
   string subscription = 2;
+
+  // User labels.
+  map<string, string> labels = 3;
 }
 
 // Request for the UpdateSnapshot method.
@@ -720,7 +663,8 @@ message Snapshot {
   // For example, consider a subscription whose oldest unacked message is 3 days
   // old. If a snapshot is created from this subscription, the snapshot -- which
   // will always capture this 3-day-old backlog as long as the snapshot
-  // exists -- will expire in 4 days.
+  // exists -- will expire in 4 days. The service will refuse to create a
+  // snapshot that would expire in less than 1 hour after creation.
   google.protobuf.Timestamp expire_time = 3;
 
   // User labels.
