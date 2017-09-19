@@ -1,0 +1,1001 @@
+// Copyright 2017 Google Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.datahub.v2;
+
+import "google/api/annotations.proto";
+import "google/cloud/datahub/v2/annotation_group.proto";
+import "google/cloud/datahub/v2/id.proto";
+import "google/cloud/datahub/v2/mendel_specs.proto";
+import "google/cloud/datahub/v2/plx_specs.proto";
+import "google/cloud/datahub/v2/table_spec.proto";
+import "google/cloud/datahub/v2/tableau_specs.proto";
+import "google/iam/v1/policy.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option cc_enable_arenas = true;
+option go_package = "google.golang.org/genproto/googleapis/cloud/datahub/v2;datahub";
+option java_multiple_files = true;
+option java_package = "com.google.cloud.datahub";
+
+
+// V2 APIs for Datahub service.
+service Datahub2 {
+  // Creates or updates an entry in Datahub. The corresponding dataset
+  // should exist already for entry creation to succeed.
+  rpc CreateEntry(CreateEntryRequest) returns (Entry) {
+    option (google.api.http) = { post: "/v2/{parent=projects/*/datasets/*}/entries" body: "entry" };
+  }
+
+  // Deletes an entry.
+  rpc DeleteEntry(DeleteEntryRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v2/{name=projects/*/datasets/*/entries/*}" };
+  }
+
+  // Reads an entry.
+  rpc GetEntry(GetEntryRequest) returns (Entry) {
+    option (google.api.http) = { get: "/v2/{name=projects/*/datasets/*/entries/*}" };
+  }
+
+  // Lists all entries under a given dataset.
+  rpc ListEntries(ListEntriesRequest) returns (ListEntriesResponse) {
+    option (google.api.http) = { get: "/v2/{parent=projects/*/datasets/*}/entries" };
+  }
+
+  // Reads a dataset.
+  rpc GetDataset(GetDatasetRequest) returns (Dataset) {
+    option (google.api.http) = { get: "/v2/{name=projects/*/datasets/*}" };
+  }
+
+  // Creates a template in Datahub. This will fail if the template already
+  // eixsts or if the caller does not have permission to create entries within
+  // the given project.
+  rpc CreateAnnotationTemplate(CreateAnnotationTemplateRequest) returns (AnnotationTemplate);
+
+  // Deletes the given template, and all associated annotations, atomically.
+  // Caller must be the owner of the template.
+  rpc DeleteAnnotationTemplate(DeleteAnnotationTemplateRequest) returns (google.protobuf.Empty);
+
+  // Updates annotation groups for an entry by
+  //  - adding new groups and/or
+  //  - replacing existing groups and/or
+  //  - deleting existing groups
+  rpc UpdateEntryAnnotationGroups(UpdateEntryAnnotationGroupsRequest) returns (UpdateEntryAnnotationGroupsResponse);
+
+  // Searches for entries/datasets that match a query.
+  rpc SearchEntries(SearchEntriesRequest) returns (SearchEntriesResponse) {
+    option (google.api.http) = { get: "/v2/entries:search" };
+  }
+
+  // List starred, archived, recently accessed, or my assets.
+  rpc List(ListRequest) returns (ListResponse) {
+    option (google.api.http) = { get: "/v2/list" };
+  }
+
+  // Updates personal information for an entry, such as star, last access time
+  // etc.
+  rpc UpdateEntryPersonalSpec(UpdateEntryPersonalSpecRequest) returns (PersonalSpec) {
+    option (google.api.http) = { patch: "/v2/{name=projects/*/datasets/*/entries/*}/personalSpec" body: "personal_spec" };
+  }
+
+  // Grant access for an entry A. Entry A must exist in the database.
+  // Appends the ACL bindings in the request to the existing entry.
+  rpc GrantEntryAcl(GrantEntryAclRequest) returns (GrantEntryAclResponse) {
+    option (google.api.http) = { post: "/v2/{name=projects/*/datasets/*/entries/*}:grantAcl" body: "*" };
+  }
+
+  // Revokes access for an entry A. Entry A must exist in the database.
+  // Removes the ACL bindings in the request from the existing entry.
+  rpc RevokeEntryAcl(RevokeEntryAclRequest) returns (RevokeEntryAclResponse) {
+    option (google.api.http) = { post: "/v2/{name=projects/*/datasets/*/entries/*}:revokeAcl" body: "*" };
+  }
+
+  // Updates contents of a collection
+  rpc UpdateCollection(UpdateCollectionRequest) returns (CollectionSpec) {
+    option (google.api.http) = { patch: "/v2/collection:update" body: "*" };
+  }
+
+  // Lists entries and subfolders immediately under a folder of a collection,
+  // along with basic entry information including type, display name and
+  // personal spec.
+  rpc ListCollectionFolderEntries(ListCollectionFolderEntriesRequest) returns (ListCollectionFolderEntriesResponse) {
+    option (google.api.http) = { post: "/v2/folder:list" body: "*" };
+  }
+
+  // Request to inform that an entry source is viewed by the user in user
+  // context.
+  rpc TouchEntry(TouchEntryRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { get: "/v2/{name=projects/*/datasets/*/entries/*}:touch" };
+  }
+}
+
+// Request to create/update an entry. The corresponding dataset
+// should exist already for entry creation to succeed.
+message CreateEntryRequest {
+  // The parent resource name where the entry to be created. It can be url
+  // format e.g. 'projects/a/datasets/b' or fully quailified id format e.g.
+  // "a.b".
+  string parent = 1;
+
+  // The id for the entry to be created.
+  // For Collection type: Can be empty to allow the system to generate one.
+  string entry_local_id = 2;
+
+  // Type of the entry.
+  EntryType type = 3;
+
+  // Information required for creating an entry in Datahub.
+  //
+  // Setting entry ACL:
+  // If 'entry.entry_acl' is not set, then the following happens:
+  // 1. When creating a new entry, entry owner will be set to the authenticated
+  //    user.
+  // 2. When updating an existing entry, ACL remains unchanged.
+  // If 'entry.entry_acl' is set, then it will become the entry's ACL when the
+  // request succeeds.
+  EntrySpec entry = 4;
+
+  // If set to true and the entry already exists, overwrites the existing one.
+  // If modify_time in managing system stats is set, Datahub will reject
+  // older overwrite request for the purpose of synchronization.
+  bool allow_overwrite = 5;
+
+  // Ignore modify_time from managing system stats when overwriting the entry.
+  bool disable_modify_time_check = 6;
+}
+
+// Request to delete an entry.
+message DeleteEntryRequest {
+  // The resource name of the entry to be deleted. It can be url
+  // format e.g. "projects/foo/datasets/bar/entries/baz" or fully quailified id
+  // format "foo.bar.baz".
+  string name = 1;
+
+  // Deletion timestamp reported by source/managing system. It will be recorded
+  // in managing system info.
+  google.protobuf.Timestamp managing_system_delete_time = 2;
+}
+
+// Request to get an entry.
+message GetEntryRequest {
+  // The field will contain the name of the requested entry. It can be
+  // url format e.g: "projects/foo/datasets/bar/entries/baz" or fully qualified
+  // id format "foo.bar.baz".
+  string name = 1;
+
+  // If the mask is not specified, all contents will be read and returned.
+  // If set, only specified contents will be read and returned.
+  google.protobuf.FieldMask field_mask = 2;
+
+  // If not set, all accessible annotations will be read and returned.
+  // If set, only specified annotations will be read and returned.
+  repeated string annotation_groups = 3;
+}
+
+// Request to get the list of entries in a dataset.
+message ListEntriesRequest {
+  // The dataset name for the listing entries. It can be url format e.g.
+  // "projects/a/datasets/b" or fully qualified id format e.g. "a.b".
+  string parent = 1;
+
+  // The maximum number of items to return. If page size is set to 0, we will
+  // use 10 as default page size.
+  int32 page_size = 2;
+
+  // The next page token value returned from a previous List request, if any.
+  string page_token = 3;
+
+  // The type of entries to be listed. If unspecified, all types are included.
+  EntryType entry_type = 4;
+
+  // If the mask is not specified, all contents will be read and returned.
+  // If set, only specified contents will be read and returned.
+  google.protobuf.FieldMask field_mask = 5;
+
+  // If not set, all accessible annotations will be read and returned.
+  // If set, only specified annotations will be read and returned.
+  repeated string annotation_groups = 6;
+}
+
+// Response of listing entries in a dataset.
+message ListEntriesResponse {
+  // Entry details.
+  repeated Entry entries = 1;
+
+  // Token to retrieve the next page of results, or empty if there are no
+  // more results in the list.
+  string next_page_token = 2;
+}
+
+// Request to get a dataset.
+message GetDatasetRequest {
+  // The field will contain the name of the requested dataset. It can be
+  // url format e.g. "projects/a/datasets/b" or fully qualified id format e.g.
+  // "a.b".
+  string name = 1;
+}
+
+// Request to update annotation group for an entry.
+// It is an error for the same group to appear in upsert and delete. This
+// call is transactional and if it fails, no updates will be applied.
+message UpdateEntryAnnotationGroupsRequest {
+  // Id of the entry.
+  EntryId id = 1;
+
+  // Adds the given annotation groups to the entry. This fails with an
+  // AlreadyExistsError if any of the given groups already exist on the entry.
+  map<string, ExtensibleAnnotationGroup> add_groups = 4;
+
+  // Updates or inserts the given groups. If the group does not exist, it
+  // is created. If the group exists, the entire group is overwritten in
+  // whole with the given group.
+  map<string, ExtensibleAnnotationGroup> upsert_groups = 2;
+
+  // Names of the groups to delete, will succeed if it does not exist.
+  repeated string delete_groups = 3;
+}
+
+// Response of updating annotation for an entry.
+message UpdateEntryAnnotationGroupsResponse {
+  // Id of the entry.
+  EntryId id = 1;
+
+  // Annotation groups of the entry after updates.
+  map<string, ExtensibleAnnotationGroup> groups = 2;
+}
+
+// Requests a new template to be created.
+message CreateAnnotationTemplateRequest {
+  // The template to create.
+  AnnotationTemplate template = 1;
+
+  // If set to true and the template already exists, overwrites the existing
+  // one.
+  bool allow_overwrite = 2;
+}
+
+// Deletes the given template.
+message DeleteAnnotationTemplateRequest {
+  // The project containing the template.
+  string project_id = 1;
+
+  // The base name of the template.
+  string template_name = 2;
+}
+
+// Request to grant acls for an entry.
+message GrantEntryAclRequest {
+  // name of the entry.
+  string name = 1;
+
+  // New bindings to be granted.
+  // These bindings will be appended to the entry's current bindings.
+  repeated google.iam.v1.Binding bindings = 2;
+}
+
+// Response for GrantEntryAcl
+message GrantEntryAclResponse {
+  // List of the updated bindings, including the bindings added through the
+  // request as well as the previously existing bindings.
+  repeated google.iam.v1.Binding bindings = 1;
+}
+
+// Request to revoke acls for an entry.
+message RevokeEntryAclRequest {
+  // name of the entry.
+  string name = 1;
+
+  // Bindings to be revoked.
+  // These bindings will be removed from entry's current bindings.
+  repeated google.iam.v1.Binding bindings = 2;
+}
+
+// Response for RevokeEntryAcl
+message RevokeEntryAclResponse {
+  // List of updated bindings after the requested bindings are removed.
+  repeated google.iam.v1.Binding bindings = 1;
+}
+
+// Proto to represent an entry in Datahub.
+message Entry {
+  // Id of the entry.
+  EntryId id = 1;
+
+  // Type of the entry.
+  EntryType type = 2;
+
+  // Specification of the entry.
+  EntrySpec entry_spec = 4;
+
+  // System generated timestamp and status information.
+  SystemStats stats = 6;
+
+  // Data associated with the entry personalized to the current user.
+  PersonalSpec personal_spec = 7;
+}
+
+// Proto to represent a dataset.
+message Dataset {
+  // The id of the dataset.
+  DatasetId id = 1;
+
+  // Specification of the dataset.
+  DatasetSpec dataset_spec = 3;
+
+  // System generated timestamp and status information.
+  SystemStats stats = 4;
+}
+
+// Labels for GCP.
+message CloudLabel {
+  // Each label is a key-value pair.
+  map<string, string> labels = 1;
+}
+
+// Specification of an entry.
+message EntrySpec {
+  // Display info such as title and description.
+  DisplayInfo display_info = 1;
+
+  // Type-specific information.
+  TypeSpec type_spec = 2;
+
+  // Info about the managing system that integrates with Datahub.
+  ManagingSystemInfo managing_system_info = 3;
+
+  // Retention policy and config on the entry.
+  EntryRetentionInfo retention_info = 4;
+
+  // The list of cloud labels for this entry.
+  CloudLabel cloud_label = 7;
+}
+
+// This message contains entry type specific information about the entry.
+message TypeSpec {
+  // Type specific information.
+  oneof spec {
+    // Spec that applies to table entry.
+    TableSpec table_spec = 1;
+
+    // Spec that applies to collection entry.
+    CollectionSpec collection_spec = 2;
+
+    // Spec that applies to data stream entry.
+    DataStreamSpec data_stream_spec = 14;
+  }
+}
+
+// A spec for a DATA_STREAM entry type.
+message DataStreamSpec {
+
+}
+
+// Retention policy and configs on the entry.
+message EntryRetentionInfo {
+  // The expiration time for the entry.
+  // Empty message indicates no expiration time.
+  google.protobuf.Timestamp expire_time = 1;
+}
+
+// Retention policy and configs on the dataset.
+message DatasetRetentionInfo {
+  // Duration which should be added to the creation time to
+  // determine the expiration time for newly created entries
+  // contained in the dataset.
+  google.protobuf.Duration default_expiration = 1;
+}
+
+// Specification of a dataset.
+message DatasetSpec {
+  // Display info such as title and description.
+  DisplayInfo display_info = 1;
+
+  // Retention policy and config on the dataset.
+  DatasetRetentionInfo retention_info = 2;
+
+  // Info about the managing system that integrates with Datahub.
+  // Only for BigQuery EAP. Will be gone after migration.
+  ManagingSystemInfo managing_system_info = 3;
+
+  // The ACL on the dataset. If this is updated in the same request as other
+  // fields, it is possible that ACL is updated while others are not.
+  Acl dataset_acl = 4;
+
+  // The region of the dataset.
+  string region = 5;
+
+  // The list of cloud labels for this dataset.
+  CloudLabel cloud_label = 6;
+}
+
+// System generated stats for the entry/dataset. This is read-only.
+message SystemStats {
+  // The creation time.
+  google.protobuf.Timestamp create_time = 1;
+
+  // The last modified time.
+  google.protobuf.Timestamp modify_time = 2;
+}
+
+// Information for displaying all entries in a human-readable way
+message DisplayInfo {
+  // The human-readable name of an entry. This should be a short
+  // phrase identifying the entry (e.g., "Analytics Data - Jan 2011").
+  string display_name = 1;
+
+  // The description of an entry. This can be several sentences or paragraphs
+  // describing the contents in detail.
+  string description = 2;
+}
+
+// Describes the ACL on a dataset or entry.
+message Acl {
+  // Associates a list of 'members' to a 'role'.  Multiple 'bindings' must not
+  // be specified for the same 'role'.  'bindings' with no members will result
+  // in an error.
+  //
+  // For entries and datasets, valid roles are:
+  //   "roles/datahub.peeker"
+  //   "roles/datahub.annotator"
+  //   "roles/datahub.reader"
+  //   "roles/datahub.entryWriter"
+  //   "roles/datahub.owner"
+  //   "roles/datahub.datasetUser"
+  //   "roles/datahub.bigqueryDataEditor"
+  repeated google.iam.v1.Binding bindings = 5;
+}
+
+// Info about the managing system integrated with Datahub.
+message ManagingSystemInfo {
+  // The system that manages the data asset this entry refers to.
+  ManagingSystem managing_system = 1;
+
+  // Stats for the entry reported by managing system.
+  ManagingSystemStats stats = 2;
+}
+
+// Stats for the entry reported by managing system.
+message ManagingSystemStats {
+  // The creation time.
+  google.protobuf.Timestamp create_time = 1;
+
+  // The last modified time.
+  google.protobuf.Timestamp modify_time = 2;
+}
+
+// SortSpec provides specification for order of entries returned in the
+// response eg: order based upon relevancy, last modification timestamp, etc.
+message SortSpec {
+  // Sort Type provides the field to use for ordering list entries.
+  enum Type {
+    // Default value.  The default sort order can be based upon the API.
+    // For SearchEntriesRequest, default sort type is RELEVANCE.
+    // For ListRequest,
+    //   Default sort type is LAST_MODIFIED_TIMESTAMP.
+    //   If personalTypeFilter has RECENTS, default is LAST_ACCESS_TIME.
+    UNSPECIFIED_SORT = 0;
+
+    // Sort based upon relevance score.
+    RELEVANCE = 1;
+
+    // If last modified timestamp is present in source system stats proto then
+    // it will be used, otherwise datahub's last modified timestamp will be
+    // used.
+    LAST_MODIFIED_TIMESTAMP = 2;
+
+    // Sort based upon title of the entry.
+    TITLE = 3;
+
+    // Sort based upon last access time of the current user.
+    LAST_ACCESS_TIME = 4;
+  }
+
+  // Order provides the ordering relation for list of entries.
+  enum Order {
+    // Use descending order of <sort_type> values (Default option).
+    DESCENDING = 0;
+
+    // Use ascending order of <sort_type> values.
+    ASCENDING = 1;
+  }
+
+  // Type of the sort.
+  Type type = 1;
+
+  // Sort order to be used.
+  Order order = 2;
+}
+
+// Request to search the Datahub catalog.
+message SearchEntriesRequest {
+  // The query string in search query syntax. The query must be non-empty.
+  string query = 1;
+
+  // Number of results in the search page. If <=0 then defaults to 10.
+  int32 page_size = 2;
+
+  // Token that specifies which page is requested. If empty then the first page
+  // is returned.
+  string page_token = 3;
+
+  // SortSpec for the search request.
+  // Defult Sort Spec is
+  //     type: RELEVANCE
+  //     order: DESCENDING
+  SortSpec sort_spec = 7;
+
+  // If selector_spec is set then search results will be filtered based on
+  // selectors, otherwise all matching results will be returned.
+  SelectorSpec selector_spec = 8;
+
+  // If true, the search is restricted to publicly shared entries.
+  // By default it is false.
+  bool aau_entries_only = 5;
+
+  // If true, then similar results are collapsed.
+  bool collapse_results = 6;
+}
+
+// Dataset specific information in the search result.
+message DatasetResult {
+  // Id of the dataset.
+  DatasetId id = 1;
+}
+
+// Entry specific information in the search result.
+message EntryResult {
+  // Type of the entry.
+  EntryType type = 1;
+
+  // Subtype of the datahub entry.
+  oneof subtype {
+    // Table source type.
+    TableSourceType table_source_type = 2;
+  }
+
+  // Id of the entry.
+  EntryId id = 3;
+}
+
+// A result that appears in the response of a search request.
+message SearchResult {
+  // Type specific information for the result.
+  oneof result_type {
+    // Dataset specific information.
+    DatasetResult dataset = 1;
+
+    // Entry specific information.
+    EntryResult entry = 2;
+  }
+
+  // Name section for the search result.
+  // section <txt_value> contains name of the entry.
+  ResultSection name = 5;
+
+  // Title section for the search result.
+  // section <txt_value> contains display name of the entry.
+  ResultSection title = 6;
+
+  // Project id section for the search result.
+  // section <txt_value> contains project_id of the entry.
+  ResultSection project_id = 7;
+
+  // Description section for the search result.
+  // section <txt_value> contains full text of the description.
+  ResultSection description = 8;
+
+  // Cloud Label section for the search result.
+  // This section contains information about all cloud labels of the entry.
+  // section <txt_value> contains text representation of cloud labels in the
+  // following format:
+  //       "<Label-name>: <value>", one label per line.
+  ResultSection cloud_labels = 9;
+
+  // Not all values are returned in the search response by default, eg: table
+  // schema, columns, etc.
+  //
+  // Type specific information in the search result.
+  oneof type_specific_sections {
+    // Table Specific related information in the search result.
+    TableSpecSection table = 10;
+  }
+
+  // If this result is a collapse of concrete results then this field provides
+  // information on the individual results. In this case, the remaining fields
+  // for the search result are filled from the first result in the list of
+  // collapsed entries.
+  ResultSection collapsed_entries = 11;
+
+  // Personal data for the entry
+  PersonalSpec personal_spec = 13;
+}
+
+// Table Specific information in the search result.
+message TableSpecSection {
+  // Result section for all column names.
+  // By default column_names are not returned in the response.
+  ResultSection column_names = 1;
+
+  // Result section for all column descriptions.
+  // By default column descriptions are not returned in the response.
+  ResultSection column_descriptions = 2;
+}
+
+// ResultSection contains attributes of a section of the search result. A
+// section of the search result could be defined as logical division of entry
+// which can be handled separately by Search UI (or any clients to Search API).
+// For example,
+//    - "description" section contains attributes of description of entry (eg:
+//    value of description, snippet, etc.).
+//    - "cloud labels" section contains attributes of cloud labels of an entry.
+message ResultSection {
+  // Represents value of the section.
+  // This is not the actual (RAW) value of the field, and clients need to use
+  // Get API(GetDataset, GetEntry) to fetch the actual value.
+  oneof kind {
+    // Represents string value.
+    string txt_value = 1;
+
+    // Represents int value.
+    int64 int_value = 2;
+
+    // Value for collapsed_entries.
+    CollapsedEntryValue collapsed_entries_value = 3;
+  }
+
+  // Snippet for the section based upon user query.
+  // Snippet is the formatted representation of the value highlighting terms
+  // which matched the query (using HTML tags).
+  // This will be empty if there are no matches for the query.
+  string snippet = 4;
+}
+
+// Describes collapsed entries in the SearchResult.
+message CollapsedEntryValue {
+  // Collapsed entry details.
+  message CollapsedEntry {
+    // Name of the collapsed entry.
+    string name = 1;
+
+    // Id of the collapsed entry.
+    EntryId entry_id = 2;
+
+    // Date substitution of the collapsed entry.
+    //
+    // eg: If the entry's name is foo_20120101 then <date> substitution would be
+    // "20120101".
+    string date = 3;
+  }
+
+  // The list of collapsed entries.
+  repeated CollapsedEntry entries = 1;
+}
+
+// Response to a search request.
+message SearchEntriesResponse {
+  // Search results in descending order of relevance.
+  repeated SearchResult results = 1;
+
+  // The (approximate) total number of entries matched for the query.
+  int32 total_size = 2;
+
+  // The token that can be used to retrieve the next page of results.
+  string next_page_token = 3;
+
+  // Result stats.
+  ResultStats result_stats = 4;
+}
+
+// The collection of facets that describe the search results.
+message ResultStats {
+  // The top project ids that appear in the results. The key is the project id
+  // and the value is the number of results that correspond to this project id.
+  map<string, int32> top_project_ids = 1;
+
+  // The top types that appear in the results. The key is a string token for
+  // the type that can be passed directly to the "type:" predicate of the search
+  // language. The value is the number of results that have this type.
+  map<string, int32> top_types = 2;
+}
+
+// FilterSpec provides specification to filter a list of entries based on
+// different criteria. Criteria are joined with AND operation.
+message FilterSpec {
+  // Filters of personal feature
+  enum PersonalFilter {
+    // Assets created by me
+    MY_ASSETS = 0;
+
+    // Starred assets
+    STARS = 1;
+
+    // Assets accessed by the user, in reverse order of access time
+    RECENTS = 2;
+
+    // Archived assets
+    ARCHIVES = 3;
+
+    // Assets visible to me but not created by me.
+    SHARED_WITH_ME = 4;
+  }
+
+  // Types of personal features to be returned.
+  repeated PersonalFilter personal_type_filter = 1;
+}
+
+// SelectorSpec provides specification to select in a list of entries based on
+// different criteria, eg: entry type. Criteria are joined with OR operation.
+message SelectorSpec {
+  // Specifies type of resource (entry or dataset) to be returned in the list
+  // response.
+  enum TypeSelector {
+    option allow_alias = true;
+    // Dataset entries.
+    DATASET = 0;
+
+    // The type of entry that has a GoogleSQL schema, including logical views.
+    TABLE = 1;
+
+    // Collection type
+    COLLECTION = 4;
+
+    // A stream of data, e.g., pubsub topic.
+    DATA_STREAM = 14;
+  }
+
+  // Type(s) of the resource (entries or datasets) to be returned. If this list
+  // is empty then all resource types will be returned.
+  repeated TypeSelector type_selector = 1;
+}
+
+// Request for List calls.
+message ListRequest {
+  // FilterSpec for the list request.
+  FilterSpec filter_spec = 1;
+
+  // SelectorSpec for the list request.
+  SelectorSpec selector_spec = 2;
+
+  // SortSpec for the list request.
+  // Defult Sort Spec is
+  //     type: LAST_MODIFIED_TIMESTAMP
+  //     order: DESCENDING
+  SortSpec sort_spec = 3;
+
+  // Number of items requested. If <=0 then defaults to 10.
+  int32 page_size = 4;
+
+  // Token to specify which page to be returned.  If it is set to empty first
+  // page is returned.
+  string page_token = 5;
+}
+
+// An item that appears in the List Response.
+message Item {
+  // Type specific information of the item.
+  oneof item_type {
+    // Dataset specific information.
+    DatasetResult dataset = 1;
+
+    // Entry specific information.
+    EntryResult entry = 2;
+  }
+
+  // Onwer of the item, e.g. user:abc@gmail.com
+  repeated string owner = 3;
+
+  // Description of the entry.
+  string description = 4;
+
+  // Display name of the entry.
+  string display_name = 5;
+
+  // If last modified timestamp is present in source system stats proto then
+  // it will be used, otherwise datahub's last modified timestamp will be
+  // used.
+  google.protobuf.Timestamp modify_time = 6;
+
+  // Personal data for the entry
+  PersonalSpec personal_spec = 7;
+}
+
+// Response to a list request.
+message ListResponse {
+  // list of items.
+  repeated Item item = 1;
+
+  // The total number of items returned.
+  int32 total_size = 2;
+
+  // Token to fetch next page of results. It will be set to empty if there are
+  // no more items in the list.
+  string next_page_token = 3;
+}
+
+// Request to update personal spec of an entry.
+// For partial update, use update_mask.
+message UpdateEntryPersonalSpecRequest {
+  // The resource name of the entry to be updated. It can be url
+  // format e.g. "projects/foo/datasets/bar/entries/baz" or fully quailified id
+  // format "foo.bar.baz".
+  string name = 1;
+
+  // Personal info to update.
+  PersonalSpec personal_spec = 2;
+
+  // Mask to control which fields get updated. Updates all if not present.
+  google.protobuf.FieldMask update_mask = 3;
+}
+
+// Personal information for an entry.
+message PersonalSpec {
+  // Whether this entry is starred by the user.
+  bool starred = 1;
+
+  // Time recently viewed by the user. Is unset if never viewed.
+  google.protobuf.Timestamp recent_view_time = 2;
+
+  // Whether this entry is archived.
+  bool archived = 3;
+
+  // Whether the current user has datahub.entries.update permission.
+  // This field is derived from entry acl and user role. Update on it will be
+  // ignored.
+  bool can_update = 11;
+}
+
+// The spec for collection-typed entry.
+// Design doc: go/datahub-collection-eng
+message CollectionSpec {
+  // List of folders for a collection.
+  repeated Folder folders = 1;
+}
+
+// Folder path and content in a collection.
+message Folder {
+  // Full folder path, e.g., "/f_1/f_2". Root is "/"
+  // When a path /f_1/f_2/f_3 is added, {/f_1, /f_1/f_2,
+  // /f_1/f_2/f_3} will also be added if not already exist.
+  string folder_path = 1;
+
+  // Entry ids in a folder.  Can be empty for an empty folder.
+  repeated EntryId entry_ids = 2;
+}
+
+// Request to update contents of a collection.
+// Note:
+// 1. Updates will follow the listed order (add_folder, update_folder,
+// delete_folder, upsert_entry, then delete_entry).
+// 2. All folder paths are absolute paths, e.g., "/f_1/f_2". Root is "/"
+// 3. When a path /f_1/f_2/f_3 is added, {/f_1, /f_1/f_2, /f_1/f_2/f_3} will
+// also be added if not already exist.
+message UpdateCollectionRequest {
+  // Id of collection to update.
+  EntryId collection_id = 1;
+
+  // List of colleciton updates. Updates will follow the list order.
+  repeated CollectionUpdate updates = 2;
+}
+
+// A collection update operation.
+message CollectionUpdate {
+  // Path pair for update_folder_path
+  message PathPair {
+    // The original path of the folder
+    string original_path = 1;
+
+    // The new path to move to
+    string new_path = 2;
+  }
+
+  // One of the update type.
+  oneof update {
+    // Insert a folder with listed entries. If the folder of a given path
+    // already exists, new entries will be appended. If an entry listed already
+    // exists, it will be moved to the new folder.
+    Folder upsert_folder = 1;
+
+    // Update the path of a folder.
+    // Everything under original folder path will also be moved to new path.
+    // Fail if new path already exists.
+    PathPair update_folder_path = 2;
+
+    // Delete a folder and remove underlying entries from the collection,
+    // including subfolders.
+    string delete_folder = 3;
+
+    // Remove an entry from the collection. Note: The actual entry is not
+    // deleted.
+    EntryId delete_entry = 4;
+  }
+}
+
+// Request for List calls.
+message ListCollectionFolderEntriesRequest {
+  // Collection id.
+  EntryId collection_id = 1;
+
+  // Absolute folder path. "/" is root.
+  string folder_path = 2;
+
+  // SelectorSpec for the list request.
+  SelectorSpec selector_spec = 3;
+
+  // Number of items requested. If <=0 then defaults to 10.
+  int32 page_size = 5;
+
+  // Token to specify which page to be returned.  If it is set to empty first
+  // page is returned.
+  string page_token = 6;
+}
+
+// Response to a list request.
+message ListCollectionFolderEntriesResponse {
+  // List of items.
+  repeated Item item = 1;
+
+  // Folder names immediately under the request folder and count of containing
+  // items and sub-folders, non-recursive.
+  map<string, int32> subfolder_items = 2;
+
+  // The total number of items returned.
+  int32 total_size = 3;
+
+  // Token to fetch next page of results. It will be set to empty if there are
+  // no more items in the list.
+  string next_page_token = 4;
+}
+
+// Request to inform that an entry source is viewed by a user. The user info is
+// obtained through the user context.
+message TouchEntryRequest {
+  // The name of the requested entry. It can be url format e.g:
+  // "projects/foo/datasets/bar/entries/baz" or fully qualified id format
+  // "foo.bar.baz".
+  string name = 1;
+}
+
+// Type of the entry.
+enum EntryType {
+  option allow_alias = true;
+  // Default unknown type
+  ENTRY_TYPE_UNKNOWN = 0;
+
+  // The type of entry that has a GoogleSQL schema, including logical views.
+  TABLE = 1;
+
+  // The type of entry that represents a group of entries.
+  COLLECTION = 4;
+
+  // A stream of data, e.g., pubsub topic.
+  DATA_STREAM = 14;
+}
+
+// The system that manages the entry.
+enum ManagingSystem {
+  // Unspecified.
+  MANAGING_SYSTEM_UNKNOWN = 0;
+
+  // Special value indicating that entry is not managed by any of the systems
+  // below.
+  MANUAL = 1;
+
+  // BigQuery.
+  BIGQUERY = 2;
+}
