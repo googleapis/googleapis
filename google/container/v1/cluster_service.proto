@@ -195,6 +195,11 @@ service ClusterManager {
   rpc SetNetworkPolicy(SetNetworkPolicyRequest) returns (Operation) {
     option (google.api.http) = { post: "/v1/projects/{project_id}/zones/{zone}/clusters/{cluster_id}:setNetworkPolicy" body: "*" };
   }
+
+  // Sets the maintenance policy for a cluster.
+  rpc SetMaintenancePolicy(SetMaintenancePolicyRequest) returns (Operation) {
+    option (google.api.http) = { post: "/v1/projects/{project_id}/zones/{zone}/clusters/{cluster_id}:setMaintenancePolicy" body: "*" };
+  }
 }
 
 // Parameters that describe the nodes in a cluster.
@@ -259,7 +264,7 @@ message NodeConfig {
   // the Kubernetes version -- it's best to assume the behavior is undefined
   // and conflicts should be avoided.
   // For more information, including usage and the valid values, see:
-  // http://kubernetes.io/v1.1/docs/user-guide/labels.html
+  // https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
   map<string, string> labels = 6;
 
   // The number of local SSD disks to be attached to the node.
@@ -285,6 +290,14 @@ message NodeConfig {
   // See https://cloud.google.com/compute/docs/gpus for more information about
   // support for GPUs.
   repeated AcceleratorConfig accelerators = 11;
+
+  // Minimum CPU platform to be used by this instance. The instance may be
+  // scheduled on the specified or newer CPU platform. Applicable values are the
+  // friendly names of CPU platforms, such as
+  // <code>minCpuPlatform: &quot;Intel Haswell&quot;</code> or
+  // <code>minCpuPlatform: &quot;Intel Sandy Bridge&quot;</code>. For more
+  // information, read [how to specify min CPU platform](https://cloud.google.com/compute/docs/instances/specify-min-cpu-platform)
+  string min_cpu_platform = 13;
 }
 
 // The authentication information for accessing the master endpoint.
@@ -339,6 +352,11 @@ message AddonsConfig {
 
   // Configuration for the Kubernetes Dashboard.
   KubernetesDashboard kubernetes_dashboard = 3;
+
+  // Configuration for NetworkPolicy. This only tracks whether the addon
+  // is enabled or not on the Master, it does not track whether network policy
+  // is enabled for the nodes.
+  NetworkPolicyConfig network_policy_config = 4;
 }
 
 // Configuration options for the HTTP (L7) load balancing controller addon,
@@ -363,6 +381,14 @@ message HorizontalPodAutoscaling {
 // Configuration for the Kubernetes Dashboard.
 message KubernetesDashboard {
   // Whether the Kubernetes Dashboard is enabled for this cluster.
+  bool disabled = 1;
+}
+
+// Configuration for NetworkPolicy. This only tracks whether the addon
+// is enabled or not on the Master, it does not track whether network policy
+// is enabled for the nodes.
+message NetworkPolicyConfig {
+  // Whether NetworkPolicy is enabled for this cluster.
   bool disabled = 1;
 }
 
@@ -433,52 +459,82 @@ message IPAllocationPolicy {
   // subnetwork.
   string subnetwork_name = 3;
 
+  // This field is deprecated, use cluster_ipv4_cidr_block.
+  string cluster_ipv4_cidr = 4;
+
+  // This field is deprecated, use node_ipv4_cidr_block.
+  string node_ipv4_cidr = 5;
+
+  // This field is deprecated, use services_ipv4_cidr_block.
+  string services_ipv4_cidr = 6;
+
+  // The name of the secondary range to be used for the cluster CIDR
+  // block.  The secondary range will be used for pod IP
+  // addresses. This must be an existing secondary range associated
+  // with the cluster subnetwork.
+  //
+  // This field is only applicable with use_ip_aliases is true and
+  // create_subnetwork is false.
+  string cluster_secondary_range_name = 7;
+
+  // The name of the secondary range to be used as for the services
+  // CIDR block.  The secondary range will be used for service
+  // ClusterIPs. This must be an existing secondary range associated
+  // with the cluster subnetwork.
+  //
+  // This field is only applicable with use_ip_aliases is true and
+  // create_subnetwork is false.
+  string services_secondary_range_name = 8;
+
   // The IP address range for the cluster pod IPs. If this field is set, then
   // `cluster.cluster_ipv4_cidr` must be left blank.
   //
   // This field is only applicable when `use_ip_aliases` is true.
   //
-  // Set to blank to have a range will be chosen with the default size.
+  // Set to blank to have a range chosen with the default size.
   //
-  // Set to /netmask (e.g. `/14`) to have a range be chosen with a specific
+  // Set to /netmask (e.g. `/14`) to have a range chosen with a specific
   // netmask.
   //
-  // Set to a [CIDR](http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
+  // Set to a
+  // [CIDR](http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
   // notation (e.g. `10.96.0.0/14`) from the RFC-1918 private networks (e.g.
   // `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) to pick a specific range
   // to use.
-  string cluster_ipv4_cidr = 4;
+  string cluster_ipv4_cidr_block = 9;
 
   // The IP address range of the instance IPs in this cluster.
   //
   // This is applicable only if `create_subnetwork` is true.
   //
-  // Set to blank to have a range will be chosen with the default size.
+  // Set to blank to have a range chosen with the default size.
   //
-  // Set to /netmask (e.g. `/14`) to have a range be chosen with a specific
+  // Set to /netmask (e.g. `/14`) to have a range chosen with a specific
   // netmask.
   //
-  // Set to a [CIDR](http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
+  // Set to a
+  // [CIDR](http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
   // notation (e.g. `10.96.0.0/14`) from the RFC-1918 private networks (e.g.
   // `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) to pick a specific range
   // to use.
-  string node_ipv4_cidr = 5;
+  string node_ipv4_cidr_block = 10;
 
   // The IP address range of the services IPs in this cluster. If blank, a range
   // will be automatically chosen with the default size.
   //
   // This field is only applicable when `use_ip_aliases` is true.
   //
-  // Set to blank to have a range will be chosen with the default size.
+  // Set to blank to have a range chosen with the default size.
   //
-  // Set to /netmask (e.g. `/14`) to have a range be chosen with a specific
+  // Set to /netmask (e.g. `/14`) to have a range chosen with a specific
   // netmask.
   //
-  // Set to a [CIDR](http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
+  // Set to a
+  // [CIDR](http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
   // notation (e.g. `10.96.0.0/14`) from the RFC-1918 private networks (e.g.
   // `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) to pick a specific range
   // to use.
-  string services_ipv4_cidr = 6;
+  string services_ipv4_cidr_block = 11;
 }
 
 // A Google Container Engine cluster.
@@ -617,6 +673,9 @@ message Cluster {
   // Master authorized networks is a Beta feature.
   // The configuration options for master authorized networks feature.
   MasterAuthorizedNetworksConfig master_authorized_networks_config = 22;
+
+  // Configure the maintenance policy for this cluster.
+  MaintenancePolicy maintenance_policy = 23;
 
   // [Output only] Server-defined URL for the resource.
   string self_link = 100;
@@ -808,6 +867,9 @@ message Operation {
 
     // Updates network policy for a cluster.
     SET_NETWORK_POLICY = 15;
+
+    // Set the maintenance policy.
+    SET_MAINTENANCE_POLICY = 16;
   }
 
   // The server-assigned ID for the operation.
@@ -1374,6 +1436,34 @@ message AutoUpgradeOptions {
   string description = 2;
 }
 
+// MaintenancePolicy defines the maintenance policy to be used for the cluster.
+message MaintenancePolicy {
+  // Specifies the maintenance window in which maintenance may be performed.
+  MaintenanceWindow window = 1;
+}
+
+// MaintenanceWindow defines the maintenance window to be used for the cluster.
+message MaintenanceWindow {
+  oneof policy {
+    // DailyMaintenanceWindow specifies a daily maintenance operation window.
+    DailyMaintenanceWindow daily_maintenance_window = 2;
+  }
+}
+
+// Time window specified for daily maintenance operations.
+message DailyMaintenanceWindow {
+  // Time within the maintenance window to start the maintenance operations.
+  // Time format should be in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt)
+  // format "HH:MM”, where HH : [00-23] and MM : [00-59] GMT.
+  string start_time = 2;
+
+  // [Output only] Duration of the time window, automatically chosen to be
+  // smallest possible in the given scenario.
+  // Duration will be in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt)
+  // format "PTnHnMnS".
+  string duration = 3;
+}
+
 // SetNodePoolManagementRequest sets the node management properties of a node
 // pool.
 message SetNodePoolManagementRequest {
@@ -1563,4 +1653,23 @@ message SetNetworkPolicyRequest {
 
   // Configuration options for the NetworkPolicy feature.
   NetworkPolicy network_policy = 4;
+}
+
+// SetMaintenancePolicyRequest sets the maintenance policy for a cluster.
+message SetMaintenancePolicyRequest {
+  // The Google Developers Console [project ID or project
+  // number](https://support.google.com/cloud/answer/6158840).
+  string project_id = 1;
+
+  // The name of the Google Compute Engine
+  // [zone](/compute/docs/zones#available) in which the cluster
+  // resides.
+  string zone = 2;
+
+  // The name of the cluster to update.
+  string cluster_id = 3;
+
+  // The maintenance policy to be set for the cluster. An empty field
+  // clears the existing maintenance policy.
+  MaintenancePolicy maintenance_policy = 4;
 }
