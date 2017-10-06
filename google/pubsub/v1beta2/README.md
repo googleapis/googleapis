@@ -92,26 +92,6 @@ subscription.push_config().set_push_endpoint("machinename:8888");
 Subscriber.CreateSubscription(subscription);
 ```
 
-Consuming messages via push:
-
-```data
-// The port 'machinename:8888' must be bound to a stubby server that
-// implements the PushEndpointService with the following method.
-// (This example assumes the push endpoint has a single subscription
-// called "subName", though in general a single push endpoint might
-// have multiple subscriptions.)
-
-int ProcessPushMessage(
-    ProcessPushMessageRequest request,
-    ProcessPushMessageResponse *response) {
-  if (request.subscription().equals("subscriptionName")) {
-    Process(request.message().data());
-  }
-  *response = ProcessPushMessageResponse.default();
-  return OK;  // This return code implies an acknowledgment
-}
-```
-
 Consuming messages via pull:
 
 ```data
