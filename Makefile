@@ -40,7 +40,7 @@ FLAGS+=	--plugin=protoc-gen-grpc=$(GRPCPLUGIN)
 SUFFIX:= pb.cc
 SUFFIX_SRC:= pb.cc
 SUFFIX_HDR:= pb.h
-OBJSUFFIX:= o
+SUFFIX_OBJ:= o
 
 OUTPUT_BIN:=$(OUTPUT)_obj
 
@@ -49,25 +49,24 @@ PROTOS:= $(shell find google $(PROTOINCLUDE)/google/protobuf -type f -name '*.pr
 DEPS_SRC:= $(PROTOS:.proto=.$(SUFFIX_SRC))
 DEPS_HDR:= $(PROTOS:.proto=.$(SUFFIX_HDR))
 
-OBJDEPS:= $(addprefix $(OUTPUT_BIN)/,$(PROTOS:.proto=.$(OBJSUFFIX)))
+DEPS_OBJ:= $(PROTOS:.proto=.$(SUFFIX_OBJ))
 
-#all: $(DEPS)
 all: libgoogleapis.a
 
-libgoogleapis.a: $(OBJDEPS)
+libgoogleapis.a: $(addprefix $(OUTPUT_BIN)/,$(DEPS_OBJ))
 	ar r libgoogleapis.a $?
 
-$(OUTPUT_BIN)/%.o: $(OUTPUT)/%.$(SUFFIX_SRC)
+$(OUTPUT_BIN)/%.$(SUFFIX_OBJ): $(OUTPUT)/%.$(SUFFIX_SRC) | $(addprefix $(OUTPUT)/,$(DEPS_HDR))
 	mkdir -p $(dir $@)
 	g++ -I$(OUTPUT) -c -g -O2 -o $@ $^
 
-$(OUTPUT)/%.$(SUFFIX):  %.proto
+$(OUTPUT)/%.$(SUFFIX_SRC) $(OUTPUT)/%.$(SUFFIX_HDR): %.proto
 	mkdir -p $(OUTPUT)
 	$(PROTOC) $(FLAGS) $*.proto
 
 clean:
-	rm -f $(patsubst %,$(OUTPUT)/%,$(DEPS))
+	rm -f $(patsubst %,$(OUTPUT)/%,$(DEPS_SRC)) $(patsubst %,$(OUTPUT)/%,$(DEPS_HDR))
 	rm -rfd $(OUTPUT)
-	rm -f $(patsubst %,$(OUTPUT_BIN)/%,$(OBJDEPS))
+	rm -f $(patsubst %,$(OUTPUT_BIN)/%,$(DEPS_OBJ))
 	rm -rfd $(OUTPUT_BIN)
 	rm -f libgoogleapis.a
