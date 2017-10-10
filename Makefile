@@ -13,13 +13,16 @@ OUTPUT ?= ./gens
 LANGUAGE ?= cpp
 
 # Choose grpc plugin
-GRPCPLUGIN ?= /usr/local/bin/grpc_$(LANGUAGE)_plugin
+#GRPCPLUGIN ?= /usr/bin/grpc_$(LANGUAGE)_plugin
+GRPCPLUGIN ?= /opt/build/grpc/bin/grpc_$(LANGUAGE)_plugin
 
 # Choose the proto include directory.
-PROTOINCLUDE ?= /usr/local/include
+#PROTOINCLUDE ?= /usr/include
+PROTOINCLUDE ?= /opt/build/protobuf/include
 
 # Choose protoc binary
-PROTOC ?= protoc
+#PROTOC ?= protoc
+PROTOC ?= /opt/build/protobuf/bin/protoc
 
 # Compile the entire repository
 #
@@ -35,15 +38,36 @@ FLAGS+= --$(LANGUAGE)_out=$(OUTPUT) --grpc_out=$(OUTPUT)
 FLAGS+=	--plugin=protoc-gen-grpc=$(GRPCPLUGIN)
 
 SUFFIX:= pb.cc
+SUFFIX_SRC:= pb.cc
+SUFFIX_HDR:= pb.h
+OBJSUFFIX:= o
 
-DEPS:= $(shell find google $(PROTOINCLUDE)/google/protobuf -type f -name '*.proto' | sed "s/proto$$/$(SUFFIX)/")
+OUTPUT_BIN:=$(OUTPUT)_obj
 
-all: $(DEPS)
+PROTOS:= $(shell find google $(PROTOINCLUDE)/google/protobuf -type f -name '*.proto')
 
-%.$(SUFFIX):  %.proto
+DEPS_SRC:= $(PROTOS:.proto=.$(SUFFIX_SRC))
+DEPS_HDR:= $(PROTOS:.proto=.$(SUFFIX_HDR))
+
+OBJDEPS:= $(addprefix $(OUTPUT_BIN)/,$(PROTOS:.proto=.$(OBJSUFFIX)))
+
+#all: $(DEPS)
+all: libgoogleapis.a
+
+libgoogleapis.a: $(OBJDEPS)
+	ar r libgoogleapis.a $?
+
+$(OUTPUT_BIN)/%.o: $(OUTPUT)/%.$(SUFFIX_SRC)
+	mkdir -p $(dir $@)
+	g++ -I$(OUTPUT) -c -g -O2 -o $@ $^
+
+$(OUTPUT)/%.$(SUFFIX):  %.proto
 	mkdir -p $(OUTPUT)
 	$(PROTOC) $(FLAGS) $*.proto
 
 clean:
-	rm $(patsubst %,$(OUTPUT)/%,$(DEPS)) 2> /dev/null
-	rm -rd $(OUTPUT)
+	rm -f $(patsubst %,$(OUTPUT)/%,$(DEPS))
+	rm -rfd $(OUTPUT)
+	rm -f $(patsubst %,$(OUTPUT_BIN)/%,$(OBJDEPS))
+	rm -rfd $(OUTPUT_BIN)
+	rm -f libgoogleapis.a
