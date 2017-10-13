@@ -17,7 +17,6 @@ syntax = "proto3";
 package google.cloud.functions.v1beta2;
 
 import "google/api/annotations.proto";
-import "google/api/auth.proto";
 import "google/cloud/functions/v1beta2/operations.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/duration.proto";
@@ -66,6 +65,25 @@ service CloudFunctionsService {
   rpc CallFunction(CallFunctionRequest) returns (CallFunctionResponse) {
     option (google.api.http) = { post: "/v1beta2/{name=projects/*/locations/*/functions/*}:call" body: "*" };
   }
+
+  // Returns a signed URL for uploading a function source code.
+  // For more information about the signed URL usage see:
+  // https://cloud.google.com/storage/docs/access-control/signed-urls
+  // Once the function source code upload is complete, the used signed
+  // URL should be provided in CreateFunction or UpdateFunction request
+  // as a reference to the function source code.
+  rpc GenerateUploadUrl(GenerateUploadUrlRequest) returns (GenerateUploadUrlResponse) {
+    option (google.api.http) = { post: "/v1beta2/{parent=projects/*/locations/*}/functions:generateUploadUrl" body: "*" };
+  }
+
+  // Returns a signed URL for downloading deployed function source code.
+  // The URL is only valid for a limited period and should be used within
+  // minutes after generation.
+  // For more information about the signed URL usage see:
+  // https://cloud.google.com/storage/docs/access-control/signed-urls
+  rpc GenerateDownloadUrl(GenerateDownloadUrlRequest) returns (GenerateDownloadUrlResponse) {
+    option (google.api.http) = { post: "/v1beta2/{name=projects/*/locations/*/functions/*}:generateDownloadUrl" body: "*" };
+  }
 }
 
 // Describes a Cloud Function that contains user computation executed in
@@ -77,12 +95,31 @@ message CloudFunction {
 
   // The location of the function source code.
   oneof source_code {
-    // The URL, starting with gs://, pointing to the zip archive which contains
-    // the function.
+    // The Google Cloud Storage URL, starting with gs://, pointing to the zip
+    // archive which contains the function.
     string source_archive_url = 14;
 
     // The hosted repository where the function is defined.
     SourceRepository source_repository = 3;
+
+    // The URL pointing to the hosted repository where the function is defined.
+    // There are supported Cloud Source Repository URLs in the following
+    // formats:
+    //
+    // To refer to a specific commit:
+    // `https://source.developers.google.com/projects/*/repos/*/revisions/*/paths/*`
+    // To refer to a moveable alias (branch):
+    // `https://source.developers.google.com/projects/*/repos/*/moveable-aliases/*/paths/*`
+    // In particular, to refer to HEAD use `master` moveable alias.
+    // To refer to a specific fixed alias (tag):
+    // `https://source.developers.google.com/projects/*/repos/*/fixed-aliases/*/paths/*`
+    //
+    // You may omit `paths/*` if you want to use the main directory.
+    string source_repository_url = 18;
+
+    // The Google Cloud Storage signed URL used for source uploading, generated
+    // by [google.cloud.functions.v1beta2.GenerateUploadUrl][]
+    string source_upload_url = 16;
   }
 
   // An event that triggers the function.
@@ -124,6 +161,14 @@ message CloudFunction {
 
   // Output only. The last update timestamp of a Cloud Function.
   google.protobuf.Timestamp update_time = 15;
+
+  // Output only.
+  // The version identifier of the Cloud Function. Each deployment attempt
+  // results in a new version of a function being created.
+  int64 version_id = 20;
+
+  // Labels associated with this Cloud Function.
+  map<string, string> labels = 21;
 }
 
 // Describes HTTPSTrigger, could be used to connect web hooks to function.
@@ -144,7 +189,7 @@ message EventTrigger {
   //      `providers/cloud.storage/eventTypes/object.change`
   //
   //      Handle a write to the Firebase Realtime Database
-  //      `providers/firebase.database/eventTypes/data.write`
+  //      `providers/google.firebase.database/eventTypes/ref.write`
   string event_type = 1;
 
   // Which instance of the source's service should send events. E.g. for Pub/Sub
@@ -153,6 +198,16 @@ message EventTrigger {
   // that only supports one instance per-project, this should be the name of the
   // project (`projects/*`)
   string resource = 2;
+
+  // The hostname of the service that should be observed.
+  //
+  // If no string is provided, the default service implementing the API will
+  // be used. For example, `storage.googleapis.com` is the default for all
+  // event types in the 'google.storage` namespace.
+  string service = 6;
+
+  // Specifies policy for failed executions.
+  FailurePolicy failure_policy = 5;
 }
 
 // Describes the location of the function source in a remote repository.
@@ -189,6 +244,25 @@ message SourceRepository {
   // that time. If user deployed from revision then this value will be always
   // equal to the revision specified by the user.
   string deployed_revision = 6;
+}
+
+// Describes the policy in case of function's execution failure.
+// If empty, then defaults to ignoring failures (i.e. not retrying them).
+message FailurePolicy {
+  // Describes the retry policy in case of function's execution failure.
+  // A function execution will be retried on any failure.
+  // A failed execution will be retried up to 7 days with an exponential backoff
+  // (capped at 10 seconds).
+  // Retried execution is charged as any other execution.
+  message Retry {
+
+  }
+
+  // Defines the action taken in case of a function execution failure.
+  oneof action {
+    // If specified, then the function will be retried in case of a failure.
+    Retry retry = 1;
+  }
 }
 
 // Request for the `CreateFunction` method.
@@ -241,7 +315,7 @@ message ListFunctionsResponse {
 
   // If not empty, indicates that there may be more functions that match
   // the request; this value should be passed in a new
-  // [google.cloud.functions.v1beta2.ListFunctionsRequest][]
+  // [google.cloud.functions.v1beta2.ListFunctionsRequest][google.cloud.functions.v1beta2.ListFunctionsRequest]
   // to get more functions.
   string next_page_token = 2;
 }
@@ -273,6 +347,38 @@ message CallFunctionResponse {
   // Either system or user-function generated error. Set if execution
   // was not successful.
   string error = 3;
+}
+
+// Request of `GenerateUploadUrl` method.
+message GenerateUploadUrlRequest {
+  // The project and location in which the Google Cloud Storage signed URL
+  // should be generated, specified in the format `projects/*/locations/*
+  string parent = 1;
+}
+
+// Response of `GenerateUploadUrl` method.
+message GenerateUploadUrlResponse {
+  // The generated Google Cloud Storage signed URL that should be used for a
+  // function source code upload. The uploaded file should be a zip archive
+  // which contains a function.
+  string upload_url = 1;
+}
+
+// Request of `GenerateDownloadUrl` method.
+message GenerateDownloadUrlRequest {
+  // The name of function for which source code Google Cloud Storage signed
+  // URL should be generated.
+  string name = 1;
+
+  // The optional version of function.
+  uint64 version_id = 2;
+}
+
+// Response of `GenerateDownloadUrl` method.
+message GenerateDownloadUrlResponse {
+  // The generated Google Cloud Storage signed URL that should be used for
+  // function source code download.
+  string download_url = 1;
 }
 
 // Describes the current stage of a deployment.
