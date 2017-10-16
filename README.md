@@ -7,6 +7,11 @@ Google APIs and help you to utilize them more efficiently. You can also
 use these definitions with open source tools to generate client
 libraries, documentation, and other artifacts.
 
+API client libraries can be built directly from files in this repo using
+[Artman](https://github.com/googleapis/artman). The latest generation status can
+be tracked [here](https://circleci.com/gh/googleapis/googleapis) which currently
+has status [![CircleCI](https://circleci.com/gh/googleapis/googleapis.svg?style=svg)](https://circleci.com/gh/googleapis/googleapis).
+
 For more details on all Google APIs and developer tools, see the [Google
 Developers](https://developers.google.com/products/) site.
 
