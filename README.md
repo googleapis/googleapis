@@ -47,8 +47,7 @@ better developer experience.
 
 ## Discussions
 
-Please use GitHub Issues to discuss bugs and features related to this
-repository.
+This repo contains copies of Google API definitions and related files.  For discussions or to raise issues about [Google API client libraries](https://github.com/googleapis), [GRPC](https://github.com/grpc) or [Google Cloud Client Libraries](https://github.com/googlecloudplatform) please refer to the repos associated with each area.
 
 ## Repository Structure
 
