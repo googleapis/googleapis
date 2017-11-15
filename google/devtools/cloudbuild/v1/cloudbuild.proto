@@ -17,6 +17,7 @@ syntax = "proto3";
 package google.devtools.cloudbuild.v1;
 
 import "google/api/annotations.proto";
+import "google/cloud/audit/audit_log.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
@@ -37,6 +38,9 @@ option objc_class_prefix = "GCB";
 //
 // A user can list previously-requested builds or get builds by their ID to
 // determine the status of the build.
+// //////////
+// BUILDS //
+// //////////
 service CloudBuild {
   // Starts a build with the specified configuration.
   //
@@ -102,6 +106,64 @@ service CloudBuild {
   rpc UpdateBuildTrigger(UpdateBuildTriggerRequest) returns (BuildTrigger) {
     option (google.api.http) = { patch: "/v1/projects/{project_id}/triggers/{trigger_id}" body: "trigger" };
   }
+
+  // Runs a BuildTrigger at a particular source revision.
+  rpc RunBuildTrigger(RunBuildTriggerRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = { post: "/v1/projects/{project_id}/triggers/{trigger_id}:run" body: "source" };
+  }
+
+  // Creates a new build based on the given build.
+  //
+  // This API creates a new build using the original build request,  which may
+  // or may not result in an identical build.
+  //
+  // For triggered builds:
+  //
+  // * Triggered builds resolve to a precise revision, so a retry of a triggered
+  // build will result in a build that uses the same revision.
+  //
+  // For non-triggered builds that specify RepoSource:
+  //
+  // * If the original build built from the tip of a branch, the retried build
+  // will build from the tip of that branch, which may not be the same revision
+  // as the original build.
+  // * If the original build specified a commit sha or revision ID, the retried
+  // build will use the identical source.
+  //
+  // For builds that specify StorageSource:
+  //
+  // * If the original build pulled source from Cloud Storage without specifying
+  // the generation of the object, the new build will use the current object,
+  // which may be different from the original build source.
+  // * If the original build pulled source from Cloud Storage and specified the
+  // generation of the object, the new build will attempt to use the same
+  // object, which may or may not be available depending on the bucket's
+  // lifecycle management settings.
+  rpc RetryBuild(RetryBuildRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = { post: "/v1/projects/{project_id}/builds/{id}:retry" body: "*" };
+  }
+}
+
+// RetryBuildRequest specifies a build to retry.
+message RetryBuildRequest {
+  // ID of the project.
+  string project_id = 1;
+
+  // Build ID of the original build.
+  string id = 2;
+}
+
+// RunBuildTriggerRequest specifies a build trigger to run and the source to
+// use.
+message RunBuildTriggerRequest {
+  // ID of the project.
+  string project_id = 1;
+
+  // ID of the trigger.
+  string trigger_id = 2;
+
+  // Source to build against this trigger.
+  RepoSource source = 3;
 }
 
 // StorageSource describes the location of the source in an archive file in
@@ -145,6 +207,9 @@ message RepoSource {
     // Explicit commit SHA to build.
     string commit_sha = 5;
   }
+
+  // Directory, relative to the source root, in which to run the build.
+  string dir = 7;
 }
 
 // Source describes the location of the source in a supported storage
@@ -152,8 +217,7 @@ message RepoSource {
 message Source {
   // Describes location of source.
   oneof source {
-    // If provided, get the source from this location in in Google Cloud
-    // Storage.
+    // If provided, get the source from this location in Google Cloud Storage.
     StorageSource storage_source = 2;
 
     // If provided, get source from this location in a Cloud Repo.
@@ -280,6 +344,7 @@ message Results {
 // - $TAG_NAME: the tag name specified by RepoSource.
 // - $REVISION_ID or $COMMIT_SHA: the commit SHA specified by RepoSource or
 //   resolved from the specified branch or tag.
+// - $SHORT_SHA: first 7 characters of $REVISION_ID or $COMMIT_SHA.
 message Build {
   // Possible status of a build.
   enum Status {
@@ -632,6 +697,19 @@ message BuildOptions {
     ALLOW_LOOSE = 1;
   }
 
+  // Specifies the behavior when writing build logs to Google Cloud Storage.
+  enum LogStreamingOption {
+    // Service may automatically determine build log streaming behavior.
+    STREAM_DEFAULT = 0;
+
+    // Build logs should be streamed to Google Cloud Storage.
+    STREAM_ON = 1;
+
+    // Build logs should not be streamed to Google Cloud Storage; they will be
+    // written when the build is completed.
+    STREAM_OFF = 2;
+  }
+
   // Requested hash for SourceProvenance.
   repeated Hash.HashType source_provenance_hash = 1;
 
@@ -640,4 +718,8 @@ message BuildOptions {
 
   // SubstitutionOption to allow unmatch substitutions.
   SubstitutionOption substitution_option = 4;
+
+  // LogStreamingOption to define build log streaming behavior to Google Cloud
+  // Storage.
+  LogStreamingOption log_streaming_option = 5;
 }
