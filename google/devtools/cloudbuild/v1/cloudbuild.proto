@@ -38,9 +38,6 @@ option objc_class_prefix = "GCB";
 //
 // A user can list previously-requested builds or get builds by their ID to
 // determine the status of the build.
-// //////////
-// BUILDS //
-// //////////
 service CloudBuild {
   // Starts a build with the specified configuration.
   //
@@ -70,6 +67,37 @@ service CloudBuild {
   // Cancels a requested build in progress.
   rpc CancelBuild(CancelBuildRequest) returns (Build) {
     option (google.api.http) = { post: "/v1/projects/{project_id}/builds/{id}:cancel" body: "*" };
+  }
+
+  // Creates a new build based on the given build.
+  //
+  // This API creates a new build using the original build request,  which may
+  // or may not result in an identical build.
+  //
+  // For triggered builds:
+  //
+  // * Triggered builds resolve to a precise revision, so a retry of a triggered
+  // build will result in a build that uses the same revision.
+  //
+  // For non-triggered builds that specify RepoSource:
+  //
+  // * If the original build built from the tip of a branch, the retried build
+  // will build from the tip of that branch, which may not be the same revision
+  // as the original build.
+  // * If the original build specified a commit sha or revision ID, the retried
+  // build will use the identical source.
+  //
+  // For builds that specify StorageSource:
+  //
+  // * If the original build pulled source from Cloud Storage without specifying
+  // the generation of the object, the new build will use the current object,
+  // which may be different from the original build source.
+  // * If the original build pulled source from Cloud Storage and specified the
+  // generation of the object, the new build will attempt to use the same
+  // object, which may or may not be available depending on the bucket's
+  // lifecycle management settings.
+  rpc RetryBuild(RetryBuildRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = { post: "/v1/projects/{project_id}/builds/{id}:retry" body: "*" };
   }
 
   // Creates a new BuildTrigger.
@@ -110,37 +138,6 @@ service CloudBuild {
   // Runs a BuildTrigger at a particular source revision.
   rpc RunBuildTrigger(RunBuildTriggerRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = { post: "/v1/projects/{project_id}/triggers/{trigger_id}:run" body: "source" };
-  }
-
-  // Creates a new build based on the given build.
-  //
-  // This API creates a new build using the original build request,  which may
-  // or may not result in an identical build.
-  //
-  // For triggered builds:
-  //
-  // * Triggered builds resolve to a precise revision, so a retry of a triggered
-  // build will result in a build that uses the same revision.
-  //
-  // For non-triggered builds that specify RepoSource:
-  //
-  // * If the original build built from the tip of a branch, the retried build
-  // will build from the tip of that branch, which may not be the same revision
-  // as the original build.
-  // * If the original build specified a commit sha or revision ID, the retried
-  // build will use the identical source.
-  //
-  // For builds that specify StorageSource:
-  //
-  // * If the original build pulled source from Cloud Storage without specifying
-  // the generation of the object, the new build will use the current object,
-  // which may be different from the original build source.
-  // * If the original build pulled source from Cloud Storage and specified the
-  // generation of the object, the new build will attempt to use the same
-  // object, which may or may not be available depending on the bucket's
-  // lifecycle management settings.
-  rpc RetryBuild(RetryBuildRequest) returns (google.longrunning.Operation) {
-    option (google.api.http) = { post: "/v1/projects/{project_id}/builds/{id}:retry" body: "*" };
   }
 }
 
@@ -233,6 +230,9 @@ message BuiltImage {
 
   // Docker Registry 2.0 digest.
   string digest = 3;
+
+  // Stores timing information for pushing the specified image.
+  TimeSpan push_timing = 4;
 }
 
 // BuildStep describes a step to perform in the build pipeline.
@@ -301,6 +301,9 @@ message BuildStep {
   // Using a named volume in only one step is not valid as it is indicative
   // of a mis-configured build request.
   repeated Volume volumes = 9;
+
+  // Stores timing information for executing this build step.
+  TimeSpan timing = 10;
 }
 
 // Volume describes a Docker container volume which is mounted into build steps
@@ -462,6 +465,24 @@ message Build {
 
   // Secrets to decrypt using Cloud KMS.
   repeated Secret secrets = 32;
+
+  // Stores timing information for phases of the build.
+  // Valid keys are:
+  // - BUILD: time to execute all build steps
+  // - PUSH: time to push all specified images.
+  // - FETCHSOURCE: time to fetch source.
+  // If the build does not specify source, or does not specify images,
+  // these keys will not be included.
+  map<string, TimeSpan> timing = 33;
+}
+
+// Stores start and end times for a build execution phase.
+message TimeSpan {
+  // Start of time span.
+  google.protobuf.Timestamp start_time = 1;
+
+  // End of time span.
+  google.protobuf.Timestamp end_time = 2;
 }
 
 // Metadata for build operations.
@@ -692,10 +713,10 @@ message BuildOptions {
     // Standard machine type.
     UNSPECIFIED = 0;
 
-    // Medium size.
+    // Highcpu machine with 8 CPUs.
     N1_HIGHCPU_8 = 1;
 
-    // Large size.
+    // Highcpu machine with 32 CPUs.
     N1_HIGHCPU_32 = 2;
   }
 
