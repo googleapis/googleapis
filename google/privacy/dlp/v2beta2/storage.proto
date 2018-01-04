@@ -1,0 +1,288 @@
+// Copyright 2017 Google Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.privacy.dlp.v2beta2;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Google.Cloud.Dlp.V2Beta2";
+option go_package = "google.golang.org/genproto/googleapis/privacy/dlp/v2beta2;dlp";
+option java_multiple_files = true;
+option java_outer_classname = "DlpStorage";
+option java_package = "com.google.privacy.dlp.v2beta2";
+option php_namespace = "Google\\Cloud\\Dlp\\V2beta2";
+
+
+// Type of information detected by the API.
+message InfoType {
+  // Name of the information type.
+  string name = 1;
+}
+
+// Custom information type provided by the user. Used to find domain-specific
+// sensitive information configurable to the data in question.
+message CustomInfoType {
+  // Custom information type based on a dictionary of words or phrases. This can
+  // be used to match sensitive information specific to the data, such as a list
+  // of employee IDs or job titles.
+  //
+  // Dictionary words are case-insensitive and all characters other than letters
+  // and digits in the unicode [Basic Multilingual
+  // Plane](https://en.wikipedia.org/wiki/Plane_%28Unicode%29#Basic_Multilingual_Plane)
+  // will be replaced with whitespace when scanning for matches, so the
+  // dictionary phrase "Sam Johnson" will match all three phrases "sam johnson",
+  // "Sam, Johnson", and "Sam (Johnson)". Additionally, the characters
+  // surrounding any match must be of a different type than the adjacent
+  // characters within the word, so letters must be next to non-letters and
+  // digits next to non-digits. For example, the dictionary word "jen" will
+  // match the first three letters of the text "jen123" but will return no
+  // matches for "jennifer".
+  //
+  // Dictionary words containing a large number of characters that are not
+  // letters or digits may result in unexpected findings because such characters
+  // are treated as whitespace.
+  message Dictionary {
+    // Message defining a list of words or phrases to search for in the data.
+    message WordList {
+      // Words or phrases defining the dictionary. The dictionary must contain
+      // at least one phrase and every phrase must contain at least 2 characters
+      // that are letters or digits. [required]
+      repeated string words = 1;
+    }
+
+    oneof source {
+      // List of words or phrases to search for.
+      WordList word_list = 1;
+    }
+  }
+
+  // Message for detecting output from deidentification transformations
+  // such as
+  // [`CryptoReplaceFfxFpeConfig`](/dlp/docs/reference/rest/v2beta1/content/deidentify#CryptoReplaceFfxFpeConfig).
+  // These types of transformations are
+  // those that perform pseudonymization, thereby producing a "surrogate" as
+  // output. This should be used in conjunction with a field on the
+  // transformation such as `surrogate_info_type`. This custom info type does
+  // not support the use of `detection_rules`.
+  message SurrogateType {
+
+  }
+
+  // Info type configuration. All custom info types must have configurations
+  // that do not conflict with built-in info types or other custom info types.
+  InfoType info_type = 1;
+
+  oneof type {
+    // Dictionary-based custom info type.
+    Dictionary dictionary = 2;
+
+    // Surrogate info type.
+    SurrogateType surrogate_type = 4;
+  }
+}
+
+// General identifier of a data field in a storage service.
+message FieldId {
+  // Name describing the field.
+  string name = 1;
+}
+
+// Datastore partition ID.
+// A partition ID identifies a grouping of entities. The grouping is always
+// by project and namespace, however the namespace ID may be empty.
+//
+// A partition ID contains several dimensions:
+// project ID and namespace ID.
+message PartitionId {
+  // The ID of the project to which the entities belong.
+  string project_id = 2;
+
+  // If not empty, the ID of the namespace to which the entities belong.
+  string namespace_id = 4;
+}
+
+// A representation of a Datastore kind.
+message KindExpression {
+  // The name of the kind.
+  string name = 1;
+}
+
+// Options defining a data set within Google Cloud Datastore.
+message DatastoreOptions {
+  // A partition ID identifies a grouping of entities. The grouping is always
+  // by project and namespace, however the namespace ID may be empty.
+  PartitionId partition_id = 1;
+
+  // The kind to process.
+  KindExpression kind = 2;
+}
+
+// Options defining a file or a set of files (path ending with *) within
+// a Google Cloud Storage bucket.
+message CloudStorageOptions {
+  // Set of files to scan.
+  message FileSet {
+    // The url, in the format `gs://<bucket>/<path>`. Trailing wildcard in the
+    // path is allowed.
+    string url = 1;
+  }
+
+  FileSet file_set = 1;
+}
+
+// Options defining BigQuery table and row identifiers.
+message BigQueryOptions {
+  // Complete BigQuery table reference.
+  BigQueryTable table_reference = 1;
+
+  // References to fields uniquely identifying rows within the table.
+  // Nested fields in the format, like `person.birthdate.year`, are allowed.
+  repeated FieldId identifying_fields = 2;
+}
+
+// Shared message indicating Cloud storage type.
+message StorageConfig {
+  oneof type {
+    // Google Cloud Datastore options specification.
+    DatastoreOptions datastore_options = 2;
+
+    // Google Cloud Storage options specification.
+    CloudStorageOptions cloud_storage_options = 3;
+
+    // BigQuery options specification.
+    BigQueryOptions big_query_options = 4;
+  }
+}
+
+// Record key for a finding in a Cloud Storage file.
+message CloudStorageKey {
+  // Path to the file.
+  string file_path = 1;
+
+  // Byte offset of the referenced data in the file.
+  int64 start_offset = 2;
+}
+
+// Record key for a finding in Cloud Datastore.
+message DatastoreKey {
+  // Datastore entity key.
+  Key entity_key = 1;
+}
+
+// A unique identifier for a Datastore entity.
+// If a key's partition ID or any of its path kinds or names are
+// reserved/read-only, the key is reserved/read-only.
+// A reserved/read-only key is forbidden in certain documented contexts.
+message Key {
+  // A (kind, ID/name) pair used to construct a key path.
+  //
+  // If either name or ID is set, the element is complete.
+  // If neither is set, the element is incomplete.
+  message PathElement {
+    // The kind of the entity.
+    // A kind matching regex `__.*__` is reserved/read-only.
+    // A kind must not contain more than 1500 bytes when UTF-8 encoded.
+    // Cannot be `""`.
+    string kind = 1;
+
+    // The type of ID.
+    oneof id_type {
+      // The auto-allocated ID of the entity.
+      // Never equal to zero. Values less than zero are discouraged and may not
+      // be supported in the future.
+      int64 id = 2;
+
+      // The name of the entity.
+      // A name matching regex `__.*__` is reserved/read-only.
+      // A name must not be more than 1500 bytes when UTF-8 encoded.
+      // Cannot be `""`.
+      string name = 3;
+    }
+  }
+
+  // Entities are partitioned into subsets, currently identified by a project
+  // ID and namespace ID.
+  // Queries are scoped to a single partition.
+  PartitionId partition_id = 1;
+
+  // The entity path.
+  // An entity path consists of one or more elements composed of a kind and a
+  // string or numerical identifier, which identify entities. The first
+  // element identifies a _root entity_, the second element identifies
+  // a _child_ of the root entity, the third element identifies a child of the
+  // second entity, and so forth. The entities identified by all prefixes of
+  // the path are called the element's _ancestors_.
+  //
+  // A path can never be empty, and a path can have at most 100 elements.
+  repeated PathElement path = 2;
+}
+
+// Message for a unique key indicating a record that contains a finding.
+message RecordKey {
+  oneof type {
+    CloudStorageKey cloud_storage_key = 1;
+
+    DatastoreKey datastore_key = 2;
+  }
+}
+
+// Message defining the location of a BigQuery table. A table is uniquely
+// identified  by its project_id, dataset_id, and table_name. Within a query
+// a table is often referenced with a string in the format of:
+// `<project_id>:<dataset_id>.<table_id>` or
+// `<project_id>.<dataset_id>.<table_id>`.
+message BigQueryTable {
+  // The Google Cloud Platform project ID of the project containing the table.
+  // If omitted, project ID is inferred from the API call.
+  string project_id = 1;
+
+  // Dataset ID of the table.
+  string dataset_id = 2;
+
+  // Name of the table.
+  string table_id = 3;
+}
+
+// An entity in a dataset is a field or set of fields that correspond to a
+// single person. For example, in medical records the `EntityId` might be
+// a patient identifier, or for financial records it might be an account
+// identifier. This message is used when generalizations or analysis must be
+// consistent across multiple rows pertaining to the same entity.
+message EntityId {
+  // Composite key indicating which field contains the entity identifier.
+  FieldId field = 1;
+}
+
+// Categorization of results based on how likely they are to represent a match,
+// based on the number of elements they contain which imply a match.
+enum Likelihood {
+  // Default value; information with all likelihoods is included.
+  LIKELIHOOD_UNSPECIFIED = 0;
+
+  // Few matching elements.
+  VERY_UNLIKELY = 1;
+
+  UNLIKELY = 2;
+
+  // Some matching elements.
+  POSSIBLE = 3;
+
+  LIKELY = 4;
+
+  // Many matching elements.
+  VERY_LIKELY = 5;
+}
