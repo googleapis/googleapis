@@ -70,6 +70,12 @@ message CustomInfoType {
     }
   }
 
+  // Message defining a custom regular expression.
+  message Regex {
+    // Pattern defining the regular expression.
+    string pattern = 1;
+  }
+
   // Message for detecting output from deidentification transformations
   // such as
   // [`CryptoReplaceFfxFpeConfig`](/dlp/docs/reference/rest/v2beta1/content/deidentify#CryptoReplaceFfxFpeConfig).
@@ -82,17 +88,83 @@ message CustomInfoType {
 
   }
 
+  // Rule for modifying a custom info type to alter behavior under certain
+  // circumstances, depending on the specific details of the rule. Not supported
+  // for the `surrogate_type` custom info type.
+  message DetectionRule {
+    // Message for specifying a window around a finding to apply a detection
+    // rule.
+    message Proximity {
+      // Number of characters before the finding to consider.
+      int32 window_before = 1;
+
+      // Number of characters after the finding to consider.
+      int32 window_after = 2;
+    }
+
+    // Message for specifying an adjustment to the likelihood of a finding as
+    // part of a detection rule.
+    message LikelihoodAdjustment {
+      oneof adjustment {
+        // Set the likelihood of a finding to a fixed value.
+        Likelihood fixed_likelihood = 1;
+
+        // Increase or decrease the likelihood by the specified number of
+        // levels. For example, if a finding would be `POSSIBLE` without the
+        // detection rule and `relative_likelihood` is 1, then it is upgraded to
+        // `LIKELY`, while a value of -1 would downgrade it to `UNLIKELY`.
+        // Likelihood may never drop below `VERY_UNLIKELY` or exceed
+        // `VERY_LIKELY`, so applying an adjustment of 1 followed by an
+        // adjustment of -1 when base likelihood is `VERY_LIKELY` will result in
+        // a final likelihood of `LIKELY`.
+        int32 relative_likelihood = 2;
+      }
+    }
+
+    // Detection rule that adjusts the likelihood of findings within a certain
+    // proximity of hotwords.
+    message HotwordRule {
+      // Regex pattern defining what qualifies as a hotword.
+      Regex hotword_regex = 1;
+
+      // Proximity of the finding within which the entire hotword must reside.
+      // The total length of the window cannot exceed 1000 characters.
+      Proximity proximity = 2;
+
+      // Likelihood adjustment to apply to all matching findings.
+      LikelihoodAdjustment likelihood_adjustment = 3;
+    }
+
+    oneof type {
+      // Hotword-based detection rule.
+      HotwordRule hotword_rule = 1;
+    }
+  }
+
   // Info type configuration. All custom info types must have configurations
   // that do not conflict with built-in info types or other custom info types.
   InfoType info_type = 1;
+
+  // Likelihood to return for this custom info type. This base value can be
+  // altered by a detection rule if the finding meets the criteria specified by
+  // the rule. Defaults to `VERY_LIKELY` if not specified.
+  Likelihood likelihood = 6;
 
   oneof type {
     // Dictionary-based custom info type.
     Dictionary dictionary = 2;
 
+    // Regex-based custom info type.
+    Regex regex = 3;
+
     // Surrogate info type.
     SurrogateType surrogate_type = 4;
   }
+
+  // Set of detection rules to apply to all findings of this custom info type.
+  // Rules are applied in order that they are specified. Not supported for the
+  // `surrogate_type` custom info type.
+  repeated DetectionRule detection_rules = 7;
 }
 
 // General identifier of a data field in a storage service.
@@ -142,6 +214,10 @@ message CloudStorageOptions {
   }
 
   FileSet file_set = 1;
+
+  // Max number of bytes to scan from a file. If a scanned file's size is bigger
+  // than this value then the rest of the bytes are omitted.
+  int64 bytes_limit_per_file = 4;
 }
 
 // Options defining BigQuery table and row identifiers.
@@ -156,6 +232,23 @@ message BigQueryOptions {
 
 // Shared message indicating Cloud storage type.
 message StorageConfig {
+  // Configuration of the timespan of the items to include in scanning.
+  // Currently only supported when inspecting Google Cloud Storage and BigQuery.
+  message TimespanConfig {
+    // Exclude files older than this value.
+    google.protobuf.Timestamp start_time = 1;
+
+    // Exclude files newer than this value.
+    // If set to zero, no upper time limit is applied.
+    google.protobuf.Timestamp end_time = 2;
+
+    // When the job is started by a JobTrigger we will automatically figure out
+    // a valid start_time to avoid scanning files that have not been modified
+    // since the last time the JobTrigger executed. This will be based on the
+    // time of the execution of the last run of the JobTrigger.
+    bool enable_auto_population_of_timespan_config = 4;
+  }
+
   oneof type {
     // Google Cloud Datastore options specification.
     DatastoreOptions datastore_options = 2;
@@ -166,6 +259,8 @@ message StorageConfig {
     // BigQuery options specification.
     BigQueryOptions big_query_options = 4;
   }
+
+  TimespanConfig timespan_config = 6;
 }
 
 // Record key for a finding in a Cloud Storage file.

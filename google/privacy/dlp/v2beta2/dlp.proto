@@ -203,6 +203,32 @@ service DlpService {
     };
   }
 
+  // Creates a job to run DLP actions such as scanning storage for sensitive
+  // information on a set schedule.
+  rpc CreateJobTrigger(CreateJobTriggerRequest) returns (JobTrigger) {
+    option (google.api.http) = { post: "/v2beta2/{parent=projects/*}/jobTriggers" body: "*" };
+  }
+
+  // Updates a job trigger.
+  rpc UpdateJobTrigger(UpdateJobTriggerRequest) returns (JobTrigger) {
+    option (google.api.http) = { patch: "/v2beta2/{name=projects/*/jobTriggers/*}" body: "*" };
+  }
+
+  // Gets a job trigger.
+  rpc GetJobTrigger(GetJobTriggerRequest) returns (JobTrigger) {
+    option (google.api.http) = { get: "/v2beta2/{name=projects/*/jobTriggers/*}" };
+  }
+
+  // Lists job triggers.
+  rpc ListJobTriggers(ListJobTriggersRequest) returns (ListJobTriggersResponse) {
+    option (google.api.http) = { get: "/v2beta2/{parent=projects/*}/jobTriggers" };
+  }
+
+  // Deletes a job trigger.
+  rpc DeleteJobTrigger(DeleteJobTriggerRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v2beta2/{name=projects/*/jobTriggers/*}" };
+  }
+
   // Lists DlpJobs that match the specified filter in the request.
   rpc ListDlpJobs(ListDlpJobsRequest) returns (ListDlpJobsResponse) {
     option (google.api.http) = { get: "/v2beta2/{parent=projects/*}/dlpJobs" };
@@ -596,6 +622,13 @@ message InspectDataSourceRequest {
 
   // A configuration for the job.
   InspectJobConfig job_config = 2;
+
+  // Optional job ID to use for the created job. If not provided, a job ID will
+  // automatically be generated. Must be unique within the project. The job ID
+  // can contain uppercase and lowercase letters, numbers, and hyphens; that is,
+  // it must match the regular expression: `[a-zA-Z\\d-]+`. The maximum length
+  // is 100 characters. Can be empty to allow the system to generate one.
+  string job_id = 3;
 }
 
 // Cloud repository for storing output.
@@ -684,6 +717,13 @@ message AnalyzeDataSourceRiskRequest {
 
   // Configuration for this risk analysis job.
   RiskAnalysisJobConfig job_config = 2;
+
+  // Optional job ID to use for the created job. If not provided, a job ID will
+  // automatically be generated. Must be unique within the project. The job ID
+  // can contain uppercase and lowercase letters, numbers, and hyphens; that is,
+  // it must match the regular expression: `[a-zA-Z\\d-]+`. The maximum length
+  // is 100 characters. Can be empty to allow the system to generate one.
+  string job_id = 3;
 }
 
 // Configuration for a risk analysis job.
@@ -693,6 +733,10 @@ message RiskAnalysisJobConfig {
 
   // Input dataset to compute metrics over.
   BigQueryTable source_table = 2;
+
+  // Actions to execute at the completion of the job. Are executed in the order
+  // provided.
+  repeated Action actions = 3;
 }
 
 // Privacy metric to compute for reidentification risk analysis.
@@ -1586,6 +1630,21 @@ message TransformationSummary {
   int64 transformed_bytes = 7;
 }
 
+// Schedule for triggeredJobs.
+message Schedule {
+  oneof option {
+    // With this option a job is started a regular periodic basis. For
+    // example: every 10 minutes.
+    //
+    // A scheduled start time will be skipped if the previous
+    // execution has not ended when its scheduled time occurs.
+    //
+    // This value must be set to a time duration greater than or equal
+    // to 60 minutes and can be no longer than 60 days.
+    google.protobuf.Duration reccurrence_period_duration = 1;
+  }
+}
+
 // The inspectTemplate contains a configuration (set of types of sensitive data
 // to be detected) to be used anywhere you otherwise would normally specify
 // InspectConfig.
@@ -1636,6 +1695,108 @@ message DeidentifyTemplate {
 
   // ///////////// // The core content of the template  // ///////////////
   DeidentifyConfig deidentify_config = 6;
+}
+
+// Contains a configuration to make dlp api calls on a repeating basis.
+message JobTrigger {
+  // What event needs to occur for a new job to be started.
+  message Trigger {
+    oneof trigger {
+      // Create a job on a repeating basis based on the elapse of time.
+      Schedule schedule = 1;
+    }
+  }
+
+  // The results of an unsuccessful activation of the JobTrigger.
+  message Error {
+    google.rpc.Status details = 1;
+
+    // The times the error occurred.
+    repeated google.protobuf.Timestamp timestamps = 2;
+  }
+
+  // Whether the trigger is currently active. If PAUSED or CANCELLED, no jobs
+  // will be created with this configuration. The service may automatically
+  // pause triggers experiencing frequent errors. To restart a job, set the
+  // status to HEALTHY after correcting user errors.
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+
+    // Trigger is healthy.
+    HEALTHY = 1;
+
+    // Trigger is temporarily paused.
+    PAUSED = 2;
+
+    // Trigger is cancelled and can not be resumed.
+    CANCELLED = 3;
+  }
+
+  // Unique resource name for the triggeredJob, assigned by the service when the
+  // triggeredJob is created, for example
+  // `projects/dlp-test-project/triggeredJobs/53234423`.
+  string name = 1;
+
+  // Display name (max 100 chars)
+  string display_name = 2;
+
+  // User provided description (max 256 chars)
+  string description = 3;
+
+  // The configuration details for the specific type of job to run.
+  oneof job {
+    InspectJobConfig inspect_job = 4;
+  }
+
+  // A list of triggers which will be OR'ed together. Only one in the list
+  // needs to trigger for a job to be started. The list may contain only
+  // a single Schedule trigger and must have at least one object.
+  repeated Trigger triggers = 5;
+
+  // A stream of errors encountered when the trigger was activated. Repeated
+  // errors may result in the JobTrigger automaticaly being paused.
+  // Will return the last 100 errors. Whenever the JobTrigger is modified
+  // this list will be cleared. Output only field.
+  repeated Error errors = 6;
+
+  // The creation timestamp of a triggeredJob, output only field.
+  google.protobuf.Timestamp create_time = 7;
+
+  // The last update timestamp of a triggeredJob, output only field.
+  google.protobuf.Timestamp update_time = 8;
+
+  // The timestamp of the last time this trigger executed.
+  google.protobuf.Timestamp last_run_time = 9;
+
+  // A status for this trigger. [required]
+  Status status = 10;
+}
+
+// A task to execute on the completion of a job.
+message Action {
+  // If set, the detailed findings will be persisted to the specified
+  // OutputStorageConfig. Compatible with: Inspect
+  message SaveFindings {
+    OutputStorageConfig output_config = 1;
+  }
+
+  // Publish the results of a DlpJob to a pub sub channel.
+  // Compatible with: Inpect, Risk
+  message PublishToPubSub {
+    // Cloud Pub/Sub topic to send notifications to. The topic must have given
+    // publishing access rights to the DLP API service account executing
+    // the long running DlpJob sending the notifications.
+    // Format is projects/{project}/topics/{topic}.
+    string topic = 1;
+  }
+
+  oneof action {
+    // Save resulting findings in a provided location.
+    SaveFindings save_findings = 1;
+
+    // Publish a notification to a pubsub topic.
+    PublishToPubSub pub_sub = 2;
+  }
 }
 
 // Request message for CreateInspectTemplate.
@@ -1709,6 +1870,87 @@ message DeleteInspectTemplateRequest {
   string name = 1;
 }
 
+// Request message for CreateJobTrigger.
+message CreateJobTriggerRequest {
+  // The parent resource name, for example projects/my-project-id.
+  string parent = 1;
+
+  // The JobTrigger to create.
+  JobTrigger job_trigger = 2;
+
+  // The trigger id can contain uppercase and lowercase letters,
+  // numbers, and hyphens; that is, it must match the regular
+  // expression: `[a-zA-Z\\d-]+`. The maximum length is 100
+  // characters. Can be empty to allow the system to generate one.
+  string trigger_id = 3;
+}
+
+// Request message for UpdateJobTrigger.
+message UpdateJobTriggerRequest {
+  // Resource name of the project and the triggeredJob, for example
+  // `projects/dlp-test-project/jobTriggers/53234423`.
+  string name = 1;
+
+  // New JobTrigger value.
+  JobTrigger job_trigger = 2;
+
+  // Mask to control which fields get updated.
+  google.protobuf.FieldMask update_mask = 3;
+}
+
+// Request message for GetJobTrigger.
+message GetJobTriggerRequest {
+  // Resource name of the project and the triggeredJob, for example
+  // `projects/dlp-test-project/jobTriggers/53234423`.
+  string name = 1;
+}
+
+// Request message for ListJobTriggers.
+message ListJobTriggersRequest {
+  // The parent resource name, for example projects/my-project-id.
+  string parent = 1;
+
+  // Optional page token to continue retrieval. Comes from previous call
+  // to ListJobTriggers. `order_by` and `filter` should not change for
+  // subsequent calls, but can be omitted if token is specified.
+  string page_token = 2;
+
+  // Optional size of the page, can be limited by a server.
+  int32 page_size = 3;
+
+  // Optional comma separated list of triggeredJob fields to order by,
+  // followed by 'asc/desc' postfix, i.e.
+  // `"create_time asc,name desc,schedule_mode asc"`. This list is
+  // case-insensitive.
+  //
+  // Example: `"name asc,schedule_mode desc, status desc"`
+  //
+  // Supported filters keys and values are:
+  //
+  // - `create_time`: corresponds to time the triggeredJob was created.
+  // - `update_time`: corresponds to time the triggeredJob was last updated.
+  // - `name`: corresponds to JobTrigger's display name.
+  // - `status`: corresponds to the triggeredJob status.
+  string order_by = 4;
+}
+
+// Response message for ListJobTriggers.
+message ListJobTriggersResponse {
+  // List of triggeredJobs, up to page_size in ListJobTriggersRequest.
+  repeated JobTrigger job_triggers = 1;
+
+  // If the next page is available then the next page token to be used
+  // in following ListJobTriggers request.
+  string next_page_token = 2;
+}
+
+// Request message for DeleteJobTrigger.
+message DeleteJobTriggerRequest {
+  // Resource name of the project and the triggeredJob, for example
+  // `projects/dlp-test-project/jobTriggers/53234423`.
+  string name = 1;
+}
+
 message InspectJobConfig {
   // The data to scan.
   StorageConfig storage_config = 1;
@@ -1723,6 +1965,10 @@ message InspectJobConfig {
   // `inspect_config` will be merged into the values persisted as part of the
   // template.
   string inspect_template_name = 4;
+
+  // Actions to execute at the completion of the job. Are executed in the order
+  // provided.
+  repeated Action actions = 5;
 }
 
 // Combines all of the information about a DLP job.
@@ -1774,6 +2020,10 @@ message DlpJob {
 
   // A stream of errors encountered running the job.
   repeated google.rpc.Status error_results = 9;
+
+  // If created by a job trigger, the resource name of the trigger that
+  // instantiated the job.
+  string job_trigger_name = 10;
 }
 
 // The request message for [DlpJobs.GetDlpJob][].
@@ -1798,6 +2048,7 @@ message ListDlpJobsRequest {
   // * Supported fields/values for inspect jobs:
   //     - `state` - PENDING|RUNNING|CANCELED|FINISHED|FAILED
   //     - `inspected_storage` - DATASTORE|CLOUD_STORAGE|BIGQUERY
+  //     - `trigger_name` - The resource name of the trigger that created job.
   // * Supported fields for risk analysis jobs:
   //     - `state` - RUNNING|CANCELED|FINISHED|FAILED
   // * The operator must be `=` or `!=`.
