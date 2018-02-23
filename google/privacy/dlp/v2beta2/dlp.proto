@@ -370,6 +370,9 @@ message Finding {
 
   // Timestamp when finding was detected.
   google.protobuf.Timestamp create_time = 6;
+
+  // InfoType-dependent details parsed from quote.
+  QuoteInfo quote_info = 7;
 }
 
 // Specifies the location of the finding.
@@ -633,13 +636,45 @@ message InspectDataSourceRequest {
 
 // Cloud repository for storing output.
 message OutputStorageConfig {
+  // Predefined schemas for storing findings.
+  enum OutputSchema {
+    OUTPUT_SCHEMA_UNSPECIFIED = 0;
+
+    // Basic schema including only `info_type`, `quote`, `certainty`, and
+    // `timestamp`.
+    BASIC_COLUMNS = 1;
+
+    // Schema tailored to findings from scanning Google Cloud Storage.
+    GCS_COLUMNS = 2;
+
+    // Schema tailored to findings from scanning Google Datastore.
+    DATASTORE_COLUMNS = 3;
+
+    // Schema tailored to findings from scanning Google BigQuery.
+    BIG_QUERY_COLUMNS = 4;
+
+    // Schema containing all columns.
+    ALL_COLUMNS = 5;
+  }
+
   oneof type {
-    // Store findings in a new table in an existing dataset. If table_id is not
-    // set a new one will be generated for you with the following format:
+    // Store findings in an existing table or a new table in an existing
+    // dataset. Each column in an existing table must have the same name, type,
+    // and mode of a field in the `Finding` object. If table_id is not set a new
+    // one will be generated for you with the following format:
     // dlp_googleapis_yyyy_mm_dd_[dlp_job_id]. Pacific timezone will be used for
     // generating the date details.
     BigQueryTable table = 1;
   }
+
+  // Schema used for writing the findings. Columns are derived from the
+  // `Finding` object. If appending to an existing table, any columns from the
+  // predefined schema that are missing will be added. No columns in the
+  // existing table will be deleted.
+  //
+  // If unspecified, then all available columns will be used for a new table,
+  // and no changes will be made to an existing table.
+  OutputSchema output_schema = 3;
 }
 
 // Statistics regarding a specific InfoType.
@@ -1087,7 +1122,36 @@ message Value {
     google.type.TimeOfDay time_value = 6;
 
     google.type.Date date_value = 7;
+
+    google.type.DayOfWeek day_of_week_value = 8;
   }
+}
+
+// Message for infoType-dependent details parsed from quote.
+message QuoteInfo {
+  // Object representation of the quote.
+  oneof parsed_quote {
+    DateTime date_time = 2;
+  }
+}
+
+// Message for a date time object.
+message DateTime {
+  message TimeZone {
+    // Set only if the offset can be determined. Positive for time ahead of UTC.
+    // E.g. For "UTC-9", this value is -540.
+    int32 offset_minutes = 1;
+  }
+
+  // One or more of the following must be set. All fields are optional, but
+  // when set must be valid date or time values.
+  google.type.Date date = 1;
+
+  google.type.DayOfWeek day_of_week = 2;
+
+  google.type.TimeOfDay time = 3;
+
+  TimeZone time_zone = 4;
 }
 
 // The configuration that controls how the data will change.
@@ -1124,6 +1188,8 @@ message PrimitiveTransformation {
     TimePartConfig time_part_config = 8;
 
     CryptoHashConfig crypto_hash_config = 9;
+
+    DateShiftConfig date_shift_config = 11;
   }
 }
 
@@ -1446,6 +1512,35 @@ message KmsWrappedCryptoKey {
 
   // The resource name of the KMS CryptoKey to use for unwrapping. [required]
   string crypto_key_name = 2;
+}
+
+// Shifts dates by random number of days, with option to be consistent for the
+// same context.
+message DateShiftConfig {
+  // Range of shift in days. Actual shift will be selected at random within this
+  // range (inclusive ends). Negative means shift to earlier in time. Must not
+  // be more than 365250 days (1000 years) each direction.
+  //
+  // For example, 3 means shift date to at most 3 days into the future.
+  // [Required]
+  int32 upper_bound_days = 1;
+
+  // For example, -5 means shift date to at most 5 days back in the past.
+  // [Required]
+  int32 lower_bound_days = 2;
+
+  // Points to the field that contains the context, for example, an entity id.
+  // If set, must also set method. If set, shift will be consistent for the
+  // given context.
+  FieldId context = 3;
+
+  // Method for calculating shift that takes context into consideration. If
+  // set, must also set context. Can only be applied to table items.
+  oneof method {
+    // Causes the shift to be computed based on this key and the context. This
+    // results in the same shift for the same context and crypto_key.
+    CryptoKey crypto_key = 4;
+  }
 }
 
 // A type of transformation that will scan unstructured text and
