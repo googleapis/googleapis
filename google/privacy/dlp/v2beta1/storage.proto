@@ -17,22 +17,72 @@ syntax = "proto3";
 package google.privacy.dlp.v2beta1;
 
 import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
 
+option csharp_namespace = "Google.Cloud.Dlp.V2Beta1";
 option go_package = "google.golang.org/genproto/googleapis/privacy/dlp/v2beta1;dlp";
 option java_multiple_files = true;
 option java_outer_classname = "DlpStorage";
 option java_package = "com.google.privacy.dlp.v2beta1";
+option php_namespace = "Google\\Cloud\\Dlp\\V2beta1";
 
 
 // Type of information detected by the API.
 message InfoType {
-  // Name of the information type, provided by the API call ListInfoTypes.
+  // Name of the information type.
   string name = 1;
+}
+
+// Custom information type provided by the user. Used to find domain-specific
+// sensitive information configurable to the data in question.
+message CustomInfoType {
+  // Custom information type based on a dictionary of words or phrases. This can
+  // be used to match sensitive information specific to the data, such as a list
+  // of employee IDs or job titles.
+  //
+  // Dictionary words are case-insensitive and all characters other than letters
+  // and digits in the unicode [Basic Multilingual
+  // Plane](https://en.wikipedia.org/wiki/Plane_%28Unicode%29#Basic_Multilingual_Plane)
+  // will be replaced with whitespace when scanning for matches, so the
+  // dictionary phrase "Sam Johnson" will match all three phrases "sam johnson",
+  // "Sam, Johnson", and "Sam (Johnson)". Additionally, the characters
+  // surrounding any match must be of a different type than the adjacent
+  // characters within the word, so letters must be next to non-letters and
+  // digits next to non-digits. For example, the dictionary word "jen" will
+  // match the first three letters of the text "jen123" but will return no
+  // matches for "jennifer".
+  //
+  // Dictionary words containing a large number of characters that are not
+  // letters or digits may result in unexpected findings because such characters
+  // are treated as whitespace.
+  message Dictionary {
+    // Message defining a list of words or phrases to search for in the data.
+    message WordList {
+      // Words or phrases defining the dictionary. The dictionary must contain
+      // at least one phrase and every phrase must contain at least 2 characters
+      // that are letters or digits. [required]
+      repeated string words = 1;
+    }
+
+    oneof source {
+      // List of words or phrases to search for.
+      WordList word_list = 1;
+    }
+  }
+
+  // Info type configuration. All custom info types must have configurations
+  // that do not conflict with built-in info types or other custom info types.
+  InfoType info_type = 1;
+
+  oneof type {
+    // Dictionary-based custom info type.
+    Dictionary dictionary = 2;
+  }
 }
 
 // General identifier of a data field in a storage service.
 message FieldId {
-  // Column name describing the field.
+  // Name describing the field.
   string column_name = 1;
 }
 
@@ -88,7 +138,7 @@ message DatastoreOptions {
 message CloudStorageOptions {
   // Set of files to scan.
   message FileSet {
-    // The url, in the format gs://<bucket>/<path>. Trailing wildcard in the
+    // The url, in the format `gs://<bucket>/<path>`. Trailing wildcard in the
     // path is allowed.
     string url = 1;
   }
@@ -98,8 +148,18 @@ message CloudStorageOptions {
 
 // A location in Cloud Storage.
 message CloudStoragePath {
-  // The url, in the format of gs://bucket/<path>.
+  // The url, in the format of `gs://bucket/<path>`.
   string path = 1;
+}
+
+// Options defining BigQuery table and row identifiers.
+message BigQueryOptions {
+  // Complete BigQuery table reference.
+  BigQueryTable table_reference = 1;
+
+  // References to fields uniquely identifying rows within the table.
+  // Nested fields in the format, like `person.birthdate.year`, are allowed.
+  repeated FieldId identifying_fields = 2;
 }
 
 // Shared message indicating Cloud storage type.
@@ -110,6 +170,9 @@ message StorageConfig {
 
     // Google Cloud Storage options specification.
     CloudStorageOptions cloud_storage_options = 3;
+
+    // BigQuery options specification.
+    BigQueryOptions big_query_options = 4;
   }
 }
 
@@ -183,4 +246,31 @@ message RecordKey {
 
     DatastoreKey datastore_key = 2;
   }
+}
+
+// Message defining the location of a BigQuery table. A table is uniquely
+// identified  by its project_id, dataset_id, and table_name. Within a query
+// a table is often referenced with a string in the format of:
+// `<project_id>:<dataset_id>.<table_id>` or
+// `<project_id>.<dataset_id>.<table_id>`.
+message BigQueryTable {
+  // The Google Cloud Platform project ID of the project containing the table.
+  // If omitted, project ID is inferred from the API call.
+  string project_id = 1;
+
+  // Dataset ID of the table.
+  string dataset_id = 2;
+
+  // Name of the table.
+  string table_id = 3;
+}
+
+// An entity in a dataset is a field or set of fields that correspond to a
+// single person. For example, in medical records the `EntityId` might be
+// a patient identifier, or for financial records it might be an account
+// identifier. This message is used when generalizations or analysis must be
+// consistent across multiple rows pertaining to the same entity.
+message EntityId {
+  // Composite key indicating which field contains the entity identifier.
+  FieldId field = 1;
 }

@@ -69,7 +69,7 @@ We’ll look at these in more detail in the rest of this overview.
 
 A [managed service](/service-management/reference/rest/v1/services) is
 a network service managed by
-[Google Service Management](/service-management). Each nabaged service has a
+[Google Service Management](/service-management). Each managed service has a
 unique name, such as `example.googleapis.com`, which must be a valid
 fully-qualified DNS name, as per RFC 1035.
 
