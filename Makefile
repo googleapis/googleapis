@@ -36,7 +36,7 @@ FLAGS+=	--plugin=protoc-gen-grpc=$(GRPCPLUGIN)
 
 SUFFIX:= pb.cc
 
-DEPS:= $(shell find google $(PROTOINCLUDE)/google/protobuf -type f -name '*.proto' | sed "s/proto$$/$(SUFFIX)/")
+DEPS:= $(shell find google $(PROTOINCLUDE)/google/protobuf -type f -name '*.proto' -not -path '*/v0/*' | sed "s/proto$$/$(SUFFIX)/")
 
 all: $(DEPS)
 
