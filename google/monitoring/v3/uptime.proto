@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2018 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,6 +26,26 @@ option java_outer_classname = "UptimeProto";
 option java_package = "com.google.monitoring.v3";
 option php_namespace = "Google\\Cloud\\Monitoring\\V3";
 
+
+// Nimbus InternalCheckers.
+message InternalChecker {
+  // The GCP project ID. Not necessarily the same as the project_id for the
+  // config.
+  string project_id = 1;
+
+  // The internal network to perform this uptime check on.
+  string network = 2;
+
+  // The GCP zone the uptime check should egress from. Only respected for
+  // internal uptime checks, where internal_network is specified.
+  string gcp_zone = 3;
+
+  // The checker ID.
+  string checker_id = 4;
+
+  // The checker's human-readable name.
+  string display_name = 5;
+}
 
 // This message configures which resources and services to monitor for
 // availability.
@@ -86,6 +106,7 @@ message UptimeCheckConfig {
     // https://www.w3.org/Protocols/rfc2616/rfc2616.txt (page 31).
     // Entering two separate headers with the same key in a Create call will
     // cause the first to be overwritten by the second.
+    // The maximum number of headers allowed is 100.
     map<string, string> headers = 6;
   }
 
@@ -101,27 +122,8 @@ message UptimeCheckConfig {
   // content. In the future, it can be expanded to allow for regular expressions
   // and more complex matching.
   message ContentMatcher {
-    // String content to match
+    // String content to match (max 1024 bytes)
     string content = 1;
-  }
-
-  // Nimbus InternalCheckers.
-  message InternalChecker {
-    // The GCP project ID. Not necessarily the same as the project_id for the config.
-    string project_id = 1;
-
-    // The internal network to perform this uptime check on.
-    string network = 2;
-
-    // The GCP zone the uptime check should egress from. Only respected for
-    // internal uptime checks, where internal_network is specified.
-    string gcp_zone = 3;
-
-    // The checker ID.
-    string checker_id = 4;
-
-    // The checker's human-readable name.
-    string display_name = 5;
   }
 
   // A unique resource name for this UptimeCheckConfig. The format is:
@@ -141,7 +143,15 @@ message UptimeCheckConfig {
 
   // The resource the check is checking. Required.
   oneof resource {
-    // The monitored resource associated with the configuration.
+    // The [monitored
+    // resource](https://cloud.google.com/monitoring/api/resources) associated
+    // with the configuration.
+    // The following monitored resource types are supported for uptime checks:
+    //   uptime_url
+    //   gce_instance
+    //   gae_app
+    //   aws_ec2_instance
+    //   aws_elb_load_balancer
     google.api.MonitoredResource monitored_resource = 3;
 
     // The group resource associated with the configuration.
@@ -157,8 +167,10 @@ message UptimeCheckConfig {
     TcpCheck tcp_check = 6;
   }
 
-  // How often the uptime check is performed.
-  // Currently, only 1, 5, 10, and 15 minutes are supported. Required.
+  // How often, in seconds, the uptime check is performed.
+  // Currently, the only supported values are `60s` (1 minute), `300s`
+  // (5 minutes), `600s` (10 minutes), and `900s` (15 minutes). Optional,
+  // defaults to `300s`.
   google.protobuf.Duration period = 7;
 
   // The maximum amount of time to wait for the request to complete (must be
@@ -179,7 +191,12 @@ message UptimeCheckConfig {
   // regions.
   repeated UptimeCheckRegion selected_regions = 10;
 
-  // The internal checkers that this check will egress from.
+  // Denotes whether this is a check that egresses from InternalCheckers.
+  bool is_internal = 15;
+
+  // The internal checkers that this check will egress from. If `is_internal` is
+  // true and this list is empty, the check will egress from all
+  // InternalCheckers configured for the project that owns this CheckConfig.
   repeated InternalChecker internal_checkers = 14;
 }
 
@@ -224,15 +241,18 @@ enum UptimeCheckRegion {
 }
 
 // The supported resource types that can be used as values of
-// group_resource.resource_type. gae_app and uptime_url are not allowed
-// because group checks on App Engine modules and URLs are not allowed.
+// `group_resource.resource_type`.
+// `INSTANCE` includes `gce_instance` and `aws_ec2_instance` resource types.
+// The resource types `gae_app` and `uptime_url` are not valid here because
+// group checks on App Engine modules and URLs are not allowed.
 enum GroupResourceType {
   // Default value (not valid).
   RESOURCE_TYPE_UNSPECIFIED = 0;
 
-  // A group of instances (could be either GCE or AWS_EC2).
+  // A group of instances from Google Cloud Platform (GCP) or
+  // Amazon Web Services (AWS).
   INSTANCE = 1;
 
-  // A group of AWS load balancers.
+  // A group of Amazon ELB load balancers.
   AWS_ELB_LOAD_BALANCER = 2;
 }
