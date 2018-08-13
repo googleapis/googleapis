@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc.
+// Copyright 2018 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -333,6 +333,62 @@ service DlpService {
       body: "*"
     };
   }
+
+  // Creates a pre-built StoredInfoType to be used for inspecting storage in
+  // InspectDataSource.
+  rpc CreateStoredInfoType(CreateStoredInfoTypeRequest) returns (StoredInfoType) {
+    option (google.api.http) = {
+      post: "/v2/{parent=organizations/*}/storedInfoTypes"
+      body: "*"
+      additional_bindings {
+        post: "/v2/{parent=projects/*}/storedInfoTypes"
+        body: "*"
+      }
+    };
+  }
+
+  // Updates the StoredInfoType by creating a new version. The existing version
+  // will continue to be used until the new version is ready.
+  rpc UpdateStoredInfoType(UpdateStoredInfoTypeRequest) returns (StoredInfoType) {
+    option (google.api.http) = {
+      patch: "/v2/{name=organizations/*/storedInfoTypes/*}"
+      body: "*"
+      additional_bindings {
+        patch: "/v2/{name=projects/*/storedInfoTypes/*}"
+        body: "*"
+      }
+    };
+  }
+
+  // Gets a StoredInfoType.
+  rpc GetStoredInfoType(GetStoredInfoTypeRequest) returns (StoredInfoType) {
+    option (google.api.http) = {
+      get: "/v2/{name=organizations/*/storedInfoTypes/*}"
+      additional_bindings {
+        get: "/v2/{name=projects/*/storedInfoTypes/*}"
+      }
+    };
+  }
+
+  // Lists StoredInfoTypes.
+  rpc ListStoredInfoTypes(ListStoredInfoTypesRequest) returns (ListStoredInfoTypesResponse) {
+    option (google.api.http) = {
+      get: "/v2/{parent=organizations/*}/storedInfoTypes"
+      additional_bindings {
+        get: "/v2/{parent=projects/*}/storedInfoTypes"
+      }
+    };
+  }
+
+  // Deletes a StoredInfoType.
+  rpc DeleteStoredInfoType(DeleteStoredInfoTypeRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/v2/{name=organizations/*/storedInfoTypes/*}"
+      additional_bindings {
+        delete: "/v2/{name=projects/*/storedInfoTypes/*}"
+      }
+    };
+  }
 }
 
 // Configuration description of the scanning process.
@@ -375,6 +431,11 @@ message InspectConfig {
   // When no InfoTypes or CustomInfoTypes are specified in a request, the
   // system may automatically choose what detectors to run. By default this may
   // be all types, but may change over time as detectors are updated.
+  //
+  // The special InfoType name "ALL_BASIC" can be used to trigger all detectors,
+  // but may change over time as new InfoTypes are added. If you need precise
+  // control and predictability as to what detectors are run you should specify
+  // specific InfoTypes listed in the reference.
   repeated InfoType info_types = 1;
 
   // Only returns findings equal or above this threshold. The default is
@@ -2597,6 +2658,157 @@ message DeleteDeidentifyTemplateRequest {
   string name = 1;
 }
 
+// Configuration for a custom dictionary created from a data source of any size
+// up to the maximum size defined in the
+// [limits](https://cloud.google.com/dlp/limits) page. The artifacts of
+// dictionary creation are stored in the specified Google Cloud Storage
+// location. Consider using `CustomInfoType.Dictionary` for smaller dictionaries
+// that satisfy the size requirements.
+message LargeCustomDictionaryConfig {
+  // Location to store dictionary artifacts in Google Cloud Storage. These files
+  // will only be accessible by project owners and the DLP API. If any of these
+  // artifacts are modified, the dictionary is considered invalid and can no
+  // longer be used.
+  CloudStoragePath output_path = 1;
+
+  oneof source {
+    // Set of files containing newline-delimited lists of dictionary phrases.
+    CloudStorageFileSet cloud_storage_file_set = 2;
+
+    // Field in a BigQuery table where each cell represents a dictionary phrase.
+    BigQueryField big_query_field = 3;
+  }
+}
+
+// Configuration for a StoredInfoType.
+message StoredInfoTypeConfig {
+  // Display name of the StoredInfoType (max 256 characters).
+  string display_name = 1;
+
+  // Description of the StoredInfoType (max 256 characters).
+  string description = 2;
+
+  oneof type {
+    // StoredInfoType where findings are defined by a dictionary of phrases.
+    LargeCustomDictionaryConfig large_custom_dictionary = 3;
+  }
+}
+
+// Version of a StoredInfoType, including the configuration used to build it,
+// create timestamp, and current state.
+message StoredInfoTypeVersion {
+  // StoredInfoType configuration.
+  StoredInfoTypeConfig config = 1;
+
+  // Create timestamp of the version. Read-only, determined by the system
+  // when the version is created.
+  google.protobuf.Timestamp create_time = 2;
+
+  // Stored info type version state. Read-only, updated by the system
+  // during dictionary creation.
+  StoredInfoTypeState state = 3;
+
+  // Errors that occurred when creating this storedInfoType version, or
+  // anomalies detected in the storedInfoType data that render it unusable. Only
+  // the five most recent errors will be displayed, with the most recent error
+  // appearing first.
+  // <p>For example, some of the data for stored custom dictionaries is put in
+  // the user's Google Cloud Storage bucket, and if this data is modified or
+  // deleted by the user or another system, the dictionary becomes invalid.
+  // <p>If any errors occur, fix the problem indicated by the error message and
+  // use the UpdateStoredInfoType API method to create another version of the
+  // storedInfoType to continue using it, reusing the same `config` if it was
+  // not the source of the error.
+  repeated Error errors = 4;
+}
+
+// StoredInfoType resource message that contains information about the current
+// version and any pending updates.
+message StoredInfoType {
+  // Resource name.
+  string name = 1;
+
+  // Current version of the stored info type.
+  StoredInfoTypeVersion current_version = 2;
+
+  // Pending versions of the stored info type. Empty if no versions are
+  // pending.
+  repeated StoredInfoTypeVersion pending_versions = 3;
+}
+
+// Request message for CreateStoredInfoType.
+message CreateStoredInfoTypeRequest {
+  // The parent resource name, for example projects/my-project-id or
+  // organizations/my-org-id.
+  string parent = 1;
+
+  // Configuration of the storedInfoType to create.
+  StoredInfoTypeConfig config = 2;
+
+  // The storedInfoType ID can contain uppercase and lowercase letters,
+  // numbers, and hyphens; that is, it must match the regular
+  // expression: `[a-zA-Z\\d-]+`. The maximum length is 100
+  // characters. Can be empty to allow the system to generate one.
+  string stored_info_type_id = 3;
+}
+
+// Request message for UpdateStoredInfoType.
+message UpdateStoredInfoTypeRequest {
+  // Resource name of organization and storedInfoType to be updated, for
+  // example `organizations/433245324/storedInfoTypes/432452342` or
+  // projects/project-id/storedInfoTypes/432452342.
+  string name = 1;
+
+  // Updated configuration for the storedInfoType. If not provided, a new
+  // version of the storedInfoType will be created with the existing
+  // configuration.
+  StoredInfoTypeConfig config = 2;
+
+  // Mask to control which fields get updated.
+  google.protobuf.FieldMask update_mask = 3;
+}
+
+// Request message for GetStoredInfoType.
+message GetStoredInfoTypeRequest {
+  // Resource name of the organization and storedInfoType to be read, for
+  // example `organizations/433245324/storedInfoTypes/432452342` or
+  // projects/project-id/storedInfoTypes/432452342.
+  string name = 1;
+}
+
+// Request message for ListStoredInfoTypes.
+message ListStoredInfoTypesRequest {
+  // The parent resource name, for example projects/my-project-id or
+  // organizations/my-org-id.
+  string parent = 1;
+
+  // Optional page token to continue retrieval. Comes from previous call
+  // to `ListStoredInfoTypes`.
+  string page_token = 2;
+
+  // Optional size of the page, can be limited by server. If zero server returns
+  // a page of max size 100.
+  int32 page_size = 3;
+}
+
+// Response message for ListStoredInfoTypes.
+message ListStoredInfoTypesResponse {
+  // List of storedInfoTypes, up to page_size in ListStoredInfoTypesRequest.
+  repeated StoredInfoType stored_info_types = 1;
+
+  // If the next page is available then the next page token to be used
+  // in following ListStoredInfoTypes request.
+  string next_page_token = 2;
+}
+
+// Request message for DeleteStoredInfoType.
+message DeleteStoredInfoTypeRequest {
+  // Resource name of the organization and storedInfoType to be deleted, for
+  // example `organizations/433245324/storedInfoTypes/432452342` or
+  // projects/project-id/storedInfoTypes/432452342.
+  string name = 1;
+}
+
 // Options describing which parts of the provided content should be scanned.
 enum ContentOption {
   // Includes entire content of a file or a data stream.
@@ -2655,4 +2867,24 @@ enum DlpJobType {
 
   // The job executed a Risk Analysis computation.
   RISK_ANALYSIS_JOB = 2;
+}
+
+// State of a StoredInfoType version.
+enum StoredInfoTypeState {
+  STORED_INFO_TYPE_STATE_UNSPECIFIED = 0;
+
+  // StoredInfoType version is being created.
+  PENDING = 1;
+
+  // StoredInfoType version is ready for use.
+  READY = 2;
+
+  // StoredInfoType creation failed. All relevant error messages are returned in
+  // the `StoredInfoTypeVersion` message.
+  FAILED = 3;
+
+  // StoredInfoType is no longer valid because artifacts stored in
+  // user-controlled storage were modified. To fix an invalid StoredInfoType,
+  // use the `UpdateStoredInfoType` method to create a new version.
+  INVALID = 4;
 }
