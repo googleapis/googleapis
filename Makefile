@@ -41,6 +41,8 @@ DEPS:= $(shell find google $(PROTOINCLUDE)/google/protobuf -type f -name '*.prot
 all: $(DEPS)
 
 %.$(SUFFIX):  %.proto
+	# NOTE: if "protolock" command is not installed, see https://github.com/nilslice/protolock
+	protolock status
 	mkdir -p $(OUTPUT)
 	$(PROTOC) $(FLAGS) $*.proto
 
