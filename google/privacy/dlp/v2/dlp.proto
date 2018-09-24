@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC
+// Copyright 2018 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
 
 syntax = "proto3";
 
@@ -400,6 +401,59 @@ service DlpService {
   }
 }
 
+// List of exclude infoTypes.
+message ExcludeInfoTypes {
+  // InfoType list in ExclusionRule rule drops a finding when it overlaps or
+  // contained within with a finding of an infoType from this list. For
+  // example, for `InspectionRuleSet.info_types` containing "PHONE_NUMBER"` and
+  // `exclusion_rule` containing `exclude_info_types.info_types` with
+  // "EMAIL_ADDRESS" the phone number findings are dropped if they overlap
+  // with EMAIL_ADDRESS finding.
+  // That leads to "555-222-2222@example.org" to generate only a single
+  // finding, namely email address.
+  repeated InfoType info_types = 1;
+}
+
+// The rule that specifies conditions when findings of infoTypes specified in
+// `InspectionRuleSet` are removed from results.
+message ExclusionRule {
+  oneof type {
+    // Dictionary which defines the rule.
+    CustomInfoType.Dictionary dictionary = 1;
+
+    // Regular expression which defines the rule.
+    CustomInfoType.Regex regex = 2;
+
+    // Set of infoTypes for which findings would affect this rule.
+    ExcludeInfoTypes exclude_info_types = 3;
+  }
+
+  // How the rule is applied, see MatchingType documentation for details.
+  MatchingType matching_type = 4;
+}
+
+// A single inspection rule to be applied to infoTypes, specified in
+// `InspectionRuleSet`.
+message InspectionRule {
+  oneof type {
+    // Hotword-based detection rule.
+    CustomInfoType.DetectionRule.HotwordRule hotword_rule = 1;
+
+    // Exclusion rule.
+    ExclusionRule exclusion_rule = 2;
+  }
+}
+
+// Rule set for modifying a set of infoTypes to alter behavior under certain
+// circumstances, depending on the specific details of the rules within the set.
+message InspectionRuleSet {
+  // List of infoTypes this rule set is applied to.
+  repeated InfoType info_types = 1;
+
+  // Set of rules to be applied to infoTypes. The rules are applied in order.
+  repeated InspectionRule rules = 2;
+}
+
 // Configuration description of the scanning process.
 // When used with redactContent only info_types and min_likelihood are currently
 // used.
@@ -468,6 +522,11 @@ message InspectConfig {
   // List of options defining data content to scan.
   // If empty, text, images, and other content will be included.
   repeated ContentOption content_options = 8;
+
+  // Set of rules to apply to the findings for this InspectConfig.
+  // Exclusion rules, contained in the set are executed in the end, other
+  // rules are executed in the order they are specified for each info type.
+  repeated InspectionRuleSet rule_set = 10;
 }
 
 // Container for bytes to inspect or redact.
@@ -2335,6 +2394,21 @@ message ListInspectTemplatesRequest {
   // Optional size of the page, can be limited by server. If zero server returns
   // a page of max size 100.
   int32 page_size = 3;
+
+  // Optional comma separated list of fields to order by,
+  // followed by `asc` or `desc` postfix. This list is case-insensitive,
+  // default sorting order is ascending, redundant space characters are
+  // insignificant.
+  //
+  // Example: `name asc,update_time, create_time desc`
+  //
+  // Supported fields are:
+  //
+  // - `create_time`: corresponds to time the template was created.
+  // - `update_time`: corresponds to time the template was last updated.
+  // - `name`: corresponds to template's name.
+  // - `display_name`: corresponds to template's display name.
+  string order_by = 4;
 }
 
 // Response message for ListInspectTemplates.
@@ -2433,9 +2507,11 @@ message ListJobTriggersRequest {
   //
   // Supported fields are:
   //
-  // - `create_time`: corresponds to time the triggeredJob was created.
-  // - `update_time`: corresponds to time the triggeredJob was last updated.
+  // - `create_time`: corresponds to time the JobTrigger was created.
+  // - `update_time`: corresponds to time the JobTrigger was last updated.
   // - `name`: corresponds to JobTrigger's name.
+  // - `display_name`: corresponds to JobTrigger's display name.
+  // - `status`: corresponds to JobTrigger's status.
   string order_by = 4;
 }
 
@@ -2646,6 +2722,21 @@ message ListDeidentifyTemplatesRequest {
   // Optional size of the page, can be limited by server. If zero server returns
   // a page of max size 100.
   int32 page_size = 3;
+
+  // Optional comma separated list of fields to order by,
+  // followed by `asc` or `desc` postfix. This list is case-insensitive,
+  // default sorting order is ascending, redundant space characters are
+  // insignificant.
+  //
+  // Example: `name asc,update_time, create_time desc`
+  //
+  // Supported fields are:
+  //
+  // - `create_time`: corresponds to time the template was created.
+  // - `update_time`: corresponds to time the template was last updated.
+  // - `name`: corresponds to template's name.
+  // - `display_name`: corresponds to template's display name.
+  string order_by = 4;
 }
 
 // Response message for ListDeidentifyTemplates.
@@ -2798,6 +2889,22 @@ message ListStoredInfoTypesRequest {
   // Optional size of the page, can be limited by server. If zero server returns
   // a page of max size 100.
   int32 page_size = 3;
+
+  // Optional comma separated list of fields to order by,
+  // followed by `asc` or `desc` postfix. This list is case-insensitive,
+  // default sorting order is ascending, redundant space characters are
+  // insignificant.
+  //
+  // Example: `name asc, display_name, create_time desc`
+  //
+  // Supported fields are:
+  //
+  // - `create_time`: corresponds to time the most recent version of the
+  // resource was created.
+  // - `state`: corresponds to the state of the resource.
+  // - `name`: corresponds to resource name.
+  // - `display_name`: corresponds to info type's display name.
+  string order_by = 4;
 }
 
 // Response message for ListStoredInfoTypes.
@@ -2828,6 +2935,35 @@ enum ContentOption {
 
   // Images found in the data.
   CONTENT_IMAGE = 2;
+}
+
+// Type of the match which can be applied to different ways of matching, like
+// Dictionary, regular expression and intersecting with findings of another
+// info type.
+enum MatchingType {
+  // Invalid.
+  MATCHING_TYPE_UNSPECIFIED = 0;
+
+  // Full match.
+  //
+  // - Dictionary: join of Dictionary results matched complete finding quote
+  // - Regex: all regex matches fill a finding quote start to end
+  // - Exclude info type: completely inside affecting info types findings
+  MATCHING_TYPE_FULL_MATCH = 1;
+
+  // Partial match.
+  //
+  // - Dictionary: at least one of the tokens in the finding matches
+  // - Regex: substring of the finding matches
+  // - Exclude info type: intersects with affecting info types findings
+  MATCHING_TYPE_PARTIAL_MATCH = 2;
+
+  // Inverse match.
+  //
+  // - Dictionary: no tokens in the finding match the dictionary
+  // - Regex: finding doesn't match the regex
+  // - Exclude info type: no intersection with affecting info types findings
+  MATCHING_TYPE_INVERSE_MATCH = 3;
 }
 
 // Parts of the APIs which use certain infoTypes.
