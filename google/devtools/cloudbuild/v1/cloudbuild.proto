@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC
+// Copyright 2018 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
 
 syntax = "proto3";
 
@@ -333,16 +334,20 @@ message BuildStep {
 
   // List of volumes to mount into the build step.
   //
-  // Each volume will be created as an empty volume prior to execution of the
-  // build step. Upon completion of the build, volumes and their contents will
-  // be discarded.
+  // Each volume is created as an empty volume prior to execution of the
+  // build step. Upon completion of the build, volumes and their contents are
+  // discarded.
   //
   // Using a named volume in only one step is not valid as it is indicative
-  // of a mis-configured build request.
+  // of a build request with an incorrect configuration.
   repeated Volume volumes = 9;
 
   // Output only. Stores timing information for executing this build step.
   TimeSpan timing = 10;
+
+  // Output only. Stores timing information for pulling this build step's
+  // builder image only.
+  TimeSpan pull_timing = 13;
 
   // Time limit for executing this build step. If not defined, the step has no
   // time limit and will be allowed to continue to run until either it completes
@@ -385,6 +390,14 @@ message Results {
 
   // Number of artifacts uploaded. Only populated when artifacts are uploaded.
   int64 num_artifacts = 5;
+
+  // List of build step outputs, produced by builder images, in the order
+  // corresponding to build step indices.
+  //
+  // [Cloud Builders](https://cloud.google.com/cloud-build/docs/cloud-builders)
+  // can produce this output by writing to `$BUILDER_OUTPUT/output`.
+  // Only the first 4KB of data is stored.
+  repeated bytes build_step_outputs = 6;
 }
 
 // An artifact that was uploaded during a build. This
@@ -663,7 +676,7 @@ message Secret {
   //
   // Secret environment variables must be unique across all of a build's
   // secrets, and must be used by at least one build step. Values can be at most
-  // 1 KB in size. There can be at most ten secret values across all of a
+  // 64 KB in size. There can be at most 100 secret values across all of a
   // build's secrets.
   map<string, bytes> secret_env = 3;
 }
@@ -753,6 +766,27 @@ message BuildTrigger {
 
   // Substitutions data for Build resource.
   map<string, string> substitutions = 11;
+
+  // ignored_files and included_files are file glob matches using
+  // http://godoc/pkg/path/filepath#Match extended with support for "**".
+  //
+  // If ignored_files and changed files are both empty, then they are
+  // not used to determine whether or not to trigger a build.
+  //
+  // If ignored_files is not empty, then we ignore any files that match
+  // any of the ignored_file globs. If the change has no files that are
+  // outside of the ignored_files globs, then we do not trigger a build.
+  repeated string ignored_files = 15;
+
+  // If any of the files altered in the commit pass the ignored_files
+  // filter and included_files is empty, then as far as this filter is
+  // concerned, we should trigger the build.
+  //
+  // If any of the files altered in the commit pass the ignored_files
+  // filter and included_files is not empty, then we make sure that at
+  // least one of those files matches a included_files glob. If not,
+  // then we do not trigger a build.
+  repeated string included_files = 16;
 }
 
 // Request to create a new `BuildTrigger`.
@@ -852,6 +886,18 @@ message BuildOptions {
     STREAM_OFF = 2;
   }
 
+  // Specifies the logging mode.
+  enum LoggingMode {
+    // The service determines the logging mode. The default is `LEGACY`
+    LOGGING_UNSPECIFIED = 0;
+
+    // Stackdriver logging and Cloud Storage logging are enabled.
+    LEGACY = 1;
+
+    // Only Cloud Storage logging is enabled.
+    GCS_ONLY = 2;
+  }
+
   // Requested hash for SourceProvenance.
   repeated Hash.HashType source_provenance_hash = 1;
 
@@ -876,4 +922,32 @@ message BuildOptions {
   // Option to define build log streaming behavior to Google Cloud
   // Storage.
   LogStreamingOption log_streaming_option = 5;
+
+  // Option to specify the logging mode, which determines where the logs are stored.
+  LoggingMode logging = 11;
+
+  // A list of global environment variable definitions that will exist for all
+  // build steps in this build. If a variable is defined in both globally and in
+  // a build step, the variable will use the build step value.
+  //
+  // The elements are of the form "KEY=VALUE" for the environment variable "KEY"
+  // being given the value "VALUE".
+  repeated string env = 12;
+
+  // A list of global environment variables, which are encrypted using a Cloud
+  // Key Management Service crypto key. These values must be specified in the
+  // build's `Secret`. These variables will be available to all build steps
+  // in this build.
+  repeated string secret_env = 13;
+
+  // Global list of volumes to mount for ALL build steps
+  //
+  // Each volume is created as an empty volume prior to starting the build
+  // process. Upon completion of the build, volumes and their contents are
+  // discarded. Global volume names and paths cannot conflict with the volumes
+  // defined a build step.
+  //
+  // Using a global volume in a build with only one step is not valid as
+  // it is indicative of a build request with an incorrect configuration.
+  repeated Volume volumes = 14;
 }
