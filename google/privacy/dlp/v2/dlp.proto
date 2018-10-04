@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc.
+// Copyright 2018 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
 
 syntax = "proto3";
 
@@ -333,6 +334,124 @@ service DlpService {
       body: "*"
     };
   }
+
+  // Creates a pre-built stored infoType to be used for inspection.
+  // See https://cloud.google.com/dlp/docs/creating-stored-infotypes to
+  // learn more.
+  rpc CreateStoredInfoType(CreateStoredInfoTypeRequest) returns (StoredInfoType) {
+    option (google.api.http) = {
+      post: "/v2/{parent=organizations/*}/storedInfoTypes"
+      body: "*"
+      additional_bindings {
+        post: "/v2/{parent=projects/*}/storedInfoTypes"
+        body: "*"
+      }
+    };
+  }
+
+  // Updates the stored infoType by creating a new version. The existing version
+  // will continue to be used until the new version is ready.
+  // See https://cloud.google.com/dlp/docs/creating-stored-infotypes to
+  // learn more.
+  rpc UpdateStoredInfoType(UpdateStoredInfoTypeRequest) returns (StoredInfoType) {
+    option (google.api.http) = {
+      patch: "/v2/{name=organizations/*/storedInfoTypes/*}"
+      body: "*"
+      additional_bindings {
+        patch: "/v2/{name=projects/*/storedInfoTypes/*}"
+        body: "*"
+      }
+    };
+  }
+
+  // Gets a stored infoType.
+  // See https://cloud.google.com/dlp/docs/creating-stored-infotypes to
+  // learn more.
+  rpc GetStoredInfoType(GetStoredInfoTypeRequest) returns (StoredInfoType) {
+    option (google.api.http) = {
+      get: "/v2/{name=organizations/*/storedInfoTypes/*}"
+      additional_bindings {
+        get: "/v2/{name=projects/*/storedInfoTypes/*}"
+      }
+    };
+  }
+
+  // Lists stored infoTypes.
+  // See https://cloud.google.com/dlp/docs/creating-stored-infotypes to
+  // learn more.
+  rpc ListStoredInfoTypes(ListStoredInfoTypesRequest) returns (ListStoredInfoTypesResponse) {
+    option (google.api.http) = {
+      get: "/v2/{parent=organizations/*}/storedInfoTypes"
+      additional_bindings {
+        get: "/v2/{parent=projects/*}/storedInfoTypes"
+      }
+    };
+  }
+
+  // Deletes a stored infoType.
+  // See https://cloud.google.com/dlp/docs/creating-stored-infotypes to
+  // learn more.
+  rpc DeleteStoredInfoType(DeleteStoredInfoTypeRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/v2/{name=organizations/*/storedInfoTypes/*}"
+      additional_bindings {
+        delete: "/v2/{name=projects/*/storedInfoTypes/*}"
+      }
+    };
+  }
+}
+
+// List of exclude infoTypes.
+message ExcludeInfoTypes {
+  // InfoType list in ExclusionRule rule drops a finding when it overlaps or
+  // contained within with a finding of an infoType from this list. For
+  // example, for `InspectionRuleSet.info_types` containing "PHONE_NUMBER"` and
+  // `exclusion_rule` containing `exclude_info_types.info_types` with
+  // "EMAIL_ADDRESS" the phone number findings are dropped if they overlap
+  // with EMAIL_ADDRESS finding.
+  // That leads to "555-222-2222@example.org" to generate only a single
+  // finding, namely email address.
+  repeated InfoType info_types = 1;
+}
+
+// The rule that specifies conditions when findings of infoTypes specified in
+// `InspectionRuleSet` are removed from results.
+message ExclusionRule {
+  oneof type {
+    // Dictionary which defines the rule.
+    CustomInfoType.Dictionary dictionary = 1;
+
+    // Regular expression which defines the rule.
+    CustomInfoType.Regex regex = 2;
+
+    // Set of infoTypes for which findings would affect this rule.
+    ExcludeInfoTypes exclude_info_types = 3;
+  }
+
+  // How the rule is applied, see MatchingType documentation for details.
+  MatchingType matching_type = 4;
+}
+
+// A single inspection rule to be applied to infoTypes, specified in
+// `InspectionRuleSet`.
+message InspectionRule {
+  oneof type {
+    // Hotword-based detection rule.
+    CustomInfoType.DetectionRule.HotwordRule hotword_rule = 1;
+
+    // Exclusion rule.
+    ExclusionRule exclusion_rule = 2;
+  }
+}
+
+// Rule set for modifying a set of infoTypes to alter behavior under certain
+// circumstances, depending on the specific details of the rules within the set.
+message InspectionRuleSet {
+  // List of infoTypes this rule set is applied to.
+  repeated InfoType info_types = 1;
+
+  // Set of rules to be applied to infoTypes. The rules are applied in order.
+  repeated InspectionRule rules = 2;
 }
 
 // Configuration description of the scanning process.
@@ -375,6 +494,11 @@ message InspectConfig {
   // When no InfoTypes or CustomInfoTypes are specified in a request, the
   // system may automatically choose what detectors to run. By default this may
   // be all types, but may change over time as detectors are updated.
+  //
+  // The special InfoType name "ALL_BASIC" can be used to trigger all detectors,
+  // but may change over time as new InfoTypes are added. If you need precise
+  // control and predictability as to what detectors are run you should specify
+  // specific InfoTypes listed in the reference.
   repeated InfoType info_types = 1;
 
   // Only returns findings equal or above this threshold. The default is
@@ -398,6 +522,11 @@ message InspectConfig {
   // List of options defining data content to scan.
   // If empty, text, images, and other content will be included.
   repeated ContentOption content_options = 8;
+
+  // Set of rules to apply to the findings for this InspectConfig.
+  // Exclusion rules, contained in the set are executed in the end, other
+  // rules are executed in the order they are specified for each info type.
+  repeated InspectionRuleSet rule_set = 10;
 }
 
 // Container for bytes to inspect or redact.
@@ -2265,6 +2394,21 @@ message ListInspectTemplatesRequest {
   // Optional size of the page, can be limited by server. If zero server returns
   // a page of max size 100.
   int32 page_size = 3;
+
+  // Optional comma separated list of fields to order by,
+  // followed by `asc` or `desc` postfix. This list is case-insensitive,
+  // default sorting order is ascending, redundant space characters are
+  // insignificant.
+  //
+  // Example: `name asc,update_time, create_time desc`
+  //
+  // Supported fields are:
+  //
+  // - `create_time`: corresponds to time the template was created.
+  // - `update_time`: corresponds to time the template was last updated.
+  // - `name`: corresponds to template's name.
+  // - `display_name`: corresponds to template's display name.
+  string order_by = 4;
 }
 
 // Response message for ListInspectTemplates.
@@ -2363,9 +2507,11 @@ message ListJobTriggersRequest {
   //
   // Supported fields are:
   //
-  // - `create_time`: corresponds to time the triggeredJob was created.
-  // - `update_time`: corresponds to time the triggeredJob was last updated.
+  // - `create_time`: corresponds to time the JobTrigger was created.
+  // - `update_time`: corresponds to time the JobTrigger was last updated.
   // - `name`: corresponds to JobTrigger's name.
+  // - `display_name`: corresponds to JobTrigger's display name.
+  // - `status`: corresponds to JobTrigger's status.
   string order_by = 4;
 }
 
@@ -2576,6 +2722,21 @@ message ListDeidentifyTemplatesRequest {
   // Optional size of the page, can be limited by server. If zero server returns
   // a page of max size 100.
   int32 page_size = 3;
+
+  // Optional comma separated list of fields to order by,
+  // followed by `asc` or `desc` postfix. This list is case-insensitive,
+  // default sorting order is ascending, redundant space characters are
+  // insignificant.
+  //
+  // Example: `name asc,update_time, create_time desc`
+  //
+  // Supported fields are:
+  //
+  // - `create_time`: corresponds to time the template was created.
+  // - `update_time`: corresponds to time the template was last updated.
+  // - `name`: corresponds to template's name.
+  // - `display_name`: corresponds to template's display name.
+  string order_by = 4;
 }
 
 // Response message for ListDeidentifyTemplates.
@@ -2597,6 +2758,173 @@ message DeleteDeidentifyTemplateRequest {
   string name = 1;
 }
 
+// Configuration for a custom dictionary created from a data source of any size
+// up to the maximum size defined in the
+// [limits](https://cloud.google.com/dlp/limits) page. The artifacts of
+// dictionary creation are stored in the specified Google Cloud Storage
+// location. Consider using `CustomInfoType.Dictionary` for smaller dictionaries
+// that satisfy the size requirements.
+message LargeCustomDictionaryConfig {
+  // Location to store dictionary artifacts in Google Cloud Storage. These files
+  // will only be accessible by project owners and the DLP API. If any of these
+  // artifacts are modified, the dictionary is considered invalid and can no
+  // longer be used.
+  CloudStoragePath output_path = 1;
+
+  oneof source {
+    // Set of files containing newline-delimited lists of dictionary phrases.
+    CloudStorageFileSet cloud_storage_file_set = 2;
+
+    // Field in a BigQuery table where each cell represents a dictionary phrase.
+    BigQueryField big_query_field = 3;
+  }
+}
+
+// Configuration for a StoredInfoType.
+message StoredInfoTypeConfig {
+  // Display name of the StoredInfoType (max 256 characters).
+  string display_name = 1;
+
+  // Description of the StoredInfoType (max 256 characters).
+  string description = 2;
+
+  oneof type {
+    // StoredInfoType where findings are defined by a dictionary of phrases.
+    LargeCustomDictionaryConfig large_custom_dictionary = 3;
+  }
+}
+
+// Version of a StoredInfoType, including the configuration used to build it,
+// create timestamp, and current state.
+message StoredInfoTypeVersion {
+  // StoredInfoType configuration.
+  StoredInfoTypeConfig config = 1;
+
+  // Create timestamp of the version. Read-only, determined by the system
+  // when the version is created.
+  google.protobuf.Timestamp create_time = 2;
+
+  // Stored info type version state. Read-only, updated by the system
+  // during dictionary creation.
+  StoredInfoTypeState state = 3;
+
+  // Errors that occurred when creating this storedInfoType version, or
+  // anomalies detected in the storedInfoType data that render it unusable. Only
+  // the five most recent errors will be displayed, with the most recent error
+  // appearing first.
+  // <p>For example, some of the data for stored custom dictionaries is put in
+  // the user's Google Cloud Storage bucket, and if this data is modified or
+  // deleted by the user or another system, the dictionary becomes invalid.
+  // <p>If any errors occur, fix the problem indicated by the error message and
+  // use the UpdateStoredInfoType API method to create another version of the
+  // storedInfoType to continue using it, reusing the same `config` if it was
+  // not the source of the error.
+  repeated Error errors = 4;
+}
+
+// StoredInfoType resource message that contains information about the current
+// version and any pending updates.
+message StoredInfoType {
+  // Resource name.
+  string name = 1;
+
+  // Current version of the stored info type.
+  StoredInfoTypeVersion current_version = 2;
+
+  // Pending versions of the stored info type. Empty if no versions are
+  // pending.
+  repeated StoredInfoTypeVersion pending_versions = 3;
+}
+
+// Request message for CreateStoredInfoType.
+message CreateStoredInfoTypeRequest {
+  // The parent resource name, for example projects/my-project-id or
+  // organizations/my-org-id.
+  string parent = 1;
+
+  // Configuration of the storedInfoType to create.
+  StoredInfoTypeConfig config = 2;
+
+  // The storedInfoType ID can contain uppercase and lowercase letters,
+  // numbers, and hyphens; that is, it must match the regular
+  // expression: `[a-zA-Z\\d-]+`. The maximum length is 100
+  // characters. Can be empty to allow the system to generate one.
+  string stored_info_type_id = 3;
+}
+
+// Request message for UpdateStoredInfoType.
+message UpdateStoredInfoTypeRequest {
+  // Resource name of organization and storedInfoType to be updated, for
+  // example `organizations/433245324/storedInfoTypes/432452342` or
+  // projects/project-id/storedInfoTypes/432452342.
+  string name = 1;
+
+  // Updated configuration for the storedInfoType. If not provided, a new
+  // version of the storedInfoType will be created with the existing
+  // configuration.
+  StoredInfoTypeConfig config = 2;
+
+  // Mask to control which fields get updated.
+  google.protobuf.FieldMask update_mask = 3;
+}
+
+// Request message for GetStoredInfoType.
+message GetStoredInfoTypeRequest {
+  // Resource name of the organization and storedInfoType to be read, for
+  // example `organizations/433245324/storedInfoTypes/432452342` or
+  // projects/project-id/storedInfoTypes/432452342.
+  string name = 1;
+}
+
+// Request message for ListStoredInfoTypes.
+message ListStoredInfoTypesRequest {
+  // The parent resource name, for example projects/my-project-id or
+  // organizations/my-org-id.
+  string parent = 1;
+
+  // Optional page token to continue retrieval. Comes from previous call
+  // to `ListStoredInfoTypes`.
+  string page_token = 2;
+
+  // Optional size of the page, can be limited by server. If zero server returns
+  // a page of max size 100.
+  int32 page_size = 3;
+
+  // Optional comma separated list of fields to order by,
+  // followed by `asc` or `desc` postfix. This list is case-insensitive,
+  // default sorting order is ascending, redundant space characters are
+  // insignificant.
+  //
+  // Example: `name asc, display_name, create_time desc`
+  //
+  // Supported fields are:
+  //
+  // - `create_time`: corresponds to time the most recent version of the
+  // resource was created.
+  // - `state`: corresponds to the state of the resource.
+  // - `name`: corresponds to resource name.
+  // - `display_name`: corresponds to info type's display name.
+  string order_by = 4;
+}
+
+// Response message for ListStoredInfoTypes.
+message ListStoredInfoTypesResponse {
+  // List of storedInfoTypes, up to page_size in ListStoredInfoTypesRequest.
+  repeated StoredInfoType stored_info_types = 1;
+
+  // If the next page is available then the next page token to be used
+  // in following ListStoredInfoTypes request.
+  string next_page_token = 2;
+}
+
+// Request message for DeleteStoredInfoType.
+message DeleteStoredInfoTypeRequest {
+  // Resource name of the organization and storedInfoType to be deleted, for
+  // example `organizations/433245324/storedInfoTypes/432452342` or
+  // projects/project-id/storedInfoTypes/432452342.
+  string name = 1;
+}
+
 // Options describing which parts of the provided content should be scanned.
 enum ContentOption {
   // Includes entire content of a file or a data stream.
@@ -2607,6 +2935,35 @@ enum ContentOption {
 
   // Images found in the data.
   CONTENT_IMAGE = 2;
+}
+
+// Type of the match which can be applied to different ways of matching, like
+// Dictionary, regular expression and intersecting with findings of another
+// info type.
+enum MatchingType {
+  // Invalid.
+  MATCHING_TYPE_UNSPECIFIED = 0;
+
+  // Full match.
+  //
+  // - Dictionary: join of Dictionary results matched complete finding quote
+  // - Regex: all regex matches fill a finding quote start to end
+  // - Exclude info type: completely inside affecting info types findings
+  MATCHING_TYPE_FULL_MATCH = 1;
+
+  // Partial match.
+  //
+  // - Dictionary: at least one of the tokens in the finding matches
+  // - Regex: substring of the finding matches
+  // - Exclude info type: intersects with affecting info types findings
+  MATCHING_TYPE_PARTIAL_MATCH = 2;
+
+  // Inverse match.
+  //
+  // - Dictionary: no tokens in the finding match the dictionary
+  // - Regex: finding doesn't match the regex
+  // - Exclude info type: no intersection with affecting info types findings
+  MATCHING_TYPE_INVERSE_MATCH = 3;
 }
 
 // Parts of the APIs which use certain infoTypes.
@@ -2655,4 +3012,24 @@ enum DlpJobType {
 
   // The job executed a Risk Analysis computation.
   RISK_ANALYSIS_JOB = 2;
+}
+
+// State of a StoredInfoType version.
+enum StoredInfoTypeState {
+  STORED_INFO_TYPE_STATE_UNSPECIFIED = 0;
+
+  // StoredInfoType version is being created.
+  PENDING = 1;
+
+  // StoredInfoType version is ready for use.
+  READY = 2;
+
+  // StoredInfoType creation failed. All relevant error messages are returned in
+  // the `StoredInfoTypeVersion` message.
+  FAILED = 3;
+
+  // StoredInfoType is no longer valid because artifacts stored in
+  // user-controlled storage were modified. To fix an invalid StoredInfoType,
+  // use the `UpdateStoredInfoType` method to create a new version.
+  INVALID = 4;
 }

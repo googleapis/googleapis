@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc.
+// Copyright 2018 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
 
 syntax = "proto3";
 
@@ -36,6 +37,18 @@ message InfoType {
   string name = 1;
 }
 
+// A reference to a StoredInfoType to use with scanning.
+message StoredType {
+  // Resource name of the requested `StoredInfoType`, for example
+  // `organizations/433245324/storedInfoTypes/432452342` or
+  // `projects/project-id/storedInfoTypes/432452342`.
+  string name = 1;
+
+  // Timestamp indicating when the version of the `StoredInfoType` used for
+  // inspection was created. Output-only field, populated by the system.
+  google.protobuf.Timestamp create_time = 2;
+}
+
 // Custom information type provided by the user. Used to find domain-specific
 // sensitive information configurable to the data in question.
 message CustomInfoType {
@@ -57,7 +70,11 @@ message CustomInfoType {
   //
   // Dictionary words containing a large number of characters that are not
   // letters or digits may result in unexpected findings because such characters
-  // are treated as whitespace.
+  // are treated as whitespace. The
+  // [limits](https://cloud.google.com/dlp/limits) page contains details about
+  // the size limits of dictionaries. For dictionaries that do not fit within
+  // these constraints, consider using `LargeCustomDictionaryConfig` in the
+  // `StoredInfoType` API.
   message Dictionary {
     // Message defining a list of words or phrases to search for in the data.
     message WordList {
@@ -79,7 +96,9 @@ message CustomInfoType {
 
   // Message defining a custom regular expression.
   message Regex {
-    // Pattern defining the regular expression.
+    // Pattern defining the regular expression. Its syntax
+    // (https://github.com/google/re2/wiki/Syntax) can be found under the
+    // google/re2 repository on GitHub.
     string pattern = 1;
   }
 
@@ -154,8 +173,21 @@ message CustomInfoType {
     }
   }
 
-  // All CustomInfoTypes must have a name
-  // that does not conflict with built-in InfoTypes or other CustomInfoTypes.
+  enum ExclusionType {
+    // A finding of this custom info type will not be excluded from results.
+    EXCLUSION_TYPE_UNSPECIFIED = 0;
+
+    // A finding of this custom info type will be excluded from final results,
+    // but can still affect rule execution.
+    EXCLUSION_TYPE_EXCLUDE = 1;
+  }
+
+  // CustomInfoType can either be a new infoType, or an extension of built-in
+  // infoType, when the name matches one of existing infoTypes and that infoType
+  // is specified in `InspectContent.info_types` field. Specifying the latter
+  // adds findings to the one detected by the system. If built-in info type is
+  // not specified in `InspectContent.info_types` list then the name is treated
+  // as a custom info type.
   InfoType info_type = 1;
 
   // Likelihood to return for this CustomInfoType. This base value can be
@@ -173,12 +205,20 @@ message CustomInfoType {
     // Message for detecting output from deidentification transformations that
     // support reversing.
     SurrogateType surrogate_type = 4;
+
+    // Load an existing `StoredInfoType` resource for use in
+    // `InspectDataSource`. Not currently supported in `InspectContent`.
+    StoredType stored_type = 5;
   }
 
   // Set of detection rules to apply to all findings of this CustomInfoType.
   // Rules are applied in order that they are specified. Not supported for the
   // `surrogate_type` CustomInfoType.
   repeated DetectionRule detection_rules = 7;
+
+  // If set to EXCLUSION_TYPE_EXCLUDE this infoType will not cause a finding
+  // to be returned. It still can be used for rules matching.
+  ExclusionType exclusion_type = 8;
 }
 
 // General identifier of a data field in a storage service.
@@ -217,13 +257,13 @@ message DatastoreOptions {
   KindExpression kind = 2;
 }
 
-// Options defining a file or a set of files (path ending with *) within
-// a Google Cloud Storage bucket.
+// Options defining a file or a set of files within a Google Cloud Storage
+// bucket.
 message CloudStorageOptions {
   // Set of files to scan.
   message FileSet {
-    // The url, in the format `gs://<bucket>/<path>`. Trailing wildcard in the
-    // path is allowed.
+    // The Cloud Storage url of the file(s) to scan, in the format
+    // `gs://<bucket>/<path>`. Trailing wildcard in the path is allowed.
     string url = 1;
   }
 
@@ -241,11 +281,19 @@ message CloudStorageOptions {
     RANDOM_START = 2;
   }
 
+  // The set of one or more files to scan.
   FileSet file_set = 1;
 
   // Max number of bytes to scan from a file. If a scanned file's size is bigger
-  // than this value then the rest of the bytes are omitted.
+  // than this value then the rest of the bytes are omitted. Only one
+  // of bytes_limit_per_file and bytes_limit_per_file_percent can be specified.
   int64 bytes_limit_per_file = 4;
+
+  // Max percentage of bytes to scan from a file. The rest are omitted. The
+  // number of bytes scanned is rounded down. Must be between 0 and 100,
+  // inclusively. Both 0 and 100 means no limit. Defaults to 0. Only one
+  // of bytes_limit_per_file and bytes_limit_per_file_percent can be specified.
+  int32 bytes_limit_per_file_percent = 8;
 
   // List of file type groups to include in the scan.
   // If empty, all files are scanned and available data format processors
@@ -258,6 +306,13 @@ message CloudStorageOptions {
   // Number of files scanned is rounded down. Must be between 0 and 100,
   // inclusively. Both 0 and 100 means no limit. Defaults to 0.
   int32 files_limit_percent = 7;
+}
+
+// Message representing a set of files in Cloud Storage.
+message CloudStorageFileSet {
+  // The url, in the format `gs://<bucket>/<path>`. Trailing wildcard in the
+  // path is allowed.
+  string url = 1;
 }
 
 // Message representing a single file or path in Cloud Storage.
@@ -291,8 +346,16 @@ message BigQueryOptions {
 
   // Max number of rows to scan. If the table has more rows than this value, the
   // rest of the rows are omitted. If not set, or if set to 0, all rows will be
-  // scanned. Cannot be used in conjunction with TimespanConfig.
+  // scanned. Only one of rows_limit and rows_limit_percent can be specified.
+  // Cannot be used in conjunction with TimespanConfig.
   int64 rows_limit = 3;
+
+  // Max percentage of rows to scan. The rest are omitted. The number of rows
+  // scanned is rounded down. Must be between 0 and 100, inclusively. Both 0 and
+  // 100 means no limit. Defaults to 0. Only one of rows_limit and
+  // rows_limit_percent can be specified. Cannot be used in conjunction with
+  // TimespanConfig.
+  int32 rows_limit_percent = 6;
 
   SampleMethod sample_method = 4;
 }
@@ -302,15 +365,17 @@ message StorageConfig {
   // Configuration of the timespan of the items to include in scanning.
   // Currently only supported when inspecting Google Cloud Storage and BigQuery.
   message TimespanConfig {
-    // Exclude files older than this value.
+    // Exclude files or rows older than this value.
     google.protobuf.Timestamp start_time = 1;
 
-    // Exclude files newer than this value.
+    // Exclude files or rows newer than this value.
     // If set to zero, no upper time limit is applied.
     google.protobuf.Timestamp end_time = 2;
 
     // Specification of the field containing the timestamp of scanned items.
-    // Required for data sources like Datastore or BigQuery.
+    // Used for data sources like Datastore or BigQuery.
+    // If not specified for BigQuery, table last modification timestamp
+    // is checked against given time span.
     // The valid data types of the timestamp field are:
     // for BigQuery - timestamp, date, datetime;
     // for Datastore - timestamp.
@@ -427,6 +492,15 @@ message BigQueryTable {
 
   // Name of the table.
   string table_id = 3;
+}
+
+// Message defining a field of a BigQuery table.
+message BigQueryField {
+  // Source table of the field.
+  BigQueryTable table = 1;
+
+  // Designated field in the BigQuery table.
+  FieldId field = 2;
 }
 
 // An entity in a dataset is a field or set of fields that correspond to a
