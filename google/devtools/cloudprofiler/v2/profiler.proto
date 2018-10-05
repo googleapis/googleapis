@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2018 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,79 +18,106 @@ package google.devtools.cloudprofiler.v2;
 
 import "google/api/annotations.proto";
 import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "google.golang.org/genproto/googleapis/devtools/cloudprofiler/v2;cloudprofiler";
 
 
-// Service for recording the profiling data from profiling agents running
-// in the cloud or from an offline provider of profiling data.
+// Manage the collection of continuous profiling data provided by profiling
+// agents running in the cloud or by an offline provider of profiling data.
 //
 // General guidelines:
 // * Profiles for a single deployment must be created in ascending time order.
 // * Profiles can be created in either online or offline mode, see below.
 service ProfilerService {
-  // CreateProfile creates a new profile resource.
+  // CreateProfile creates a new profile resource in the online mode.
   //
-  // In the online creation mode:
-  // * The server ensures that the new profiles are created at a constant rate
-  //   per deployment, so the creation request may hang for some time until the
-  //   next profile session is available.
-  // * The request may fail with ABORTED error if the creation is not
-  //   available within ~1m, the response will indicate the duration of the
-  //   backoff the client should take before attempting creating a profile
-  //   again. The backoff duration is returned in google.rpc.RetryInfo extension
-  //   on the response status. To a gRPC client, the extension will be return as
-  //   a binary-serialized proto in the trailing metadata item named
-  //   "google.rpc.retryinfo-bin".
+  // The server ensures that the new profiles are created at a constant rate per
+  // deployment, so the creation request may hang for some time until the next
+  // profile session is available.
   //
-  // In the offline creation mode:
-  // * The client provides the profile to create along with the profile bytes,
-  //   the server records it.
+  // The request may fail with ABORTED error if the creation is not available
+  // within ~1m, the response will indicate the duration of the backoff the
+  // client should take before attempting creating a profile again. The backoff
+  // duration is returned in google.rpc.RetryInfo extension on the response
+  // status. To a gRPC client, the extension will be return as a
+  // binary-serialized proto in the trailing metadata item named
+  // "google.rpc.retryinfo-bin".
   rpc CreateProfile(CreateProfileRequest) returns (Profile) {
-    option (google.api.http) = { post: "/v2/projects/{deployment.project_id}/profiles" body: "*" };
+    option (google.api.http) = {
+      post: "/v2/{parent=projects/*}/profiles"
+      body: "*"
+    };
+  }
+
+  // CreateOfflineProfile creates a new profile resource in the offline mode.
+  // The client provides the profile to create along with the profile bytes, the
+  // server records it.
+  rpc CreateOfflineProfile(CreateOfflineProfileRequest) returns (Profile) {
+    option (google.api.http) = {
+      post: "/v2/{parent=projects/*}/profiles:createOffline"
+      body: "profile"
+    };
   }
 
   // UpdateProfile updates the profile bytes and labels on the profile resource
-  // created in the online mode.
+  // created in the online mode. Updating the bytes for profiles created in the
+  // offline mode is currently not supported: the profile content must be
+  // provided at the time of the profile creation.
   rpc UpdateProfile(UpdateProfileRequest) returns (Profile) {
-    option (google.api.http) = { patch: "/v2/{profile.name=projects/*/profiles/*}" body: "profile" };
+    option (google.api.http) = {
+      patch: "/v2/{profile.name=projects/*/profiles/*}"
+      body: "profile"
+    };
   }
 }
 
-// CreateProfileRequest describes a profile resource creation request.
-// Deployment field must be populated for both online and offline modes.
-// For the online mode, profile field is not set and the profile_type specifies
-// the list of profile types supported by the agent. The creation call will hang
-// until a profile of one of these types needs to be collected. For offline
-// mode, profile field must be set, profile_type must be empty, and deployment
-// field must be identical to the deployment in the profile.
+// CreateProfileRequest describes a profile resource online creation request.
+// The deployment field must be populated. The profile_type specifies the list
+// of profile types supported by the agent. The creation call will hang until a
+// profile of one of these types needs to be collected.
 message CreateProfileRequest {
+  // Parent project to create the profile in.
+  string parent = 4;
+
   // Deployment details.
   Deployment deployment = 1;
 
-  // Online mode: One or more profile types that the agent is capable of
-  // providing.
+  // One or more profile types that the agent is capable of providing.
   repeated ProfileType profile_type = 2;
+}
 
-  // Offline mode: Contents of the profile to create.
-  Profile profile = 3;
+// CreateOfflineProfileRequest describes a profile resource offline creation
+// request. Profile field must be set.
+message CreateOfflineProfileRequest {
+  // Parent project to create the profile in.
+  string parent = 1;
+
+  // Contents of the profile to create.
+  Profile profile = 2;
 }
 
 // UpdateProfileRequest contains the profile to update.
 message UpdateProfileRequest {
   // Profile to update
   Profile profile = 1;
+
+  // Field mask used to specify the fields to be overwritten. Currently only
+  // profile_bytes and labels fields are supported by UpdateProfile, so only
+  // those fields can be specified in the mask. When no mask is provided, all
+  // fields are overwritten.
+  google.protobuf.FieldMask update_mask = 2;
 }
 
 // Profile resource.
 message Profile {
-  // Opaque, server-assigned, unique ID for this profile.
-  // Output only.
+  // Output only. Opaque, server-assigned, unique ID for this profile.
   string name = 1;
 
   // Type of profile.
-  // Input (for the offline mode) or output (for the online mode).
+  // For offline mode, this must be specified when creating the profile. For
+  // online mode it is assigned and returned by the server.
   ProfileType profile_type = 2;
 
   // Deployment this profile corresponds to.
@@ -104,14 +131,13 @@ message Profile {
   // stopping the profiling is handled asynchronously).
   google.protobuf.Duration duration = 4;
 
-  // Profile bytes, as a gzip compressed serialized proto, the format is
-  // https://github.com/google/pprof/blob/master/proto/profile.proto.
+  // Input only. Profile bytes, as a gzip compressed serialized proto, the
+  // format is https://github.com/google/pprof/blob/master/proto/profile.proto.
   bytes profile_bytes = 5;
 
-  // Labels associated to this specific profile. These labels will get merged
-  // with the deployment labels for the final data set.
-  // See documentation on deployment labels for validation rules and limits.
-  // Input only, will not be populated on responses.
+  // Input only. Labels associated to this specific profile. These labels will
+  // get merged with the deployment labels for the final data set.  See
+  // documentation on deployment labels for validation rules and limits.
   map<string, string> labels = 6;
 }
 
@@ -158,7 +184,8 @@ enum ProfileType {
   // Wallclock time sampling. More expensive as stops all threads.
   WALL = 2;
 
-  // Heap allocation sampling.
+  // In-use heap profile. Represents a snapshot of the allocations that are
+  // live at the time of the profiling.
   HEAP = 3;
 
   // Single-shot collection of all thread stacks.
@@ -166,4 +193,15 @@ enum ProfileType {
 
   // Synchronization contention profile.
   CONTENTION = 5;
+
+  // Peak heap profile.
+  PEAK_HEAP = 6;
+
+  // Heap allocation profile. It represents the aggregation of all allocations
+  // made over the duration of the profile. All allocations are included,
+  // including those that might have been freed by the end of the profiling
+  // interval. The profile is in particular useful for garbage collecting
+  // languages to understand which parts of the code create most of the garbage
+  // collection pressure to see if those can be optimized.
+  HEAP_ALLOC = 7;
 }
