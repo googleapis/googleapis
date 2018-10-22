@@ -150,7 +150,7 @@ com_google_api_codegen_tools_repositories()
 #
 git_repository(
     name = "com_google_protoc_java_resource_names_plugin",
-    commit = "a1ad58ad508cfb9463d061f57f99f728eb72cfa3",
+    commit = "46d8662701a9ce9a7afcf16c2262f686f9dbe279",
     remote = "https://github.com/googleapis/protoc-java-resource-names-plugin.git",
 )
 
