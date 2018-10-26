@@ -83,8 +83,8 @@ message AnnotateVideoRequest {
 // Video context and/or feature-specific parameters.
 message VideoContext {
   // Video segments to annotate. The segments may overlap and are not required
-  // to be contiguous or span the whole video. If unspecified, each video
-  // is treated as a single segment.
+  // to be contiguous or span the whole video. If unspecified, each video is
+  // treated as a single segment.
   repeated VideoSegment segments = 1;
 
   // Config for LABEL_DETECTION.
@@ -98,6 +98,9 @@ message VideoContext {
 
   // Config for FACE_DETECTION.
   FaceDetectionConfig face_detection_config = 5;
+
+  // Config for SPEECH_TRANSCRIPTION.
+  SpeechTranscriptionConfig speech_transcription_config = 6;
 }
 
 // Config for LABEL_DETECTION.
@@ -299,6 +302,9 @@ message VideoAnnotationResults {
   // Explicit content annotation.
   ExplicitContentAnnotation explicit_annotation = 7;
 
+  // Speech transcription.
+  repeated SpeechTranscription speech_transcriptions = 11;
+
   // If set, indicates an error. Note that for a single `AnnotateVideoRequest`
   // some videos may succeed and some may fail.
   google.rpc.Status error = 9;
@@ -318,8 +324,8 @@ message VideoAnnotationProgress {
   // [Google Cloud Storage](https://cloud.google.com/storage/).
   string input_uri = 1;
 
-  // Approximate percentage processed thus far.
-  // Guaranteed to be 100 when fully processed.
+  // Approximate percentage processed thus far. Guaranteed to be
+  // 100 when fully processed.
   int32 progress_percent = 2;
 
   // Time when the request was received.
@@ -335,6 +341,142 @@ message VideoAnnotationProgress {
 message AnnotateVideoProgress {
   // Progress metadata for all videos specified in `AnnotateVideoRequest`.
   repeated VideoAnnotationProgress annotation_progress = 1;
+}
+
+// Config for SPEECH_TRANSCRIPTION.
+message SpeechTranscriptionConfig {
+  // *Required* The language of the supplied audio as a
+  // [BCP-47](https://www.rfc-editor.org/rfc/bcp/bcp47.txt) language tag.
+  // Example: "en-US".
+  // See [Language Support](https://cloud.google.com/speech/docs/languages)
+  // for a list of the currently supported language codes.
+  string language_code = 1;
+
+  // *Optional* Maximum number of recognition hypotheses to be returned.
+  // Specifically, the maximum number of `SpeechRecognitionAlternative` messages
+  // within each `SpeechTranscription`. The server may return fewer than
+  // `max_alternatives`. Valid values are `0`-`30`. A value of `0` or `1` will
+  // return a maximum of one. If omitted, will return a maximum of one.
+  int32 max_alternatives = 2;
+
+  // *Optional* If set to `true`, the server will attempt to filter out
+  // profanities, replacing all but the initial character in each filtered word
+  // with asterisks, e.g. "f***". If set to `false` or omitted, profanities
+  // won't be filtered out.
+  bool filter_profanity = 3;
+
+  // *Optional* A means to provide context to assist the speech recognition.
+  repeated SpeechContext speech_contexts = 4;
+
+  // *Optional* If 'true', adds punctuation to recognition result hypotheses.
+  // This feature is only available in select languages. Setting this for
+  // requests in other languages has no effect at all. The default 'false' value
+  // does not add punctuation to result hypotheses. NOTE: "This is currently
+  // offered as an experimental service, complimentary to all users. In the
+  // future this may be exclusively available as a premium feature."
+  bool enable_automatic_punctuation = 5;
+
+  // *Optional* For file formats, such as MXF or MKV, supporting multiple audio
+  // tracks, specify up to two tracks. Default: track 0.
+  repeated int32 audio_tracks = 6;
+
+  // *Optional* If 'true', enables speaker detection for each recognized word in
+  // the top alternative of the recognition result using a speaker_tag provided
+  // in the WordInfo.
+  // Note: When this is true, we send all the words from the beginning of the
+  // audio for the top alternative in every consecutive responses.
+  // This is done in order to improve our speaker tags as our models learn to
+  // identify the speakers in the conversation over time.
+  bool enable_speaker_diarization = 7;
+
+  // *Optional*
+  // If set, specifies the estimated number of speakers in the conversation.
+  // If not set, defaults to '2'.
+  // Ignored unless enable_speaker_diarization is set to true.
+  int32 diarization_speaker_count = 8;
+
+  // *Optional* If `true`, the top result includes a list of words and the
+  // confidence for those words. If `false`, no word-level confidence
+  // information is returned. The default is `false`.
+  bool enable_word_confidence = 9;
+}
+
+// Provides "hints" to the speech recognizer to favor specific words and phrases
+// in the results.
+message SpeechContext {
+  // *Optional* A list of strings containing words and phrases "hints" so that
+  // the speech recognition is more likely to recognize them. This can be used
+  // to improve the accuracy for specific words and phrases, for example, if
+  // specific commands are typically spoken by the user. This can also be used
+  // to add additional words to the vocabulary of the recognizer. See
+  // [usage limits](https://cloud.google.com/speech/limits#content).
+  repeated string phrases = 1;
+}
+
+// A speech recognition result corresponding to a portion of the audio.
+message SpeechTranscription {
+  // May contain one or more recognition hypotheses (up to the maximum specified
+  // in `max_alternatives`).  These alternatives are ordered in terms of
+  // accuracy, with the top (first) alternative being the most probable, as
+  // ranked by the recognizer.
+  repeated SpeechRecognitionAlternative alternatives = 1;
+
+  // Output only. The
+  // [BCP-47](https://www.rfc-editor.org/rfc/bcp/bcp47.txt) language tag of the
+  // language in this result. This language code was detected to have the most
+  // likelihood of being spoken in the audio.
+  string language_code = 2;
+}
+
+// Alternative hypotheses (a.k.a. n-best list).
+message SpeechRecognitionAlternative {
+  // Transcript text representing the words that the user spoke.
+  string transcript = 1;
+
+  // The confidence estimate between 0.0 and 1.0. A higher number
+  // indicates an estimated greater likelihood that the recognized words are
+  // correct. This field is typically provided only for the top hypothesis, and
+  // only for `is_final=true` results. Clients should not rely on the
+  // `confidence` field as it is not guaranteed to be accurate or consistent.
+  // The default of 0.0 is a sentinel value indicating `confidence` was not set.
+  float confidence = 2;
+
+  // A list of word-specific information for each recognized word.
+  repeated WordInfo words = 3;
+}
+
+// Word-specific information for recognized words. Word information is only
+// included in the response when certain request parameters are set, such
+// as `enable_word_time_offsets`.
+message WordInfo {
+  // Time offset relative to the beginning of the audio, and
+  // corresponding to the start of the spoken word. This field is only set if
+  // `enable_word_time_offsets=true` and only in the top hypothesis. This is an
+  // experimental feature and the accuracy of the time offset can vary.
+  google.protobuf.Duration start_time = 1;
+
+  // Time offset relative to the beginning of the audio, and
+  // corresponding to the end of the spoken word. This field is only set if
+  // `enable_word_time_offsets=true` and only in the top hypothesis. This is an
+  // experimental feature and the accuracy of the time offset can vary.
+  google.protobuf.Duration end_time = 2;
+
+  // The word corresponding to this set of information.
+  string word = 3;
+
+  // Output only. The confidence estimate between 0.0 and 1.0. A higher number
+  // indicates an estimated greater likelihood that the recognized words are
+  // correct. This field is set only for the top alternative.
+  // This field is not guaranteed to be accurate and users should not rely on it
+  // to be always provided.
+  // The default of 0.0 is a sentinel value indicating `confidence` was not set.
+  float confidence = 4;
+
+  // Output only. A distinct integer value is assigned for every speaker within
+  // the audio. This field specifies which one of those speakers was detected to
+  // have spoken this word. Value ranges from 1 up to diarization_speaker_count,
+  // and is only set if speaker diarization is enabled.
+  int32 speaker_tag = 5;
 }
 
 // Video annotation feature.
@@ -353,6 +495,9 @@ enum Feature {
 
   // Human face detection and tracking.
   FACE_DETECTION = 4;
+
+  // Speech transcription.
+  SPEECH_TRANSCRIPTION = 6;
 }
 
 // Label detection mode.
