@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc.
+// Copyright 2018 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
 
 syntax = "proto3";
 
@@ -24,6 +25,7 @@ import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
 
 option cc_enable_arenas = true;
 option go_package = "google.golang.org/genproto/googleapis/cloud/iot/v1;iot";
@@ -32,8 +34,7 @@ option java_outer_classname = "DeviceManagerProto";
 option java_package = "com.google.cloud.iot.v1";
 
 
-// Internet of things (IoT) service. Allows to manipulate device registry
-// instances and the registration of devices (Things) to the cloud.
+// Internet of Things (IoT) service. Securely connect and manage IoT devices.
 service DeviceManager {
   // Creates a device registry that contains devices.
   rpc CreateDeviceRegistry(CreateDeviceRegistryRequest) returns (DeviceRegistry) {
@@ -106,9 +107,6 @@ service DeviceManager {
   rpc DeleteDevice(DeleteDeviceRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
       delete: "/v1/{name=projects/*/locations/*/registries/*/devices/*}"
-      additional_bindings {
-        delete: "/v1/{name=projects/*/locations/*/registries/*/groups/*/devices/*}"
-      }
     };
   }
 
@@ -117,7 +115,7 @@ service DeviceManager {
     option (google.api.http) = {
       get: "/v1/{parent=projects/*/locations/*/registries/*}/devices"
       additional_bindings {
-        get: "/v1/{parent=projects/*/locations/*/groups/*}/devices"
+        get: "/v1/{parent=projects/*/locations/*/registries/*/groups/*}/devices"
       }
     };
   }
@@ -198,6 +196,54 @@ service DeviceManager {
       }
     };
   }
+
+  // Sends a command to the specified device. In order for a device to be able
+  // to receive commands, it must:
+  // 1) be connected to Cloud IoT Core using the MQTT protocol, and
+  // 2) be subscribed to the group of MQTT topics specified by
+  //    /devices/{device-id}/commands/#. This subscription will receive commands
+  //    at the top-level topic /devices/{device-id}/commands as well as commands
+  //    for subfolders, like /devices/{device-id}/commands/subfolder.
+  //    Note that subscribing to specific subfolders is not supported.
+  // If the command could not be delivered to the device, this method will
+  // return an error; in particular, if the device is not subscribed, this
+  // method will return FAILED_PRECONDITION. Otherwise, this method will
+  // return OK. If the subscription is QoS 1, at least once delivery will be
+  // guaranteed; for QoS 0, no acknowledgment will be expected from the device.
+  rpc SendCommandToDevice(SendCommandToDeviceRequest) returns (SendCommandToDeviceResponse) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/registries/*/devices/*}:sendCommandToDevice"
+      body: "*"
+      additional_bindings {
+        post: "/v1/{name=projects/*/locations/*/registries/*/groups/*/devices/*}:sendCommandToDevice"
+        body: "*"
+      }
+    };
+  }
+
+  // Associates the device with the gateway.
+  rpc BindDeviceToGateway(BindDeviceToGatewayRequest) returns (BindDeviceToGatewayResponse) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/locations/*/registries/*}:bindDeviceToGateway"
+      body: "*"
+      additional_bindings {
+        post: "/v1/{parent=projects/*/locations/*/registries/*/groups/*}:bindDeviceToGateway"
+        body: "*"
+      }
+    };
+  }
+
+  // Deletes the association between the device and the gateway.
+  rpc UnbindDeviceFromGateway(UnbindDeviceFromGatewayRequest) returns (UnbindDeviceFromGatewayResponse) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/locations/*/registries/*}:unbindDeviceFromGateway"
+      body: "*"
+      additional_bindings {
+        post: "/v1/{parent=projects/*/locations/*/registries/*/groups/*}:unbindDeviceFromGateway"
+        body: "*"
+      }
+    };
+  }
 }
 
 // Request for `CreateDeviceRegistry`.
@@ -249,13 +295,13 @@ message ListDeviceRegistriesRequest {
 
   // The maximum number of registries to return in the response. If this value
   // is zero, the service will select a default size. A call may return fewer
-  // objects than requested, but if there is a non-empty `page_token`, it
-  // indicates that more entries are available.
+  // objects than requested. A non-empty `next_page_token` in the response
+  // indicates that more data is available.
   int32 page_size = 2;
 
   // The value returned by the last `ListDeviceRegistriesResponse`; indicates
-  // that this is a continuation of a prior `ListDeviceRegistries` call, and
-  // that the system should return the next page of data.
+  // that this is a continuation of a prior `ListDeviceRegistries` call and
+  // the system should return the next page of data.
   string page_token = 3;
 }
 
@@ -278,7 +324,7 @@ message CreateDeviceRequest {
   string parent = 1;
 
   // The device registration details. The field `name` must be empty. The server
-  // will generate that field from the device registry `id` provided and the
+  // generates `name` from the device registry `id` and the
   // `parent` field.
   Device device = 2;
 }
@@ -297,7 +343,7 @@ message GetDeviceRequest {
 
 // Request for `UpdateDevice`.
 message UpdateDeviceRequest {
-  // The new values for the device registry. The `id` and `num_id` fields must
+  // The new values for the device. The `id` and `num_id` fields must
   // be empty, and the field `name` must specify the name path. For example,
   // `projects/p0/locations/us-central1/registries/registry0/devices/device0`or
   // `projects/p0/locations/us-central1/registries/registry0/devices/{num_id}`.
@@ -324,30 +370,56 @@ message ListDevicesRequest {
   // `projects/my-project/locations/us-central1/registries/my-registry`.
   string parent = 1;
 
-  // A list of device numerical ids. If empty, it will ignore this field. This
-  // field cannot hold more than 10,000 entries.
+  // A list of device numeric IDs. If empty, this field is ignored. Maximum
+  // IDs: 10,000.
   repeated uint64 device_num_ids = 2;
 
-  // A list of device string identifiers. If empty, it will ignore this field.
-  // For example, `['device0', 'device12']`. This field cannot hold more than
-  // 10,000 entries.
+  // A list of device string IDs. For example, `['device0', 'device12']`.
+  // If empty, this field is ignored. Maximum IDs: 10,000
   repeated string device_ids = 3;
 
   // The fields of the `Device` resource to be returned in the response. The
-  // fields `id`, and `num_id` are always returned by default, along with any
+  // fields `id` and `num_id` are always returned, along with any
   // other fields specified.
   google.protobuf.FieldMask field_mask = 4;
 
+  // Options related to gateways.
+  GatewayListOptions gateway_list_options = 6;
+
   // The maximum number of devices to return in the response. If this value
   // is zero, the service will select a default size. A call may return fewer
-  // objects than requested, but if there is a non-empty `page_token`, it
-  // indicates that more entries are available.
+  // objects than requested. A non-empty `next_page_token` in the response
+  // indicates that more data is available.
   int32 page_size = 100;
 
   // The value returned by the last `ListDevicesResponse`; indicates
-  // that this is a continuation of a prior `ListDevices` call, and
-  // that the system should return the next page of data.
+  // that this is a continuation of a prior `ListDevices` call and
+  // the system should return the next page of data.
   string page_token = 101;
+}
+
+// Options for limiting the list based on gateway type and associations.
+message GatewayListOptions {
+  // If not set, all devices and gateways are returned. If set, the list is
+  // filtered based on gateway type and associations.
+  oneof filter {
+    // If `GATEWAY` is specified, only gateways are returned. If `NON_GATEWAY`
+    // is specified, only non-gateway devices are returned. If
+    // `GATEWAY_TYPE_UNSPECIFIED` is specified, all devices are returned.
+    GatewayType gateway_type = 1;
+
+    // If set, only devices associated with the specified gateway are returned.
+    // The gateway ID can be numeric (`num_id`) or the user-defined string
+    // (`id`). For example, if `123` is specified, only devices bound to the
+    // gateway with `num_id` 123 are returned.
+    string associations_gateway_id = 2;
+
+    // If set, returns only the gateways with which the specified device is
+    // associated. The device ID can be numeric (`num_id`) or the user-defined
+    // string (`id`). For example, if `456` is specified, returns only the
+    // gateways to which the device with `num_id` 456 is bound.
+    string associations_device_id = 3;
+  }
 }
 
 // Response for `ListDevices`.
@@ -416,4 +488,69 @@ message ListDeviceStatesResponse {
   // The last few device states. States are listed in descending order of server
   // update time, starting from the most recent one.
   repeated DeviceState device_states = 1;
+}
+
+// Request for `SendCommandToDevice`.
+message SendCommandToDeviceRequest {
+  // The name of the device. For example,
+  // `projects/p0/locations/us-central1/registries/registry0/devices/device0` or
+  // `projects/p0/locations/us-central1/registries/registry0/devices/{num_id}`.
+  string name = 1;
+
+  // The command data to send to the device.
+  bytes binary_data = 2;
+
+  // Optional subfolder for the command. If empty, the command will be delivered
+  // to the /devices/{device-id}/commands topic, otherwise it will be delivered
+  // to the /devices/{device-id}/commands/{subfolder} topic. Multi-level
+  // subfolders are allowed. This field must not have more than 256 characters,
+  // and must not contain any MQTT wildcards ("+" or "#") or null characters.
+  string subfolder = 3;
+}
+
+// Response for `SendCommandToDevice`.
+message SendCommandToDeviceResponse {
+
+}
+
+// Request for `BindDeviceToGateway`.
+message BindDeviceToGatewayRequest {
+  // The name of the registry. For example,
+  // `projects/example-project/locations/us-central1/registries/my-registry`.
+  string parent = 1;
+
+  // The value of `gateway_id` can be either the device numeric ID or the
+  // user-defined device identifier.
+  string gateway_id = 2;
+
+  // The device to associate with the specified gateway. The value of
+  // `device_id` can be either the device numeric ID or the user-defined device
+  // identifier.
+  string device_id = 3;
+}
+
+// Response for `BindDeviceToGateway`.
+message BindDeviceToGatewayResponse {
+
+}
+
+// Request for `UnbindDeviceFromGateway`.
+message UnbindDeviceFromGatewayRequest {
+  // The name of the registry. For example,
+  // `projects/example-project/locations/us-central1/registries/my-registry`.
+  string parent = 1;
+
+  // The value of `gateway_id` can be either the device numeric ID or the
+  // user-defined device identifier.
+  string gateway_id = 2;
+
+  // The device to disassociate from the specified gateway. The value of
+  // `device_id` can be either the device numeric ID or the user-defined device
+  // identifier.
+  string device_id = 3;
+}
+
+// Response for `UnbindDeviceFromGateway`.
+message UnbindDeviceFromGatewayResponse {
+
 }
