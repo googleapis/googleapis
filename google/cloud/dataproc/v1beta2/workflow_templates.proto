@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc.
+// Copyright 2018 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
 
 syntax = "proto3";
 
@@ -110,10 +111,10 @@ service WorkflowTemplateService {
   // [Empty][google.protobuf.Empty].
   rpc InstantiateInlineWorkflowTemplate(InstantiateInlineWorkflowTemplateRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
-      post: "/v1beta2/{parent=projects/*/regions/*}/workflowTemplates:instantiateInline"
+      post: "/v1beta2/{parent=projects/*/locations/*}/workflowTemplates:instantiateInline"
       body: "template"
       additional_bindings {
-        post: "/v1beta2/{parent=projects/*/locations/*}/workflowTemplates:instantiateInline"
+        post: "/v1beta2/{parent=projects/*/regions/*}/workflowTemplates:instantiateInline"
         body: "template"
       }
     };
@@ -203,6 +204,11 @@ message WorkflowTemplate {
 
   // Required. The Directed Acyclic Graph of Jobs to submit.
   repeated OrderedJob jobs = 8;
+
+  // Optional. Template parameters whose values are substituted into the
+  // template. Values for parameters must be provided when the template is
+  // instantiated.
+  repeated TemplateParameter parameters = 9;
 }
 
 // Specifies workflow execution target.
@@ -319,6 +325,104 @@ message OrderedJob {
   repeated string prerequisite_step_ids = 10;
 }
 
+// A configurable parameter that replaces one or more fields in the template.
+// Parameterizable fields:
+// - Labels
+// - File uris
+// - Job properties
+// - Job arguments
+// - Script variables
+// - Main class (in HadoopJob and SparkJob)
+// - Zone (in ClusterSelector)
+message TemplateParameter {
+  // Required.  Parameter name.
+  // The parameter name is used as the key, and paired with the
+  // parameter value, which are passed to the template when the template
+  // is instantiated.
+  // The name must contain only capital letters (A-Z), numbers (0-9), and
+  // underscores (_), and must not start with a number. The maximum length is
+  // 40 characters.
+  string name = 1;
+
+  // Required. Paths to all fields that the parameter replaces.
+  // A field is allowed to appear in at most one parameter's list of field paths.
+  //
+  // A field path is similar in syntax to a [google.protobuf.FieldMask][google.protobuf.FieldMask].
+  // For example, a field path that references the zone field of a workflow
+  // template's cluster selector would be specified as
+  // `placement.clusterSelector.zone`.
+  //
+  // Also, field paths can reference fields using the following syntax:
+  //
+  // * Values in maps can be referenced by key:
+  //     * labels['key']
+  //     * placement.clusterSelector.clusterLabels['key']
+  //     * placement.managedCluster.labels['key']
+  //     * placement.clusterSelector.clusterLabels['key']
+  //     * jobs['step-id'].labels['key']
+  //
+  // * Jobs in the jobs list can be referenced by step-id:
+  //     * jobs['step-id'].hadoopJob.mainJarFileUri
+  //     * jobs['step-id'].hiveJob.queryFileUri
+  //     * jobs['step-id'].pySparkJob.mainPythonFileUri
+  //     * jobs['step-id'].hadoopJob.jarFileUris[0]
+  //     * jobs['step-id'].hadoopJob.archiveUris[0]
+  //     * jobs['step-id'].hadoopJob.fileUris[0]
+  //     * jobs['step-id'].pySparkJob.pythonFileUris[0]
+  //
+  // * Items in repeated fields can be referenced by a zero-based index:
+  //     * jobs['step-id'].sparkJob.args[0]
+  //
+  // * Other examples:
+  //     * jobs['step-id'].hadoopJob.properties['key']
+  //     * jobs['step-id'].hadoopJob.args[0]
+  //     * jobs['step-id'].hiveJob.scriptVariables['key']
+  //     * jobs['step-id'].hadoopJob.mainJarFileUri
+  //     * placement.clusterSelector.zone
+  //
+  // It may not be possible to parameterize maps and repeated fields in their
+  // entirety since only individual map values and individual items in repeated
+  // fields can be referenced. For example, the following field paths are
+  // invalid:
+  //
+  // - placement.clusterSelector.clusterLabels
+  // - jobs['step-id'].sparkJob.args
+  repeated string fields = 2;
+
+  // Optional. Brief description of the parameter.
+  // Must not exceed 1024 characters.
+  string description = 3;
+
+  // Optional. Validation rules to be applied to this parameter's value.
+  ParameterValidation validation = 4;
+}
+
+// Configuration for parameter validation.
+message ParameterValidation {
+  // Required. The type of validation to be performed.
+  oneof validation_type {
+    // Validation based on regular expressions.
+    RegexValidation regex = 1;
+
+    // Validation based on a list of allowed values.
+    ValueValidation values = 2;
+  }
+}
+
+// Validation based on regular expressions.
+message RegexValidation {
+  // Required. RE2 regular expressions used to validate the parameter's value.
+  // The value must match the regex in its entirety (substring
+  // matches are not sufficient).
+  repeated string regexes = 1;
+}
+
+// Validation based on a list of allowed values.
+message ValueValidation {
+  // Required. List of allowed values for the parameter.
+  repeated string values = 1;
+}
+
 // A Cloud Dataproc workflow template resource.
 message WorkflowMetadata {
   // The operation state.
@@ -355,11 +459,20 @@ message WorkflowMetadata {
   // Output only. The workflow state.
   State state = 6;
 
-  // Output only. The name of the managed cluster.
+  // Output only. The name of the target cluster.
   string cluster_name = 7;
 
   // Map from parameter names to values that were used for those parameters.
   map<string, string> parameters = 8;
+
+  // Output only. Workflow start time.
+  google.protobuf.Timestamp start_time = 9;
+
+  // Output only. Workflow end time.
+  google.protobuf.Timestamp end_time = 10;
+
+  // Output only. The UUID of target cluster.
+  string cluster_uuid = 11;
 }
 
 // The cluster operation triggered by a workflow.
@@ -460,6 +573,9 @@ message InstantiateWorkflowTemplateRequest {
   // workflow template.
   int32 version = 2;
 
+  // Deprecated. Please use `request_id` field instead.
+  string instance_id = 3 [deprecated = true];
+
   // Optional. A tag that prevents multiple concurrent workflow
   // instances with the same tag from running. This mitigates risk of
   // concurrent instances started due to retries.
@@ -469,7 +585,11 @@ message InstantiateWorkflowTemplateRequest {
   //
   // The tag must contain only letters (a-z, A-Z), numbers (0-9),
   // underscores (_), and hyphens (-). The maximum length is 40 characters.
-  string instance_id = 3;
+  string request_id = 5;
+
+  // Optional. Map from parameter names to values that should be used for those
+  // parameters. Values may not exceed 100 characters.
+  map<string, string> parameters = 4;
 }
 
 // A request to instantiate an inline workflow template.
@@ -482,6 +602,9 @@ message InstantiateInlineWorkflowTemplateRequest {
   // Required. The workflow template to instantiate.
   WorkflowTemplate template = 2;
 
+  // Deprecated. Please use `request_id` field instead.
+  string instance_id = 3;
+
   // Optional. A tag that prevents multiple concurrent workflow
   // instances with the same tag from running. This mitigates risk of
   // concurrent instances started due to retries.
@@ -491,7 +614,7 @@ message InstantiateInlineWorkflowTemplateRequest {
   //
   // The tag must contain only letters (a-z, A-Z), numbers (0-9),
   // underscores (_), and hyphens (-). The maximum length is 40 characters.
-  string instance_id = 3;
+  string request_id = 4;
 }
 
 // A request to update a workflow template.
