@@ -1,0 +1,62 @@
+#! /bin/bash
+
+if [ "$#" -ne 3 ]; then
+  echo "Usage: ./script/generate [api_name] [api_version] [language]"
+fi
+
+##
+
+API_NAME="$1"
+API_VERSION="$2"
+LANGUAGE="$3"
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+CODE_SAMPLES_DIR="$( dirname "$SCRIPT_DIR" )"
+GOOGLEAPIS_DIR="$( dirname "$CODE_SAMPLES_DIR" )"
+
+## Lookup artman configuration file (used for generation) in googleapis dir
+
+ARTMAN_FILE="$GOOGLEAPIS_DIR/google/$API_NAME/artman_${API_NAME}_${API_VERSION}.yaml"
+CLOUD_ARTMAN_FILE="$GOOGLEAPIS_DIR/google/cloud/$API_NAME/artman_${API_NAME}_${API_VERSION}.yaml"
+
+if [ -f "$ARTMAN_FILE" ]; then
+  RELATIVE_ARTMAN_FILE="/googleapis/google/$API_NAME/artman_${API_NAME}_${API_VERSION}.yaml"
+elif [ -f "$CLOUD_ARTMAN_FILE" ]; then
+  RELATIVE_ARTMAN_FILE="/googleapis/google/cloud/$API_NAME/artman_${API_NAME}_${API_VERSION}.yaml"
+else
+  echo "Artman file not found for $API_NAME $API_VERSION"
+  echo
+  echo "Search paths:"
+  echo "  $ARTMAN_FILE"
+  echo "  $CLOUD_ARTMAN_FILE"
+  exit 1
+fi
+
+## Run generator via artman docker image
+
+ARTMAN_COMMAND="artman --local --config \"$RELATIVE_ARTMAN_FILE\" --generator-args=\"--dev_samples\" generate ${LANGUAGE}_gapic"
+
+OUTPUT_DIR="$CODE_SAMPLES_DIR/.generator-output/$(date +"%Y%m%d_%H%M%S")/$LANGUAGE"
+mkdir -p "$OUTPUT_DIR"
+
+docker run --rm                                        \
+  --env     RUNNING_IN_ARTMAN_DOCKER=True              \
+  --workdir /googleapis                                \
+  --volume "$GOOGLEAPIS_DIR:/googleapis"               \
+  --volume "$OUTPUT_DIR:/googleapis/artman-genfiles"   \
+  googleapis/artman                                    \
+  /bin/bash -c "$ARTMAN_COMMAND"
+
+echo "Output saved to: $OUTPUT_DIR"
+
+API_SAMPLES_DIRECTORY="$CODE_SAMPLES_DIR/$API_NAME/$API_VERSION/$LANGUAGE"
+mkdir -p "$API_SAMPLES_DIRECTORY"
+
+# find "$(find "$OUTPUT_DIR" -type d -name samples)" -type f \( -name "*.php" -or -name "*.py" \) -exec "cp -v {} $API_SAMPLES_DIRECTORY/" \;
+
+for sample_file in `find "$(find "$OUTPUT_DIR" -type d -name samples)" -type f \( -name "*.php" -or -name "*.py" \)`; do
+  echo "Sample file: $sample_file"
+  cp -v "$sample_file" "$API_SAMPLES_DIRECTORY/"
+done
+
+echo "Sample files saved to: $API_SAMPLES_DIRECTORY"
