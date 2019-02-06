@@ -57,6 +57,41 @@ _If there are blocking issues, we can use this document to note them down._
 
 #### 👂 Speech-to-Text API
 
+ - [Transcribing short audio files][]
+   - [ ] `speech_transcribe_sync`
+   - [ ] `speech_transcribe_sync_gcs`
+ - [Transcribing long audio files][]
+   - [ ] `speech_transcribe_async`
+   - [ ] `speech_transcribe_async_gcs`
+ - [Getting word timestamps][]
+   - [ ] `speech_transcribe_async_word_time_offsets_gcs`
+ - 🔬 Beta Features
+   - [Enabling word-level confidence][]
+     - [ ] `speech_transcribe_word_level_confidence_beta`
+   - [Separating different speakers in an audio recording][]
+     - [ ] `speech_transcribe_diarization_beta`
+   - [Detecting language spoken automatically][]
+     - [ ] `speech_transcribe_multilanguage_beta`
+   - [Transcribing audio with multiple channels][]
+     - [ ] `speech_transcribe_multichannel_beta`
+   - [Using enhanced models][]
+     - [ ] `speech_transcribe_enhanced_model_beta`
+   - [Adding recognition metadata][]
+     - [ ] `speech_transcribe_recognition_metadata_beta`
+   - [Getting punctuation][]
+     - [ ] `speech_transcribe_auto_punctuation_beta`
+ 
+ [Transcribing short audio files]: https://cloud.google.com/speech-to-text/docs/sync-recognize
+ [Transcribing long audio files]: https://cloud.google.com/speech-to-text/docs/async-recognize
+ [Getting word timestamps]: https://cloud.google.com/speech-to-text/docs/async-time-offsets
+ [Enabling word-level confidence]: https://cloud.google.com/speech-to-text/docs/word-confidence
+ [Separating different speakers in an audio recording]: https://cloud.google.com/speech-to-text/docs/multiple-voices
+ [Detecting language spoken automatically]: https://cloud.google.com/speech-to-text/docs/multiple-languages
+ [Transcribing audio with multiple channels]: https://cloud.google.com/speech-to-text/docs/multi-channel
+ [Using enhanced models]: https://cloud.google.com/speech-to-text/docs/enhanced-models
+ [Adding recognition metadata]: https://cloud.google.com/speech-to-text/docs/recognition-metadata
+ [Getting punctuation]: https://cloud.google.com/speech-to-text/docs/automatic-punctuation
+
 #### 🗣 Text-to-Speech API
 
  - [Creating voice audio files][] - Converting text to synthetic voice audio
