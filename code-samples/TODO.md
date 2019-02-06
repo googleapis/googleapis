@@ -11,8 +11,7 @@ There are a few types of work which need to happen to ship these samples:
 
 For every language, we need a list of snippets and tests to use as **target output**.
 
-These snippets should demonstrate synchronous calls, long-running operations,  
-file inputs, and various other _"features"_ provided by the sample generator.
+These snippets should demonstrate synchronous calls, long-running operations, file inputs, and other _"features"_ provided by the sample generator.
 
 | Language | Synchronous | Long-running operation | File input | File output | Resource Paths | 
 |----------|-------------|------------------------|------------|-------------|----------------|
@@ -28,9 +27,14 @@ file inputs, and various other _"features"_ provided by the sample generator.
 
 Here we can track the individual samples which we have authored in YAML!
 
+Please only cross of each individual language after confirming that the tests pass for that language.
+
 _If there are blocking issues, we can use this document to note them down._
 
 #### 📜 Natural Language API
+
+| `region_tag` | YAML | Test | 🐹 Go | ☕️ Java | 🚀 Node.js | 🐘 PHP | 🐍 Python |
+|--------------|------|------|-------|---------|-------------|--------|-----------|
 
 #### 👂 Speech-to-Text API
 
