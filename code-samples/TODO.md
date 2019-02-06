@@ -112,7 +112,42 @@ _If there are blocking issues, we can use this document to note them down._
 
 #### 👁 Vision API
 
-#### 👜 Vision Product Search API
+#### 👜 Product Search API
+
+ - [Creating a product set resource][]
+   - [ ] `vision_product_search_create_product_set`
+   - [ ] `vision_product_search_import_product_images`
+ - [Creating and managing your product resources][]
+   - [ ] `vision_product_search_create_product`
+   - [ ] `vision_product_search_add_product_to_product_set`
+   - [ ] `vision_product_search_remove_product_from_product_set`
+ - [Creating your reference images & indexing][]
+   - [ ] `vision_product_search_create_reference_image`
+   - `vision_product_search_import_product_images` _(used on another page above)_
+ - [Getting and listing resources][]
+   - [ ] `vision_product_search_list_product_sets`
+   - [ ] `vision_product_search_get_product_set`
+   - [ ] `vision_product_search_list_products`
+   - [ ] `vision_product_search_get_product`
+   - [ ] `vision_product_search_list_reference_images`
+   - [ ] `vision_product_search_get_reference_image`
+ - [Updating resources][]
+   - [ ] `vision_product_search_update_product_labels`
+ - [Deleting resources][]
+   - [ ] `vision_product_search_delete_reference_image`
+   - [ ] `vision_product_search_delete_product`
+   - [ ] `vision_product_search_delete_product_set`
+ - [Searching for Products][]
+   - [ ] `vision_product_search_get_similar_products`
+   - [ ] `vision_product_search_get_similar_products_gcs`
+ 
+[Creating a product set resource]: https://cloud.google.com/vision/product-search/docs/create-product-set
+[Creating and managing your product resources]: https://cloud.google.com/vision/product-search/docs/create-product
+[Creating your reference images & indexing]: https://cloud.google.com/vision/product-search/docs/create-reference-images
+[Getting and listing resources]: https://cloud.google.com/vision/product-search/docs/get-list-resources
+[Updating resources]: https://cloud.google.com/vision/product-search/docs/update-resources
+[Deleting resources]: https://cloud.google.com/vision/product-search/docs/delete-resources
+[Searching for Products]: https://cloud.google.com/vision/product-search/docs/searching
 
 #### 🎞 Video Intelligence API
 
