@@ -1,5 +1,7 @@
 #! /bin/bash
 
+# TODO update to return exit 1 if sample generation fails
+
 if [ "$#" -ne 3 ]; then
   echo "Usage: ./script/generate [api_name] [api_version] [language]"
 fi
@@ -13,9 +15,21 @@ LANGUAGE="$3"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 CODE_SAMPLES_DIR="$( dirname "$SCRIPT_DIR" )"
 GOOGLEAPIS_DIR="$( dirname "$CODE_SAMPLES_DIR" )"
+RELATIVE_API_SAMPLES_DIRECTORY="$API_NAME/$API_VERSION/$LANGUAGE"
+API_SAMPLES_DIRECTORY="$CODE_SAMPLES_DIR/$RELATIVE_API_SAMPLES_DIRECTORY"
+
+case "$LANGUAGE" in
+  "python")
+    LANGUAGE_EXTENSION=py
+    ;;
+  "php")
+    LANGUAGE_EXTENSION=php
+    ;;
+  *)
+    ;;
+esac
 
 ## Lookup artman configuration file (used for generation) in googleapis dir
-
 ARTMAN_FILE="$GOOGLEAPIS_DIR/google/$API_NAME/artman_${API_NAME}_${API_VERSION}.yaml"
 CLOUD_ARTMAN_FILE="$GOOGLEAPIS_DIR/google/cloud/$API_NAME/artman_${API_NAME}_${API_VERSION}.yaml"
 
@@ -33,11 +47,28 @@ else
 fi
 
 ## Run generator via artman docker image
-
 ARTMAN_COMMAND="artman --local --config \"$RELATIVE_ARTMAN_FILE\" --generator-args=\"--dev_samples\" generate ${LANGUAGE}_gapic"
 
 OUTPUT_DIR="$CODE_SAMPLES_DIR/.generator-output/$(date +"%Y%m%d_%H%M%S")/$LANGUAGE"
 mkdir -p "$OUTPUT_DIR"
+
+log_step() {
+  echo -e "[\033[0;92m $1 \033[0m]"
+}
+
+########################################
+log_step "Sample Generator Info"
+########################################
+echo "API: $API_NAME $API_VERSION"
+echo "Language: $LANGUAGE .$LANGUAGE_EXTENSION"
+echo "Sample Output: $RELATIVE_API_SAMPLES_DIRECTORY"
+
+echo
+########################################
+log_step "Running Sample Generator"
+########################################
+
+set -ex
 
 docker run --rm                                        \
   --env     RUNNING_IN_ARTMAN_DOCKER=True              \
@@ -47,12 +78,27 @@ docker run --rm                                        \
   googleapis/artman                                    \
   /bin/bash -c "$ARTMAN_COMMAND"
 
-echo "Output saved to: $OUTPUT_DIR"
+set +ex
 
-API_SAMPLES_DIRECTORY="$CODE_SAMPLES_DIR/$API_NAME/$API_VERSION/$LANGUAGE"
-mkdir -p "$API_SAMPLES_DIRECTORY"
+echo
+echo "GAPIC output saved to: $OUTPUT_DIR"
 
-for sample_file in `find "$(find "$OUTPUT_DIR" -type d -name samples)" -type f \( -name "*.php" -or -name "*.py" \)`; do
+echo
+########################################
+log_step "Saving Samples to $RELATIVE_API_SAMPLES_DIRECTORY"
+########################################
+
+mkdir -pv "$API_SAMPLES_DIRECTORY"
+
+SAMPLES_DIRECTORY="$(find "$OUTPUT_DIR" -type d -name samples)"
+if [ ! -d "$SAMPLES_DIRECTORY" ]; then
+  echo "No samples directory found"
+  echo
+  echo "Generated output: $OUTPUT_DIR"
+  exit 1
+fi
+
+for sample_file in `find "$SAMPLES_DIRECTORY" -type f \( -name "*.php" -or -name "*.py" \)`; do
   echo "Sample file: $sample_file"
   if [ "$LANGUAGE" == "php" ]; then
     cat "$sample_file" | sed "s|require __DIR__.*|require __DIR__ . '/vendor/autoload.php';|" > "$API_SAMPLES_DIRECTORY/$(basename $sample_file)"
@@ -61,4 +107,75 @@ for sample_file in `find "$(find "$OUTPUT_DIR" -type d -name samples)" -type f \
   fi
 done
 
-echo "Sample files saved to: $API_SAMPLES_DIRECTORY"
+for paged_all_sample in `find "$API_SAMPLES_DIRECTORY" -type f \( -name "*PagedAll*.$LANGUAGE_EXTENSION" -or -name "*paged_all*.$LANGUAGE_EXTENSION" \)`; do
+  paged_sample="$(echo "$paged_all_sample" | sed 's/PagedAll/Paged/' | sed 's/paged_all/paged/')"
+  if [ -f "$paged_sample" ]; then
+    echo "Removing unwanted calling form: $paged_sample"
+    rm $paged_sample
+  fi
+done
+
+echo
+########################################
+log_step "Installing Dependencies"
+########################################
+
+CURRENT_DIR="`pwd`"
+cd "$API_SAMPLES_DIRECTORY"
+case "$LANGUAGE" in
+  "python")
+    if [ -f "requirements.txt" ]; then
+      pip install -r requirements.txt
+    else
+      echo "Missing requirements.txt in $RELATIVE_API_SAMPLES_DIRECTORY"
+      echo "Please add this by hand"
+    fi
+    ;;
+  "php")
+    if [ -f "composer.json" ]; then
+      composer install
+    else
+      echo "Missing composer.json in $RELATIVE_API_SAMPLES_DIRECTORY"
+      echo "Please add this by hand"
+    fi
+    ;;
+  *)
+    echo "Unsure how to install dependencies for $LANGUAGE"
+    ;; 
+esac
+cd "$CURRENT_DIR"
+
+echo
+echo "[$RELATIVE_API_SAMPLES_DIRECTORY]"
+ls -a "$API_SAMPLES_DIRECTORY" | cat | tail -2
+echo
+echo "Sample files saved to: $RELATIVE_API_SAMPLES_DIRECTORY"
+for sample_file in `ls $API_SAMPLES_DIRECTORY/*.$LANGUAGE_EXTENSION | xargs -n1 basename`; do
+  printf -- "- " && echo -e "\033[0;96m$sample_file\033[0m"
+done
+
+echo
+########################################
+echo "To run a sample:"
+########################################
+
+case "$LANGUAGE" in
+  "python")
+    find dialogflow/v2/python -type f -name "*.py"
+    EXAMPLE_SAMPLE_FILE="$(find "$API_SAMPLES_DIRECTORY" -type f -name "*.py" | head -1 | xargs basename)"
+    echo -e "\033[0;96m>> python $RELATIVE_API_SAMPLES_DIRECTORY/$EXAMPLE_SAMPLE_FILE --input_param=\"value\"\033[0m"
+    echo
+    echo "This sample accepts the following parameters (may be none)"
+    grep 'parser.add_argument(' -A1 "$API_SAMPLES_DIRECTORY/$EXAMPLE_SAMPLE_FILE" | grep -v 'parser.add_argument(' | sed "s/.*'--\([a-z_]*\).*/\1/" | grep -v -- --
+    ;;
+  "php")
+    EXAMPLE_SAMPLE_FILE="$(find "$API_SAMPLES_DIRECTORY" -type f -name "*.php" | head -1 | xargs basename)"
+    echo -e "\033[0;96m>> php $RELATIVE_API_SAMPLES_DIRECTORY/$EXAMPLE_SAMPLE_FILE --inputParam=\"value\"\033[0m"
+    echo
+    echo "This sample accepts the following parameters (may be none)"
+    grep '= $options\[' "$API_SAMPLES_DIRECTORY/$EXAMPLE_SAMPLE_FILE" | awk '{print $1}' | sed 's/\$//'
+    ;;
+  *)
+    echo "Unsure how to run samples for $LANGUAGE"
+    ;; 
+esac
