@@ -33,8 +33,27 @@ _If there are blocking issues, we can use this document to note them down._
 
 #### 📜 Natural Language API
 
-| `region_tag` | YAML | Test | 🐹 Go | ☕️ Java | 🚀 Node.js | 🐘 PHP | 🐍 Python |
-|--------------|------|------|-------|---------|-------------|--------|-----------|
+ - [Analyzing Syntax][]
+   - [ ] `language_syntax_text` 
+   - [ ] `language_syntax_gcs`
+ - [Analyzing Sentiment][]
+   - [ ] `language_sentiment_text` 
+   - [ ] `language_sentiment_gcs`
+ - [Analyzing Entities][]
+   - [ ] `language_entities_text` 
+   - [ ] `language_entities_gcs`
+ - [Analyzing Entity Sentiment][]
+   - [ ] `language_entity_sentiment_text`
+   - [ ] `language_entity_sentiment_gcs`
+ - [Classifying Content][]
+   - [ ] `language_classify_text`
+   - [ ] `language_classify_gcs`
+ 
+[Analyzing Syntax]: https://cloud.google.com/natural-language/docs/analyzing-syntax
+[Analyzing Sentiment]: https://cloud.google.com/natural-language/docs/analyzing-sentiment
+[Analyzing Entities]: https://cloud.google.com/natural-language/docs/analyzing-entities
+[Analyzing Entity Sentiment]: https://cloud.google.com/natural-language/docs/analyzing-entity-sentiment
+[Classifying Content]: https://cloud.google.com/natural-language/docs/classifying-text
 
 #### 👂 Speech-to-Text API
 
