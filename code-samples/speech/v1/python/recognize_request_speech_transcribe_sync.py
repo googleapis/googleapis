@@ -55,7 +55,8 @@ def sample_recognize(language_code, local_file_path):
     audio = {'content': content}
 
     response = client.recognize(config, audio)
-    print(response)
+    for result in response.results:
+        print('Transcript: {}'.format(result.alternatives[0].transcript))
 
     # [END speech_transcribe_sync_core]
 

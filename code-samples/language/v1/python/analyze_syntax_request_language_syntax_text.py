@@ -36,7 +36,7 @@ def sample_analyze_syntax(content):
 
     client = language_v1.LanguageServiceClient()
 
-    # content = 'Your text to analyze, e.g. Hello, world!'
+    # content = 'California is a state.'
 
     if isinstance(content, six.binary_type):
         content = content.decode('utf-8')
@@ -48,7 +48,7 @@ def sample_analyze_syntax(content):
     for token in tokens:
         print('Part of speech: {}'.format(
             enums.PartOfSpeech.Tag(token.part_of_speech.tag).name))
-        print('Text:'.format(token.text))
+        print('Text: {}'.format(token.text.content))
 
     # [END language_syntax_text_core]
 
@@ -61,9 +61,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--content',
-        type=str,
-        default='Your text to analyze, e.g. Hello, world!')
+        '--content', type=str, default='California is a state.')
     args = parser.parse_args()
 
     sample_analyze_syntax(args.content)

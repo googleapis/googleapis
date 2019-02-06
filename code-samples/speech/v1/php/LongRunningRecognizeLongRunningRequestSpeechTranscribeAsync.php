@@ -16,10 +16,10 @@
  */
 
 /*
- * DO NOT EDIT! This is a generated sample ("Request",  "speech_transcribe_sync")
+ * DO NOT EDIT! This is a generated sample ("LongRunningRequest",  "speech_transcribe_async")
  */
 
-// [START speech_transcribe_sync]
+// [START speech_transcribe_async]
 require __DIR__ . '/vendor/autoload.php';
 
 use Google\Cloud\Speech\V1\SpeechClient;
@@ -27,9 +27,9 @@ use Google\Cloud\Speech\V1\RecognitionAudio;
 use Google\Cloud\Speech\V1\RecognitionConfig;
 use Google\Cloud\Speech\V1\RecognitionConfig_AudioEncoding;
 
-function sampleRecognize($languageCode, $localFilePath)
+function sampleLongRunningRecognize($languageCode, $localFilePath)
 {
-    // [START speech_transcribe_sync_core]
+    // [START speech_transcribe_async_core]
 
     $speechClient = new SpeechClient();
 
@@ -46,17 +46,24 @@ function sampleRecognize($languageCode, $localFilePath)
     $audio->setContent($content);
 
     try {
-        $response = $speechClient->recognize($config, $audio);
-        foreach ($response->getResults() as $result) {
-            printf('Transcript: %s'.PHP_EOL, $result->getAlternatives()[0]->getTranscript());
+        $operationResponse = $speechClient->longRunningRecognize($config, $audio);
+        $operationResponse->pollUntilComplete();
+        if ($operationResponse->operationSucceeded()) {
+            $response = $operationResponse->getResult();
+            foreach ($response->getResults() as $result) {
+                printf('Transcript: %s'.PHP_EOL, $result->getAlternatives()[0]->getTranscript());
+            }
+        } else {
+            $error = $operationResponse->getError();
+            // handleError($error)
         }
     } finally {
         $speechClient->close();
     }
 
-    // [END speech_transcribe_sync_core]
+    // [END speech_transcribe_async_core]
 }
-// [END speech_transcribe_sync]
+// [END speech_transcribe_async]
 
 $opts = [
     'languageCode::',
@@ -74,4 +81,4 @@ $options += $defaultOptions;
 $languageCode = $options['languageCode'];
 $localFilePath = $options['localFilePath'];
 
-sampleRecognize($languageCode, $localFilePath);
+sampleLongRunningRecognize($languageCode, $localFilePath);

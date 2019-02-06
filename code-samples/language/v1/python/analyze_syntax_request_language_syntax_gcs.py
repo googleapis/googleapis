@@ -36,7 +36,7 @@ def sample_analyze_syntax(uri):
 
     client = language_v1.LanguageServiceClient()
 
-    # uri = 'Path to text file, e.g. gs://my-bucket/textfile'
+    # uri = 'gs://cloud-samples-data/california.txt'
 
     if isinstance(uri, six.binary_type):
         uri = uri.decode('utf-8')
@@ -48,7 +48,7 @@ def sample_analyze_syntax(uri):
     for token in tokens:
         print('Part of speech: {}'.format(
             enums.PartOfSpeech.Tag(token.part_of_speech.tag).name))
-        print('Text:'.format(token.text))
+        print('Text: {}'.format(token.text.content))
 
     # [END language_syntax_gcs_core]
 
@@ -61,9 +61,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--uri',
-        type=str,
-        default='Path to text file, e.g. gs://my-bucket/textfile')
+        '--uri', type=str, default='gs://cloud-samples-data/california.txt')
     args = parser.parse_args()
 
     sample_analyze_syntax(args.uri)
