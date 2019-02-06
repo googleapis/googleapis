@@ -57,6 +57,8 @@ _If there are blocking issues, we can use this document to note them down._
 
 #### 👂 Speech-to-Text API
 
+#### 🗣 Text-to-Speech API
+
  - [Creating voice audio files][] - Converting text to synthetic voice audio
    - [ ] `tts_synthesize_text`
    - [ ] `tts_synthesize_text_file`
@@ -72,8 +74,6 @@ _If there are blocking issues, we can use this document to note them down._
 [Creating voice audio files]: https://cloud.google.com/text-to-speech/docs/create-audio
 [Listing all supported voices]: https://cloud.google.com/text-to-speech/docs/list-voices
 [Using device profiles for generated audio]: https://cloud.google.com/text-to-speech/docs/audio-profiles
-
-#### 🗣 Text-to-Speech API
 
 #### 👁 Vision API
 
