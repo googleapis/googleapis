@@ -1,0 +1,92 @@
+#!/bin/bash
+
+set -e
+
+if [ "$#" -ne 2 ]; then
+  echo "Usage: ./script/generate-go [api_name] [api_version]"
+fi
+
+API_NAME="$1"
+API_VERSION="$2"
+
+if ! which gen-go-sample > /dev/null; then
+  echo "Go sample generator needs to be installed first."
+  echo "To install: ./script/install-go-generator"
+	exit 1
+fi
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+CODE_SAMPLES_DIR="$( dirname "$SCRIPT_DIR" )"
+GOOGLEAPIS_DIR="$( dirname "$CODE_SAMPLES_DIR" )"
+RELATIVE_API_SAMPLES_DIRECTORY="$API_NAME/$API_VERSION/$LANGUAGE"
+API_SAMPLES_DIRECTORY="$CODE_SAMPLES_DIR/$RELATIVE_API_SAMPLES_DIRECTORY"
+
+if [ -z $COMMON_PROTO ]; then
+  echo "The Go sample generator requires this repository cloned locally:"
+  echo "https://github.com/googleapis/api-common-protos"
+  echo
+  echo "To continue, please clone this repository somewhere on your local"
+  echo "computer and set the COMMON_PROTO environment variable to the full"
+  echo "path to that repository."
+	exit 1
+fi
+
+log_step() {
+  echo -e "[\033[0;92m $1 \033[0m]"
+}
+
+########################################
+log_step "Sample Generator Info"
+########################################
+echo "API: $API_NAME $API_VERSION"
+echo "Sample Output: $RELATIVE_API_SAMPLES_DIRECTORY"
+echo "common-protos: $COMMON_PROTO"
+
+if [ -n $GOOGLEAPIS ]; then
+  echo "googleapis (user supplied): $GOOGLEAPIS"
+else
+  GOOGLEAPIS="$GOOGLEAPIS_DIR"
+  echo "googleapis: $GOOGLEAPIS"
+fi
+
+if [ -n "$GAPIC_YAML" ]; then
+  echo "GAPIC config (user supplied): $GAPIC_YAML"
+else
+  GAPIC_YAML="$(find "$GOOGLEAPIS_DIR" -type f -name "${API_NAME}_gapic.yaml" | grep "/$API_VERSION/")"
+  if [ -z "$GAPIC_YAML" ]; then
+    echo "GAPIC configuration file not found for $API_NAME $API_VERSION (*/$API_VERSION/${API_NAME}_gapic.yaml)"
+    exit
+  fi
+  echo "GAPIC config: $GAPIC_YAML"
+fi
+
+if [ -z "PROTO_SEARCH_PATH" ]; then
+  echo "protos (user supplied): $PROTO_SEARCH_PATH"
+else
+  PROTO_SEARCH_PATH="$(dirname "$GAPIC_YAML")/*.proto"
+  echo "protos: $PROTO_SEARCH_PATH"
+fi
+
+protodesc() {
+  protoc -o /dev/stdout --include_imports -I "$COMMON_PROTO" -I "$GOOGLEAPIS" $*
+}
+
+echo
+########################################
+log_step "Running Sample Generator"
+########################################
+
+set -x
+
+gen-go-sample \
+  -clientpkg "cloud.google.com/go/$API_NAME/api$API_VERSION;$API_NAME" \
+  -gapic "$GAPIC_YAML" \
+  -o "$API_SAMPLES_DIRECTORY" \
+  -desc <(protodesc "$PROTO_SEARCH_PATH")
+
+set +x
+
+cat >&2 <<'EOF'
+done generating; to test compile:
+find -name '*.go' | xargs -P $(nproc) -n 1 go build -o /dev/null
+EOF
