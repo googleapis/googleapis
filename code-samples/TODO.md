@@ -29,6 +29,8 @@ Here we can track the individual samples which we have authored in YAML!
 
 Please only cross of each individual language after confirming that the tests pass for that language.
 
+> There may be some snippets we need to write to support test suites, e.g. if the website only displays a snippet which _creates_ a resource, our tests will need to be able to _list_ and _delete_ the same resource. We do not need to track those here, only published samples.
+
 _If there are blocking issues, we can use this document to note them down._
 
 #### 📜 Natural Language API
@@ -176,5 +178,32 @@ _If there are blocking issues, we can use this document to note them down._
 [Text Detection]: https://cloud.google.com/video-intelligence/docs/text-detection
 
 #### 💬 Dialogflow Enterprise Edition API
+
+- [Quickstart: Agent interaction using the API][]
+  - [ ] `dialogflow_detect_intent_text`
+- [Detecting Intent from Audio][]
+  - [ ] `dialogflow_detect_intent_audio`
+- [Creating Intents][]
+  - [ ] `dialogflow_create_intent`
+- [Listing and Deleting Intents][]
+  - [ ] `dialogflow_list_intents`
+  - [ ] `dialogflow_delete_intent`
+ - 🔬 Beta Features
+   - [Adding Speech Response to Detect Intent Requests][]
+     - [ ] `dialogflow_detect_intent_with_texttospeech_response`
+   - [Adding Sentiment Analysis to Detect Intent Requests][]
+     - [ ] `dialogflow_detect_intent_with_sentiment_analysis`
+   - [Knowledge Connectors][]
+     - [ ] `dialogflow_create_knowledge_base`
+     - [ ] `dialogflow_create_document`
+     - [ ] `dialogflow_detect_intent_knowledge`
+
+[Quickstart: Agent interaction using the API]: https://cloud.google.com/dialogflow-enterprise/docs/quickstart-api
+[Detecting Intent from Audio]: https://cloud.google.com/dialogflow-enterprise/docs/detect-intent-audio
+[Creating Intents]: https://cloud.google.com/dialogflow-enterprise/docs/create-intent
+[Listing and Deleting Intents]: https://cloud.google.com/dialogflow-enterprise/docs/delete-intent
+[Adding Speech Response to Detect Intent Requests]: https://cloud.google.com/dialogflow-enterprise/docs/detect-intent-tts
+[Adding Sentiment Analysis to Detect Intent Requests]: https://cloud.google.com/dialogflow-enterprise/docs/sentiment
+[Knowledge Connectors]: https://cloud.google.com/dialogflow-enterprise/docs/knowledge-connectors
 
 #### 💼 Job Discovery API
