@@ -60,11 +60,11 @@ You will be working in 2 directories of this repository:
 
 ### 🔍 Understanding Configuration Files
 
-The [`google/cloud/language/v1beta2/`][Natural Language Dir] directory contain two important files:
+The [`google/cloud/language/v1beta2/`][Natural Language Dir] directory contains two important files:
 
- - [`language_service.proto`][Review proto]
- - [`language_gapic.yaml`][Review gapic]
- 
+ - [`language_service.proto`][Review proto] – API definition
+ - [`language_gapic.yaml`][Review gapic] – Code Sample and Client Library configuration 
+
 Let's look at these two important files in detail...
 
 ----
