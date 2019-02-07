@@ -74,20 +74,25 @@ Let's look at these two important files in detail...
 
 #### 🔍 Review of [`language_service.proto`][language_proto] – API Definition
 
-[`language_service.proto`][language_proto] defines the Natural Language v1beta2 API interface.
+The [`language_service.proto`][language_proto] file defines the Natural Language v1beta2 API interface.
 
 For example, the Natural Language API provides an API endpoint for [analyzing the sentiment][Analyzing Sentiment] of text.
 
-So, presumably the API must accept text content as a parameter and return a numeric representation of the predicted sentiment?
+So, presumably the API must have a method which accepts text content as a parameter and returns a numeric representation of the predicted sentiment?
 
-It sure does! Below is an abridged/annotated excerpt of the relevant sections of the `.proto` which defines this functionality. Pay close attention to the [`AnalyzeSentiment`][] method, the [`AnalyzeSentimentRequest`][] message it accepts as parameters, and the [`AnalyzeSentimentResponse`][] message it returns.
+It sure does! Below is an abridged/annotated excerpt of the relevant sections of the `.proto` which defines this functionality.
+
+Pay close attention to the [`AnalyzeSentiment`][] method, the [`AnalyzeSentimentRequest`][] message used to pass parameters, and the [`AnalyzeSentimentResponse`][] message the API returns.
 
 ```proto
 service LanguageService {
 
-  // API method for analyzing the sentiment of provided text content.
+  // **API method** for analyzing the sentiment of provided text content.
+  //
   rpc AnalyzeSentiment(AnalyzeSentimentRequest) returns (AnalyzeSentimentResponse) { }
 
+  // **Request** interface to pass to AnalyzeSentiment.
+  //
   message AnalyzeSentimentRequest {
     // Input document.
     Document document = 1;
@@ -96,6 +101,8 @@ service LanguageService {
     EncodingType encoding_type = 2;
   }
   
+  // **Response** interface which AnalyzeSentiment returns/
+  //
   message AnalyzeSentimentResponse {
     // The overall sentiment of the input document.
     Sentiment document_sentiment = 1;
