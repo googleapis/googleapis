@@ -37,6 +37,7 @@ In this Quickstart you will author a new code sample which calls the [Cloud Natu
 Are you ready? Let's get to it! 😎
 
  1. [Setup](/)
+ 1. [Understanding Configuration Files](/)
  1. [Configure Code Samples](/)
  1. [Generate Code Samples](/)
  1. [Run Code Samples](/)
@@ -57,12 +58,12 @@ You will be working in 2 different folders of this repository:
  - [`google/cloud/language/v1beta2/`][Natural Language Dir] – this contains the `.proto` files and `gapic.yaml` file for the [Natural Language v1beta2 API][Natural Language v1beta2]
  - [`code-samples/`][Code Samples Dir] – this is where generated samples will be output & contains scripts for generating samples & more
 
-### 🖋 Configure Code Samples
+### 🔍 Understanding Configuration Files
 
-[`google/cloud/language/v1beta2/`][Natural Language Dir] contains two important files for generating code samples:
+The [`google/cloud/language/v1beta2/`][Natural Language Dir] directory contain two important files:
 
- - 🔍 [`language_service.proto`][Review proto]
- - 🔍 [`language_gapic.yaml`][Review gapic]
+ - [`language_service.proto`][Review proto]
+ - [`language_gapic.yaml`][Review gapic]
  
 Let's look at these two important files in detail...
 
@@ -167,6 +168,8 @@ Please see the
 #### 🔍 Review of [`language_gapic.yaml`][language_gapic]
 
 ...
+
+### 🖋 Configure Code Samples
 
 ### 🤖 Generate Code Samples
 
