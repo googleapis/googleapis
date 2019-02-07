@@ -45,7 +45,7 @@ Are you ready? Let's get to it! 😎
  
 ### 👩🏼‍💻 Setup
 
-1. Clone this repository
+Clone this repository:
 
 ```
 git clone https://github.com/beccasaurus/gapic-docs-samples.git
@@ -66,7 +66,7 @@ You will be working in 2 different folders of this repository:
  
 Let's look at these two important files in detail...
 
-##### 📝 [`language_service.proto`][language_proto]
+##### 📝 File Review – [`language_service.proto`][language_proto]
 
 This `.proto` defines the Natural Language v1beta2 API interface.
 
@@ -142,9 +142,29 @@ service LanguageService {
 }
 ```
 
-To author 
+Code sample configurations are based on these `.proto` API definitions.
 
-##### 📝 [`language_gapic.yaml`][language_gapic]
+For example, when we create a code sample for calling `AnalyzeSentiment`, we will configure the sample to essentially perform the following:
+
+```python
+# NOTE: this is purely make believe pseudocode to demonstrate what we will want the sample to do
+
+response = AnalyzeSentiment(
+    encoding_type=UTF8
+    document = Document(
+        type=PLAIN_TEXT
+        content="Text with a very happy sentiment!"
+        language="en-US"
+    )
+)
+
+print response.document_sentiment.magniture
+print response.document_sentiment.score
+```
+
+Please see the 
+
+##### 📝 File Review – [`language_gapic.yaml`][language_gapic]
 
 ...
 
@@ -162,7 +182,7 @@ To author
 [Code Samples Dir]: https://github.com/beccasaurus/gapic-docs-samples/tree/master/code-samples
 [Natural Language Dir]: https://github.com/beccasaurus/gapic-docs-samples/tree/master/google/cloud/language/v1beta2
 [Natural Language]: https://cloud.google.com/natural-language/docs/
-[Natural Language V1]: https://cloud.google.com/natural-language/docs/reference/rpc/google.cloud.language.v1beta2
+[Natural Language v1beta2]: https://cloud.google.com/natural-language/docs/reference/rpc/google.cloud.language.v1beta2
 
 [Analyzing Sentiment]: https://cloud.google.com/natural-language/docs/analyzing-sentiment#language-sentiment-string-python
 
