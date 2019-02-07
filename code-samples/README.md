@@ -66,7 +66,7 @@ You will be working in 2 different folders of this repository:
  
 Let's look at these two important files in detail...
 
-##### 📝 File Review – [`language_service.proto`][language_proto]
+#### 🔍 Review of [`language_service.proto`][language_proto]
 
 This `.proto` defines the Natural Language v1beta2 API interface.
 
@@ -164,7 +164,7 @@ print response.document_sentiment.score
 
 Please see the 
 
-##### 📝 File Review – [`language_gapic.yaml`][language_gapic]
+#### 🔍 Review of [`language_gapic.yaml`][language_gapic]
 
 ...
 
