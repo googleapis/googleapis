@@ -61,14 +61,14 @@ You will be working in 2 different folders of this repository:
 
 [`google/cloud/language/v1beta2/`][Natural Language Dir] contains two important files for generating code samples:
 
- - [`language_service.proto`][language_proto]
- - [`language_gapic.yaml`][language_gapic]
+ - 🔍 [`language_service.proto`][Review proto]
+ - 🔍 [`language_gapic.yaml`][Review gapic]
  
 Let's look at these two important files in detail...
 
 #### 🔍 Review of [`language_service.proto`][language_proto]
 
-This `.proto` defines the Natural Language v1beta2 API interface.
+[`language_service.proto`][language_proto] defines the Natural Language v1beta2 API interface.
 
 For example, the Natural Language API provides an API endpoint for [analyzing the sentiment][Analyzing Sentiment] of text.
 
@@ -189,3 +189,6 @@ Please see the
 [`AnalyzeSentiment`]: https://cloud.google.com/natural-language/docs/reference/rpc/google.cloud.language.v1beta2#google.cloud.language.v1beta2.LanguageService.AnalyzeSentiment
 [`AnalyzeSentimentRequest`]: https://cloud.google.com/natural-language/docs/reference/rpc/google.cloud.language.v1beta2#google.cloud.language.v1beta2.AnalyzeSentimentRequest
 [`AnalyzeSentimentResponse`]: https://cloud.google.com/natural-language/docs/reference/rpc/google.cloud.language.v1beta2#google.cloud.language.v1beta2.AnalyzeSentimentResponse
+
+[Review proto]: #-review-oflanguage_serviceproto
+[Review gapic]: #-review-of-language_gapicyaml
