@@ -53,10 +53,10 @@ git clone https://github.com/beccasaurus/gapic-docs-samples.git
 cd gapic-docs-samples/
 ```
 
-You will be working in 2 different folders of this repository:
+You will be working in 2 directories of this repository:
 
- - [`google/cloud/language/v1beta2/`][Natural Language Dir] – this contains the `.proto` files and `gapic.yaml` file for the [Natural Language v1beta2 API][Natural Language v1beta2]
- - [`code-samples/`][Code Samples Dir] – this is where generated samples will be output & contains scripts for generating samples & more
+ - [`google/cloud/language/v1beta2/`][Natural Language Dir] – contains the API definition and configuration files for the [Natural Language API][Natural Language v1beta2].
+ - [`code-samples/`][Code Samples Dir] – this is where generated samples will be output & contains scripts for generating samples & more.
 
 ### 🔍 Understanding Configuration Files
 
@@ -66,6 +66,8 @@ The [`google/cloud/language/v1beta2/`][Natural Language Dir] directory contain t
  - [`language_gapic.yaml`][Review gapic]
  
 Let's look at these two important files in detail...
+
+----
 
 #### 🔍 Review of [`language_service.proto`][language_proto]
 
@@ -164,6 +166,8 @@ print response.document_sentiment.score
 ```
 
 Please see the 
+
+----
 
 #### 🔍 Review of [`language_gapic.yaml`][language_gapic]
 
