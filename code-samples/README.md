@@ -1,6 +1,6 @@
 > ⚠️ This repository is temporary for staging code samples and tests. It may be deleted at any time.
 
-## 🦇 Code Sample Generation
+# 🦇 Code Sample Generation
 
 [googleapis]: https://github.com/googleapis/googleapis
 
@@ -24,7 +24,7 @@ This repository contains:
 
 For a full guide on authoring code samples, see [`AUTHORING_GUIDE.md`](AUTHORING_GUIDE.md)
 
-### 🏃🏼‍♀️ Quickstart
+## 🏃🏼‍♀️ Quickstart
 
 This section will take you from zero to sample generation!
 
@@ -35,7 +35,7 @@ This section will take you from zero to sample generation!
  1. [Configure Sample Tests](/)
  1. [Run Sample Tests](/)
  
-#### 👩🏼‍💻 Setup
+### 👩🏼‍💻 Setup
 
 This Quickstart will walk you through the steps to generate a code sample demonstrating how to call the [Cloud Natural Language API][Natural Language] using a client library. You will generate the code sample in multiple programming languages. You will also author and run an automated test which executes the samples against the real API to verify their functionality.
 
@@ -51,11 +51,16 @@ You will be working in 2 different folders of this repository:
  - [`google/cloud/language/v1/`][Natural Language Dir] – this contains the `.proto` files and `gapic.yaml` file for the [Natural Language V1 API][Natural Language V1]
  - [`code-samples/`][Code Samples Dir] – this is where generated samples will be output & contains scripts for generating samples & more
 
-#### 🖋 Configure Code Samples
+### 🖋 Configure Code Samples
 
-[`google/cloud/language/v1/`][Natural Language Dir] contains two important files:
+[`google/cloud/language/v1/`][Natural Language Dir] contains two important files for generating code samples:
 
-###### [`language_service.proto`][language_proto]
+ - [`language_service.proto`][language_proto]
+ - [`language_gapic.yaml`][language_gapic]
+ 
+Let's look at these two important files in detail...
+
+##### 📝 [`language_service.proto`][language_proto]
 
 This `.proto` defines the Natural Language V1 API interface.
 
@@ -63,7 +68,7 @@ For example, the Natural Language API provides an API endpoint for [analyzing th
 
 So, presumably the API must accept text content as a parameter and return a numeric representation of the predicted sentiment?
 
-It sure does! Below is an abridged/annotated excerpt of the relevant sections of the `.proto` which defines this functionality. Pay close attention to the `AnalyzeSentiment` method, the `AnalyzeSentimentRequest` message it accepts as parameters, and the `AnalyzeSentimentResponse` message it returns.
+It sure does! Below is an abridged/annotated excerpt of the relevant sections of the `.proto` which defines this functionality. Pay close attention to the [`AnalyzeSentiment`][] method, the [`AnalyzeSentimentRequest`][] message it accepts as parameters, and the [`AnalyzeSentimentResponse`][] message it returns.
 
 ```proto
 service LanguageService {
@@ -131,17 +136,19 @@ service LanguageService {
 }
 ```
 
-###### [`language_gapic.yaml`][language_gapic]
 
 
+##### 📝 [`language_gapic.yaml`][language_gapic]
 
-#### 🤖 Generate Code Samples
+...
 
-#### 🚗 Run Code Samples
+### 🤖 Generate Code Samples
 
-#### 🖋 Configure Sample Tests
+### 🚗 Run Code Samples
 
-#### 🚗 Run Sample Tests
+### 🖋 Configure Sample Tests
+
+### 🚗 Run Sample Tests
 
 [language_gapic]: https://github.com/beccasaurus/gapic-docs-samples/blob/master/google/cloud/language/v1/language_gapic.yaml
 [language_proto]: https://github.com/beccasaurus/gapic-docs-samples/blob/master/google/cloud/language/v1/language_service.proto
@@ -152,3 +159,7 @@ service LanguageService {
 [Natural Language V1]: https://cloud.google.com/natural-language/docs/reference/rpc/google.cloud.language.v1
 
 [Analyzing Sentiment]: https://cloud.google.com/natural-language/docs/analyzing-sentiment#language-sentiment-string-python
+
+[`AnalyzeSentiment`]: https://cloud.google.com/natural-language/docs/reference/rpc/google.cloud.language.v1#google.cloud.language.v1.LanguageService.AnalyzeSentiment
+[`AnalyzeSentimentRequest`]: https://cloud.google.com/natural-language/docs/reference/rpc/google.cloud.language.v1#google.cloud.language.v1.AnalyzeSentimentRequest
+[`AnalyzeSentimentResponse`]: https://cloud.google.com/natural-language/docs/reference/rpc/google.cloud.language.v1#google.cloud.language.v1.AnalyzeSentimentResponse
