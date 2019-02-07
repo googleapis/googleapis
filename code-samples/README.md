@@ -28,21 +28,22 @@ For a full guide on authoring code samples, see [`AUTHORING_GUIDE.md`](AUTHORING
 
 In this Quickstart you will author a new code sample which calls the [Cloud Natural Language API][Natural Language].
 
- - You will update an existing configuration file to add a new code sample.
- - You will generate the new code sample in multiple programming languages.
- - You will run the generated code samples manually.
- - You will configure automated tests to run this sample against the live API in all languages.
- - You will run the automated tests against the generated code samples in multiple programming languages.
+ - You will update an existing configuration file to add a **new code sample**.
+ - You will generate the new code sample in **multiple programming languages**.
+ - You will **run the generated code** samples manually.
+ - You will configure **automated tests** to run this sample against the live API in all languages.
+ - You will r**un the automated tests** against the generated code samples in multiple programming languages.
  
 Are you ready? Let's get to it! 😎
 
- 1. [Setup](/)
- 1. [Understanding Configuration Files](/)
- 1. [Configure Code Samples](/)
- 1. [Generate Code Samples](/)
- 1. [Run Code Samples](/)
- 1. [Configure Sample Tests](/)
- 1. [Run Sample Tests](/)
+ 1. 👩🏼‍💻 [Setup](/)
+ 1. 🔍 [Understanding Configuration Files](/)
+ 1. 🖋 [Configure Code Samples](/)
+ 1. 🤖 [Generate Code Samples](/)
+ 1. 🚗 [Run Code Samples](/)
+ 1. 🖋 [Configure Sample Tests](/)
+ 1. 🚗 [Run Sample Tests](/)
+ 1. ☕️ Conclusion
  
 ### 👩🏼‍💻 Setup
 
@@ -58,6 +59,8 @@ You will be working in 2 directories of this repository:
  - [`google/cloud/language/v1beta2/`][Natural Language Dir] – contains the API definition and configuration files for the [Natural Language API][Natural Language v1beta2].
  - [`code-samples/`][Code Samples Dir] – this is where generated samples will be output & contains scripts for generating samples & more.
 
+----
+
 ### 🔍 Understanding Configuration Files
 
 The [`google/cloud/language/v1beta2/`][Natural Language Dir] directory contains two important files:
@@ -69,7 +72,7 @@ Let's look at these two important files in detail...
 
 ----
 
-#### 🔍 Review of [`language_service.proto`][language_proto]
+#### 🔍 Review of [`language_service.proto`][language_proto] – API Definition
 
 [`language_service.proto`][language_proto] defines the Natural Language v1beta2 API interface.
 
@@ -147,10 +150,12 @@ service LanguageService {
 
 Code sample configurations are based on these `.proto` API definitions.
 
+> Usually these RPC API definitions can be found on the website which can be easier than reading files directly. For example, [click here][]Natural Language v1beta2 to see the online reference for `google.cloud.language.v1beta2`.
+
 For example, when we create a code sample for calling `AnalyzeSentiment`, we will configure the sample to essentially perform the following:
 
 ```python
-# NOTE: this is purely make believe pseudocode to demonstrate what we will want the sample to do
+# this is purely make believe pseudocode to demonstrate what we will want the sample to do
 
 response = AnalyzeSentiment(
     encoding_type=UTF8
@@ -169,7 +174,7 @@ Please see the
 
 ----
 
-#### 🔍 Review of [`language_gapic.yaml`][language_gapic]
+#### 🔍 Review of [`language_gapic.yaml`][language_gapic] – Code Sample and Client Library configuration
 
 ...
 
@@ -182,6 +187,8 @@ Please see the
 ### 🖋 Configure Sample Tests
 
 ### 🚗 Run Sample Tests
+
+### ☕️ Conclusion
 
 [language_gapic]: https://github.com/beccasaurus/gapic-docs-samples/blob/master/google/cloud/language/v1beta2/language_gapic.yaml
 [language_proto]: https://github.com/beccasaurus/gapic-docs-samples/blob/master/google/cloud/language/v1beta2/language_service.proto
