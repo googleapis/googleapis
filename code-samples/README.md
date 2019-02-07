@@ -155,11 +155,14 @@ service LanguageService {
 }
 ```
 
-Code sample configurations are based on these `.proto` API definitions.
+> **Note:** you can also find the RPC reference online for most APIs.
+> [click here][Natural Language v1beta2] to see the online reference for `google.cloud.language.v1beta2`
 
-> Note: you can also find the RPC reference online for most APIs, e.g. [click here][Natural Language v1beta2] to see the online reference for `google.cloud.language.v1beta2`
+Code sample configurations are based on these API definitions.
 
-For example, when we create a code sample for calling `AnalyzeSentiment`, we will configure the sample to essentially perform the following:
+For example, let's say we want to generate a code sample which demonstrates how to analyze sentiment!
+
+Based on the RPC interface of `AnalyzeSentiment`, we would want the sample to demonstrate something like the pseudocode below:
 
 ```python
 # this is purely make believe pseudocode to demonstrate what we will want the sample to do
@@ -177,13 +180,56 @@ print response.document_sentiment.magniture
 print response.document_sentiment.score
 ```
 
-Please see the 
+We will configure this sample below!
 
 ----
 
 #### 🔍 Review of [`language_gapic.yaml`][language_gapic] – Code Sample and Client Library configuration
 
-...
+The [`language_gapic.yaml`][Review gapic] file contains configuration for generating client libraries for the Natural Language v2beta1 API.
+
+For example:
+ – What should the name of the generated Java library package to be?
+ - Should the generated source code files contain a license header?
+   - If so, what license?
+ - What should the retry behavior be for API calls which timeout?
+ - How can we configure retry behavior for _specific_ API methods?
+ - Should an error be raised if required parameters are not passed?
+ - Which parameters for each _specific_ API method are required?
+ - **Should there be code samples for a given _specific_ API method?**
+   - **If so, what should those samples look like?**
+
+All of this is configured in the GAPIC configuration files (authored in YAML).
+
+GAPIC configuration files have the following structure:
+
+ - Language Settings (e.g. for package names)
+ - License Header
+ - API Methods:
+   - Method 1 (e.g. AnalyzeSentiment)
+     - Required Fields
+     - Timeout Milliseconds
+     - Code Samples
+     - et al
+
+In YAML, this is structured as so:
+
+```yaml
+type: com.google.api.codegen.ConfigProto
+config_schema_version: 1.0.0
+language_settings:
+license_header:
+interfaces:
+- name: google.cloud.language.v1beta2.LanguageService
+  methods:
+  - name: AnalyzeSentiment  <=
+    required_fields:
+    timeout_millis:
+    samples:                <=
+    sample_value_sets:      <=
+```
+
+You can search these files to find the section for a given method, e.g. AnalyzeSentiment, where code samples are configured.
 
 ### 🖋 Configure Code Samples
 
