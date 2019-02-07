@@ -28,13 +28,18 @@
 
 workspace(name = "com_google_googleapis")
 
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+##############################################################################
+# Java
+##############################################################################
 #
 # grpc-java repository dependencies (required to by `java_grpc_library` bazel rule)
 #
-git_repository(
+http_archive(
     name = "io_grpc_grpc_java",
-    remote = "https://github.com/grpc/grpc-java.git",
-    tag = "v1.13.1",
+    strip_prefix = "grpc-java-1.13.1",
+    urls = ["https://github.com/grpc/grpc-java/archive/v1.13.1.zip"],
 )
 
 load(
@@ -87,12 +92,12 @@ maven_jar(
 
 maven_jar(
     name = "com_google_api_grpc_proto_google_common_protos__com_google_api_codegen",
-    artifact = "com.google.api.grpc:proto-google-common-protos:1.13.0-pre1",
+    artifact = "com.google.api.grpc:proto-google-common-protos:1.13.0-pre2",
 )
 
 git_repository(
     name = "com_google_api_codegen",
-    commit = "4ae22668fb8dafbe6ecb476c0ffe83a28d2121fb",
+    commit = "47ae8d82de2d46e18cbfb990a4d5dbd02c314d29",
     remote = "https://github.com/googleapis/gapic-generator.git",
     repo_mapping = {
         "@com_google_guava_guava": "@com_google_guava_guava__com_google_api_codegen",
@@ -101,7 +106,7 @@ git_repository(
 )
 
 load(
-    "@com_google_api_codegen//rules_gapic/java:java_gapic_pkg_repos.bzl",
+    "@com_google_api_codegen//rules_gapic/java:java_gapic_repositories.bzl",
     "java_gapic_direct_repositories",
     "java_gapic_gax_repositories",
 )
@@ -148,10 +153,10 @@ com_google_api_codegen_tools_repositories()
 # protoc-java-resource-names-plugin repository dependencies (required to support resource names
 # feature in gapic generator)
 #
-git_repository(
+http_archive(
     name = "com_google_protoc_java_resource_names_plugin",
-    commit = "46d8662701a9ce9a7afcf16c2262f686f9dbe279",
-    remote = "https://github.com/googleapis/protoc-java-resource-names-plugin.git",
+    strip_prefix = "protoc-java-resource-names-plugin-46d8662701a9ce9a7afcf16c2262f686f9dbe279",
+    urls = ["https://github.com/googleapis/protoc-java-resource-names-plugin/archive/46d8662701a9ce9a7afcf16c2262f686f9dbe279.zip"],
 )
 
 load(
@@ -160,3 +165,33 @@ load(
 )
 
 com_google_protoc_java_resource_names_plugin_repositories(omit_com_google_protobuf = True)
+
+##############################################################################
+# Go
+##############################################################################
+
+http_archive(
+    name = "io_bazel_rules_go",
+    strip_prefix = "rules_go-7d17d496a6b32f6a573c6c22e29c58204eddf3d4",
+    urls = ["https://github.com/bazelbuild/rules_go/archive/7d17d496a6b32f6a573c6c22e29c58204eddf3d4.zip"],
+)
+
+load("@io_bazel_rules_go//go:def.bzl", "go_rules_dependencies", "go_register_toolchains")
+
+go_rules_dependencies()
+
+go_register_toolchains()
+
+http_archive(
+    name = "bazel_gazelle",
+    strip_prefix = "bazel-gazelle-0.16.0",
+    urls = ["https://github.com/bazelbuild/bazel-gazelle/archive/0.16.0.zip"],
+)
+
+load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
+
+gazelle_dependencies()
+
+load("@com_google_api_codegen//rules_gapic/go:go_gapic_repositories.bzl", "go_gapic_repositories")
+
+go_gapic_repositories()
