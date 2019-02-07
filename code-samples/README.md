@@ -150,7 +150,7 @@ service LanguageService {
 
 Code sample configurations are based on these `.proto` API definitions.
 
-> Usually these RPC API definitions can be found on the website which can be easier than reading files directly. For example, [click here][]Natural Language v1beta2 to see the online reference for `google.cloud.language.v1beta2`.
+> Note: you can also find the RPC reference online for most APIs, e.g. [click here][Natural Language v1beta2] to see the online reference for `google.cloud.language.v1beta2`
 
 For example, when we create a code sample for calling `AnalyzeSentiment`, we will configure the sample to essentially perform the following:
 
