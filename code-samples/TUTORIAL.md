@@ -12,6 +12,7 @@ Are you ready? Let's get to it! 😎
 
 ----
 
+ 1. 👩🏼‍💻 [Before you begin](#-before-you-begin)
  1. 👩🏼‍💻 [Setup](#-setup)
  1. 🔍 [Understanding Configuration Files](#-understanding-configuration-files)
  1. 🎓 My First Code Sample!
@@ -27,9 +28,9 @@ Are you ready? Let's get to it! 😎
     - 🚗 [Run Sample Tests](#-run-sample-tests)
  1. ☕️ [Next Steps](#-next-steps)
  
- ----
- 
-## 👩🏼‍💻 Setup
+----
+
+## ☝️ Before you begin
 
 **Programming Languages**
 
@@ -37,6 +38,18 @@ To run generated samples you must have the target languages installed.
 
 This tutorial generates code samples in 🐍 [Python](https://www.python.org/)
 and 🐘 [PHP](http://php.net/). At least one of these languages is required.
+
+**Google Cloud Platform**
+
+This Tutorial will generate code samples for the [Natural Language API][Natural Language].
+
+Running these samples requires setting up a Google Cloud Project and configuring service
+account credentials.
+
+Please successfully complete the [Natural Language API – Client Libraries Quickstart](https://cloud.google.com/natural-language/docs/quickstart-client-libraries)
+before starting this tutorial.
+
+## 👩🏼‍💻 Setup
 
 **Docker**
 
