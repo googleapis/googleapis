@@ -22,9 +22,9 @@ Are you ready? Let's get to it! 😎
     - 🤖 [Generate First Code Sample](#-generate-first-code-sample)
     - 🚗 [Run First Code Sample](#-run-first-code-sample)
  1. ⚙️ Customizing Code Samples
-    - ⌨️ Code Sample CLI Parameters
-    - 💬 Code Sample Response Output
- 1. 🦇 Generate and Run Code Sample in Other Languages  🐍 🐘 🐹 ☕️ 🚀
+    - ⌨️ [Code Sample CLI Parameters](#️-code-sample-cli-parameters)
+    - 💬 [Code Sample Response Output](#-code-sample-response-output)
+ 1. 🦇 [Generate and Run Code Sample in Other Languages](#-generate-and-run-code-sample-in-other-languages-----️-)  🐍 🐘 🐹 ☕️ 🚀
  1. 🏆 Code Sample Tests
     - 🖋 [Configure Sample Tests](#-configure-sample-tests)
     - 🚗 [Run Sample Tests](#-run-sample-tests)
