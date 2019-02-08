@@ -38,14 +38,22 @@ Are you ready? Let's get to it! 😎
 
  1. 👩🏼‍💻 [Setup](#-setup)
  1. 🔍 [Understanding Configuration Files](#-understanding-configuration-files)
- 1. 🖋 [Configure Code Samples](#-configure-code-samples)
- 1. 🤖 [Generate Code Samples](#-generate-code-samples)
- 1. 🚗 [Run Code Samples](#-run-code-samples)
+ 
+ 1. 🖋 [Configure First Code Sample](#-configure-first-code-sample)
+ 1. 🤖 [Generate First Code Sample](#-generate-first-code-sample)
+ 1. 🚗 [Run First Code Sample](#-run-first-code-sample)
+ 1. 🖋 [Configure Code Sample with Parameters and Output](#-configure-code-sample-with-parameters-and-output)
+ 1. 🤖 [Generate Code Sample with Parameters and Output](#-generate-code-sample-with-parameters-and-output)
+ 1. 🚗 [Run Code Sample with Parameters and Output](#-run-code-sample-with-parameters-and-output)
  1. 🖋 [Configure Sample Tests](#-configure-sample-tests)
  1. 🚗 [Run Sample Tests](#-run-sample-tests)
- 1. ☕️ [Conclusion](#-conclusion)
+ 1. ☕️ [Next Steps](#-next-steps)
  
 ### 👩🏼‍💻 Setup
+
+This sample requires Docker.
+
+This sample requires that you have Python installed locally _(PHP and Go are optional)_
 
 Clone this repository:
 
@@ -218,21 +226,95 @@ interfaces:
     sample_value_sets:      <= <= <=
 ```
 
-Next, we will add code samples to an existing GAPIC configuration files!
+Code samples for each method are nested under that rpc method (see `<=` above).
 
-### 🖋 Configure Code Samples
+Next, you will add code samples to an existing GAPIC configuration files!
+
+### 🖋 Configure First Code Sample
+
+The code samples are configured in the GAPIC configuration file for Natural Language v1beta2:
+
+ - [`google/cloud/language/v1beta2/language_gapic.yaml`][language_gapic]
+
+Open this file to edit it in your favorite text editor.
+
+Scroll down until you find this section which configures the `AnalyzeSentiment` method:
+
+```yaml
+  methods:
+  - name: AnalyzeSentiment
+    flattening:
+      groups:
+      - parameters:
+        - document
+    required_fields:
+    - document
+    retry_codes_name: idempotent
+    retry_params_name: default
+    timeout_millis: 30000
+```
+
+There are no samples configured. Let's add one!
+
+First, choose a unique identifier for your sample. These are used to identify the sample and embed it in cloud.google.com.
+
+We will name this sample `language_analyze_sentiment_v1beta2`
+
+```yaml
+  methods:
+  - name: AnalyzeSentiment
+    flattening:
+      groups:
+      - parameters:
+        - document
+    required_fields:
+    - document
+    retry_codes_name: idempotent
+    retry_params_name: default
+    timeout_millis: 30000
+    
+    samples:
+      standalone:
+      - calling_forms: ".*"
+        value_sets: [language_analyze_sentiment_v1beta2]
+        region_tag: language_analyze_sentiment_v1beta2
+        
+    sample_value_sets:
+    - id: language_analyze_sentiment_v1beta2
+      description: "Analyze sentiment of text"
+```
+
+Each sample requires two sections in the YAML configuration:
+
+ 1. `samples: standalone:`
+   - header defining each code sample's `region_tag:` identifier
+   - allows for selection of specific `calling_forms:` templates to render (covered in the [`AUTHORING_GUIDE.md`](AUTHORING_GUIDE.md)
+ 1. `sample_value_sets:`
+   - defines the sample structure and data
+   - defines a description of the sample
+   - defines input parameters the sample should take
+   - defines fields to print from a successful API response
+   - and more
+
+For now, let's go ahead and generate this sample! We will add more content to it below.
+
+### 🤖 Generate First Code Sample
 
 
 
-### 🤖 Generate Code Samples
+### 🚗 Run First Code Sample
 
-### 🚗 Run Code Samples
+### 🖋 Configure Code Sample with Parameters and Output
+
+### 🤖 Generate Code Sample with Parameters and Output
+
+### 🚗 Run Code Sample with Parameters and Output
 
 ### 🖋 Configure Sample Tests
 
 ### 🚗 Run Sample Tests
 
-### ☕️ Conclusion
+### ☕️ Next Steps
 
 [language_gapic]: https://github.com/beccasaurus/gapic-docs-samples/blob/master/google/cloud/language/v1beta2/language_gapic.yaml
 [language_proto]: https://github.com/beccasaurus/gapic-docs-samples/blob/master/google/cloud/language/v1beta2/language_service.proto
