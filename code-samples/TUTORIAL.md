@@ -31,9 +31,24 @@ Are you ready? Let's get to it! 😎
  
 ## 👩🏼‍💻 Setup
 
-This sample requires Docker.
+**Programming Languages**
 
-This sample requires that you have Python installed locally _(PHP and Go are optional)_
+To run generated samples you must have the target languages installed.
+
+This tutorial generates code samples in 🐍 [Python](https://www.python.org/)
+and 🐘 [PHP](http://php.net/). At least one of these languages is required.
+
+**Docker**
+
+This sample requires [Docker](https://www.docker.com/).
+
+Pull the [Docker image](https://hub.docker.com/r/googleapis/artman/) for the Client Library and Code Sample generator:
+
+```
+docker pull googleapis/artman
+```
+
+**Tutorial Repository**
 
 Clone this repository:
 
@@ -41,6 +56,8 @@ Clone this repository:
 git clone https://github.com/beccasaurus/gapic-docs-samples.git
 cd gapic-docs-samples/
 ```
+
+**Folder Structure**
 
 You will be working in 2 directories of this repository:
 
@@ -281,9 +298,13 @@ For now, let's go ahead and generate this sample! We will add more content to it
 
 ## 🤖 Generate First Code Sample
 
-To generate the source code for this sample, generate all samples for the Natural Language v1beta2 API with the following command:
+To generate the source code for this sample in Python:
 
-...
+```
+./script/generate language v1beta2 python
+```
+
+
 
 ## 🚗 Run First Code Sample
 
