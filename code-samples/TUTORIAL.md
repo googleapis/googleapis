@@ -57,6 +57,8 @@ git clone https://github.com/beccasaurus/gapic-docs-samples.git
 cd gapic-docs-samples/
 ```
 
+**Folder Structure**
+
 You will be working in 2 directories of this repository:
 
  - [`google/cloud/language/v1beta2/`][Natural Language Dir] – contains the API definition and configuration files for the [Natural Language API][Natural Language v1beta2].
