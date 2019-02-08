@@ -21,10 +21,10 @@ Are you ready? Let's get to it! 😎
     - 🖋 [Configure First Code Sample](#-configure-first-code-sample)
     - 🤖 [Generate First Code Sample](#-generate-first-code-sample)
     - 🚗 [Run First Code Sample](#-run-first-code-sample)
- 1. ⚙️ Code Sample Parameters and Output
-     - 🖋 [Configure Code Sample with Parameters and Output](#-configure-code-sample-with-parameters-and-output)
-    - 🤖 [Generate Code Sample with Parameters and Output](#-generate-code-sample-with-parameters-and-output)
-    - 🚗 [Run Code Sample with Parameters and Output](#-run-code-sample-with-parameters-and-output)
+ 1. ⚙️ Customizing Code Samples
+    - ⌨️ Code Sample CLI Parameters
+    - 💬 Code Sample Response Output
+ 1. 🦇 Generate and Run Code Sample in Other Languages  🐍 🐘 🐹 ☕️ 🚀
  1. 🏆 Code Sample Tests
     - 🖋 [Configure Sample Tests](#-configure-sample-tests)
     - 🚗 [Run Sample Tests](#-run-sample-tests)
@@ -400,13 +400,177 @@ The `Document` also requires a `type` to specify if the text is `PLAIN_TEXT` or 
 
 Rather than edit this file by hand, let's update the code sample configuration so that it generates a working sample.
 
-## 🖋 Configure Code Sample with Parameters and Output
+```yaml
+    sample_value_sets:
+    - id: language_analyze_sentiment_v1beta2
+      description: "Analyze sentiment of text"
+      
+      # Initialize Document with required values
+      parameters:
+        defaults:
+        - document.content="Example text for sentiment analysis"
+        - document.type=PLAIN_TEXT
+```
 
-...
+Regenerate the sample:
 
-## 🤖 Generate Code Sample with Parameters and Output
+```
+./script/generate language v1beta2 python
+```
 
-## 🚗 Run Code Sample with Parameters and Output
+The updated Python code:
+
+```py
+def sample_analyze_sentiment():
+    """Analyze sentiment of text"""
+
+    client = language_v1beta2.LanguageServiceClient()
+
+    content = 'Example text for sentiment analysis'
+    type_ = enums.Document.Type.PLAIN_TEXT
+    document = {'content': content, 'type': type_}
+
+    response = client.analyze_sentiment(document)
+    print(response)
+```
+
+Run the sample again:
+
+```
+python language/v1beta2/python/analyze_sentiment_request_language_analyze_sentiment_v1beta2.py
+```
+
+The sentiment should be printed out!
+
+```
+document_sentiment {
+  magnitude: 0.20000000298
+  score: 0.20000000298
+}
+language: "en"
+sentences {
+  text {
+    content: "Example text for sentiment analysis"
+    begin_offset: -1
+  }
+  sentiment {
+    magnitude: 0.20000000298
+    score: 0.20000000298
+  }
+}
+```
+
+Great!
+
+Note that the text content is now hard-coded into the Python sample: `"Example text for sentiment analysis"`
+
+Next, we will configure the code sample so that:
+
+1. The text content can be passed in from the command line
+2. The sample prints out a custom response message
+
+## ⌨️ Code Sample CLI Parameters
+
+Simple code sample parameters (`string` values) can be configured as command-line arguments, allowing users to pass in values via the command line.
+
+Let's configure `document.content` so that it can be provided via a `--text_content=""` CLI argument:
+
+```yaml
+      # Initialize Document with required values
+      parameters:
+        defaults:
+        - document.content="Example text for sentiment analysis"
+        - document.type=PLAIN_TEXT
+        # Configure attributes of parameters, including CLI arguments              
+        attributes:                                                                
+        - parameter: document.content                                           
+          sample_argument_name: text_content
+```
+
+Regenerate the sample:
+
+```
+./script/generate language v1beta2 python
+```
+
+You should see the following output:
+
+```
+Sample files saved to: language/v1beta2/python
+- language/v1beta2/python/analyze_sentiment_request_language_analyze_sentiment_v1beta2.py
+
+To run a sample:
+>> python language/v1beta2/python/analyze_sentiment_request_language_analyze_sentiment_v1beta2.py --input_param="value"
+
+This sample accepts the following parameters:
+text_content
+```
+
+Let's try running the sample passing custom text to analyze:
+
+```
+$ python language/v1beta2/python/analyze_sentiment_request_language_analyze_sentiment_v1beta2.py --text_content="I am sad and upset"
+
+document_sentiment {
+  magnitude: 0.5
+  score: -0.5
+}
+language: "en"
+sentences {
+  text {
+    content: "I am sad and upset"
+    begin_offset: -1
+  }
+  sentiment {
+    magnitude: 0.5
+    score: -0.5
+  }
+}
+```
+
+Perfect. If you run the sample without `--text_content`, it will continue to use the default value.
+
+Here is an excerpt of the generated Python:
+
+
+```py
+def sample_analyze_sentiment(text_content):
+    """Analyze sentiment of text"""
+
+    client = language_v1beta2.LanguageServiceClient()
+
+    # text_content = 'Example text for sentiment analysis'
+
+    if isinstance(text_content, six.binary_type):
+        text_content = text_content.decode('utf-8')
+    type_ = enums.Document.Type.PLAIN_TEXT
+    document = {'content': text_content, 'type': type_}
+
+    response = client.analyze_sentiment(document)
+    print(response)
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--text_content',
+        type=str,
+        default='Example text for sentiment analysis')
+    args = parser.parse_args()
+
+    sample_analyze_sentiment(args.text_content)
+```
+
+Currently, the sample simply outputs the entire API response via `print(response)`
+
+Let's update the sample to output a custom response.
+
+## 💬 Code Sample Response Output
+
+
+
+## 🦇 Generate and Run Code Sample in Other Languages  🐍 🐘 🐹 ☕️ 🚀
 
 ## 🖋 Configure Sample Tests
 
