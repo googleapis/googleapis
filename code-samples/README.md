@@ -286,10 +286,11 @@ We will name this sample `language_analyze_sentiment_v1beta2`
 
 Each sample requires two sections in the YAML configuration:
 
- 1. `samples: standalone:`
+ 1. `samples:`  
+    `standalone:`
    - header defining each code sample's `region_tag:` identifier
    - allows for selection of specific `calling_forms:` templates to render (covered in the [`AUTHORING_GUIDE.md`](AUTHORING_GUIDE.md)
- 1. `sample_value_sets:`
+ 2. `sample_value_sets:`
    - defines the sample structure and data
    - defines a description of the sample
    - defines input parameters the sample should take
@@ -300,7 +301,9 @@ For now, let's go ahead and generate this sample! We will add more content to it
 
 ### 🤖 Generate First Code Sample
 
+To generate the source code for this sample, generate all samples for the Natural Language v1beta2 API with the following command:
 
+...
 
 ### 🚗 Run First Code Sample
 
