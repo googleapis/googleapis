@@ -389,7 +389,16 @@ Because the `document` needs to be initialized, the API throws an error:
 google.api_core.exceptions.InvalidArgument: 400 One of content, or gcs_content_uri must be set.
 ```
 
-Rather than edit the code file manually to make this work, let's update the code sample configuration to generate this code for us!
+If you look at the [`.proto` review][Review proto] above, you'll see that `AnalyzeSentimentRequest` contains a `Document` which is used to specify the text to analyze.
+
+`Document` has two fields for specifying the content:
+
+1. `string content`: `// The content of the input in string format.`
+2. `string gcs_content_uri`: `// The Google Cloud Storage URI where the file content is located.`
+
+The `Document` also requires a `type` to specify if the text is `PLAIN_TEXT` or `HTML`.
+
+Rather than edit this file by hand, let's update the code sample configuration so that it generates a working sample.
 
 ## 🖋 Configure Code Sample with Parameters and Output
 
