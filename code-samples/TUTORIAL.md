@@ -684,6 +684,95 @@ Next you will generate this sample in a second programming language.
 
 ## 🦇 Generate and Run Code Sample in Other Languages  🐍 🐘 🐹 ☕️ 🚀
 
+> Feb 8 – as of today, `script/generate` supports Python and PHP with support for Go and Java
+> coming very soon.
+
+### 🐘 PHP
+
+> **Dependencies:** requires `php` and [`composer`](https://getcomposer.org/)
+
+Generate code samples:
+
+```
+./script/generate language v1beta2 php
+```
+
+Run code sample:
+
+```
+php language/v1beta2/php/AnalyzeSentimentRequestLanguageAnalyzeSentimentV1beta2.php \
+  --textContent="I am happy. I am sad."
+```
+
+> **Note:** at the time of writing, the PHP CLI argument is `--textContent` which is inconsistent with PHP's `--text_content`. This will be changed very shortly to use `--text_content` instead.
+
+You should see output like the following:
+
+```
+Overall sentiment: 0.2
+Sentiment for each sentence:
+Sentence: I am happy.
+=> 0.8
+Sentence: I am sad.
+=> -0.2
+```
+
+PHP source code:
+
+```php
+require __DIR__ . '/vendor/autoload.php';
+
+use Google\Cloud\Language\V1beta2\LanguageServiceClient;
+use Google\Cloud\Language\V1beta2\Document;
+use Google\Cloud\Language\V1beta2\Document_Type;
+
+function sampleAnalyzeSentiment($textContent)
+{
+    // [START language_analyze_sentiment_v1beta2_core]
+
+    $languageServiceClient = new LanguageServiceClient();
+
+    // $textContent = 'Example text for sentiment analysis';
+    $type = Document_Type::PLAIN_TEXT;
+    $document = new Document();
+    $document->setContent($textContent);
+    $document->setType($type);
+
+    try {
+        $response = $languageServiceClient->analyzeSentiment($document);
+        $sentiment = $response->getDocumentSentiment();
+        printf('Overall sentiment: %s'.PHP_EOL, $sentiment->getScore());
+        printf('Sentiment for each sentence:'.PHP_EOL);
+        foreach ($response->getSentences() as $sentence) {
+            printf('Sentence: %s'.PHP_EOL, $sentence->getText()->getContent());
+            printf('=> %s'.PHP_EOL, $sentence->getSentiment()->getScore());
+        }
+    } finally {
+        $languageServiceClient->close();
+    }
+
+    // [END language_analyze_sentiment_v1beta2_core]
+}
+// [END language_analyze_sentiment_v1beta2]
+
+$opts = [
+    'textContent::',
+];
+
+$defaultOptions = [
+    'textContent' => 'Example text for sentiment analysis',
+];
+
+$options = getopt('', $opts);
+$options += $defaultOptions;
+
+$textContent = $options['textContent'];
+
+sampleAnalyzeSentiment($textContent);
+```
+
+Next, we will author tests to verify that these samples work (across all languages)
+
 ## 🖋 Configure Sample Tests
 
 ## 🚗 Run Sample Tests
