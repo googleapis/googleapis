@@ -15,6 +15,8 @@ Are you ready? Let's get to it! 😎
  1. 👩🏼‍💻 [Before you begin](#-before-you-begin)
  1. 👩🏼‍💻 [Setup](#-setup)
  1. 🔍 [Understanding Configuration Files](#-understanding-configuration-files)
+    - [API Definition: `language_service.proto`](#-review-oflanguage_serviceproto-api-definition)
+    - [Code Sample and Client Library configuration: `language_gapic.yaml`](#-review-of-language_gapicyaml--code-sample-and-client-library-configuration)
  1. 🎓 My First Code Sample!
     - 🖋 [Configure First Code Sample](#-configure-first-code-sample)
     - 🤖 [Generate First Code Sample](#-generate-first-code-sample)
@@ -317,11 +319,81 @@ To generate the source code for this sample in Python:
 ./script/generate language v1beta2 python
 ```
 
+If all goes well, you should see the following output:
 
+```
+Sample files saved to: language/v1beta2/python
+- language/v1beta2/python/analyze_sentiment_request_language_analyze_sentiment_v1beta2.py
+
+To run a sample:
+>> python language/v1beta2/python/analyze_sentiment_request_language_analyze_sentiment_v1beta2.py --input_param="value"
+```
+
+The sample file was generated in a new directory `code-samples/language/v1beta2/python/`
+
+Let's take a look at some of the generated code sample:
+
+```py
+# [START language_analyze_sentiment_v1beta2]
+from google.cloud import language_v1beta2
+
+def sample_analyze_sentiment():
+    """Analyze sentiment of text"""
+
+    client = language_v1beta2.LanguageServiceClient()
+
+    # TODO: Initialize `document`:
+    document = {}
+
+    response = client.analyze_sentiment(document)
+    print(response)
+# [END language_analyze_sentiment_v1beta2]
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    args = parser.parse_args()
+
+    sample_analyze_sentiment()
+
+if __name__ == '__main__':
+    main()
+```
+
+The snippet includes:
+ - The `region_tag:` we defined `language_analyze_sentiment_v1beta2` which wraps the body of the main snippet (to embed in documentation)
+ - The `description:` we defined `"""Analyze sentiment of text"""` as a docstring for the function
+ - Executable `main()` which invokes the snippet function when the file is run
+
+You'll notice that there is a comment with a `TODO`:
+
+```py
+# TODO: Initialize `document`:
+document = {}
+```
+
+This is a message for the developer. If they want to run this sample successfully, they need to manually instantiate a valid request object (a Python representation of the [`AnalyzeSentimentRequest`][] we saw in the [`.proto` review][Review proto])
 
 ## 🚗 Run First Code Sample
 
+Let's try to run the code snippet to hit the real API:
+
+```
+python language/v1beta2/python/analyze_sentiment_request_language_analyze_sentiment_v1beta2.py
+```
+
+Because the `document` needs to be initialized, the API throws an error:
+
+```
+google.api_core.exceptions.InvalidArgument: 400 One of content, or gcs_content_uri must be set.
+```
+
+Rather than edit the code file manually to make this work, let's update the code sample configuration to generate this code for us!
+
 ## 🖋 Configure Code Sample with Parameters and Output
+
+...
 
 ## 🤖 Generate Code Sample with Parameters and Output
 
@@ -347,5 +419,5 @@ To generate the source code for this sample in Python:
 [`AnalyzeSentimentRequest`]: https://cloud.google.com/natural-language/docs/reference/rpc/google.cloud.language.v1beta2#google.cloud.language.v1beta2.AnalyzeSentimentRequest
 [`AnalyzeSentimentResponse`]: https://cloud.google.com/natural-language/docs/reference/rpc/google.cloud.language.v1beta2#google.cloud.language.v1beta2.AnalyzeSentimentResponse
 
-[Review proto]: #-review-oflanguage_serviceproto
-[Review gapic]: #-review-of-language_gapicyaml
+[Review proto]: #-review-oflanguage_serviceproto-api-definition
+[Review gapic]: #-review-of-language_gapicyaml--code-sample-and-client-library-configuration
