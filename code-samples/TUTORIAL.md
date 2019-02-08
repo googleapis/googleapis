@@ -200,7 +200,7 @@ print response.document_sentiment.magniture
 print response.document_sentiment.score
 ```
 
-We will configure this sample below!
+You will configure this sample below!
 
 ----
 
@@ -568,7 +568,119 @@ Let's update the sample to output a custom response.
 
 ## 💬 Code Sample Response Output
 
+API code samples embedded in cloud.google.com focus on demonstrating:
 
+ - What API do I need to call to perform X task?
+ - Show me an example of how to construct a realistic request.
+ - Highlight information from the response which I will likely want to use.
+
+The `parameters:` section focuses on building the request.
+
+The `on_success:` section focuses on showing the response.
+
+Add the following `on_success:` section to your code sample:
+
+```yaml
+    sample_value_sets:                                                             
+    - id: language_analyze_sentiment_v1beta2                                       
+      description: "Analyze sentiment of text"                                     
+                                                                                   
+      # Initialize Document with required values                                   
+      parameters:                                                                  
+        #.....                                 
+                                                                                
+      # Response handling                                                       
+      on_success:                                                               
+      - print:                                                                  
+        - "Hello world"                                                         
+      - print:                                                                  
+        - "Sentiment score: %s"                                                 
+        - $resp.document_sentiment.score                                        
+      - print:                                                                  
+        - "Sentiment magnitude: %s"                                             
+        - $resp.document_sentiment.magnitude
+```
+
+Regenerate and run the sample:
+
+```
+./script/generate language v1beta2 python
+python language/v1beta2/python/analyze_sentiment_request_language_analyze_sentiment_v1beta2.py --text_content="I am sad"
+```
+
+You should now see the following output:
+
+```
+Hello world
+Sentiment score: -0.300000011921
+Sentiment magnitude: 0.300000011921
+Sentiment Score: -0.300000011921 and Magnitude: 0.300000011921
+```
+
+The `on_success:` section currently supports 3 directives:
+
+ 1. `print:` prints out to the console (`%s` can be used to insert response data)
+ 2. `define:` defines local variables to reference part of the response, useful for repeatedly accessing deeply nested response values
+ 3. `loop:` loops over collections of a response (each loop can contain its own `print`, `define`, and `loop` statements)
+
+The `$resp` variable references the full response.
+
+Let's make a few changes to demonstrate the `define:` and `loop:` features.
+
+Update the `on_success:` section to match the following:
+
+```yaml
+    sample_value_sets:                                                             
+    - id: language_analyze_sentiment_v1beta2                                       
+      description: "Analyze sentiment of text"                                     
+                                                                                   
+      # Initialize Document with required values                                   
+      parameters:                                                                  
+        #.....                                 
+                                                                                
+      # Response handling                                                       
+      on_success:                                                               
+      - define: sentiment=$resp.document_sentiment                              
+      - print:                                                                  
+        - "Overall sentiment: %s"                                               
+        - sentiment.score                                                       
+      - print:                                                                  
+        - "Sentiment for each sentence:"                                        
+      - loop:                                                                   
+          collection: $resp.sentences                                           
+          variable: sentence                                                    
+          body:                                                                 
+          - print:                                                              
+            - "Sentence: %s"                                                    
+            - sentence.text.content                                             
+          - print:                                                              
+            - "=> %s"                                                           
+            - sentence.sentiment.score
+```
+
+Regenerate and run the sample, this time passing multiple sentences of text.
+
+```
+./script/generate language v1beta2 python
+
+python language/v1beta2/python/analyze_sentiment_request_language_analyze_sentiment_v1beta2.py \
+  --text_content="I am sad. I am happy. I am neutral."
+```
+
+You should see output like the following:
+
+```
+Overall sentiment: 0.10000000149
+Sentiment for each sentence:
+Sentence: I am sad.
+=> -0.20000000298
+Sentence: I am happy.
+=> 0.800000011921
+Sentence: I am neutral.
+=> 0.0
+```
+
+Next you will generate this sample in a second programming language.
 
 ## 🦇 Generate and Run Code Sample in Other Languages  🐍 🐘 🐹 ☕️ 🚀
 
