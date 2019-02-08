@@ -36,14 +36,14 @@ In this Quickstart you will author a new code sample which calls the [Cloud Natu
  
 Are you ready? Let's get to it! 😎
 
- 1. 👩🏼‍💻 [Setup](/)
- 1. 🔍 [Understanding Configuration Files](/)
- 1. 🖋 [Configure Code Samples](/)
- 1. 🤖 [Generate Code Samples](/)
- 1. 🚗 [Run Code Samples](/)
- 1. 🖋 [Configure Sample Tests](/)
- 1. 🚗 [Run Sample Tests](/)
- 1. ☕️ Conclusion
+ 1. 👩🏼‍💻 [Setup](#-setup)
+ 1. 🔍 [Understanding Configuration Files](#-understanding-configuration-files)
+ 1. 🖋 [Configure Code Samples](#-configure-code-samples)
+ 1. 🤖 [Generate Code Samples](#-generate-code-samples)
+ 1. 🚗 [Run Code Samples](#-run-code-samples)
+ 1. 🖋 [Configure Sample Tests](#-configure-sample-tests)
+ 1. 🚗 [Run Sample Tests](#-run-sample-tests)
+ 1. ☕️ [Conclusion](#-conclusion)
  
 ### 👩🏼‍💻 Setup
 
@@ -196,23 +196,12 @@ For example:
  - How can we configure retry behavior for _specific_ API methods?
  - Should an error be raised if required parameters are not passed?
  - Which parameters for each _specific_ API method are required?
- - **Should there be code samples for a given _specific_ API method?**
-   - **If so, what should those samples look like?**
+ - **_Should there be code samples for a given specific API method?_**
+   - **_If so, what should those samples look like?_**
 
 All of this is configured in the GAPIC configuration files (authored in YAML).
 
-GAPIC configuration files have the following structure:
-
- - Language Settings (e.g. for package names)
- - License Header
- - API Methods:
-   - Method 1 (e.g. AnalyzeSentiment)
-     - Required Fields
-     - Timeout Milliseconds
-     - Code Samples
-     - et al
-
-In YAML, this is structured as so:
+Below is a preview showing the high-level structure of GAPIC configuration files:
 
 ```yaml
 type: com.google.api.codegen.ConfigProto
@@ -222,16 +211,18 @@ license_header:
 interfaces:
 - name: google.cloud.language.v1beta2.LanguageService
   methods:
-  - name: AnalyzeSentiment  <=
+  - name: AnalyzeSentiment  <= <= <=
     required_fields:
     timeout_millis:
-    samples:                <=
-    sample_value_sets:      <=
+    samples:                <= <= <=
+    sample_value_sets:      <= <= <=
 ```
 
-You can search these files to find the section for a given method, e.g. AnalyzeSentiment, where code samples are configured.
+Next, we will add code samples to an existing GAPIC configuration files!
 
 ### 🖋 Configure Code Samples
+
+
 
 ### 🤖 Generate Code Samples
 
