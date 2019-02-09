@@ -1,4 +1,4 @@
-# 🎓 Code Generation Tutorial
+# 🎓 Code Sample Generation Tutorial
 
 In this tutorial you will author a new code sample which calls the [Cloud Natural Language API][Natural Language].
 
