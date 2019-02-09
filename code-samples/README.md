@@ -22,4 +22,16 @@ This repository contains:
  2. New `test.yaml` configuration files for defining automated tests for generated code samples
  3. Scripts for generating code samples, running tests, and other various utilities
 
-For a full guide on authoring code samples, see [`AUTHORING_GUIDE.md`](AUTHORING_GUIDE.md)
+----
+
+# 🎓 Code Sample Generation Tutorial
+
+Please check out the [Code Sample Generation Tutorial](TUTORIAL.md)
+
+ - You will update an existing configuration file to add a **new code sample**.
+ - You will generate the new code sample in **multiple programming languages**.
+ - You will **run the generated code** samples manually.
+ - You will configure **automated tests** to run this sample against the live API in all languages.
+ - You will **run the automated tests** against the generated code samples in multiple programming languages.
+
+This is a great introduction to generating, running, and testing GAPIC code samples.
