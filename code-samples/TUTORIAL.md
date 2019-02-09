@@ -250,6 +250,8 @@ The code samples are configured in the GAPIC configuration file for Natural Lang
 
 Open this file to edit it in your favorite text editor.
 
+> **Note:** you can also run `./script/edit language v1beta2` which will open the file in your configured `$EDITOR`
+
 Scroll down until you find this section which configures the `AnalyzeSentiment` method:
 
 ```yaml
