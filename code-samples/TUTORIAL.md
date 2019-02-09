@@ -1,6 +1,6 @@
 # 🎓 Code Generation Tutorial
 
-In this Quickstart you will author a new code sample which calls the [Cloud Natural Language API][Natural Language].
+In this tutorial you will author a new code sample which calls the [Cloud Natural Language API][Natural Language].
 
  - You will update an existing configuration file to add a **new code sample**.
  - You will generate the new code sample in **multiple programming languages**.
