@@ -6,7 +6,7 @@ In this tutorial you will author a new code sample which calls the [Cloud Natura
  - You will generate the new code sample in **multiple programming languages**.
  - You will **run the generated code** samples manually.
  - You will configure **automated tests** to run this sample against the live API in all languages.
- - You will r**un the automated tests** against the generated code samples in multiple programming languages.
+ - You will **run the automated tests** against the generated code samples in multiple programming languages.
  
 Are you ready? Let's get to it! 😎
 
@@ -994,6 +994,16 @@ As you can see, you can provide a list of `params:` which executes the sample an
 For the positive test, we assert that the sentiment returned is a positive value. And for the negative test case, we assert that the sentiment returned is a negative value. We do NOT check the exact float value because that can change based on API model changes. We only care about positive or negative value responses.
 
 ## ☕️ Next Steps
+
+That's it for now!
+
+Hopefully this was enough to introduce you to code sample generation concepts.
+
+Please check back later when the [`AUTHORING_GUIDE`](AUTHORING_GUIDE.md) has been written (ETA TBD)
+
+For now, feel free to clone this and try generating samples of your very own!
+
+> **Note:** At this time, we do not have an integrated publishing pipeline for generated samples.
 
 [language_gapic]: https://github.com/beccasaurus/gapic-docs-samples/blob/master/google/cloud/language/v1beta2/language_gapic.yaml
 [language_proto]: https://github.com/beccasaurus/gapic-docs-samples/blob/master/google/cloud/language/v1beta2/language_service.proto
