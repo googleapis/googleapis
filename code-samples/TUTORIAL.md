@@ -702,7 +702,7 @@ php language/v1beta2/php/AnalyzeSentimentRequestLanguageAnalyzeSentimentV1beta2.
   --textContent="I am happy. I am sad."
 ```
 
-> **Note:** at the time of writing, the PHP CLI argument is `--textContent` which is inconsistent with PHP's `--text_content`. This will be changed very shortly to use `--text_content` instead.
+> **Note:** at the time of writing, the PHP CLI argument is `--textContent` which is inconsistent with Python's `--text_content`. This will be changed very shortly to use `--text_content` instead.
 
 You should see output like the following:
 
@@ -767,6 +767,97 @@ $options += $defaultOptions;
 $textContent = $options['textContent'];
 
 sampleAnalyzeSentiment($textContent);
+```
+
+### 🐹 Go
+
+> **Note:** Go is not yet integrated into `script/generate` and does not yet automatically handle dependency installation etc
+
+Generate code samples:
+
+```
+./script/generate-go language v1beta2
+```
+
+Run code sample:
+
+```
+go get cloud.google.com/go/language/apiv1beta2
+
+go run language/v1beta2/go/google.cloud.language.v1beta2.LanguageService_AnalyzeSentiment_language_analyze_sentiment_v1beta2.go \
+  --textContent="I am happy. I am sad."
+```
+
+> **Note:** at the time of writing, the Go CLI argument is `--textContent` which is inconsistent with Python's `--text_content`. This will be changed very shortly to use `--text_content` instead.
+
+You should see output like the following:
+
+```
+Overall sentiment: 0.2
+Sentiment for each sentence:
+Sentence: I am happy.
+=> 0.8
+Sentence: I am sad.
+=> -0.2
+```
+
+Go source code:
+
+```go
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"log"
+
+	language "cloud.google.com/go/language/apiv1beta2"
+	languagepb "google.golang.org/genproto/googleapis/cloud/language/v1beta2"
+)
+
+// [START language_analyze_sentiment_v1beta2]
+
+func sampleAnalyzeSentiment(textContent string) error {
+	ctx := context.Background()
+	c, err := language.NewClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	// textContent := "Example text for sentiment analysis"
+	req := &languagepb.AnalyzeSentimentRequest{
+		Document: &languagepb.Document{
+			Source: &languagepb.Document_Content{
+				Content: textContent,
+			},
+			Type: languagepb.Document_PLAIN_TEXT,
+		},
+	}
+	resp, err := c.AnalyzeSentiment(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	sentiment := resp.GetDocumentSentiment()
+	fmt.Printf("Overall sentiment: %v\n", sentiment.GetScore())
+	fmt.Printf("Sentiment for each sentence:\n")
+	for _, sentence := range resp.GetSentences() {
+		fmt.Printf("Sentence: %v\n", sentence.GetText().GetContent())
+		fmt.Printf("=> %v\n", sentence.GetSentiment().GetScore())
+	}
+	return nil
+}
+
+// [END language_analyze_sentiment_v1beta2]
+
+func main() {
+	textContent := flag.String("textContent", "Example text for sentiment analysis", "")
+	flag.Parse()
+	if err := sampleAnalyzeSentiment(*textContent); err != nil {
+		log.Fatal(err)
+	}
+}
 ```
 
 Next, we will author tests to verify that these samples work (across all languages)
