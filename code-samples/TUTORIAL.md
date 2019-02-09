@@ -956,8 +956,42 @@ Because our sample analyzes the sentiment of text, it makes sense that we may wa
 Update `langauge/v1beta2/tests.yaml` to the following:
 
 ```yaml
-...
+test:
+  suites:
+  - name:  Language v1beta2
+    cases:
+
+    - name: Positive Sentiment
+      spec:
+      - call:
+          target: language_analyze_sentiment_v1beta2
+          params:
+            textContent:
+              literal: "I am happy. So so happy."
+      - assert_contains:
+        - literal: "Overall sentiment: 0."
+
+    - name: Negative Sentiment
+      spec:
+      - call:
+          target: language_analyze_sentiment_v1beta2
+          params:
+            textContent:
+              literal: "I am sad. So so sad."
+      - assert_contains:
+        - literal: "Overall sentiment: -0."
 ```
+
+Let's break this down.
+
+We authored two test `cases:`, `Positive Sentiment` and `Negative Sentiment`.
+This allows us to verify that both the sample and the API are working correctly.
+
+To invoke a sample, you `call:` it using its unique `region_tag:` identifier. The region tag is the same across languages, so this will run the sample across all configured languages.
+
+As you can see, you can provide a list of `params:` which executes the sample and passes these along as CLI arguments. You can find out more about `literal:` (versus `variable:`) in the [`AUTHORING_GUIDE`](AUTHORING_GUIDE.md)
+
+For the positive test, we assert that the sentiment returned is a positive value. And for the negative test case, we assert that the sentiment returned is a negative value. We do NOT check the exact float value because that can change based on API model changes. We only care about positive or negative value responses.
 
 ## ☕️ Next Steps
 
