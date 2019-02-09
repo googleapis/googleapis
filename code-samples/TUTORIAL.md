@@ -24,7 +24,9 @@ Are you ready? Let's get to it! 😎
  1. ⚙️ Customizing Code Samples
     - ⌨️ [Code Sample CLI Parameters](#️-code-sample-cli-parameters)
     - 💬 [Code Sample Response Output](#-code-sample-response-output)
- 1. 🦇 [Generate and Run Code Sample in Other Languages](#-generate-and-run-code-sample-in-other-languages-----️-)  🐍 🐘 🐹 ☕️ 🚀
+ 1. 🦇 [Generate and Run Code Sample in Other Languages](#-generate-and-run-code-sample-in-other-languages)
+    - 🐘 [PHP](#-php)
+    - 🐹 [Go](#-go)
  1. 🏆 [Testing Samples](#-testing-samples)
  1. ☕️ [Next Steps](#-next-steps)
  
@@ -680,7 +682,7 @@ Sentence: I am neutral.
 
 Next you will generate this sample in a second programming language.
 
-## 🦇 Generate and Run Code Sample in Other Languages  🐍 🐘 🐹 ☕️ 🚀
+## 🦇 Generate and Run Code Sample in Other Languages
 
 > Feb 8 – as of today, `script/generate` supports Python and PHP with support for Go and Java
 > coming very soon.
