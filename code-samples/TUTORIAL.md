@@ -24,10 +24,10 @@ Are you ready? Let's get to it! 😎
  1. ⚙️ Customizing Code Samples
     - ⌨️ [Code Sample CLI Parameters](#️-code-sample-cli-parameters)
     - 💬 [Code Sample Response Output](#-code-sample-response-output)
- 1. 🦇 [Generate and Run Code Sample in Other Languages](#-generate-and-run-code-sample-in-other-languages-----️-)  🐍 🐘 🐹 ☕️ 🚀
- 1. 🏆 Code Sample Tests
-    - 🖋 [Configure Sample Tests](#-configure-sample-tests)
-    - 🚗 [Run Sample Tests](#-run-sample-tests)
+ 1. 🦇 [Generate and Run Code Sample in Other Languages](#-generate-and-run-code-sample-in-other-languages)
+    - 🐘 [PHP](#-php)
+    - 🐹 [Go](#-go)
+ 1. 🏆 [Testing Samples](#-testing-samples)
  1. ☕️ [Next Steps](#-next-steps)
  
 ----
@@ -249,6 +249,8 @@ The code samples are configured in the GAPIC configuration file for Natural Lang
  - [`google/cloud/language/v1beta2/language_gapic.yaml`][language_gapic]
 
 Open this file to edit it in your favorite text editor.
+
+> **Note:** you can also run `./script/edit language v1beta2` which will open the file in your configured `$EDITOR`
 
 Scroll down until you find this section which configures the `AnalyzeSentiment` method:
 
@@ -682,7 +684,7 @@ Sentence: I am neutral.
 
 Next you will generate this sample in a second programming language.
 
-## 🦇 Generate and Run Code Sample in Other Languages  🐍 🐘 🐹 ☕️ 🚀
+## 🦇 Generate and Run Code Sample in Other Languages
 
 > Feb 8 – as of today, `script/generate` supports Python and PHP with support for Go and Java
 > coming very soon.
@@ -704,7 +706,7 @@ php language/v1beta2/php/AnalyzeSentimentRequestLanguageAnalyzeSentimentV1beta2.
   --textContent="I am happy. I am sad."
 ```
 
-> **Note:** at the time of writing, the PHP CLI argument is `--textContent` which is inconsistent with PHP's `--text_content`. This will be changed very shortly to use `--text_content` instead.
+> **Note:** at the time of writing, the PHP CLI argument is `--textContent` which is inconsistent with Python's `--text_content`. This will be changed very shortly to use `--text_content` instead.
 
 You should see output like the following:
 
@@ -771,11 +773,191 @@ $textContent = $options['textContent'];
 sampleAnalyzeSentiment($textContent);
 ```
 
+### 🐹 Go
+
+> **Note:** Go is not yet integrated into `script/generate` and does not yet automatically handle dependency installation etc
+
+Generate code samples:
+
+```
+./script/generate-go language v1beta2
+```
+
+Run code sample:
+
+```
+go get cloud.google.com/go/language/apiv1beta2
+
+go run language/v1beta2/go/google.cloud.language.v1beta2.LanguageService_AnalyzeSentiment_language_analyze_sentiment_v1beta2.go \
+  --textContent="I am happy. I am sad."
+```
+
+> **Note:** at the time of writing, the Go CLI argument is `--textContent` which is inconsistent with Python's `--text_content`. This will be changed very shortly to use `--text_content` instead.
+
+You should see output like the following:
+
+```
+Overall sentiment: 0.2
+Sentiment for each sentence:
+Sentence: I am happy.
+=> 0.8
+Sentence: I am sad.
+=> -0.2
+```
+
+Go source code:
+
+```go
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"log"
+
+	language "cloud.google.com/go/language/apiv1beta2"
+	languagepb "google.golang.org/genproto/googleapis/cloud/language/v1beta2"
+)
+
+// [START language_analyze_sentiment_v1beta2]
+
+func sampleAnalyzeSentiment(textContent string) error {
+	ctx := context.Background()
+	c, err := language.NewClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	// textContent := "Example text for sentiment analysis"
+	req := &languagepb.AnalyzeSentimentRequest{
+		Document: &languagepb.Document{
+			Source: &languagepb.Document_Content{
+				Content: textContent,
+			},
+			Type: languagepb.Document_PLAIN_TEXT,
+		},
+	}
+	resp, err := c.AnalyzeSentiment(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	sentiment := resp.GetDocumentSentiment()
+	fmt.Printf("Overall sentiment: %v\n", sentiment.GetScore())
+	fmt.Printf("Sentiment for each sentence:\n")
+	for _, sentence := range resp.GetSentences() {
+		fmt.Printf("Sentence: %v\n", sentence.GetText().GetContent())
+		fmt.Printf("=> %v\n", sentence.GetSentiment().GetScore())
+	}
+	return nil
+}
+
+// [END language_analyze_sentiment_v1beta2]
+
+func main() {
+	textContent := flag.String("textContent", "Example text for sentiment analysis", "")
+	flag.Parse()
+	if err := sampleAnalyzeSentiment(*textContent); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
 Next, we will author tests to verify that these samples work (across all languages)
 
-## 🖋 Configure Sample Tests
+## 🏆 Testing Samples
 
-## 🚗 Run Sample Tests
+Arguably the most important part of sample authoring is – **testing!** 
+
+Tests can be configured in YAML which exercise generated samples by running them against the real API. Tests can be run for the same set of samples in all languages.
+
+When you generate samples for the first time, a stub test file is generated: `language/v1beta2/tests.yaml`
+
+Let's take a look at the content of the test YAML file:
+
+```yaml
+test:
+  suites:
+  - name:  "language samples test"
+    cases:
+    - name: "Do a thing"
+      spec:
+      - log:
+        - "This test stub was autogenerated"
+      - log:
+        - "For more information, visit https://github.com/beccasaurus/gapic-docs-samples/tree/master/code-samples"
+
+      # Call a sample by region tag ID
+      # - call:
+      #     target: "my_region_tag"
+      #     params:
+      #       text_content:
+      #         literal: "Content of the 'text_content' parameter"
+
+      # Assert value present in output of executed samples
+      # - assert_contains:
+      #   - literal: "The output should include this!"
+```
+
+The naming conventions of sample tests follow common [`xUnit`](https://en.wikipedia.org/wiki/XUnit) style conventions.
+
+ - Assert-style validations
+ - Tests are organized into suites
+ - Each test suite contains:
+   - N test cases
+   - 1 setup function which runs before ever test case
+   - 1 teardown function which runs after each test case
+
+Let's start by running this test file:
+
+```
+./script/test language/v1
+```
+
+The output should include the following lines:
+
+```
+==== SUITE php region resolver:0:language samples test START  ==========================================
+     /Users/rebeccataylor/Desktop/gapic-docs-samples/code-samples/language/v1/language_tests.yaml
+---- Test case 0: "Do a thing" PASSED ------------------------------
+    Output:
+    | ### Test case TEST
+    | This test stub was autogenerated
+    | For more information, visit https://github.com/beccasaurus/gapic-docs-samples/tree/master/code-samples
+
+==== SUITE php region resolver:0:language samples test SUCCESS ========================================
+
+INFO:root:php region resolver: teardown
+INFO:root:python region resolver: setup
+
+==== SUITE python region resolver:0:language samples test START  ==========================================
+     /Users/rebeccataylor/Desktop/gapic-docs-samples/code-samples/language/v1/language_tests.yaml
+---- Test case 0: "Do a thing" PASSED ------------------------------
+    Output:
+    | ### Test case TEST
+    | This test stub was autogenerated
+    | For more information, visit https://github.com/beccasaurus/gapic-docs-samples/tree/master/code-samples
+
+==== SUITE python region resolver:0:language samples test SUCCESS ========================================
+```
+
+You'll notice that this almost looks duplicated, like the same thing was run twice.
+
+If you look closer, it's because the single test case was run once for Python and once for PHP:
+
+ - `php region resolver:0:language samples test SUCCESS`
+ - `python region resolver:0:language samples test SUCCESS`
+
+Let's update the test to actually verify the samples we authored.
+
+Because our sample analyzes the sentiment of text, it makes sense that we may want to validate the API by testing both positive and negative sentiment cases.
+
+Update `langauge/v1beta2/tests.yaml` to the following:
+
+```yaml
+...
+```
 
 ## ☕️ Next Steps
 
