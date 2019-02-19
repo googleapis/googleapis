@@ -97,7 +97,7 @@ maven_jar(
 
 git_repository(
     name = "com_google_api_codegen",
-    commit = "47ae8d82de2d46e18cbfb990a4d5dbd02c314d29",
+    commit = "761abebf784db7b9ec2d2e2326d90a502666fc02",
     remote = "https://github.com/googleapis/gapic-generator.git",
     repo_mapping = {
         "@com_google_guava_guava": "@com_google_guava_guava__com_google_api_codegen",
