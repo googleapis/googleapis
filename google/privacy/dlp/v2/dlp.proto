@@ -280,6 +280,15 @@ service DlpService {
     };
   }
 
+  // Activate a job trigger. Causes the immediate execute of a trigger
+  // instead of waiting on the trigger event to occur.
+  rpc ActivateJobTrigger(ActivateJobTriggerRequest) returns (DlpJob) {
+    option (google.api.http) = {
+      post: "/v2/{name=projects/*/jobTriggers/*}:activate"
+      body: "*"
+    };
+  }
+
   // Creates a new job to inspect storage or calculate risk metrics.
   // See https://cloud.google.com/dlp/docs/inspecting-storage and
   // https://cloud.google.com/dlp/docs/compute-risk-analysis to learn more.
@@ -432,6 +441,18 @@ message ExclusionRule {
   MatchingType matching_type = 4;
 }
 
+// Options describing which parts of the provided content should be scanned.
+enum ContentOption {
+  // Includes entire content of a file or a data stream.
+  CONTENT_UNSPECIFIED = 0;
+
+  // Text content within the data, excluding any metadata.
+  CONTENT_TEXT = 1;
+
+  // Images found in the data.
+  CONTENT_IMAGE = 2;
+}
+
 // A single inspection rule to be applied to infoTypes, specified in
 // `InspectionRuleSet`.
 message InspectionRule {
@@ -474,12 +495,12 @@ message InspectConfig {
 
     // Max number of findings that will be returned for each item scanned.
     // When set within `InspectDataSourceRequest`,
-    // the maximum returned is 1000 regardless if this is set higher.
+    // the maximum returned is 2000 regardless if this is set higher.
     // When set within `InspectContentRequest`, this field is ignored.
     int32 max_findings_per_item = 1;
 
     // Max number of findings that will be returned per request/job.
-    // When set within `InspectContentRequest`, the maximum returned is 1000
+    // When set within `InspectContentRequest`, the maximum returned is 2000
     // regardless if this is set higher.
     int32 max_findings_per_request = 2;
 
@@ -643,6 +664,35 @@ message Location {
   // List of nested objects pointing to the precise location of the finding
   // within the file or record.
   repeated ContentLocation content_locations = 7;
+}
+
+// Type of the match which can be applied to different ways of matching, like
+// Dictionary, regular expression and intersecting with findings of another
+// info type.
+enum MatchingType {
+  // Invalid.
+  MATCHING_TYPE_UNSPECIFIED = 0;
+
+  // Full match.
+  //
+  // - Dictionary: join of Dictionary results matched complete finding quote
+  // - Regex: all regex matches fill a finding quote start to end
+  // - Exclude info type: completely inside affecting info types findings
+  MATCHING_TYPE_FULL_MATCH = 1;
+
+  // Partial match.
+  //
+  // - Dictionary: at least one of the tokens in the finding matches
+  // - Regex: substring of the finding matches
+  // - Exclude info type: intersects with affecting info types findings
+  MATCHING_TYPE_PARTIAL_MATCH = 2;
+
+  // Inverse match.
+  //
+  // - Dictionary: no tokens in the finding match the dictionary
+  // - Regex: finding doesn't match the regex
+  // - Exclude info type: no intersection with affecting info types findings
+  MATCHING_TYPE_INVERSE_MATCH = 3;
 }
 
 // Findings container location data.
@@ -1019,6 +1069,10 @@ message InfoTypeDescription {
 
   // Which parts of the API supports this InfoType.
   repeated InfoTypeSupportedBy supported_by = 3;
+
+  // Description of the infotype. Translated when language is provided in the
+  // request.
+  string description = 4;
 }
 
 // Request for the list of infoTypes.
@@ -1652,9 +1706,10 @@ message TimePartConfig {
 // Pseudonymization method that generates surrogates via cryptographic hashing.
 // Uses SHA-256.
 // The key size must be either 32 or 64 bytes.
-// Outputs a 32 byte digest as an uppercase hex string
-// (for example, 41D1567F7F99F1DC2A5FAB886DEE5BEE).
+// Outputs a base64 encoded representation of the hashed output
+// (for example, L7k0BHmF1ha5U3NfGykjro4xWi1MPVQPjhMAZbSV9mM=).
 // Currently, only string and integer values can be hashed.
+// See https://cloud.google.com/dlp/docs/pseudonymization to learn more.
 message CryptoHashConfig {
   // The key used by the hash function.
   CryptoKey crypto_key = 1;
@@ -1933,6 +1988,17 @@ message UnwrappedCryptoKey {
   bytes key = 1;
 }
 
+// Parts of the APIs which use certain infoTypes.
+enum InfoTypeSupportedBy {
+  ENUM_TYPE_UNSPECIFIED = 0;
+
+  // Supported by the inspect operations.
+  INSPECT = 1;
+
+  // Supported by the risk analysis operations.
+  RISK_ANALYSIS = 2;
+}
+
 // Include to use an existing data crypto key wrapped by KMS.
 // Authorization requires the following IAM permissions when sending a request
 // to perform a crypto transformation using a kms-wrapped crypto key:
@@ -2048,7 +2114,8 @@ message RecordSuppression {
 message RecordCondition {
   // The field type of `value` and `field` do not need to match to be
   // considered equal, but not all comparisons are possible.
-  //
+  // EQUAL_TO and NOT_EQUAL_TO attempt to compare even with incompatible types,
+  // but all other comparisons are invalid with incompatible types.
   // A `value` of type:
   //
   // - `string` can be compared against all other types
@@ -2135,7 +2202,7 @@ message TransformationSummary {
     ERROR = 2;
   }
 
-  // Set if the transformation was limited to a specific info_type.
+  // Set if the transformation was limited to a specific InfoType.
   InfoType info_type = 1;
 
   // Set if the transformation was limited to a specific FieldId.
@@ -2340,6 +2407,12 @@ message Action {
 
   }
 
+  // Enable email notification to project owners and editors on jobs's
+  // completion/failure.
+  message JobNotificationEmails {
+
+  }
+
   oneof action {
     // Save resulting findings in a provided location.
     SaveFindings save_findings = 1;
@@ -2349,6 +2422,10 @@ message Action {
 
     // Publish summary to Cloud Security Command Center (Alpha).
     PublishSummaryToCscc publish_summary_to_cscc = 3;
+
+    // Enable email notification to project owners and editors on job‘s
+    // completion/failure.
+    JobNotificationEmails job_notification_emails = 8;
   }
 }
 
@@ -2453,6 +2530,13 @@ message CreateJobTriggerRequest {
   string trigger_id = 3;
 }
 
+// Request message for ActivateJobTrigger.
+message ActivateJobTriggerRequest {
+  // Resource name of the trigger to activate, for example
+  // `projects/dlp-test-project/jobTriggers/53234423`.
+  string name = 1;
+}
+
 // Request message for UpdateJobTrigger.
 message UpdateJobTriggerRequest {
   // Resource name of the project and the triggeredJob, for example
@@ -2518,10 +2602,37 @@ message ListJobTriggersRequest {
   //
   // - `create_time`: corresponds to time the JobTrigger was created.
   // - `update_time`: corresponds to time the JobTrigger was last updated.
+  // - `last_run_time`: corresponds to the last time the JobTrigger ran.
   // - `name`: corresponds to JobTrigger's name.
   // - `display_name`: corresponds to JobTrigger's display name.
   // - `status`: corresponds to JobTrigger's status.
   string order_by = 4;
+
+  // Optional. Allows filtering.
+  //
+  // Supported syntax:
+  //
+  // * Filter expressions are made up of one or more restrictions.
+  // * Restrictions can be combined by `AND` or `OR` logical operators. A
+  // sequence of restrictions implicitly uses `AND`.
+  // * A restriction has the form of `<field> <operator> <value>`.
+  // * Supported fields/values for inspect jobs:
+  //     - `status` - HEALTHY|PAUSED|CANCELLED
+  //     - `inspected_storage` - DATASTORE|CLOUD_STORAGE|BIGQUERY
+  //     - 'last_run_time` - RFC 3339 formatted timestamp, surrounded by
+  //     quotation marks. Nanoseconds are ignored.
+  //     - 'error_count' - Number of errors that have occurred while running.
+  // * The operator must be `=` or `!=` for status and inspected_storage.
+  //
+  // Examples:
+  //
+  // * inspected_storage = cloud_storage AND status = HEALTHY
+  // * inspected_storage = cloud_storage OR inspected_storage = bigquery
+  // * inspected_storage = cloud_storage AND (state = PAUSED OR state = HEALTHY)
+  // * last_run_time > \"2017-12-12T00:00:00+00:00\"
+  //
+  // The length of this field should be no more than 500 characters.
+  string filter = 5;
 }
 
 // Response message for ListJobTriggers.
@@ -2617,6 +2728,32 @@ message DlpJob {
 message GetDlpJobRequest {
   // The name of the DlpJob resource.
   string name = 1;
+}
+
+// Operators available for comparing the value of fields.
+enum RelationalOperator {
+  RELATIONAL_OPERATOR_UNSPECIFIED = 0;
+
+  // Equal. Attempts to match even with incompatible types.
+  EQUAL_TO = 1;
+
+  // Not equal to. Attempts to match even with incompatible types.
+  NOT_EQUAL_TO = 2;
+
+  // Greater than.
+  GREATER_THAN = 3;
+
+  // Less than.
+  LESS_THAN = 4;
+
+  // Greater than or equals.
+  GREATER_THAN_OR_EQUALS = 5;
+
+  // Less than or equals.
+  LESS_THAN_OR_EQUALS = 6;
+
+  // Exists
+  EXISTS = 7;
 }
 
 // The request message for listing DLP jobs.
@@ -2947,84 +3084,6 @@ message DeleteStoredInfoTypeRequest {
   // example `organizations/433245324/storedInfoTypes/432452342` or
   // projects/project-id/storedInfoTypes/432452342.
   string name = 1;
-}
-
-// Options describing which parts of the provided content should be scanned.
-enum ContentOption {
-  // Includes entire content of a file or a data stream.
-  CONTENT_UNSPECIFIED = 0;
-
-  // Text content within the data, excluding any metadata.
-  CONTENT_TEXT = 1;
-
-  // Images found in the data.
-  CONTENT_IMAGE = 2;
-}
-
-// Type of the match which can be applied to different ways of matching, like
-// Dictionary, regular expression and intersecting with findings of another
-// info type.
-enum MatchingType {
-  // Invalid.
-  MATCHING_TYPE_UNSPECIFIED = 0;
-
-  // Full match.
-  //
-  // - Dictionary: join of Dictionary results matched complete finding quote
-  // - Regex: all regex matches fill a finding quote start to end
-  // - Exclude info type: completely inside affecting info types findings
-  MATCHING_TYPE_FULL_MATCH = 1;
-
-  // Partial match.
-  //
-  // - Dictionary: at least one of the tokens in the finding matches
-  // - Regex: substring of the finding matches
-  // - Exclude info type: intersects with affecting info types findings
-  MATCHING_TYPE_PARTIAL_MATCH = 2;
-
-  // Inverse match.
-  //
-  // - Dictionary: no tokens in the finding match the dictionary
-  // - Regex: finding doesn't match the regex
-  // - Exclude info type: no intersection with affecting info types findings
-  MATCHING_TYPE_INVERSE_MATCH = 3;
-}
-
-// Parts of the APIs which use certain infoTypes.
-enum InfoTypeSupportedBy {
-  ENUM_TYPE_UNSPECIFIED = 0;
-
-  // Supported by the inspect operations.
-  INSPECT = 1;
-
-  // Supported by the risk analysis operations.
-  RISK_ANALYSIS = 2;
-}
-
-// Operators available for comparing the value of fields.
-enum RelationalOperator {
-  RELATIONAL_OPERATOR_UNSPECIFIED = 0;
-
-  // Equal.
-  EQUAL_TO = 1;
-
-  // Not equal to.
-  NOT_EQUAL_TO = 2;
-
-  // Greater than.
-  GREATER_THAN = 3;
-
-  // Less than.
-  LESS_THAN = 4;
-
-  // Greater than or equals.
-  GREATER_THAN_OR_EQUALS = 5;
-
-  // Less than or equals.
-  LESS_THAN_OR_EQUALS = 6;
-
-  // Exists
-  EXISTS = 7;
 }
 
 // An enum to represent the various type of DLP jobs.
