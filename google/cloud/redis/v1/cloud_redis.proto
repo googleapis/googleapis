@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC
+// Copyright 2018 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
 
 syntax = "proto3";
 
@@ -95,6 +96,43 @@ service CloudRedis {
     };
   }
 
+  // Import a Redis RDB snapshot file from GCS into a Redis instance.
+  //
+  // Redis may stop serving during this operation. Instance state will be
+  // IMPORTING for entire operation. When complete, the instance will contain
+  // only data from the imported file.
+  //
+  // The returned operation is automatically deleted after a few hours, so
+  // there is no need to call DeleteOperation.
+  rpc ImportInstance(ImportInstanceRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/instances/*}:import"
+      body: "*"
+    };
+  }
+
+  // Export Redis instance data into a Redis RDB format file in GCS.
+  //
+  // Redis will continue serving during this operation.
+  //
+  // The returned operation is automatically deleted after a few hours, so
+  // there is no need to call DeleteOperation.
+  rpc ExportInstance(ExportInstanceRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/instances/*}:export"
+      body: "*"
+    };
+  }
+
+  // Failover the master role to current replica node against a specific
+  // STANDARD tier redis instance.
+  rpc FailoverInstance(FailoverInstanceRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/instances/*}:failover"
+      body: "*"
+    };
+  }
+
   // Deletes a specific Redis instance.  Instance stops serving and data is
   // deleted.
   rpc DeleteInstance(DeleteInstanceRequest) returns (google.longrunning.Operation) {
@@ -125,12 +163,17 @@ message Instance {
     // Redis instance is being deleted.
     DELETING = 4;
 
-    // Redis instance is being repaired and may be unusable. Details can be
-    // found in the `status_message` field.
+    // Redis instance is being repaired and may be unusable.
     REPAIRING = 5;
 
     // Maintenance is being performed on this Redis instance.
     MAINTENANCE = 6;
+
+    // Redis instance is importing data (availability may be affected).
+    IMPORTING = 8;
+
+    // Redis instance is failing over (availability may be affected).
+    FAILING_OVER = 9;
   }
 
   // Available service tiers to choose from
@@ -177,7 +220,9 @@ message Instance {
   // Optional. The version of Redis software.
   // If not provided, latest supported version will be used. Updating the
   // version will perform an upgrade/downgrade to the new version. Currently,
-  // the supported values are `REDIS_3_2` for Redis 3.2.
+  // the supported values are:
+  //  * `REDIS_4_0` for Redis 4.0 compatibility
+  //  * `REDIS_3_2` for Redis 3.2 compatibility
   string redis_version = 7;
 
   // Optional. The CIDR range of internal addresses that are reserved for this
@@ -214,8 +259,14 @@ message Instance {
   // http://redis.io/topics/config. Currently, the only supported parameters
   // are:
   //
-  //  *   maxmemory-policy
-  //  *   notify-keyspace-events
+  //  Redis 3.2 and above:
+  //  * maxmemory-policy
+  //  * notify-keyspace-events
+  //
+  //  Redis 4.0 and above:
+  //  * activedefrag
+  //  * lfu-log-factor
+  //  * lfu-decay-time
   map<string, string> redis_configs = 16;
 
   // Required. The service tier of the instance.
@@ -229,6 +280,13 @@ message Instance {
   // instance is connected. If left unspecified, the `default` network
   // will be used.
   string authorized_network = 20;
+
+  // Output only. Cloud IAM identity used by import / export operations to
+  // transfer data to/from Cloud Storage. Format is
+  // "serviceAccount:<service_account_email>". The value may change over time
+  // for a given instance so should be checked before each import/export
+  // operation.
+  string persistence_iam_identity = 21;
 }
 
 // Request for [ListInstances][google.cloud.redis.v1.CloudRedis.ListInstances].
@@ -269,6 +327,9 @@ message ListInstancesResponse {
   // Token to retrieve the next page of results, or empty if there are no more
   // results in the list.
   string next_page_token = 2;
+
+  // Locations that could not be reached.
+  repeated string unreachable = 3;
 }
 
 // Request for [GetInstance][google.cloud.redis.v1.CloudRedis.GetInstance].
@@ -323,6 +384,85 @@ message DeleteInstanceRequest {
   //     `projects/{project_id}/locations/{location_id}/instances/{instance_id}`
   // where `location_id` refers to a GCP region
   string name = 1;
+}
+
+// The GCS location for the input content
+message GcsSource {
+  // Required. Source data URI. (e.g. 'gs://my_bucket/my_object').
+  string uri = 1;
+}
+
+// The input content
+message InputConfig {
+  // Required. Specify source location of input data
+  oneof source {
+    // Google Cloud Storage location where input content is located.
+    GcsSource gcs_source = 1;
+  }
+}
+
+// Request for [Import][google.cloud.redis.v1.CloudRedis.ImportInstance].
+message ImportInstanceRequest {
+  // Required. Redis instance resource name using the form:
+  //     `projects/{project_id}/locations/{location_id}/instances/{instance_id}`
+  // where `location_id` refers to a GCP region
+  string name = 1;
+
+  // Required. Specify data to be imported.
+  InputConfig input_config = 3;
+}
+
+
+// The GCS location for the output content
+message GcsDestination {
+  // Required. Data destination URI (e.g.
+  // 'gs://my_bucket/my_object'). Existing files will be overwritten.
+  string uri = 1;
+}
+
+// The output content
+message OutputConfig {
+  // Required. Specify destination location of output data
+  oneof destination {
+    // Google Cloud Storage destination for output content.
+    GcsDestination gcs_destination = 1;
+  }
+}
+
+// Request for [Export][google.cloud.redis.v1.CloudRedis.ExportInstance].
+message ExportInstanceRequest {
+  // Required. Redis instance resource name using the form:
+  //     `projects/{project_id}/locations/{location_id}/instances/{instance_id}`
+  // where `location_id` refers to a GCP region
+  string name = 1;
+
+  // Required. Specify data to be exported.
+  OutputConfig output_config = 3;
+}
+
+// Request for [Failover][google.cloud.redis.v1.CloudRedis.FailoverInstance].
+message FailoverInstanceRequest {
+  enum DataProtectionMode {
+    DATA_PROTECTION_MODE_UNSPECIFIED = 0;
+
+    // Instance failover will be protected with data loss control. More
+    // specifically, the failover will only be performed if the current
+    // replication offset diff between master and replica is under a certain
+    // threshold.
+    LIMITED_DATA_LOSS = 1;
+
+    // Instance failover will be performed without data loss control.
+    FORCE_DATA_LOSS = 2;
+  }
+
+  // Required. Redis instance resource name using the form:
+  //     `projects/{project_id}/locations/{location_id}/instances/{instance_id}`
+  // where `location_id` refers to a GCP region
+  string name = 1;
+
+  // Optional. Available data protection modes that the user can choose. If it's
+  // unspecified, data protection mode will be LIMITED_DATA_LOSS by default.
+  DataProtectionMode data_protection_mode = 2;
 }
 
 // Represents the v1 metadata of the long-running operation.
