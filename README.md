@@ -7,6 +7,32 @@ Google APIs and help you to utilize them more efficiently. You can also
 use these definitions with open source tools to generate client
 libraries, documentation, and other artifacts.
 
+## Building
+### Bazel
+
+The recommended way to build the API client libraries is through
+[Bazel](https://bazel.build/) >= 0.23.0.
+
+To build all libraries:
+
+```
+bazel build //...
+```
+
+To test all libraries:
+
+```
+bazel test //...
+```
+
+To build one library in one language:
+
+```
+bazel build //google/example/library/v1:google-cloud-library-v1-java
+```
+
+### Artman
+
 API client libraries can be built directly from files in this repo using
 [Artman](https://github.com/googleapis/artman). The latest generation status can
 be tracked [here](https://circleci.com/gh/googleapis/googleapis) which currently
