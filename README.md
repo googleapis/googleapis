@@ -27,7 +27,7 @@ To test all libraries:
 bazel test //...
 ```
 
-To build one library:
+To build one library in all languages:
 
 ```
 bazel build //google/example/library/v1/...
@@ -47,6 +47,14 @@ API client libraries can be built directly from files in this repo using
 [Artman](https://github.com/googleapis/artman). The latest generation status can
 be tracked [here](https://circleci.com/gh/googleapis/googleapis) which currently
 has status [![CircleCI](https://circleci.com/gh/googleapis/googleapis.svg?style=svg)](https://circleci.com/gh/googleapis/googleapis).
+
+To build the Java package for one library:
+
+```
+artman --config google/example/library/artman_library_example_v1.yaml generate java_gapic
+```
+
+Artman can only build one library in one language at a time.
 
 For more details on all Google APIs and developer tools, see the [Google
 Developers](https://developers.google.com/products/) site.
