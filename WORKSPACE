@@ -11,8 +11,8 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 #
 http_archive(
     name = "com_google_api_codegen",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/9940c38fce35fb0733467ffc725e6b1c30ef673a.zip"],
-    strip_prefix = "gapic-generator-9940c38fce35fb0733467ffc725e6b1c30ef673a",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/8e930b79e846b9d4876462be9dc4c1dbc04e2903.zip"],
+    strip_prefix = "gapic-generator-8e930b79e846b9d4876462be9dc4c1dbc04e2903",
 )
 
 #
