@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC.
+// Copyright 2019 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -45,6 +45,38 @@ service ImageAnnotator {
       returns (BatchAnnotateImagesResponse) {
     option (google.api.http) = {
       post: "/v1/images:annotate"
+      body: "*"
+    };
+  }
+
+  // Service that performs image detection and annotation for a batch of files.
+  // Now only "application/pdf", "image/tiff" and "image/gif" are supported.
+  //
+  // This service will extract at most 5 (customers can specify which 5 in
+  // AnnotateFileRequest.pages) frames (gif) or pages (pdf or tiff) from each
+  // file provided and perform detection and annotation for each image
+  // extracted.
+  rpc BatchAnnotateFiles(BatchAnnotateFilesRequest)
+      returns (BatchAnnotateFilesResponse) {
+    option (google.api.http) = {
+      post: "/v1/files:annotate"
+      body: "*"
+    };
+  }
+
+  // Run asynchronous image detection and annotation for a list of images.
+  //
+  // Progress and results can be retrieved through the
+  // `google.longrunning.Operations` interface.
+  // `Operation.metadata` contains `OperationMetadata` (metadata).
+  // `Operation.response` contains `AsyncBatchAnnotateImagesResponse` (results).
+  //
+  // This service will write image annotation outputs to json files in customer
+  // GCS bucket, each json file containing BatchAnnotateImagesResponse proto.
+  rpc AsyncBatchAnnotateImages(AsyncBatchAnnotateImagesRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/images:asyncBatchAnnotate"
       body: "*"
     };
   }
@@ -126,6 +158,28 @@ message Feature {
   // Supported values: "builtin/stable" (the default if unset) and
   // "builtin/latest".
   string model = 3;
+}
+
+// A bucketized representation of likelihood, which is intended to give clients
+// highly stable results across model upgrades.
+enum Likelihood {
+  // Unknown likelihood.
+  UNKNOWN = 0;
+
+  // It is very unlikely that the image belongs to the specified vertical.
+  VERY_UNLIKELY = 1;
+
+  // It is unlikely that the image belongs to the specified vertical.
+  UNLIKELY = 2;
+
+  // It is possible that the image belongs to the specified vertical.
+  POSSIBLE = 3;
+
+  // It is likely that the image belongs to the specified vertical.
+  LIKELY = 4;
+
+  // It is very likely that the image belongs to the specified vertical.
+  VERY_LIKELY = 5;
 }
 
 // External image source (Google Cloud Storage or web URL image location).
@@ -294,7 +348,7 @@ message FaceAnnotation {
   }
 
   // The bounding polygon around the face. The coordinates of the bounding box
-  // are in the original image's scale, as returned in `ImageParams`.
+  // are in the original image's scale.
   // The bounding box is computed to "frame" the face in accordance with human
   // expectations. It is based on the landmarker results.
   // Note that one or more x and/or y coordinates may not be generated in the
@@ -505,7 +559,7 @@ message ImageProperties {
 // Single crop hint that is used to generate a new crop when serving an image.
 message CropHint {
   // The bounding polygon for the crop region. The coordinates of the bounding
-  // box are in the original image's scale, as returned in `ImageParams`.
+  // box are in the original image's scale.
   BoundingPoly bounding_poly = 1;
 
   // Confidence of this being a salient region.  Range [0, 1].
@@ -565,7 +619,7 @@ message ImageContext {
 }
 
 // Request for performing Google Cloud Vision API tasks over a user-provided
-// image, with user-requested features.
+// image, with user-requested features, and with context information.
 message AnnotateImageRequest {
   // The image to be processed.
   Image image = 1;
@@ -648,6 +702,9 @@ message AnnotateFileResponse {
 
   // Individual responses to images found within the file.
   repeated AnnotateImageResponse responses = 2;
+
+  // This field gives the total number of pages in the file.
+  int32 total_pages = 3;
 }
 
 // Multiple image annotation requests are batched into a single service call.
@@ -660,6 +717,48 @@ message BatchAnnotateImagesRequest {
 message BatchAnnotateImagesResponse {
   // Individual responses to image annotation requests within the batch.
   repeated AnnotateImageResponse responses = 1;
+}
+
+// A request to annotate one single file, e.g. a PDF, TIFF or GIF file.
+message AnnotateFileRequest {
+  // Required. Information about the input file.
+  InputConfig input_config = 1;
+
+  // Required. Requested features.
+  repeated Feature features = 2;
+
+  // Additional context that may accompany the image(s) in the file.
+  ImageContext image_context = 3;
+
+  // Pages of the file to perform image annotation.
+  //
+  // Pages starts from 1, we assume the first page of the file is page 1.
+  // At most 5 pages are supported per request. Pages can be negative.
+  //
+  // Page 1 means the first page.
+  // Page 2 means the second page.
+  // Page -1 means the last page.
+  // Page -2 means the second to the last page.
+  //
+  // If the file is GIF instead of PDF or TIFF, page refers to GIF frames.
+  //
+  // If this field is empty, by default the service performs image annotation
+  // for the first 5 pages of the file.
+  repeated int32 pages = 4;
+}
+
+// A list of requests to annotate files using the BatchAnnotateFiles API.
+message BatchAnnotateFilesRequest {
+  // The list of file annotation requests. Right now we support only one
+  // AnnotateFileRequest in BatchAnnotateFilesRequest.
+  repeated AnnotateFileRequest requests = 1;
+}
+
+// A list of file annotation responses.
+message BatchAnnotateFilesResponse {
+  // The list of file annotation responses, each response corresponding to each
+  // AnnotateFileRequest in BatchAnnotateFilesRequest.
+  repeated AnnotateFileResponse responses = 1;
 }
 
 // An offline file annotation request.
@@ -683,6 +782,21 @@ message AsyncAnnotateFileResponse {
   OutputConfig output_config = 1;
 }
 
+// Request for async image annotation for a list of images.
+message AsyncBatchAnnotateImagesRequest {
+  // Individual image annotation requests for this batch.
+  repeated AnnotateImageRequest requests = 1;
+
+  // Required. The desired output location and metadata (e.g. format).
+  OutputConfig output_config = 2;
+}
+
+// Response to an async batch image annotation request.
+message AsyncBatchAnnotateImagesResponse {
+  // The output location and metadata from AsyncBatchAnnotateImagesRequest.
+  OutputConfig output_config = 1;
+}
+
 // Multiple async file annotation requests are batched into a single service
 // call.
 message AsyncBatchAnnotateFilesRequest {
@@ -701,6 +815,14 @@ message AsyncBatchAnnotateFilesResponse {
 message InputConfig {
   // The Google Cloud Storage location to read the input from.
   GcsSource gcs_source = 1;
+
+  // File content, represented as a stream of bytes.
+  // Note: As with all `bytes` fields, protobuffers use a pure binary
+  // representation, whereas JSON representations use base64.
+  //
+  // Currently, this field only works for BatchAnnotateFiles requests. It does
+  // not work for AsyncBatchAnnotateFiles requests.
+  bytes content = 3;
 
   // The type of the file. Currently only "application/pdf" and "image/tiff"
   // are supported. Wildcards are not supported.
@@ -735,16 +857,23 @@ message GcsSource {
 
 // The Google Cloud Storage location where the output will be written to.
 message GcsDestination {
-  // Google Cloud Storage URI where the results will be stored. Results will
-  // be in JSON format and preceded by its corresponding input URI. This field
-  // can either represent a single file, or a prefix for multiple outputs.
-  // Prefixes must end in a `/`.
+  // Google Cloud Storage URI prefix where the results will be stored. Results
+  // will be in JSON format and preceded by its corresponding input URI prefix.
+  // This field can either represent a gcs file prefix or gcs directory. In
+  // either case, the uri should be unique because in order to get all of the
+  // output files, you will need to do a wildcard gcs search on the uri prefix
+  // you provide.
   //
   // Examples:
   //
-  // *    File: gs://bucket-name/filename.json
-  // *    Prefix: gs://bucket-name/prefix/here/
-  // *    File: gs://bucket-name/prefix/here
+  // *    File Prefix: gs://bucket-name/here/filenameprefix   The output files
+  // will be created in gs://bucket-name/here/ and the names of the
+  // output files will begin with "filenameprefix".
+  //
+  // *    Directory Prefix: gs://bucket-name/some/location/   The output files
+  // will be created in gs://bucket-name/some/location/ and the names of the
+  // output files could be anything because there was no filename prefix
+  // specified.
   //
   // If multiple outputs, each response is still AnnotateFileResponse, each of
   // which contains some subset of the full list of AnnotateImageResponse.
@@ -781,26 +910,4 @@ message OperationMetadata {
 
   // The time when the operation result was last updated.
   google.protobuf.Timestamp update_time = 6;
-}
-
-// A bucketized representation of likelihood, which is intended to give clients
-// highly stable results across model upgrades.
-enum Likelihood {
-  // Unknown likelihood.
-  UNKNOWN = 0;
-
-  // It is very unlikely that the image belongs to the specified vertical.
-  VERY_UNLIKELY = 1;
-
-  // It is unlikely that the image belongs to the specified vertical.
-  UNLIKELY = 2;
-
-  // It is possible that the image belongs to the specified vertical.
-  POSSIBLE = 3;
-
-  // It is likely that the image belongs to the specified vertical.
-  LIKELY = 4;
-
-  // It is very likely that the image belongs to the specified vertical.
-  VERY_LIKELY = 5;
 }
