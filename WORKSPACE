@@ -97,3 +97,12 @@ gazelle_dependencies()
 load("@com_google_api_codegen//rules_gapic/go:go_gapic_repositories.bzl", "go_gapic_repositories")
 
 go_gapic_repositories()
+
+load("//:repository_rules.bzl", "enabled_rules")
+
+enabled_rules(
+    name = "com_google_googleapis_imports",
+    go = True,
+    java = True,
+    proto = True,
+)
