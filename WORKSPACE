@@ -97,3 +97,15 @@ gazelle_dependencies()
 load("@com_google_api_codegen//rules_gapic/go:go_gapic_repositories.bzl", "go_gapic_repositories")
 
 go_gapic_repositories()
+
+http_archive(
+    name = "com_github_grpc_grpc",
+    urls = [
+        "https://github.com/grpc/grpc/archive/cb9b43b9f7291ceb714d92e0a717c6364c1fcc61.zip",
+    ],
+    strip_prefix = "grpc-cb9b43b9f7291ceb714d92e0a717c6364c1fcc61",
+)
+
+load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", com_github_grpc_grpc_bazel_grpc_deps = "grpc_deps")
+
+com_github_grpc_grpc_bazel_grpc_deps()
