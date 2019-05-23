@@ -29,9 +29,19 @@ http_archive(
 ##############################################################################
 
 # java_gapic artifacts runtime dependencies (gax-java)
-load("@com_google_api_codegen//rules_gapic/java:java_gapic_repositories.bzl", "java_gapic_repositories")
+#
+# Keeping it here to see how this goes (what will be more maintainable: direct import of gax or via
+# gapic-generator).
+#
+#load("@com_google_api_codegen//rules_gapic/java:java_gapic_repositories.bzl", "java_gapic_repositories")
+#
+#java_gapic_repositories()
 
-java_gapic_repositories()
+http_archive(
+    name = "com_google_api_gax_java",
+    urls = ["https://github.com/googleapis/gax-java/archive/6b170195c18e0d8abc8385ef063d6da9773f87de.zip"],
+    strip_prefix = "gax-java-6b170195c18e0d8abc8385ef063d6da9773f87de",
+)
 
 load("@com_google_api_gax_java//:repository_rules.bzl", "com_google_api_gax_java_properties")
 
@@ -73,11 +83,11 @@ com_google_protoc_java_resource_names_plugin_repositories(omit_com_google_protob
 # rules_go (support Golang under bazel)
 http_archive(
     name = "io_bazel_rules_go",
-    strip_prefix = "rules_go-7d17d496a6b32f6a573c6c22e29c58204eddf3d4",
-    urls = ["https://github.com/bazelbuild/rules_go/archive/7d17d496a6b32f6a573c6c22e29c58204eddf3d4.zip"],
+    url = "https://github.com/bazelbuild/rules_go/releases/download/0.18.5/rules_go-0.18.5.tar.gz",
+    sha256 = "a82a352bffae6bee4e95f68a8d80a70e87f42c4741e6a448bec11998fcc82329",
 )
 
-load("@io_bazel_rules_go//go:def.bzl", "go_rules_dependencies", "go_register_toolchains")
+load("@io_bazel_rules_go//go:deps.bzl", "go_rules_dependencies", "go_register_toolchains")
 
 go_rules_dependencies()
 
@@ -86,8 +96,8 @@ go_register_toolchains()
 # bazel-gazelle (support Golang under bazel)
 http_archive(
     name = "bazel_gazelle",
-    strip_prefix = "bazel-gazelle-0.16.0",
-    urls = ["https://github.com/bazelbuild/bazel-gazelle/archive/0.16.0.zip"],
+    strip_prefix = "bazel-gazelle-0.17.0",
+    urls = ["https://github.com/bazelbuild/bazel-gazelle/archive/0.17.0.zip"],
 )
 
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
