@@ -14,6 +14,7 @@ switched_rules_by_language(
     gapic = True,
     go = True,
     java = True,
+    cc = True,
 )
 
 # Note gapic-generator contains java-specific and common code, that is why it is imported in common
@@ -108,3 +109,18 @@ gazelle_dependencies()
 load("@com_google_api_codegen//rules_gapic/go:go_gapic_repositories.bzl", "go_gapic_repositories")
 
 go_gapic_repositories()
+
+##############################################################################
+# C++
+##############################################################################
+
+http_archive(
+    name = "com_github_grpc_grpc",
+    urls = ["https://github.com/grpc/grpc/archive/v1.21.0.tar.gz"],
+    strip_prefix = "grpc-1.21.0",
+    sha256 = "8da7f32cc8978010d2060d740362748441b81a34e5425e108596d3fcd63a97f2",
+)
+
+load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
+
+grpc_deps()

@@ -92,7 +92,7 @@ def switched_rules_by_language(
             this rule. False by default.
         java (bool): Enable Java specific rules. False by default.
         go (bool): Enable Go specific rules. False by default.
-        cc (bool): Enable C++ specific rules. False by default. Not implemented yet.
+        cc (bool): Enable C++ specific rules. False by default. Partially implemented.
         python (bool): Enable Python-specific rules. False by default. Not implemented yet.
         php (bool): Enable PHP specific rules. False by default. Not implemented yet.
         ruby (bool): Enable Ruby specific rules. False by default. Not implemented yet.
@@ -158,6 +158,16 @@ def switched_rules_by_language(
     rules["go_gapic_assembly_pkg"] = _switch(
         go and gapic,
         "@com_google_api_codegen//rules_gapic/go:go_gapic_pkg.bzl",
+    )
+
+    rules["cc_proto_library"] = _switch(
+        cc,
+        "native.cc_proto_library",
+    )
+
+    rules["cc_grpc_library"] = _switch(
+        cc and grpc,
+        "@com_github_grpc_grpc//bazel:cc_grpc_library.bzl",
     )
 
     rules.update(rules_override)
