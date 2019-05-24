@@ -102,38 +102,46 @@ def switched_rules_by_language(
     """
 
     rules = {}
+
+    #
+    # Common
+    #
     rules["proto_library_with_info"] = _switch(
         gapic,
         "@com_google_api_codegen//rules_gapic:gapic.bzl",
     )
 
+    #
+    # Java
+    #
     rules["java_proto_library"] = _switch(
         java,
         "native.java_proto_library",
     )
-
     rules["java_grpc_library"] = _switch(
         java and grpc,
         "@io_grpc_grpc_java//:java_grpc_library.bzl",
     )
-
     rules["java_gapic_library"] = _switch(
-        java and gapic,
+        java and grpc and gapic,
         "@com_google_api_codegen//rules_gapic/java:java_gapic.bzl",
     )
     rules["java_resource_name_proto_library"] = _switch(
-        java and gapic,
+        java and grpc and gapic,
         "@com_google_api_codegen//rules_gapic/java:java_gapic.bzl",
     )
     rules["java_gapic_assembly_gradle_pkg"] = _switch(
-        java and gapic,
+        java and grpc and gapic,
         "@com_google_api_codegen//rules_gapic/java:java_gapic_pkg.bzl",
     )
     rules["java_test"] = _switch(
-        java and gapic,
+        java and grpc and gapic,
         "native.java_test",
     )
 
+    #
+    # Go
+    #
     rules["go_proto_library"] = _switch(
         go,
         "@io_bazel_rules_go//proto:def.bzl",
@@ -142,29 +150,26 @@ def switched_rules_by_language(
         go,
         "@io_bazel_rules_go//go:def.bzl",
     )
-
     rules["go_test"] = _switch(
-        go and gapic,
+        go and grpc and gapic,
         "@io_bazel_rules_go//go:def.bzl",
     )
-    rules["go_gapic_srcjar"] = _switch(
-        go and gapic,
-        "@com_google_api_codegen//rules_gapic/go:go_gapic.bzl",
-    )
     rules["go_gapic_library"] = _switch(
-        go and gapic,
+        go and grpc and gapic,
         "@com_google_api_codegen//rules_gapic/go:go_gapic.bzl",
     )
     rules["go_gapic_assembly_pkg"] = _switch(
-        go and gapic,
+        go and grpc and gapic,
         "@com_google_api_codegen//rules_gapic/go:go_gapic_pkg.bzl",
     )
 
+    #
+    # C++
+    #
     rules["cc_proto_library"] = _switch(
         cc,
         "native.cc_proto_library",
     )
-
     rules["cc_grpc_library"] = _switch(
         cc and grpc,
         "@com_github_grpc_grpc//bazel:cc_grpc_library.bzl",
