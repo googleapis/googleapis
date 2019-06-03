@@ -109,8 +109,14 @@ message VideoContext {
   // Config for EXPLICIT_CONTENT_DETECTION.
   ExplicitContentDetectionConfig explicit_content_detection_config = 4;
 
+  // Config for SPEECH_TRANSCRIPTION.
+  SpeechTranscriptionConfig speech_transcription_config = 6;
+
   // Config for TEXT_DETECTION.
   TextDetectionConfig text_detection_config = 8;
+
+  // Config for OBJECT_TRACKING.
+  ObjectTrackingConfig object_tracking_config = 13;
 }
 
 // Config for LABEL_DETECTION.
@@ -129,11 +135,35 @@ message LabelDetectionConfig {
   // Supported values: "builtin/stable" (the default if unset) and
   // "builtin/latest".
   string model = 3;
+
+  // The confidence threshold we perform filtering on the labels from
+  // frame-level detection. If not set, it is set to 0.4 by default. The valid
+  // range for this threshold is [0.1, 0.9]. Any value set outside of this
+  // range will be clipped.
+  // Note: for best results please follow the default threshold. We will update
+  // the default threshold everytime when we release a new model.
+  float frame_confidence_threshold = 4;
+
+  // The confidence threshold we perform filtering on the labels from
+  // video-level and shot-level detections. If not set, it is set to 0.3 by
+  // default. The valid range for this threshold is [0.1, 0.9]. Any value set
+  // outside of this range will be clipped.
+  // Note: for best results please follow the default threshold. We will update
+  // the default threshold everytime when we release a new model.
+  float video_confidence_threshold = 5;
 }
 
 // Config for SHOT_CHANGE_DETECTION.
 message ShotChangeDetectionConfig {
   // Model to use for shot change detection.
+  // Supported values: "builtin/stable" (the default if unset) and
+  // "builtin/latest".
+  string model = 1;
+}
+
+// Config for OBJECT_TRACKING.
+message ObjectTrackingConfig {
+  // Model to use for object tracking.
   // Supported values: "builtin/stable" (the default if unset) and
   // "builtin/latest".
   string model = 1;
@@ -155,6 +185,11 @@ message TextDetectionConfig {
   //
   // Automatic language detection is performed if no hint is provided.
   repeated string language_hints = 1;
+
+  // Model to use for text detection.
+  // Supported values: "builtin/stable" (the default if unset) and
+  // "builtin/latest".
+  string model = 2;
 }
 
 // Video segment.
@@ -254,6 +289,51 @@ message NormalizedBoundingBox {
   float bottom = 4;
 }
 
+// For tracking related features, such as LOGO_RECOGNITION, FACE_DETECTION,
+// CELEBRITY_RECOGNITION, PERSON_DETECTION.
+// An object at time_offset with attributes, and located with
+// normalized_bounding_box.
+message TimestampedObject {
+  // Normalized Bounding box in a frame, where the object is located.
+  NormalizedBoundingBox normalized_bounding_box = 1;
+
+  // Time-offset, relative to the beginning of the video,
+  // corresponding to the video frame for this object.
+  google.protobuf.Duration time_offset = 2;
+
+  // Optional. The attributes of the object in the bounding box.
+  repeated DetectedAttribute attributes = 3;
+}
+
+// A track of an object instance.
+message Track {
+  // Video segment of a track.
+  VideoSegment segment = 1;
+
+  // The object with timestamp and attributes per frame in the track.
+  repeated TimestampedObject timestamped_objects = 2;
+
+  // Optional. Attributes in the track level.
+  repeated DetectedAttribute attributes = 3;
+
+  // Optional. The confidence score of the tracked object.
+  float confidence = 4;
+}
+
+// A generic detected attribute represented by name in string format.
+message DetectedAttribute {
+  // The name of the attribute, i.e. glasses, dark_glasses, mouth_open etc.
+  // A full list of supported type names will be provided in the document.
+  string name = 1;
+
+  // Detected attribute confidence. Range [0, 1].
+  float confidence = 2;
+
+  // Text value of the detection result. For example, the value for "HairColor"
+  // can be "black", "blonde", etc.
+  string value = 3;
+}
+
 // Annotation results for a single video.
 message VideoAnnotationResults {
   // Video file location in
@@ -278,6 +358,9 @@ message VideoAnnotationResults {
   // Explicit content annotation.
   ExplicitContentAnnotation explicit_annotation = 7;
 
+  // Speech transcription.
+  repeated SpeechTranscription speech_transcriptions = 11;
+
   // OCR text detection and tracking.
   // Annotations for list of detected text snippets. Each will have list of
   // frame information associated with it.
@@ -285,6 +368,9 @@ message VideoAnnotationResults {
 
   // Annotations for list of objects detected and tracked in video.
   repeated ObjectTrackingAnnotation object_annotations = 14;
+
+  // Annotations for list of logos detected, tracked and recognized in video.
+  repeated LogoRecognitionAnnotation logo_recognition_annotations = 19;
 
   // If set, indicates an error. Note that for a single `AnnotateVideoRequest`
   // some videos may succeed and some may fail.
@@ -322,6 +408,142 @@ message VideoAnnotationProgress {
 message AnnotateVideoProgress {
   // Progress metadata for all videos specified in `AnnotateVideoRequest`.
   repeated VideoAnnotationProgress annotation_progress = 1;
+}
+
+// Config for SPEECH_TRANSCRIPTION.
+message SpeechTranscriptionConfig {
+  // *Required* The language of the supplied audio as a
+  // [BCP-47](https://www.rfc-editor.org/rfc/bcp/bcp47.txt) language tag.
+  // Example: "en-US".
+  // See [Language Support](https://cloud.google.com/speech/docs/languages)
+  // for a list of the currently supported language codes.
+  string language_code = 1;
+
+  // *Optional* Maximum number of recognition hypotheses to be returned.
+  // Specifically, the maximum number of `SpeechRecognitionAlternative` messages
+  // within each `SpeechTranscription`. The server may return fewer than
+  // `max_alternatives`. Valid values are `0`-`30`. A value of `0` or `1` will
+  // return a maximum of one. If omitted, will return a maximum of one.
+  int32 max_alternatives = 2;
+
+  // *Optional* If set to `true`, the server will attempt to filter out
+  // profanities, replacing all but the initial character in each filtered word
+  // with asterisks, e.g. "f***". If set to `false` or omitted, profanities
+  // won't be filtered out.
+  bool filter_profanity = 3;
+
+  // *Optional* A means to provide context to assist the speech recognition.
+  repeated SpeechContext speech_contexts = 4;
+
+  // *Optional* If 'true', adds punctuation to recognition result hypotheses.
+  // This feature is only available in select languages. Setting this for
+  // requests in other languages has no effect at all. The default 'false' value
+  // does not add punctuation to result hypotheses. NOTE: "This is currently
+  // offered as an experimental service, complimentary to all users. In the
+  // future this may be exclusively available as a premium feature."
+  bool enable_automatic_punctuation = 5;
+
+  // *Optional* For file formats, such as MXF or MKV, supporting multiple audio
+  // tracks, specify up to two tracks. Default: track 0.
+  repeated int32 audio_tracks = 6;
+
+  // *Optional* If 'true', enables speaker detection for each recognized word in
+  // the top alternative of the recognition result using a speaker_tag provided
+  // in the WordInfo.
+  // Note: When this is true, we send all the words from the beginning of the
+  // audio for the top alternative in every consecutive responses.
+  // This is done in order to improve our speaker tags as our models learn to
+  // identify the speakers in the conversation over time.
+  bool enable_speaker_diarization = 7;
+
+  // *Optional*
+  // If set, specifies the estimated number of speakers in the conversation.
+  // If not set, defaults to '2'.
+  // Ignored unless enable_speaker_diarization is set to true.
+  int32 diarization_speaker_count = 8;
+
+  // *Optional* If `true`, the top result includes a list of words and the
+  // confidence for those words. If `false`, no word-level confidence
+  // information is returned. The default is `false`.
+  bool enable_word_confidence = 9;
+}
+
+// Provides "hints" to the speech recognizer to favor specific words and phrases
+// in the results.
+message SpeechContext {
+  // *Optional* A list of strings containing words and phrases "hints" so that
+  // the speech recognition is more likely to recognize them. This can be used
+  // to improve the accuracy for specific words and phrases, for example, if
+  // specific commands are typically spoken by the user. This can also be used
+  // to add additional words to the vocabulary of the recognizer. See
+  // [usage limits](https://cloud.google.com/speech/limits#content).
+  repeated string phrases = 1;
+}
+
+// A speech recognition result corresponding to a portion of the audio.
+message SpeechTranscription {
+  // May contain one or more recognition hypotheses (up to the maximum specified
+  // in `max_alternatives`).  These alternatives are ordered in terms of
+  // accuracy, with the top (first) alternative being the most probable, as
+  // ranked by the recognizer.
+  repeated SpeechRecognitionAlternative alternatives = 1;
+
+  // Output only. The
+  // [BCP-47](https://www.rfc-editor.org/rfc/bcp/bcp47.txt) language tag of the
+  // language in this result. This language code was detected to have the most
+  // likelihood of being spoken in the audio.
+  string language_code = 2;
+}
+
+// Alternative hypotheses (a.k.a. n-best list).
+message SpeechRecognitionAlternative {
+  // Transcript text representing the words that the user spoke.
+  string transcript = 1;
+
+  // The confidence estimate between 0.0 and 1.0. A higher number
+  // indicates an estimated greater likelihood that the recognized words are
+  // correct. This field is typically provided only for the top hypothesis, and
+  // only for `is_final=true` results. Clients should not rely on the
+  // `confidence` field as it is not guaranteed to be accurate or consistent.
+  // The default of 0.0 is a sentinel value indicating `confidence` was not set.
+  float confidence = 2;
+
+  // A list of word-specific information for each recognized word.
+  repeated WordInfo words = 3;
+}
+
+// Word-specific information for recognized words. Word information is only
+// included in the response when certain request parameters are set, such
+// as `enable_word_time_offsets`.
+message WordInfo {
+  // Time offset relative to the beginning of the audio, and
+  // corresponding to the start of the spoken word. This field is only set if
+  // `enable_word_time_offsets=true` and only in the top hypothesis. This is an
+  // experimental feature and the accuracy of the time offset can vary.
+  google.protobuf.Duration start_time = 1;
+
+  // Time offset relative to the beginning of the audio, and
+  // corresponding to the end of the spoken word. This field is only set if
+  // `enable_word_time_offsets=true` and only in the top hypothesis. This is an
+  // experimental feature and the accuracy of the time offset can vary.
+  google.protobuf.Duration end_time = 2;
+
+  // The word corresponding to this set of information.
+  string word = 3;
+
+  // Output only. The confidence estimate between 0.0 and 1.0. A higher number
+  // indicates an estimated greater likelihood that the recognized words are
+  // correct. This field is set only for the top alternative.
+  // This field is not guaranteed to be accurate and users should not rely on it
+  // to be always provided.
+  // The default of 0.0 is a sentinel value indicating `confidence` was not set.
+  float confidence = 4;
+
+  // Output only. A distinct integer value is assigned for every speaker within
+  // the audio. This field specifies which one of those speakers was detected to
+  // have spoken this word. Value ranges from 1 up to diarization_speaker_count,
+  // and is only set if speaker diarization is enabled.
+  int32 speaker_tag = 5;
 }
 
 // A vertex represents a 2D point in the image.
@@ -432,6 +654,21 @@ message ObjectTrackingAnnotation {
   }
 }
 
+// Annotation corresponding to one detected, tracked and recognized logo class.
+message LogoRecognitionAnnotation {
+  // Entity category information to specify the logo class that all the logo
+  // tracks within this LogoRecognitionAnnotation are recognized as.
+  Entity entity = 1;
+
+  // All logo tracks where the recognized logo appears. Each track corresponds
+  // to one logo instance appearing in consecutive frames.
+  repeated Track tracks = 2;
+
+  // All video segments where the recognized logo appears. There might be
+  // multiple instances of the same logo class appearing in one VideoSegment.
+  repeated VideoSegment segments = 3;
+}
+
 // The top-level message sent by the client for the `StreamingAnnotateVideo`
 // method. Multiple `StreamingAnnotateVideoRequest` messages are sent.
 // The first message must only contain a `StreamingVideoConfig` message.
@@ -450,6 +687,8 @@ message StreamingAnnotateVideoRequest {
     // `StreamingAnnotateVideoRequest` message containing only
     // `video_config`, all subsequent `AnnotateStreamingVideoRequest`
     // messages must only contain `input_content` field.
+    // Note: as with all bytes fields, protobuffers use a pure binary
+    // representation (not base64).
     bytes input_content = 2;
   }
 }
@@ -458,7 +697,7 @@ message StreamingAnnotateVideoRequest {
 // by `StreamingAnnotateVideo`. A series of zero or more
 // `StreamingAnnotateVideoResponse` messages are streamed back to the client.
 message StreamingAnnotateVideoResponse {
-  // If set, returns a [google.rpc.Status][] message that
+  // If set, returns a [google.rpc.Status][google.rpc.Status] message that
   // specifies the error for the operation.
   google.rpc.Status error = 1;
 
@@ -522,7 +761,7 @@ message StreamingVideoAnnotationResults {
   // Label annotation results.
   repeated LabelAnnotation label_annotations = 2;
 
-  // Explicit content detection results.
+  // Explicit content annotation results.
   ExplicitContentAnnotation explicit_annotation = 3;
 
   // Object tracking results.
@@ -537,10 +776,10 @@ message StreamingVideoConfig {
 
   // Config for requested annotation feature.
   oneof streaming_config {
-    // Config for SHOT_CHANGE_DETECTION.
+    // Config for STREAMING_SHOT_CHANGE_DETECTION.
     StreamingShotChangeDetectionConfig shot_change_detection_config = 2;
 
-    // Config for LABEL_DETECTION.
+    // Config for STREAMING_LABEL_DETECTION.
     StreamingLabelDetectionConfig label_detection_config = 3;
 
     // Config for STREAMING_EXPLICIT_CONTENT_DETECTION.
@@ -569,11 +808,17 @@ enum Feature {
   // Explicit content detection.
   EXPLICIT_CONTENT_DETECTION = 3;
 
+  // Speech transcription.
+  SPEECH_TRANSCRIPTION = 6;
+
   // OCR text detection and tracking.
   TEXT_DETECTION = 7;
 
   // Object detection and tracking.
   OBJECT_TRACKING = 9;
+
+  // Logo detection, tracking, and recognition.
+  LOGO_RECOGNITION = 12;
 }
 
 // Label detection mode.
