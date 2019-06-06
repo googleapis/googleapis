@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc.
+// Copyright 2019 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
 
 syntax = "proto3";
 
@@ -29,6 +30,65 @@ option java_package = "com.google.cloud.bigquery.datatransfer.v1";
 option objc_class_prefix = "GCBDT";
 option php_namespace = "Google\\Cloud\\BigQuery\\DataTransfer\\V1";
 
+// DEPRECATED. Represents data transfer type.
+enum TransferType {
+  option deprecated = true;
+
+  // Invalid or Unknown transfer type placeholder.
+  TRANSFER_TYPE_UNSPECIFIED = 0;
+
+  // Batch data transfer.
+  BATCH = 1;
+
+  // Streaming data transfer. Streaming data source currently doesn't
+  // support multiple transfer configs per project.
+  STREAMING = 2;
+}
+
+// Represents data transfer run state.
+enum TransferState {
+  // State placeholder.
+  TRANSFER_STATE_UNSPECIFIED = 0;
+
+  // Data transfer is scheduled and is waiting to be picked up by
+  // data transfer backend.
+  PENDING = 2;
+
+  // Data transfer is in progress.
+  RUNNING = 3;
+
+  // Data transfer completed successfully.
+  SUCCEEDED = 4;
+
+  // Data transfer failed.
+  FAILED = 5;
+
+  // Data transfer is cancelled.
+  CANCELLED = 6;
+}
+
+// Options customizing the data transfer schedule.
+message ScheduleOptions {
+  // If true, automatic scheduling of data transfer runs for this configuration
+  // will be disabled. The runs can be started on ad-hoc basis using
+  // StartManualTransferRuns API. When automatic scheduling is disabled, the
+  // TransferConfig.schedule field will be ignored.
+  bool disable_auto_scheduling = 3;
+
+  // Specifies time to start scheduling transfer runs. The first run will be
+  // scheduled at or after the start time according to a recurrence pattern
+  // defined in the schedule string. The start time can be changed at any
+  // moment. The time when a data transfer can be trigerred manually is not
+  // limited by this option.
+  google.protobuf.Timestamp start_time = 1;
+
+  // Defines time to stop scheduling transfer runs. A transfer run cannot be
+  // scheduled at or after the end time. The end time can be changed at any
+  // moment. The time when a data transfer can be trigerred manually is not
+  // limited by this option.
+  google.protobuf.Timestamp end_time = 2;
+}
+
 // Represents a data transfer configuration. A transfer configuration
 // contains all metadata needed to perform a data transfer. For example,
 // `destination_dataset_id` specifies where data should be stored.
@@ -37,11 +97,12 @@ option php_namespace = "Google\\Cloud\\BigQuery\\DataTransfer\\V1";
 // appropriate data source service account.
 message TransferConfig {
   // The resource name of the transfer config.
-  // Transfer config names have the form
-  // `projects/{project_id}/transferConfigs/{config_id}`.
-  // Where `config_id` is usually a uuid, even though it is not
-  // guaranteed or required. The name is ignored when creating a transfer
-  // config.
+  // Transfer config names have the form of
+  // `projects/{project_id}/locations/{region}/transferConfigs/{config_id}`.
+  // The name is automatically generated based on the config_id specified in
+  // CreateTransferConfigRequest along with project_id and region. If config_id
+  // is not provided, usually a uuid, even though it is not guaranteed or
+  // required, will be generated for config_id.
   string name = 1;
 
   // The BigQuery target dataset id.
@@ -70,6 +131,9 @@ message TransferConfig {
   // NOTE: the granularity should be at least 8 hours, or less frequent.
   string schedule = 7;
 
+  // Options customizing the data transfer schedule.
+  ScheduleOptions schedule_options = 24;
+
   // The number of days to look back to automatically refresh the data.
   // For example, if `data_refresh_window_days = 10`, then every day
   // BigQuery reingests data for [today-10, today-1], rather than ingesting data
@@ -91,15 +155,29 @@ message TransferConfig {
   // Output only. State of the most recently updated transfer run.
   TransferState state = 10;
 
-  // Output only. Unique ID of the user on whose behalf transfer is done.
-  // Applicable only to data sources that do not support service accounts.
-  // When set to 0, the data source service account credentials are used.
-  // May be negative. Note, that this identifier is not stable.
-  // It may change over time even for the same user.
+  // Deprecated. Unique ID of the user on whose behalf transfer is done.
   int64 user_id = 11;
 
   // Output only. Region in which BigQuery dataset is located.
   string dataset_region = 14;
+
+  // A unique identifier used for identifying a transfer setup stored on
+  // external partner side. The token is opaque to DTS and can only be
+  // interpreted by partner. Partner data source should create a mapping between
+  // the config id and the token to validate that a transfer config/run is
+  // legitimate.
+  string partner_token = 22;
+
+  // Transfer settings managed by partner data sources. It is stored as
+  // key-value pairs and used for DTS UI display purpose only. Two reasons we
+  // don't want to store them together with 'params' are:
+  //  - The connection info is provided by partner and not editable in DTS UI
+  //    which is different from the immutable parameter. It will be confusing to
+  //    add another boolean to DataSourceParameter to differentiate them.
+  //  - The connection info can be any arbitrary key-value pairs. Adding them to
+  //    params fields requires partner to provide definition for them in data
+  //    source definition. It will be friendlier to avoid that for partners.
+  google.protobuf.Struct partner_connection_info = 23;
 }
 
 // Represents a data transfer run.
@@ -109,6 +187,9 @@ message TransferRun {
   // `projects/{project_id}/locations/{location}/transferConfigs/{config_id}/runs/{run_id}`.
   // The name is ignored when creating a transfer run.
   string name = 1;
+
+  // User labels.
+  map<string, string> labels = 22;
 
   // Minimum time after which a transfer run can be started.
   google.protobuf.Timestamp schedule_time = 3;
@@ -143,19 +224,23 @@ message TransferRun {
   // Data transfer run state. Ignored for input requests.
   TransferState state = 8;
 
-  // Output only. Unique ID of the user on whose behalf transfer is done.
-  // Applicable only to data sources that do not support service accounts.
-  // When set to 0, the data source service account credentials are used.
-  // May be negative. Note, that this identifier is not stable.
-  // It may change over time even for the same user.
+  // Deprecated. Unique ID of the user on whose behalf transfer is done.
   int64 user_id = 11;
 
   // Output only. Describes the schedule of this transfer run if it was
   // created as part of a regular schedule. For batch transfer runs that are
   // scheduled manually, this is empty.
   // NOTE: the system might choose to delay the schedule depending on the
-  // current load, so `schedule_time` doesn't always matches this.
+  // current load, so `schedule_time` doesn't always match this.
   string schedule = 12;
+
+  // Output only. This is the same token initialized from TransferConfig.
+  // Partner token is a unique identifier used for identifying a transfer setup
+  // stored on external partner side. The token is opaque to DTS and can only be
+  // interpreted by partner. Partner data source should create a mapping between
+  // the config id and the token to validate that a transfer config/run is
+  // legitimate.
+  string partner_token = 28;
 }
 
 // Represents a user facing message for a particular data transfer run.
@@ -173,6 +258,9 @@ message TransferMessage {
 
     // Error message.
     ERROR = 3;
+
+    // Debug message.
+    DEBUG = 4;
   }
 
   // Time when message was logged.
@@ -183,39 +271,4 @@ message TransferMessage {
 
   // Message text.
   string message_text = 3;
-}
-
-// DEPRECATED. Represents data transfer type.
-enum TransferType {
-  // Invalid or Unknown transfer type placeholder.
-  TRANSFER_TYPE_UNSPECIFIED = 0;
-
-  // Batch data transfer.
-  BATCH = 1;
-
-  // Streaming data transfer. Streaming data source currently doesn't
-  // support multiple transfer configs per project.
-  STREAMING = 2;
-}
-
-// Represents data transfer run state.
-enum TransferState {
-  // State placeholder.
-  TRANSFER_STATE_UNSPECIFIED = 0;
-
-  // Data transfer is scheduled and is waiting to be picked up by
-  // data transfer backend.
-  PENDING = 2;
-
-  // Data transfer is in progress.
-  RUNNING = 3;
-
-  // Data transfer completed successsfully.
-  SUCCEEDED = 4;
-
-  // Data transfer failed.
-  FAILED = 5;
-
-  // Data transfer is cancelled.
-  CANCELLED = 6;
 }
