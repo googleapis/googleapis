@@ -15,14 +15,15 @@ switched_rules_by_language(
     go = True,
     grpc = True,
     java = True,
+    php = True,
 )
 
 # Note gapic-generator contains java-specific and common code, that is why it is imported in common
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-b465d5651c29c344e90515172cbe662fcb296dd8",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/b465d5651c29c344e90515172cbe662fcb296dd8.zip"],
+    strip_prefix = "gapic-generator-5fcbd748cd68bb8ab4732511c6c07c1a87db02a3",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/5fcbd748cd68bb8ab4732511c6c07c1a87db02a3.zip"],
 )
 
 ##############################################################################
@@ -137,3 +138,16 @@ load(
 )
 
 com_google_gapic_generator_cpp_repositories()
+
+##############################################################################
+# PHP
+##############################################################################
+
+load("@com_google_api_codegen//rules_gapic/php:php_gapic_repositories.bzl", "php", "php_gapic_repositories")
+
+php(
+    name = "php",
+    version = "7.1.30",
+)
+
+php_gapic_repositories()
