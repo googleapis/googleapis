@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC.
+// Copyright 2019 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,18 +17,20 @@ syntax = "proto3";
 
 package google.cloud.automl.v1beta1;
 
-import "google/api/annotations.proto";
+import "google/cloud/automl/v1beta1/classification.proto";
 import "google/cloud/automl/v1beta1/column_spec.proto";
+import "google/cloud/automl/v1beta1/data_items.proto";
 import "google/cloud/automl/v1beta1/data_stats.proto";
 import "google/cloud/automl/v1beta1/ranges.proto";
+import "google/cloud/automl/v1beta1/temporal.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
+import "google/api/annotations.proto";
 
 option go_package = "google.golang.org/genproto/googleapis/cloud/automl/v1beta1;automl";
 option java_multiple_files = true;
 option java_package = "com.google.cloud.automl.v1beta1";
 option php_namespace = "Google\\Cloud\\AutoMl\\V1beta1";
-
 
 // Metadata for a dataset used for AutoML Tables.
 message TablesDatasetMetadata {
@@ -40,13 +42,9 @@ message TablesDatasetMetadata {
   // This column must be non-nullable and have one of following data types
   // (otherwise model creation will error):
   // * CATEGORY
-  // * ARRAY(CATEGORY)
   // * FLOAT64
-  // Furthermore, if the type is CATEGORY or ARRAY(CATEGORY), then only up to
-  // 40 unique values may exist in that column across all rows, but for
-  // ARRAY(CATEGORY) unique values are counted as elements of the ARRAY (i.e.
-  // following 3 ARRAY-s: [A, B], [A], [B] are counted as having 2 unique
-  // values).
+  // Furthermore, if the type is CATEGORY , then only up to
+  // 100 unique values may exist in that column across all rows.
   //
   // NOTE: Updates of this field will instantly affect any other users
   // concurrently working with the dataset.
@@ -80,10 +78,10 @@ message TablesDatasetMetadata {
 
   // Output only. Correlations between
   //
-  // [target_column][google.cloud.automl.v1beta1.TablesDatasetMetadata.target_column],
+  // [TablesDatasetMetadata.target_column_spec_id][google.cloud.automl.v1beta1.TablesDatasetMetadata.target_column_spec_id],
   // and other columns of the
   //
-  // [primary_table][google.cloud.automl.v1beta1.TablesDatasetMetadata.primary_table_spec_id].
+  // [TablesDatasetMetadataprimary_table][google.cloud.automl.v1beta1.TablesDatasetMetadata.primary_table_spec_id].
   // Only set if the target column is set. Mapping from other column spec id to
   // its CorrelationStats with the target column.
   // This field may be stale, see the stats_update_time field for
@@ -135,7 +133,7 @@ message TablesModelMetadata {
   // creates a model that maximizes/minimizes the value of the objective
   // function over the validation set.
   //
-  // The supported optimization objectives depend on the prediction_type.
+  // The supported optimization objectives depend on the prediction type.
   // If the field is not set, a default objective function is used.
   //
   // CLASSIFICATION_BINARY:
@@ -147,8 +145,6 @@ message TablesModelMetadata {
   // CLASSIFICATION_MULTI_CLASS :
   //   "MINIMIZE_LOG_LOSS" (default) - Minimize log loss.
   //
-  // CLASSIFICATION_MULTI_LABEL:
-  //   "MINIMIZE_LOG_LOSS" (default) - Minimize log loss.
   //
   // REGRESSION:
   //   "MINIMIZE_RMSE" (default) - Minimize root-mean-squared error (RMSE).
@@ -161,11 +157,11 @@ message TablesModelMetadata {
   string optimization_objective = 4;
 
   // Output only. Auxiliary information for each of the
-  // input_feature_column_specs, with respect to this particular model.
+  // input_feature_column_specs with respect to this particular model.
   repeated TablesModelColumnInfo tables_model_column_info = 5;
 
-  // The train budget of creating this model, expressed in milli node hours
-  // i.e. 1,000 value in this field means 1 node hour.
+  // Required. The train budget of creating this model, expressed in milli node
+  // hours i.e. 1,000 value in this field means 1 node hour.
   //
   // The training cost of the model will not exceed this budget. The final cost
   // will be attempted to be close to the budget, though may end up being (even)
@@ -175,12 +171,20 @@ message TablesModelMetadata {
   // If the budget is set to a value known to be insufficient to train a
   // model for the given dataset, the training won't be attempted and
   // will error.
+  //
+  // The train budget must be between 1,000 and 72,000 milli node hours,
+  // inclusive.
   int64 train_budget_milli_node_hours = 6;
 
   // Output only. The actual training cost of the model, expressed in milli
   // node hours, i.e. 1,000 value in this field means 1 node hour. Guaranteed
   // to not exceed the train budget.
   int64 train_cost_milli_node_hours = 7;
+
+  // Use the entire training budget. This disables the early stopping feature.
+  // By default, the early stopping feature is enabled, which means that AutoML
+  // Tables might stop training before the entire training budget has been used.
+  bool disable_early_stopping = 12;
 }
 
 // Contains annotation details specific to Tables.
@@ -190,19 +194,14 @@ message TablesAnnotation {
   // For
   //
   // [target_column_spec][google.cloud.automl.v1beta1.TablesModelMetadata.target_column_spec]
-  // of ARRAY(CATEGORY) data type, this is a confidence that one of the values
-  // in the ARRAY would be the provided value.
-  // For
-  //
-  // [target_column_spec][google.cloud.automl.v1beta1.TablesModelMetadata.target_column_spec]
   // of FLOAT64 data type the score is not populated.
   float score = 1;
 
   // Output only. Only populated when
   //
   // [target_column_spec][google.cloud.automl.v1beta1.TablesModelMetadata.target_column_spec]
-  // has FLOAT64 data type (i.e. for regression predictions). An interval in
-  // which the exactly correct target value has 95% chance to be in.
+  // has FLOAT64 data type. An interval in which the exactly correct target
+  // value has 95% chance to be in.
   DoubleRange prediction_interval = 4;
 
   // The predicted value of the row's
@@ -211,15 +210,20 @@ message TablesAnnotation {
   // The value depends on the column's DataType:
   // CATEGORY - the predicted (with the above confidence `score`) CATEGORY
   //            value.
-  // FLOAT64 - the predicted (with the above confidence `score`) FLOAT64 value.
-  // ARRAY(CATEGORY) - CATEGORY value meaning that this value would be in the
-  //                   ARRAY in that column (with the above confidence `score`).
+  // FLOAT64 - the predicted (with above `prediction_interval`) FLOAT64 value.
   google.protobuf.Value value = 2;
 
   // Output only. Auxiliary information for each of the model's
   //
-  // [input_feature_column_specs'][google.cloud.automl.v1beta1.TablesModelMetadata.input_feature_column_specs]
+  // [input_feature_column_specs][google.cloud.automl.v1beta1.TablesModelMetadata.input_feature_column_specs]
   // with respect to this particular prediction.
+  // If no other fields than
+  //
+  // [column_spec_name][google.cloud.automl.v1beta1.TablesModelColumnInfo.column_spec_name]
+  // and
+  //
+  // [column_display_name][google.cloud.automl.v1beta1.TablesModelColumnInfo.column_display_name]
+  // would be populated, then this whole field is not.
   repeated TablesModelColumnInfo tables_model_column_info = 3;
 }
 
@@ -236,13 +240,18 @@ message TablesModelColumnInfo {
 
   // Output only.
   //
-  // When given as part of a Model:
+  // When given as part of a Model (always populated):
   // Measurement of how much model predictions correctness on the TEST data
   // depend on values in this column. A value between 0 and 1, higher means
   // higher influence. These values are normalized - for all input feature
   // columns of a given model they add to 1.
   //
-  // When given back by Predict or Batch Predict:
+  // When given back by Predict (populated iff
+  // [feature_importance
+  // param][google.cloud.automl.v1beta1.PredictRequest.params] is set) or Batch
+  // Predict (populated iff
+  // [feature_importance][google.cloud.automl.v1beta1.PredictRequest.params]
+  // param is set):
   // Measurement of how impactful for the prediction returned for the given row
   // the value in this column was. A value between 0 and 1, higher means larger
   // impact. These values are normalized - for all input feature columns of a
