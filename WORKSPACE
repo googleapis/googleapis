@@ -22,8 +22,8 @@ switched_rules_by_language(
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-5fcbd748cd68bb8ab4732511c6c07c1a87db02a3",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/5fcbd748cd68bb8ab4732511c6c07c1a87db02a3.zip"],
+    strip_prefix = "gapic-generator-4a5220485893da3ee8934615d1901626f5b18e36",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/4a5220485893da3ee8934615d1901626f5b18e36.zip"],
 )
 
 ##############################################################################
