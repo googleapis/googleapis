@@ -17,6 +17,7 @@ syntax = "proto3";
 
 package google.cloud.dialogflow.v2beta1;
 
+import "google/protobuf/duration.proto";
 import "google/api/annotations.proto";
 
 option cc_enable_arenas = true;
@@ -76,6 +77,31 @@ enum AudioEncoding {
   AUDIO_ENCODING_SPEEX_WITH_HEADER_BYTE = 7;
 }
 
+// Information for a word recognized by the speech recognizer.
+message SpeechWordInfo {
+  // The word this info is for.
+  string word = 3;
+
+  // Time offset relative to the beginning of the audio that corresponds to the
+  // start of the spoken word. This is an experimental feature and the accuracy
+  // of the time offset can vary.
+  google.protobuf.Duration start_offset = 1;
+
+  // Time offset relative to the beginning of the audio that corresponds to the
+  // end of the spoken word. This is an experimental feature and the accuracy of
+  // the time offset can vary.
+  google.protobuf.Duration end_offset = 2;
+
+  // The Speech confidence between 0.0 and 1.0 for this word. A higher number
+  // indicates an estimated greater likelihood that the recognized word is
+  // correct. The default of 0.0 is a sentinel value indicating that confidence
+  // was not set.
+  //
+  // This field is not guaranteed to be fully stable over time for the same
+  // audio input. Users should also not rely on it to always be provided.
+  float confidence = 4;
+}
+
 // Variant of the specified [Speech model][google.cloud.dialogflow.v2beta1.InputAudioConfig.model] to use.
 //
 // See the [Cloud Speech
@@ -92,7 +118,7 @@ enum SpeechModelVariant {
   // model][InputAudioConfig.model] that the caller is eligible for.
   //
   // Please see the [Dialogflow
-  // docs](https://cloud.google.com/dialogflow-enterprise/docs/data-logging) for
+  // docs](https://cloud.google.com/dialogflow/docs/data-logging) for
   // how to make your project eligible for enhanced models.
   USE_BEST_AVAILABLE = 1;
 
@@ -114,7 +140,7 @@ enum SpeechModelVariant {
   //
   // * If the API caller isn't eligible for enhanced models, Dialogflow returns
   //   an error.  Please see the [Dialogflow
-  //   docs](https://cloud.google.com/dialogflow-enterprise/docs/data-logging)
+  //   docs](https://cloud.google.com/dialogflow/docs/data-logging)
   //   for how to make your project eligible.
   USE_ENHANCED = 3;
 }
@@ -133,15 +159,21 @@ message InputAudioConfig {
 
   // Required. The language of the supplied audio. Dialogflow does not do
   // translations. See [Language
-  // Support](https://cloud.google.com/dialogflow-enterprise/docs/reference/language)
+  // Support](https://cloud.google.com/dialogflow/docs/reference/language)
   // for a list of the currently supported language codes. Note that queries in
   // the same session do not necessarily need to specify the same language.
   string language_code = 3;
 
-  // Optional. The collection of phrase hints which are used to boost accuracy
-  // of speech recognition.
-  // Refer to
-  // [Cloud Speech API
+  // Optional. If `true`, Dialogflow returns [SpeechWordInfo][google.cloud.dialogflow.v2beta1.SpeechWordInfo] in
+  // [StreamingRecognitionResult][google.cloud.dialogflow.v2beta1.StreamingRecognitionResult] with information about the recognized speech
+  // words, e.g. start and end time offsets. If false or unspecified, Speech
+  // doesn't return any word-level information.
+  bool enable_word_info = 13;
+
+  // Optional. A list of strings containing words and phrases that the speech
+  // recognizer should recognize with higher likelihood.
+  //
+  // See [the Cloud Speech
   // documentation](https://cloud.google.com/speech-to-text/docs/basics#phrase-hints)
   // for more details.
   repeated string phrase_hints = 4;
@@ -163,6 +195,20 @@ message InputAudioConfig {
   SpeechModelVariant model_variant = 10;
 }
 
+// Description of which voice to use for speech synthesis.
+message VoiceSelectionParams {
+  // Optional. The name of the voice. If not set, the service will choose a
+  // voice based on the other parameters such as language_code and gender.
+  string name = 1;
+
+  // Optional. The preferred gender of the voice. If not set, the service will
+  // choose a voice based on the other parameters such as language_code and
+  // name. Note that this is only a preference, not requirement. If a
+  // voice of the appropriate gender is not available, the synthesizer should
+  // substitute a voice with a different gender rather than failing the request.
+  SsmlVoiceGender ssml_gender = 2;
+}
+
 // Gender of the voice as described in
 // [SSML voice element](https://www.w3.org/TR/speech-synthesis11/#edef_voice).
 enum SsmlVoiceGender {
@@ -178,20 +224,6 @@ enum SsmlVoiceGender {
 
   // A gender-neutral voice.
   SSML_VOICE_GENDER_NEUTRAL = 3;
-}
-
-// Description of which voice to use for speech synthesis.
-message VoiceSelectionParams {
-  // Optional. The name of the voice. If not set, the service will choose a
-  // voice based on the other parameters such as language_code and gender.
-  string name = 1;
-
-  // Optional. The preferred gender of the voice. If not set, the service will
-  // choose a voice based on the other parameters such as language_code and
-  // name. Note that this is only a preference, not requirement. If a
-  // voice of the appropriate gender is not available, the synthesizer should
-  // substitute a voice with a different gender rather than failing the request.
-  SsmlVoiceGender ssml_gender = 2;
 }
 
 // Configuration of how speech should be synthesized.
@@ -226,6 +258,22 @@ message SynthesizeSpeechConfig {
   VoiceSelectionParams voice = 4;
 }
 
+// Instructs the speech synthesizer how to generate the output audio content.
+message OutputAudioConfig {
+  // Required. Audio encoding of the synthesized audio content.
+  OutputAudioEncoding audio_encoding = 1;
+
+  // Optional. The synthesis sample rate (in hertz) for this audio. If not
+  // provided, then the synthesizer will use the default sample rate based on
+  // the audio encoding. If this is different from the voice's natural sample
+  // rate, then the synthesizer will honor this request by converting to the
+  // desired sample rate (which might result in worse audio quality).
+  int32 sample_rate_hertz = 2;
+
+  // Optional. Configuration of how speech should be synthesized.
+  SynthesizeSpeechConfig synthesize_speech_config = 3;
+}
+
 // Audio encoding of the output audio format in Text-To-Speech.
 enum OutputAudioEncoding {
   // Not specified.
@@ -243,20 +291,4 @@ enum OutputAudioEncoding {
   // Chrome and Firefox). The quality of the encoding is considerably higher
   // than MP3 while using approximately the same bitrate.
   OUTPUT_AUDIO_ENCODING_OGG_OPUS = 3;
-}
-
-// Instructs the speech synthesizer how to generate the output audio content.
-message OutputAudioConfig {
-  // Required. Audio encoding of the synthesized audio content.
-  OutputAudioEncoding audio_encoding = 1;
-
-  // Optional. The synthesis sample rate (in hertz) for this audio. If not
-  // provided, then the synthesizer will use the default sample rate based on
-  // the audio encoding. If this is different from the voice's natural sample
-  // rate, then the synthesizer will honor this request by converting to the
-  // desired sample rate (which might result in worse audio quality).
-  int32 sample_rate_hertz = 2;
-
-  // Optional. Configuration of how speech should be synthesized.
-  SynthesizeSpeechConfig synthesize_speech_config = 3;
 }
