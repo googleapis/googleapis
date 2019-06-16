@@ -1,15 +1,30 @@
+# Setup data to FOREACH over to generate the actual TEST ...
+# and move under _templates :)
+
 test:
   suites:
-  - name: Vision Dataset Management (Create, Get, List, Delete)
+  - name: AutoML Vision Classification – Dataset Management
     
     # This includes one test which walks through Create, List, Delete, etc.
+    #
+    # AutoML Dataset deletion may sometimes take a moment.
 
     setup:
+    # Read project ID from GOOGLE_PROJECT_ID environment variable
+    # Note: the location used by all samples it hard-coded to `us-centra1`
     - env: {name: GOOGLE_PROJECT_ID, variable: project_id}
-    - code: dataset_name = "a" + uuid().replace("-", "")[:30]
+    # Create a unique Dataset display name (max length 32 a-zA-Z0-9_)
+    - code: dataset_display_name = "a" + uuid().replace("-", "")[:30]
+
+    # TODO
+    # CONSIDER using YAML anchors/aliases if reasonably doable
+    # - sammple IDs are different
+    # - the ONE bit of output is different
+    # - althought we should also test that you can CHANGE the special inputs that each take (e.g. multilabel/class)
+    # START with copy/paste
 
     cases:
-    - name: Vision Classification
+    - name: Create, List, Get, Update, and Delete
       spec:
       # LIST (assert does not exist)
       - call:
@@ -17,44 +32,99 @@ test:
           params:
             project: { variable: project_id }
       - assert_not_contains:
-        - variable: dataset_name
+        - variable: dataset_display_name
 
       # CREATE
       - call:
           sample: automl_vision_create_dataset
           params:
-            project: { variable: project_id }
-            display_name: { variable: dataset_name }
+            project: {variable: project_id}
+            display_name: {variable: dataset_display_name}
+      # Extract the generated Dataset ID from the Dataset name field (Output only)
+      # Format: projects/{project_id}/locations/{location_id}/datasets/{generated_dataset_id}
       - extract_match:
           pattern: datasets/([^\s]+)
-          variable: dataset_id
+          variable: generated_dataset_id
       - assert_contains:
-        - literal: "Dataset name"
-        - variable: dataset_name
+        - literal: "Created dataset"
+        - literal: "Name"
+        - literal: "Display Name"
+        - variable: dataset_display_name
+        - literal: "Description"
+        - literal: "Description of this dataset"
         - literal: "Image classification dataset metadata type: MULTILABEL"
 
       # LIST (assert does exist)
       - call:
           sample: automl_vision_list_datasets
           params:
-            project: { variable: project_id }
+            project: {variable: project_id}
       - assert_contains:
-        - literal: "Dataset name"
-        - variable: dataset_name
-        - variable: dataset_id
+        - literal: "Name"
+        - variable: generated_dataset_id
+        - literal: "Display Name"
+        - variable: dataset_display_name
+        - literal: "Description"
+        - literal: "Description of this dataset"
         - literal: "Image classification dataset metadata type: MULTILABEL"
 
       # GET
       - call:
           sample: automl_vision_get_dataset
           params:
-            project: { variable: project_id }
-            dataset_id: { variable: dataset_id }
+            project: {variable: project_id}
+            generated_dataset_id: {variable: generated_dataset_id}
       - assert_contains:
-        - literal: "Dataset name"
-        - variable: dataset_name
-        - variable: dataset_id
+        - literal: "Name"
+        - variable: generated_dataset_id
+        - literal: "Display Name"
+        - variable: dataset_display_name
+        - literal: "Description"
+        - literal: "Description of this dataset"
         - literal: "Image classification dataset metadata type: MULTILABEL"
+      # Value that Update will change below
+      - assert_not_contains:
+        - literal: "Updated content of description"
+
+      # UPDATE
+      - call:
+          sample: automl_vision_update_dataset
+          params:
+            project: {variable: project_id}
+            description: {literal: "Changed description value!"}
+      - extract_match:
+          pattern: datasets/([^\s]+)
+          variable: generated_dataset_id
+      - assert_contains:
+        - literal: "Updated dataset"
+        - literal: "Name"
+        - variable: generated_dataset_id
+        - literal: "Display Name"
+        - variable: dataset_display_name
+        - literal: "Description"
+        - literal: "Updated content of description"
+        - literal: "Image classification dataset metadata type: MULTILABEL"
+      # Previous dataset description (before it was changed)
+      - assert_not_contains:
+        - literal: "Description of this dataset"
+
+      # GET
+      - call:
+          sample: automl_vision_get_dataset
+          params:
+            project: { variable: project_id }
+            dataset_id: { variable: generated_dataset_id }
+      - assert_contains:
+        - literal: "Name"
+        - variable: generated_dataset_id
+        - literal: "Display Name"
+        - variable: dataset_display_name
+        - literal: "Description"
+        - literal: "Updated content of description"
+        - literal: "Image classification dataset metadata type: MULTILABEL"
+      # Previous dataset description (before it was changed)
+      - assert_not_contains:
+        - literal: "Description of this dataset"
 
       # DELETE
       - log: ["Deleting dataset (may take a minute)"]
@@ -62,7 +132,7 @@ test:
           sample: automl_vision_delete_dataset
           params:
             project: { variable: project_id }
-            dataset_id: { variable: dataset_id }
+            dataset_id: { variable: generated_dataset_id }
       - assert_contains:
         - literal: "Deleted dataset"
 
@@ -72,5 +142,5 @@ test:
           params:
             project: { variable: project_id }
       - assert_not_contains:
-        - variable: dataset_name
-        - variable: dataset_id
+        - variable: dataset_display_name
+        - variable: generated_dataset_id
