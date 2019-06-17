@@ -1,0 +1,108 @@
+test:
+  suites:
+  - name: AutoML Natural Language Entity Extraction – Dataset Management
+
+    ##
+    # FYI: Natural Language Entity has no metadata to print.
+    ##
+    
+    # This includes one test which walks through Create, List, Delete, etc.
+    #
+    # AutoML Dataset deletion may sometimes take a moment.
+    #
+    # Optimized down to one test case because:
+    # (a) deletion may take a moment
+    # (b) 8+ copies of this test are run, one for each AutoML product
+
+    setup:
+    # Read project ID from GOOGLE_PROJECT_ID environment variable
+    # Note: the location used by all samples it hard-coded to `us-centra1`
+    - env: {name: GOOGLE_PROJECT_ID, variable: project_id}
+    # Create a unique Dataset display name (max length 32 a-zA-Z0-9_)
+    - code: dataset_display_name = "a" + uuid().replace("-", "")[:30]
+    - log:
+      - "Dataset display_name for test: {}"
+      - dataset_display_name
+
+    teardown:
+    - log: ["Cleaning up dataset (in case delete step was not run)"]
+    - call_may_fail:
+        sample: automl_natural_language_entity_delete_dataset
+        params:
+          project: { variable: project_id }
+          dataset_id: { variable: generated_dataset_id }
+
+    cases:
+    - name: Create, List, Get, Update, and Delete
+      spec:
+      # LIST (assert does not exist)
+      - call:
+          sample: automl_natural_language_entity_list_datasets
+          params:
+            project: { variable: project_id }
+      - assert_not_contains:
+        - variable: dataset_display_name
+
+      # CREATE
+      - call:
+          sample: automl_natural_language_entity_create_dataset
+          params:
+            project: {variable: project_id}
+            display_name: {variable: dataset_display_name}
+      # Extract the generated Dataset ID from the Dataset name field (Output only)
+      # Format: projects/{project_id}/locations/{location_id}/datasets/{generated_dataset_id}
+      - extract_match:
+          pattern: datasets/([^\s]+)
+          variable: generated_dataset_id
+      - log:
+        - "Generated Dataset ID: %s"
+        - generated_dataset_id
+      - assert_contains:
+        - literal: "Created dataset"
+        - literal: "Name"
+        - literal: "Display Name"
+        - variable: dataset_display_name
+        - literal: "Description"
+
+      # LIST (assert does exist)
+      - call:
+          sample: automl_natural_language_entity_list_datasets
+          params:
+            project: {variable: project_id}
+      - assert_contains:
+        - literal: "Name"
+        - variable: generated_dataset_id
+        - literal: "Display Name"
+        - variable: dataset_display_name
+        - literal: "Description"
+
+      # GET
+      - call:
+          sample: automl_natural_language_entity_get_dataset
+          params:
+            project: {variable: project_id}
+            dataset_id: {variable: generated_dataset_id}
+      - assert_contains:
+        - literal: "Name"
+        - variable: generated_dataset_id
+        - literal: "Display Name"
+        - variable: dataset_display_name
+
+      # DELETE
+      - log: ["Deleting dataset (may take a minute)"]
+      - call:
+          sample: automl_natural_language_entity_delete_dataset
+          params:
+            project: {variable: project_id}
+            dataset_id: {variable: generated_dataset_id}
+      - assert_contains:
+        - literal: "Deleted dataset"
+
+      # LIST (assert does not exist)
+      - call:
+          sample: automl_natural_language_entity_list_datasets
+          params:
+            project: { variable: project_id }
+      - assert_not_contains:
+        - variable: dataset_display_name
+        - variable: generated_dataset_id
