@@ -53,10 +53,10 @@ def switched_rules_by_language(
         java = False,
         go = False,
         cc = False,
-        python = False,
         php = False,
+        nodejs = False,
+        python = False,
         ruby = False,
-        js = False,
         csharp = False,
         rules_override = {}):
     """Switches rules in the generated imports.bzl between no-op and the actual implementation.
@@ -93,10 +93,10 @@ def switched_rules_by_language(
         java (bool): Enable Java specific rules. False by default.
         go (bool): Enable Go specific rules. False by default.
         cc (bool): Enable C++ specific rules. False by default. Partially implemented.
-        python (bool): Enable Python-specific rules. False by default. Not implemented yet.
         php (bool): Enable PHP specific rules. False by default.
+        nodejs (bool): Enable Node.js specific rules. False by default.
         ruby (bool): Enable Ruby specific rules. False by default. Not implemented yet.
-        js (bool): Enable JavaScript specific rules. False by default. Not implemented yet.
+        python (bool): Enable Python-specific rules. False by default. Not implemented yet.
         csharp (bool): Enable C# specific rules. False by default. Not implemented yet.
         rules_override (dict): Custom rule overrides (for advanced usage).
     """
@@ -197,6 +197,18 @@ def switched_rules_by_language(
     rules["php_gapic_assembly_pkg"] = _switch(
         php and grpc and gapic,
         "@com_google_api_codegen//rules_gapic/php:php_gapic_pkg.bzl",
+    )
+
+    #
+    # Node.js
+    #
+    rules["nodejs_gapic_library"] = _switch(
+        nodejs and grpc and gapic,
+        "@com_google_api_codegen//rules_gapic/nodejs:nodejs_gapic.bzl",
+    )
+    rules["nodejs_gapic_assembly_pkg"] = _switch(
+        nodejs and grpc and gapic,
+        "@com_google_api_codegen//rules_gapic/nodejs:nodejs_gapic_pkg.bzl",
     )
 
     rules.update(rules_override)
