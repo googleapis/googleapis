@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC.
+// Copyright 2019 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,17 +17,15 @@ syntax = "proto3";
 
 package google.cloud.datalabeling.v1beta1;
 
-import "google/cloud/datalabeling/v1beta1/annotation.proto";
-import "google/cloud/datalabeling/v1beta1/human_annotation_config.proto";
-import "google/protobuf/duration.proto";
-import "google/protobuf/struct.proto";
-import "google/protobuf/timestamp.proto";
 import "google/api/annotations.proto";
+import "google/cloud/datalabeling/v1beta1/annotation.proto";
+import "google/cloud/datalabeling/v1beta1/data_payloads.proto";
+import "google/cloud/datalabeling/v1beta1/human_annotation_config.proto";
+import "google/protobuf/timestamp.proto";
 
 option go_package = "google.golang.org/genproto/googleapis/cloud/datalabeling/v1beta1;datalabeling";
 option java_multiple_files = true;
 option java_package = "com.google.cloud.datalabeling.v1beta1";
-
 
 enum DataType {
   DATA_TYPE_UNSPECIFIED = 0;
@@ -38,14 +36,13 @@ enum DataType {
 
   TEXT = 4;
 
-  AUDIO = 5;
+  GENERAL_DATA = 6;
 }
 
 // Dataset is the resource to hold your data. You can request multiple labeling
 // tasks for a dataset while each one will generate an AnnotatedDataset.
 message Dataset {
-  // Output only.
-  // Dataset resource name, format is:
+  // Output only. Dataset resource name, format is:
   // projects/{project_id}/datasets/{dataset_id}
   string name = 1;
 
@@ -63,39 +60,86 @@ message Dataset {
   // where ImportData is called. It is available only after the clients
   // import data to this dataset.
   repeated InputConfig input_configs = 5;
+
+  // Output only. The names of any related resources that are blocking changes
+  // to the dataset.
+  repeated string blocking_resources = 6;
+
+  // Output only. The number of data items in the dataset.
+  int64 data_item_count = 7;
 }
 
 // The configuration of input data, including data type, location, etc.
 message InputConfig {
+  // Optional. The metadata associated with each data type.
+  oneof data_type_metadata {
+    // Required for text import, as language code must be specified.
+    TextMetadata text_metadata = 6;
+  }
+
   // Required. Where the data is from.
   oneof source {
+    // Source located in Cloud Storage.
     GcsSource gcs_source = 2;
+
+    BigQuerySource bigquery_source = 5;
   }
 
   // Required. Data type must be specifed when user tries to import data.
   DataType data_type = 1;
+
+  // Optional. If input contains annotation, user needs to specify the
+  // type and metadata of the annotation when creating it as an annotated
+  // dataset.
+  AnnotationType annotation_type = 3;
+
+  // Optional. Metadata about annotations in the input. Each annotation type may
+  // have different metadata.
+  // Metadata for classification problem.
+  ClassificationMetadata classification_metadata = 4;
 }
 
-// Source of the GCS file to be imported. Only gcs path is allowed in
-// input_uri.
+// Metadata for the text.
+message TextMetadata {
+  // The language of this text, as a
+  // [BCP-47](https://www.rfc-editor.org/rfc/bcp/bcp47.txt).
+  // Default value is en-US.
+  string language_code = 1;
+}
+
+// Metadata for classification annotations.
+message ClassificationMetadata {
+  // Whether the classification task is multi-label or not.
+  bool is_multi_label = 1;
+}
+
+// Source of the Cloud Storage file to be imported.
 message GcsSource {
-  // Required. The input uri of source file.
+  // Required. The input URI of source file. This must be a Cloud Storage path
+  // (`gs://...`).
   string input_uri = 1;
 
-  // Required. The format of the gcs source. Only "text/csv" is supported.
+  // Required. The format of the source file. Only "text/csv" is supported.
   string mime_type = 2;
+}
+
+// The BigQuery location for the input content.
+message BigQuerySource {
+  // Required. BigQuery URI to a table, up to 2000 characters long.
+  // Accepted forms: BigQuery gs path e.g. bq://projectId.bqDatasetId.bqTableId
+  string input_uri = 1;
 }
 
 // The configuration of output data.
 message OutputConfig {
   // Required. Location to output data to.
   oneof destination {
-    // Output to a GCS file. Should be used for labeling output other than Audio
-    // transcription.
+    // Output to a file in Cloud Storage. Should be used for labeling output
+    // other thanimage segmentation.
     GcsDestination gcs_destination = 1;
 
-    // Output to a GCS folder. Should be used for Audio transcription
-    // labeling output.
+    // Output to a folder in Cloud Storage. Should be used for image
+    // segmentation labeling output.
     GcsFolderDestination gcs_folder_destination = 2;
   }
 }
@@ -114,7 +158,7 @@ message GcsDestination {
 
 // Export folder destination of the data.
 message GcsFolderDestination {
-  // Required. GCS folder to export data to.
+  // Required. Cloud Storage directory to export data to.
   string output_folder_uri = 1;
 }
 
@@ -130,9 +174,6 @@ message DataItem {
 
     // The video payload, a container of the video uri.
     VideoPayload video_payload = 4;
-
-    // The audio payload, a container of the audio uri.
-    AudioPayload audio_payload = 5;
   }
 
   // Output only. Name of the data item, in format of:
@@ -144,8 +185,7 @@ message DataItem {
 // labeling task will generate an AnnotatedDataset under the Dataset that the
 // task is requested for.
 message AnnotatedDataset {
-  // Output only.
-  // AnnotatedDataset resource name in format of:
+  // Output only. AnnotatedDataset resource name in format of:
   // projects/{project_id}/datasets/{dataset_id}/annotatedDatasets/
   // {annotated_dataset_id}
   string name = 1;
@@ -182,44 +222,60 @@ message AnnotatedDataset {
 
   // Output only. Additional information about AnnotatedDataset.
   AnnotatedDatasetMetadata metadata = 10;
-}
 
-// Metadata on AnnotatedDataset.
-message AnnotatedDatasetMetadata {
-  // HumanAnnotationConfig used when requesting the human labeling task for this
-  // AnnotatedDataset.
-  HumanAnnotationConfig human_annotation_config = 1;
-
-  // Specific request configuration used when requesting the labeling task.
-  oneof annotation_request_config {
-    // Configuration for image classification task.
-    ImageClassificationConfig image_classification_config = 2;
-    // Configuration for image bounding box and bounding poly task.
-    BoundingPolyConfig bounding_poly_config = 3;
-    // Configuration for image polyline task.
-    PolylineConfig polyline_config = 4;
-    // Configuration for image segmentation task.
-    SegmentationConfig segmentation_config = 5;
-    // Configuration for video classification task.
-    VideoClassificationConfig video_classification_config = 6;
-    // Configuration for video object detection task.
-    ObjectDetectionConfig object_detection_config = 7;
-    // Configuration for video object tracking task.
-    ObjectTrackingConfig object_tracking_config = 8;
-    // Configuration for video event labeling task.
-    EventConfig event_config = 9;
-    // Configuration for text classification task.
-    TextClassificationConfig text_classification_config = 10;
-    // Configuration for text entity extraction task.
-    TextEntityExtractionConfig text_entity_extraction_config = 11;
-  }
+  // Output only. The names of any related resources that are blocking changes
+  // to the annotated dataset.
+  repeated string blocking_resources = 11;
 }
 
 // Statistics about annotation specs.
 message LabelStats {
   // Map of each annotation spec's example count. Key is the annotation spec
   // name and value is the number of examples for that annotation spec.
+  // If the annotated dataset does not have annotation spec, the map will return
+  // a pair where the key is empty string and value is the total number of
+  // annotations.
   map<string, int64> example_count = 1;
+}
+
+// Metadata on AnnotatedDataset.
+message AnnotatedDatasetMetadata {
+  // Specific request configuration used when requesting the labeling task.
+  oneof annotation_request_config {
+    // Configuration for image classification task.
+    ImageClassificationConfig image_classification_config = 2;
+
+    // Configuration for image bounding box and bounding poly task.
+    BoundingPolyConfig bounding_poly_config = 3;
+
+    // Configuration for image polyline task.
+    PolylineConfig polyline_config = 4;
+
+    // Configuration for image segmentation task.
+    SegmentationConfig segmentation_config = 5;
+
+    // Configuration for video classification task.
+    VideoClassificationConfig video_classification_config = 6;
+
+    // Configuration for video object detection task.
+    ObjectDetectionConfig object_detection_config = 7;
+
+    // Configuration for video object tracking task.
+    ObjectTrackingConfig object_tracking_config = 8;
+
+    // Configuration for video event labeling task.
+    EventConfig event_config = 9;
+
+    // Configuration for text classification task.
+    TextClassificationConfig text_classification_config = 10;
+
+    // Configuration for text entity extraction task.
+    TextEntityExtractionConfig text_entity_extraction_config = 11;
+  }
+
+  // HumanAnnotationConfig used when requesting the human labeling task for this
+  // AnnotatedDataset.
+  HumanAnnotationConfig human_annotation_config = 1;
 }
 
 // An Example is a piece of data and its annotation. For example, an image with
@@ -235,9 +291,6 @@ message Example {
 
     // The video payload, a container of the video uri.
     VideoPayload video_payload = 7;
-
-    // The audio payload, a container of the audio uri.
-    AudioPayload audio_payload = 8;
   }
 
   // Output only. Name of the example, in format of:
@@ -248,59 +301,4 @@ message Example {
   // Output only. Annotations for the piece of data in Example.
   // One piece of data can have multiple annotations.
   repeated Annotation annotations = 5;
-}
-
-// Container of information about an image.
-message ImagePayload {
-  // Image format.
-  string mime_type = 1;
-
-  // A byte string of a full image.
-  bytes image_thumbnail = 2;
-
-  // Image uri from the user bucket.
-  string image_uri = 3;
-}
-
-// Container of information about a piece of text.
-message TextPayload {
-  // Text content.
-  string text_content = 1;
-}
-
-// Container of information of a video thumbnail.
-message VideoThumbnail {
-  // A byte string of the video frame.
-  bytes thumbnail = 1;
-
-  // Time offset relative to the beginning of the video, corresponding to the
-  // video frame where the thumbnail has been extracted from.
-  google.protobuf.Duration time_offset = 2;
-}
-
-// Container of information of a video.
-message VideoPayload {
-  // Video format.
-  string mime_type = 1;
-
-  // Video uri from the user bucket.
-  string video_uri = 2;
-
-  // The list of video thumbnails.
-  repeated VideoThumbnail video_thumbnails = 3;
-
-  // FPS of the video.
-  float frame_rate = 4;
-}
-
-// Container of information of an audio.
-message AudioPayload {
-  // Audio uri in user bucket.
-  string audio_uri = 1;
-
-  // Sample rate in Hertz of the audio data sent in all
-  // `RecognitionAudio` messages. This field is optional for `FLAC` and `WAV`
-  // audio files and required for all other audio formats. For details,
-  // see [AudioEncoding][google.cloud.datalabeling.v1beta1.AudioPayload.AudioEncoding].
-  int32 sample_rate_hertz = 3;
 }
