@@ -18,21 +18,26 @@ syntax = "proto3";
 package google.cloud.bigquery.storage.v1beta1;
 
 import "google/api/annotations.proto";
-import "google/api/resource.proto";
+import "google/cloud/bigquery/storage/v1beta1/arrow.proto";
 import "google/cloud/bigquery/storage/v1beta1/avro.proto";
 import "google/cloud/bigquery/storage/v1beta1/read_options.proto";
 import "google/cloud/bigquery/storage/v1beta1/table_reference.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
+import "google/api/client.proto";
 
 option go_package = "google.golang.org/genproto/googleapis/cloud/bigquery/storage/v1beta1;storage";
 option java_package = "com.google.cloud.bigquery.storage.v1beta1";
-
 
 // BigQuery storage API.
 //
 // The BigQuery storage API can be used to read data stored in BigQuery.
 service BigQueryStorage {
+  option (google.api.default_host) = "bigquerystorage.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/bigquery,"
+      "https://www.googleapis.com/auth/cloud-platform";
+
   // Creates a new read session. A read session divides the contents of a
   // BigQuery table into one or more streams, which can then be used to read
   // data from the table. The read session also specifies properties of the
@@ -127,9 +132,6 @@ message Stream {
   // Name of the stream, in the form
   // `projects/{project_id}/locations/{location}/streams/{stream_id}`.
   string name = 1;
-
-  // Rows in the stream.
-  int64 row_count = 2;
 }
 
 // Expresses a point within a given stream using an offset position.
@@ -157,6 +159,9 @@ message ReadSession {
   oneof schema {
     // Avro schema.
     AvroSchema avro_schema = 5;
+
+    // Arrow schema.
+    ArrowSchema arrow_schema = 6;
   }
 
   // Streams associated with this session.
@@ -167,6 +172,9 @@ message ReadSession {
 
   // Any modifiers which are applied when reading from the specified table.
   TableModifiers table_modifiers = 8;
+
+  // The strategy to use for distributing data among the streams.
+  ShardingStrategy sharding_strategy = 9;
 }
 
 // Creates a new read session, which may include additional options such as
@@ -197,6 +205,10 @@ message CreateReadSessionRequest {
 
   // Data output format. Currently default to Avro.
   DataFormat format = 5;
+
+  // The strategy to use for distributing data among multiple streams. Currently
+  // defaults to liquid sharding.
+  ShardingStrategy sharding_strategy = 7;
 }
 
 // Data format for input or output data.
@@ -207,6 +219,28 @@ enum DataFormat {
   // Avro is a standard open source row based file format.
   // See https://avro.apache.org/ for more details.
   AVRO = 1;
+
+  ARROW = 3;
+}
+
+// Strategy for distributing data among multiple streams in a read session.
+enum ShardingStrategy {
+  // Same as LIQUID.
+  SHARDING_STRATEGY_UNSPECIFIED = 0;
+
+  // Assigns data to each stream based on the client's read rate. The faster the
+  // client reads from a stream, the more data is assigned to the stream. In
+  // this strategy, it's possible to read all data from a single stream even if
+  // there are other streams present.
+  LIQUID = 1;
+
+  // Assigns data to each stream such that roughly the same number of rows can
+  // be read from each stream. Because the server-side unit for assigning data
+  // is collections of rows, the API does not guarantee that each stream will
+  // return the same number or rows. Additionally, the limits are enforced based
+  // on the number of pre-filtering rows, so some filters can lead to lopsided
+  // assignments.
+  BALANCED = 2;
 }
 
 // Requesting row data via `ReadRows` must provide Stream position information.
@@ -223,6 +257,22 @@ message StreamStatus {
   // different readers in the stream progress at rates which are relatively fast
   // or slow.
   int64 estimated_row_count = 1;
+
+  // A value in the range [0.0, 1.0] that represents the fraction of rows
+  // assigned to this stream that have been processed by the server. In the
+  // presence of read filters, the server may process more rows than it returns,
+  // so this value reflects progress through the pre-filtering rows.
+  //
+  // This value is only populated for sessions created through the BALANCED
+  // sharding strategy.
+  float fraction_consumed = 2;
+
+  // Whether this stream can be split. For sessions that use the LIQUID sharding
+  // strategy, this value is always false. For BALANCED sessions, this value is
+  // false when enough data have been read such that no more splits are possible
+  // at that point or beyond. For small tables or streams that are the result of
+  // a chain of splits, this value may never be true.
+  bool is_splittable = 3;
 }
 
 // Information on if the current connection is being throttled.
@@ -239,7 +289,16 @@ message ReadRowsResponse {
   oneof rows {
     // Serialized row data in AVRO format.
     AvroRows avro_rows = 3;
+
+    // Serialized row data in Arrow RecordBatch format.
+    ArrowRecordBatch arrow_record_batch = 4;
   }
+
+  // Number of serialized rows in the rows block. This value is recorded here,
+  // in addition to the row_count values in the output-specific messages in
+  // `rows`, so that code which needs to record progress through the stream can
+  // do so in an output format-independent way.
+  int64 row_count = 6;
 
   // Estimated stream statistics.
   StreamStatus status = 2;
@@ -279,14 +338,25 @@ message FinalizeStreamRequest {
 message SplitReadStreamRequest {
   // Stream to split.
   Stream original_stream = 1;
+
+  // A value in the range (0.0, 1.0) that specifies the fractional point at
+  // which the original stream should be split. The actual split point is
+  // evaluated on pre-filtered rows, so if a filter is provided, then there is
+  // no guarantee that the division of the rows between the new child streams
+  // will be proportional to this fractional value. Additionally, because the
+  // server-side unit for assigning data is collections of rows, this fraction
+  // will always map to to a data storage boundary on the server side.
+  float fraction = 2;
 }
 
 // Response from `SplitReadStream`.
 message SplitReadStreamResponse {
-  // Primary stream. Will contain the beginning portion of
-  // |original_stream|.
+  // Primary stream, which contains the beginning portion of
+  // |original_stream|. An empty value indicates that the original stream can no
+  // longer be split.
   Stream primary_stream = 1;
 
-  // Remainder stream. Will contain the tail of |original_stream|.
+  // Remainder stream, which contains the tail of |original_stream|. An empty
+  // value indicates that the original stream can no longer be split.
   Stream remainder_stream = 2;
 }
