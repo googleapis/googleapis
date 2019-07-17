@@ -164,6 +164,14 @@ def switched_rules_by_language(
     )
 
     #
+    # Python rules are not yet supported in googleapis due to a lack of
+    # standard python rules in bazel / grpc. This placeholder enables
+    # other projects to provide their own macros.
+    # Please see https://github.com/grpc/grpc/issues/19255
+    #
+    rules["py_proto_library"] = ""
+
+    #
     # C++
     #
     rules["cc_proto_library"] = _switch(
