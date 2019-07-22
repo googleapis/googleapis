@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC.
+// Copyright 2019 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,8 +18,10 @@ syntax = "proto3";
 package google.devtools.resultstore.v2;
 
 import "google/devtools/resultstore/v2/common.proto";
+import "google/devtools/resultstore/v2/coverage.proto";
 import "google/devtools/resultstore/v2/coverage_summary.proto";
 import "google/devtools/resultstore/v2/file.proto";
+import "google/devtools/resultstore/v2/file_processing_error.proto";
 
 option go_package = "google.golang.org/genproto/googleapis/devtools/resultstore/v2;resultstore";
 option java_multiple_files = true;
@@ -64,15 +66,40 @@ message Invocation {
   // The file IDs must be unique within this list. Duplicate file IDs will
   // result in an error. Files will be returned in lexicographical order by ID.
   // Use this field to specify build logs, and other invocation level logs.
+  //
+  // Files with the following reserved file IDs cause specific post-processing
+  // or have special handling. These files must be immediately available to
+  // ResultStore for processing when the reference is uploaded.
+  //
+  // build.log: The primary log for the Invocation.
+  // coverage_report.lcov: Aggregate coverage report for the invocation.
   repeated File files = 8;
 
   // Summary of aggregate coverage across all Actions in this Invocation.
-  // the server populates this for you in the post-processing phase.
+  // If missing, this data will be populated by the server from the
+  // coverage_report.lcov file or the union of all ActionCoverages under this
+  // invocation (in that order).
   repeated LanguageCoverageSummary coverage_summaries = 9;
+
+  // Aggregate code coverage for all build and test Actions within this
+  // Invocation. If missing, this data will be populated by the server
+  // from the coverage_report.lcov file or the union of all ActionCoverages
+  // under this invocation (in that order).
+  AggregateCoverage aggregate_coverage = 10;
+
+  // NOT IMPLEMENTED.
+  // ResultStore will read and parse Files with reserved IDs listed above. Read
+  // and parse errors for all these Files are reported here.
+  // This is implemented as a map, with one FileProcessingErrors for each file.
+  // Typically produced when parsing Files, but may also be provided directly
+  // by clients.
+  repeated FileProcessingErrors file_processing_errors = 11;
 }
 
 // If known, represents the state of the user/build-system workspace.
-message WorkspaceContext {}
+message WorkspaceContext {
+
+}
 
 // Describes the workspace under which the tool was invoked, this includes
 // information that was fed into the command, the source code referenced, and
@@ -115,8 +142,10 @@ message CommandLine {
 
 // Attributes that apply to all invocations.
 message InvocationAttributes {
-  // The project ID this invocation is associated with. This must be
-  // set in the CreateInvocation call, and can't be changed.
+  // Immutable.
+  // The Cloud Project that owns this invocation (this is different than the
+  // Consumer Cloud Project that calls this API).
+  // This must be set in the CreateInvocation call, and can't be changed.
   string project_id = 1;
 
   // The list of users in the command chain.  The first user in this sequence
@@ -126,11 +155,10 @@ message InvocationAttributes {
   // Labels to categorize this invocation.
   // This is implemented as a set. All labels will be unique. Any duplicate
   // labels added will be ignored. Labels will be returned in lexicographical
-  // order. Labels should be short, easy to read, and you
-  // shouldn't have more than a handful.
-  // Labels should match regex \w([- \w]*\w)?
-  // Labels should not be used for unique properties such as unique IDs.
-  // Use properties in cases that don't meet these conditions.
+  // order. Labels should be a list of words describing the Invocation. Labels
+  // should be short, easy to read, and you shouldn't have more than a handful.
+  // Labels should not be used for unique properties such as unique IDs. Use
+  // properties in cases that don't meet these conditions.
   repeated string labels = 3;
 
   // This field describes the overall context or purpose of this invocation.

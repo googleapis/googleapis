@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC.
+// Copyright 2019 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ package google.devtools.resultstore.v2;
 import "google/devtools/resultstore/v2/common.proto";
 import "google/devtools/resultstore/v2/coverage.proto";
 import "google/devtools/resultstore/v2/file.proto";
+import "google/devtools/resultstore/v2/file_processing_error.proto";
 import "google/devtools/resultstore/v2/test_suite.proto";
 import "google/protobuf/duration.proto";
 
@@ -28,12 +29,14 @@ option java_multiple_files = true;
 option java_package = "com.google.devtools.resultstore.v2";
 
 // An action that happened as part of a configured target. This action could be
-// a build, a test, or another type of action.
+// a build, a test, or another type of action, as specified in action_type
+// oneof.
+//
 // Each parent ConfiguredTarget resource should have at least one Action as its
-// child resource before the invocation is finalized. ResultStore is a tool to
-// store build & test results. ConfiguredTarget proto by itself does not contain
-// enough fields to fully represent such results. For a simple build, at least
-// one build action is required to represent the build result.
+// child resource before the invocation is finalized. For a simple build, at
+// least one build action should be created to represent the build result, and
+// at at least one test action should be created to represent the test result,
+// if any.
 message Action {
   // The resource ID components that identify the Action.
   message Id {
@@ -51,7 +54,9 @@ message Action {
   }
 
   // The resource name.  Its format must be:
-  // invocations/${INVOCATION_ID}/targets/${TARGET_ID}/configuredTargets/${CONFIG_ID}/actions/${ACTION_ID}
+  // invocations/${INVOCATION_ID}/targets/${url_encode(TARGET_ID)}/configuredTargets/url_encode(${CONFIG_ID})/actions/${url_encode(ACTION_ID)}
+  //
+  // See CreateActionRequest proto for more information.
   string name = 1;
 
   // The resource ID components that identify the Action. They must match the
@@ -95,8 +100,10 @@ message Action {
   // A list of file references for action level files.
   // The file IDs must be unique within this list. Duplicate file IDs will
   // result in an error. Files will be returned in lexicographical order by ID.
+  //
   // Files with the following reserved file IDs cause specific post-processing
-  // or have special handling:
+  // or have special handling. These files must be immediately available to
+  // ResultStore for processing when the reference is uploaded.
   //
   // For build actions:
   // stdout: The stdout of the action
@@ -112,6 +119,11 @@ message Action {
   //     down implementation of the LCOV standard.
   //     http://ltp.sourceforge.net/coverage/lcov/geninfo.1.php
   repeated File files = 8;
+
+  // List of names of file sets that are referenced from this Action.
+  // Each name must point to a file set under the same Invocation. The name
+  // format must be: invocations/${INVOCATION_ID}/fileSets/${FILE_SET_ID}
+  repeated string file_sets = 15;
 
   // Coverage data was collected while running the build or test action. This
   // usually includes line coverage, and may also include branch coverage.
@@ -300,24 +312,6 @@ message TestWarning {
   string warning_message = 1;
 }
 
-// Stores errors reading or parsing a file during post-processing.
-message FileProcessingErrors {
-  // The uid of the File being read or parsed.
-  string file_uid = 1;
-
-  // What went wrong.
-  repeated FileProcessingError file_processing_errors = 3;
-}
-
-// Stores an error reading or parsing a file during post-processing.
-message FileProcessingError {
-  // The type of error that occurred.
-  FileProcessingErrorType type = 1;
-
-  // Error message describing the problem.
-  string message = 2;
-}
-
 // Indicates how/where this Action was executed.
 enum ExecutionStrategy {
   // The action did not indicate how it was executed.
@@ -351,31 +345,4 @@ enum TestCaching {
 
   // The test result was not found in any cache, so it had to be run again.
   CACHE_MISS = 3;
-}
-
-// Errors in file post-processing are categorized using this enum.
-enum FileProcessingErrorType {
-  // Type unspecified or not listed here.
-  FILE_PROCESSING_ERROR_TYPE_UNSPECIFIED = 0;
-
-  // A read error occurred trying to read the file.
-  GENERIC_READ_ERROR = 1;
-
-  // There was an error trying to parse the file.
-  GENERIC_PARSE_ERROR = 2;
-
-  // File is exceeds size limit.
-  FILE_TOO_LARGE = 3;
-
-  // The result of parsing the file exceeded size limit.
-  OUTPUT_TOO_LARGE = 4;
-
-  // Read access to the file was denied by file system.
-  ACCESS_DENIED = 5;
-
-  // Deadline exceeded trying to read the file.
-  DEADLINE_EXCEEDED = 6;
-
-  // File not found.
-  NOT_FOUND = 7;
 }
