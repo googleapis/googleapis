@@ -33,6 +33,7 @@ service ModelService {
   option (google.api.default_host) = "bigquery.googleapis.com";
   option (google.api.oauth_scopes) =
       "https://www.googleapis.com/auth/bigquery,"
+      "https://www.googleapis.com/auth/bigquery.readonly,"
       "https://www.googleapis.com/auth/cloud-platform,"
       "https://www.googleapis.com/auth/cloud-platform.read-only";
 
@@ -55,7 +56,25 @@ service ModelService {
 }
 
 message Model {
-  // Evaluation metrics for regression models.
+  message KmeansEnums {
+    // Indicates the method used to initialize the centroids for KMeans
+    // clustering algorithm.
+    enum KmeansInitializationMethod {
+      KMEANS_INITIALIZATION_METHOD_UNSPECIFIED = 0;
+
+      // Initializes the centroids randomly.
+      RANDOM = 1;
+
+      // Initializes the centroids using data specified in
+      // kmeans_initialization_column.
+      CUSTOM = 2;
+    }
+
+
+  }
+
+  // Evaluation metrics for regression and explicit feedback type matrix
+  // factorization models.
   message RegressionMetrics {
     // Mean absolute error.
     google.protobuf.DoubleValue mean_absolute_error = 1;
@@ -199,11 +218,60 @@ message Model {
 
   // Evaluation metrics for clustering models.
   message ClusteringMetrics {
+    // Message containing the information about one cluster.
+    message Cluster {
+      // Representative value of a single feature within the cluster.
+      message FeatureValue {
+        // Representative value of a categorical feature.
+        message CategoricalValue {
+          // Represents the count of a single category within the cluster.
+          message CategoryCount {
+            // The name of category.
+            string category = 1;
+
+            // The count of training samples matching the category within the
+            // cluster.
+            google.protobuf.Int64Value count = 2;
+          }
+
+          // Counts of all categories for the categorical feature. If there are
+          // more than ten categories, we return top ten (by count) and return
+          // one more CategoryCount with category ‘_OTHER_’ and count as
+          // aggregate counts of remaining categories.
+          repeated CategoryCount category_counts = 1;
+        }
+
+        // The feature column name.
+        string feature_column = 1;
+
+        oneof value {
+          // The numerical feature value. This is the centroid value for this
+          // feature.
+          google.protobuf.DoubleValue numerical_value = 2;
+
+          // The categorical feature value.
+          CategoricalValue categorical_value = 3;
+        }
+      }
+
+      // Centroid id.
+      int64 centroid_id = 1;
+
+      // Values of highly variant features for this cluster.
+      repeated FeatureValue feature_values = 2;
+
+      // Count of training data rows that were assigned to this cluster.
+      google.protobuf.Int64Value count = 3;
+    }
+
     // Davies-Bouldin index.
     google.protobuf.DoubleValue davies_bouldin_index = 1;
 
     // Mean of squared distances between each sample to its cluster centroid.
     google.protobuf.DoubleValue mean_squared_distance = 2;
+
+    // [Beta] Information for all clusters.
+    repeated Cluster clusters = 3;
   }
 
   // Evaluation metrics of a model. These are either computed on all training
@@ -211,7 +279,8 @@ message Model {
   // training. These are not present for imported models.
   message EvaluationMetrics {
     oneof metrics {
-      // Populated for regression models.
+      // Populated for regression models and explicit feedback type matrix
+      // factorization models.
       RegressionMetrics regression_metrics = 1;
 
       // Populated for binary classification/classifier models.
@@ -220,7 +289,7 @@ message Model {
       // Populated for multi-class classification/classifier models.
       MultiClassClassificationMetrics multi_class_classification_metrics = 3;
 
-      // [Beta] Populated for clustering models.
+      // Populated for clustering models.
       ClusteringMetrics clustering_metrics = 4;
     }
   }
@@ -292,10 +361,10 @@ message Model {
       // training data. Only applicable for classification models.
       map<string, double> label_class_weights = 17;
 
-      // [Beta] Distance type for clustering models.
+      // Distance type for clustering models.
       DistanceType distance_type = 20;
 
-      // [Beta] Number of clusters for clustering models.
+      // Number of clusters for clustering models.
       int64 num_clusters = 21;
 
       // [Beta] Google Cloud Storage URI from which the model was imported. Only
@@ -304,6 +373,13 @@ message Model {
 
       // Optimization strategy for training linear regression models.
       OptimizationStrategy optimization_strategy = 23;
+
+      // The method used to initialize the centroids for kmeans algorithm.
+      KmeansEnums.KmeansInitializationMethod kmeans_initialization_method = 33;
+
+      // The column used to provide the initial centroids for kmeans algorithm
+      // when kmeans_initialization_method is CUSTOM.
+      string kmeans_initialization_column = 34;
     }
 
     // Information about a single iteration of the training run.
@@ -336,7 +412,7 @@ message Model {
       // Learn rate used for this iteration.
       double learn_rate = 7;
 
-      // [Beta] Information about top clusters for clustering models.
+      // Information about top clusters for clustering models.
       repeated ClusterInfo cluster_infos = 8;
     }
 
@@ -365,7 +441,7 @@ message Model {
     // Logistic regression based classification model.
     LOGISTIC_REGRESSION = 2;
 
-    // [Beta] K-means clustering model.
+    // K-means clustering model.
     KMEANS = 3;
 
     // [Beta] An imported TensorFlow model.
@@ -513,8 +589,8 @@ message PatchModelRequest {
   string model_id = 3;
 
   // Patched model.
-  // Follows patch semantics. Missing fields are not updated. To clear a field,
-  // explicitly set to default value.
+  // Follows RFC5789 patch semantics. Missing fields are not updated.
+  // To clear a field, explicitly set to default value.
   Model model = 4;
 }
 
@@ -536,7 +612,8 @@ message ListModelsRequest {
   // Dataset ID of the models to list.
   string dataset_id = 2;
 
-  // The maximum number of results per page.
+  // The maximum number of results to return in a single response page.
+  // Leverage the page tokens to iterate through the entire collection.
   google.protobuf.UInt32Value max_results = 3;
 
   // Page token, returned by a previous call to request the next page of
