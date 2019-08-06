@@ -18,6 +18,7 @@ syntax = "proto3";
 package google.cloud.vision.v1;
 
 import "google/api/annotations.proto";
+import "google/api/client.proto";
 import "google/cloud/vision/v1/geometry.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/empty.proto";
@@ -49,6 +50,11 @@ option objc_class_prefix = "GCVN";
 // [ReferenceImage][google.cloud.vision.v1.ReferenceImage] resources, named
 //   `projects/*/locations/*/products/*/referenceImages/*`
 service ProductSearch {
+  option (google.api.default_host) = "vision.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform,"
+      "https://www.googleapis.com/auth/cloud-vision";
+
   // Creates and returns a new ProductSet resource.
   //
   // Possible errors:
@@ -305,6 +311,38 @@ service ProductSearch {
       body: "*"
     };
   }
+
+  // Asynchronous API to delete all Products in a ProductSet or all Products
+  // that are in no ProductSet.
+  //
+  // If a Product is a member of the specified ProductSet in addition to other
+  // ProductSets, the Product will still be deleted.
+  //
+  // It is recommended to not delete the specified ProductSet until after this
+  // operation has completed. It is also recommended to not add any of the
+  // Products involved in the batch delete to a new ProductSet while this
+  // operation is running because those Products may still end up deleted.
+  //
+  // It's not possible to undo the PurgeProducts operation. Therefore, it is
+  // recommended to keep the csv files used in ImportProductSets (if that was
+  // how you originally built the Product Set) before starting PurgeProducts, in
+  // case you need to re-import the data after deletion.
+  //
+  // If the plan is to purge all of the Products from a ProductSet and then
+  // re-use the empty ProductSet to re-import new Products into the empty
+  // ProductSet, you must wait until the PurgeProducts operation has finished
+  // for that ProductSet.
+  //
+  // The [google.longrunning.Operation][google.longrunning.Operation] API can be
+  // used to keep track of the progress and results of the request.
+  // `Operation.metadata` contains `BatchOperationMetadata`. (progress)
+  rpc PurgeProducts(PurgeProductsRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/locations/*}/products:purge"
+      body: "*"
+    };
+  }
 }
 
 // A Product contains ReferenceImages.
@@ -338,10 +376,8 @@ message Product {
 
   // The category for the product identified by the reference image. This should
   // be either "homegoods-v2", "apparel-v2", or "toys-v2". The legacy categories
-  // "homegoods", "apparel", and "toys" are still supported but will be
-  // deprecated. For new products, please use "homegoods-v2", "apparel-v2", or
-  // "toys-v2" for better product search accuracy. It is recommended to migrate
-  // existing products to these categories as well.
+  // "homegoods", "apparel", and "toys" are still supported, but these should
+  // not be used for new products.
   //
   // This field is immutable.
   string product_category = 4;
@@ -354,7 +390,11 @@ message Product {
   // to be supported soon.
   //
   // Multiple values can be assigned to the same key. One product may have up to
-  // 100 product_labels.
+  // 500 product_labels.
+  //
+  // Notice that the total number of distinct product_labels over all products
+  // in one ProductSet cannot exceed 1M, otherwise the product search pipeline
+  // will refuse to work for that ProductSet.
   repeated KeyValue product_labels = 5;
 }
 
@@ -835,4 +875,34 @@ message BatchOperationMetadata {
   // [google.longrunning.Operation.done][google.longrunning.Operation.done] is
   // set to true.
   google.protobuf.Timestamp end_time = 3;
+}
+
+// Config to control which ProductSet contains the Products to be deleted.
+message ProductSetPurgeConfig {
+  // The ProductSet that contains the Products to delete. If a Product is a
+  // member of product_set_id in addition to other ProductSets, the Product will
+  // still be deleted.
+  string product_set_id = 1;
+}
+
+// Request message for the `PurgeProducts` method.
+message PurgeProductsRequest {
+  // The Products to delete.
+  oneof target {
+    // Specify which ProductSet contains the Products to be deleted.
+    ProductSetPurgeConfig product_set_purge_config = 2;
+
+    // If delete_orphan_products is true, all Products that are not in any
+    // ProductSet will be deleted.
+    bool delete_orphan_products = 3;
+  }
+
+  // The project and location in which the Products should be deleted.
+  //
+  // Format is `projects/PROJECT_ID/locations/LOC_ID`.
+  string parent = 1;
+
+  // The default value is false. Override this value to true to actually perform
+  // the purge.
+  bool force = 4;
 }
