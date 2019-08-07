@@ -23,8 +23,8 @@ switched_rules_by_language(
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-002d6b73ea3d7498c57d9abaaa092fd37c505dc6",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/002d6b73ea3d7498c57d9abaaa092fd37c505dc6.zip"],
+    strip_prefix = "gapic-generator-a591ce660d04b0e9c6876b9836d8aac0e9f65b6d",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/a591ce660d04b0e9c6876b9836d8aac0e9f65b6d.zip"],
 )
 
 ##############################################################################
@@ -70,6 +70,12 @@ load("@com_google_api_codegen//:repositories.bzl", "com_google_api_codegen_repos
 
 com_google_api_codegen_repositories()
 
+http_archive(
+    name = "com_google_protoc_java_resource_names_plugin",
+    strip_prefix = "protoc-java-resource-names-plugin-86949f7d0f25546499acceb12c9c1a5741c71617",
+    urls = ["https://github.com/googleapis/protoc-java-resource-names-plugin/archive/86949f7d0f25546499acceb12c9c1a5741c71617.zip"],
+)
+
 # protoc-java-resource-names-plugin (loaded in com_google_api_codegen_repositories())
 # (required to support resource names feature in gapic generator)
 load(
@@ -77,7 +83,7 @@ load(
     "com_google_protoc_java_resource_names_plugin_repositories",
 )
 
-com_google_protoc_java_resource_names_plugin_repositories(omit_com_google_protobuf = True)
+com_google_protoc_java_resource_names_plugin_repositories()
 
 ##############################################################################
 # Go
@@ -117,28 +123,14 @@ go_gapic_repositories()
 ##############################################################################
 
 http_archive(
-    name = "com_google_gapic_generator_cpp",
-    strip_prefix = "gapic-generator-cpp-2d9229952b649e53b2e986f5a3031d0d374af9e1",
-    urls = ["https://github.com/googleapis/gapic-generator-cpp/archive/2d9229952b649e53b2e986f5a3031d0d374af9e1.zip"],
+    name = "com_github_grpc_grpc",
+    strip_prefix = "grpc-1.22.0",
+    urls = ["https://github.com/grpc/grpc/archive/v1.22.0.zip"],
 )
-
-load(
-    "@com_google_gapic_generator_cpp//gax:repositories.bzl",
-    "com_google_gapic_generator_cpp_gax_repositories",
-)
-
-com_google_gapic_generator_cpp_gax_repositories()
 
 load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
 
 grpc_deps()
-
-load(
-    "@com_google_gapic_generator_cpp//:repositories.bzl",
-    "com_google_gapic_generator_cpp_repositories",
-)
-
-com_google_gapic_generator_cpp_repositories()
 
 ##############################################################################
 # PHP

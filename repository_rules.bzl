@@ -169,7 +169,7 @@ def switched_rules_by_language(
     # other projects to provide their own macros.
     # Please see https://github.com/grpc/grpc/issues/19255
     #
-    rules["py_proto_library"] = ""
+    rules["py_proto_library"] = _switch(False)
 
     #
     # C++
@@ -182,10 +182,7 @@ def switched_rules_by_language(
         cc and grpc,
         "@com_github_grpc_grpc//bazel:cc_grpc_library.bzl",
     )
-    rules["cc_gapic_library"] = _switch(
-        cc and grpc and gapic,
-        "@com_google_gapic_generator_cpp//rules_gapic/cpp:cc_gapic.bzl",
-    )
+    rules["cc_gapic_library"] = _switch(False)
 
     #
     # PHP
@@ -226,5 +223,5 @@ def switched_rules_by_language(
         rules = rules,
     )
 
-def _switch(enabled, enabled_value):
+def _switch(enabled, enabled_value = ""):
     return enabled_value if enabled else ""
