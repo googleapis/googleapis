@@ -92,10 +92,11 @@ def switched_rules_by_language(
             this rule. False by default.
         java (bool): Enable Java specific rules. False by default.
         go (bool): Enable Go specific rules. False by default.
-        cc (bool): Enable C++ specific rules. False by default. Partially implemented.
+        cc (bool): Enable C++ specific rules. False by default. Partially implemented (no GAPIC
+            support).
         php (bool): Enable PHP specific rules. False by default.
         nodejs (bool): Enable Node.js specific rules. False by default.
-        ruby (bool): Enable Ruby specific rules. False by default. Not implemented yet.
+        ruby (bool): Enable Ruby specific rules. False by default.
         python (bool): Enable Python-specific rules. False by default. Not implemented yet.
         csharp (bool): Enable C# specific rules. False by default. Not implemented yet.
         rules_override (dict): Custom rule overrides (for advanced usage).
@@ -214,6 +215,26 @@ def switched_rules_by_language(
     rules["nodejs_gapic_assembly_pkg"] = _switch(
         nodejs and grpc and gapic,
         "@com_google_api_codegen//rules_gapic/nodejs:nodejs_gapic_pkg.bzl",
+    )
+
+    #
+    # Ruby
+    #
+    rules["ruby_proto_library"] = _switch(
+        ruby,
+        "@com_google_api_codegen//rules_gapic/ruby:ruby_gapic.bzl",
+    )
+    rules["ruby_grpc_library"] = _switch(
+        ruby and grpc,
+        "@com_google_api_codegen//rules_gapic/ruby:ruby_gapic.bzl",
+    )
+    rules["ruby_gapic_library"] = _switch(
+        ruby and grpc and gapic,
+        "@com_google_api_codegen//rules_gapic/ruby:ruby_gapic.bzl",
+    )
+    rules["ruby_gapic_assembly_pkg"] = _switch(
+        ruby and grpc and gapic,
+        "@com_google_api_codegen//rules_gapic/ruby:ruby_gapic_pkg.bzl",
     )
 
     rules.update(rules_override)

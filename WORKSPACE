@@ -17,14 +17,15 @@ switched_rules_by_language(
     java = True,
     nodejs = True,
     php = True,
+    ruby = True,
 )
 
 # Note gapic-generator contains java-specific and common code, that is why it is imported in common
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-a591ce660d04b0e9c6876b9836d8aac0e9f65b6d",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/a591ce660d04b0e9c6876b9836d8aac0e9f65b6d.zip"],
+    strip_prefix = "gapic-generator-90cbd714fcb0e969131ea16cc3f14073024254aa",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/90cbd714fcb0e969131ea16cc3f14073024254aa.zip"],
 )
 
 ##############################################################################
