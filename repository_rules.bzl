@@ -98,7 +98,7 @@ def switched_rules_by_language(
         nodejs (bool): Enable Node.js specific rules. False by default.
         ruby (bool): Enable Ruby specific rules. False by default.
         python (bool): Enable Python-specific rules. False by default. Not implemented yet.
-        csharp (bool): Enable C# specific rules. False by default. Not implemented yet.
+        csharp (bool): Enable C# specific rules. False by default.
         rules_override (dict): Custom rule overrides (for advanced usage).
     """
 
@@ -235,6 +235,26 @@ def switched_rules_by_language(
     rules["ruby_gapic_assembly_pkg"] = _switch(
         ruby and grpc and gapic,
         "@com_google_api_codegen//rules_gapic/ruby:ruby_gapic_pkg.bzl",
+    )
+
+    #
+    # C#
+    #
+    rules["csharp_proto_library"] = _switch(
+        csharp,
+        "@com_google_api_codegen//rules_gapic/csharp:csharp_gapic.bzl",
+    )
+    rules["csharp_grpc_library"] = _switch(
+        csharp and grpc,
+        "@com_google_api_codegen//rules_gapic/csharp:csharp_gapic.bzl",
+    )
+    rules["csharp_gapic_library"] = _switch(
+        csharp and grpc and gapic,
+        "@com_google_api_codegen//rules_gapic/csharp:csharp_gapic.bzl",
+    )
+    rules["csharp_gapic_assembly_pkg"] = _switch(
+        csharp and grpc and gapic,
+        "@com_google_api_codegen//rules_gapic/csharp:csharp_gapic_pkg.bzl",
     )
 
     rules.update(rules_override)
