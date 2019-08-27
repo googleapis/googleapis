@@ -18,15 +18,62 @@ switched_rules_by_language(
     nodejs = True,
     php = True,
     ruby = True,
+    csharp = True,
+)
+
+# Depending on one of the latest commits in grpc, since the protobuf_deps published in 3.9.1 is broken
+# The transitive dependencies of protobuf will be imported after grpc
+http_archive(
+    name = "com_google_protobuf",
+    strip_prefix = "protobuf-c60aaf79e63b911b2c04c04e1eacb4f3c36ef790", # this is 3.9.1 with fixes
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/c60aaf79e63b911b2c04c04e1eacb4f3c36ef790.zip"],
 )
 
 # Note gapic-generator contains java-specific and common code, that is why it is imported in common
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-765b0f61200aab6ca2fedf5b3e55232756b80ae2",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/765b0f61200aab6ca2fedf5b3e55232756b80ae2.zip"],
+    strip_prefix = "gapic-generator-708b97b95ae53ffd8f3d73b7c4661003df053c0e",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/708b97b95ae53ffd8f3d73b7c4661003df053c0e.zip"],
 )
+
+##############################################################################
+# C++
+##############################################################################
+# C++ must go before everything else, since the key dependencies (protobuf and gRPC)
+# are C++ repositories and they have the highest chance to have the correct versions of the
+# transitive dependencies (for those dependencies which are shared by many other repositories
+# imported in this workspace).
+#
+# Note, even though protobuf and gRPC are mostly written in C++, they are used to generate stuff
+# for most of the other languages as well, so they can be considered as the core cross-language
+# dependencies.
+
+http_archive(
+    name = "com_github_grpc_grpc",
+    strip_prefix = "grpc-7c0764918b9f33cab507ff483b4be849b0203ec4", # this is 1.23.0 with fixes
+    urls = ["https://github.com/grpc/grpc/archive/7c0764918b9f33cab507ff483b4be849b0203ec4.zip"],
+)
+
+load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
+
+grpc_deps()
+
+load("@upb//bazel:repository_defs.bzl", "bazel_version_repository")
+bazel_version_repository(
+    name = "bazel_version",
+)
+
+load("@build_bazel_rules_apple//apple:repositories.bzl", "apple_rules_dependencies")
+apple_rules_dependencies()
+
+load("@build_bazel_apple_support//lib:repositories.bzl", "apple_support_dependencies")
+apple_support_dependencies()
+
+# Making sure that protobuf transitive dependencies are imported after gRPC
+load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
+
+protobuf_deps()
 
 ##############################################################################
 # Java
@@ -43,8 +90,8 @@ http_archive(
 
 http_archive(
     name = "com_google_api_gax_java",
-    strip_prefix = "gax-java-6b170195c18e0d8abc8385ef063d6da9773f87de",
-    urls = ["https://github.com/googleapis/gax-java/archive/6b170195c18e0d8abc8385ef063d6da9773f87de.zip"],
+    strip_prefix = "gax-java-425d9111bc8a2e2c950e60b7e925de83d00b9da9",
+    urls = ["https://github.com/googleapis/gax-java/archive/425d9111bc8a2e2c950e60b7e925de83d00b9da9.zip"],
 )
 
 load("@com_google_api_gax_java//:repository_rules.bzl", "com_google_api_gax_java_properties")
@@ -118,20 +165,6 @@ gazelle_dependencies()
 load("@com_google_api_codegen//rules_gapic/go:go_gapic_repositories.bzl", "go_gapic_repositories")
 
 go_gapic_repositories()
-
-##############################################################################
-# C++
-##############################################################################
-
-http_archive(
-    name = "com_github_grpc_grpc",
-    strip_prefix = "grpc-1.22.0",
-    urls = ["https://github.com/grpc/grpc/archive/v1.22.0.zip"],
-)
-
-load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
-
-grpc_deps()
 
 ##############################################################################
 # PHP
