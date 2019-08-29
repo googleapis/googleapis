@@ -21,20 +21,31 @@ switched_rules_by_language(
     csharp = True,
 )
 
-# Depending on one of the latest commits in grpc, since the protobuf_deps published in 3.9.1 is broken
-# The transitive dependencies of protobuf will be imported after grpc
+# Protobuf depends on very old version of bazel_skylib (forward compatible with the new one).
+# Importing older version of bazel_skylib first (this is one of the things that protobuf_deps() call
+# below will do) breaks the grpc repositories, so importing the proper version explicitly before
+# everything else.
+http_archive(
+    name = "bazel_skylib",
+    urls = ["https://github.com/bazelbuild/bazel-skylib/releases/download/0.9.0/bazel_skylib-0.9.0.tar.gz"],
+)
+
 http_archive(
     name = "com_google_protobuf",
     strip_prefix = "protobuf-c60aaf79e63b911b2c04c04e1eacb4f3c36ef790", # this is 3.9.1 with fixes
     urls = ["https://github.com/protocolbuffers/protobuf/archive/c60aaf79e63b911b2c04c04e1eacb4f3c36ef790.zip"],
 )
 
+load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
+
+protobuf_deps()
+
 # Note gapic-generator contains java-specific and common code, that is why it is imported in common
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-708b97b95ae53ffd8f3d73b7c4661003df053c0e",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/708b97b95ae53ffd8f3d73b7c4661003df053c0e.zip"],
+    strip_prefix = "gapic-generator-5aa30f3d6850c8ebc1092d17ef471aea27a81242",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/5aa30f3d6850c8ebc1092d17ef471aea27a81242.zip"],
 )
 
 ##############################################################################
@@ -51,8 +62,8 @@ http_archive(
 
 http_archive(
     name = "com_github_grpc_grpc",
-    strip_prefix = "grpc-7c0764918b9f33cab507ff483b4be849b0203ec4", # this is 1.23.0 with fixes
-    urls = ["https://github.com/grpc/grpc/archive/7c0764918b9f33cab507ff483b4be849b0203ec4.zip"],
+    strip_prefix = "grpc-0542eb59d9b7a75f16edfd9e3010c8d7d399626d", # this is 1.23.0 with fixes
+    urls = ["https://github.com/grpc/grpc/archive/0542eb59d9b7a75f16edfd9e3010c8d7d399626d.zip"],
 )
 
 load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
@@ -69,11 +80,6 @@ apple_rules_dependencies()
 
 load("@build_bazel_apple_support//lib:repositories.bzl", "apple_support_dependencies")
 apple_support_dependencies()
-
-# Making sure that protobuf transitive dependencies are imported after gRPC
-load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
-
-protobuf_deps()
 
 ##############################################################################
 # Java
