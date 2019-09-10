@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC.
+// Copyright 2019 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,11 +27,51 @@ option java_outer_classname = "UptimeProto";
 option java_package = "com.google.monitoring.v3";
 option php_namespace = "Google\\Cloud\\Monitoring\\V3";
 
+// The regions from which an uptime check can be run.
+enum UptimeCheckRegion {
+  // Default value if no region is specified. Will result in uptime checks
+  // running from all regions.
+  REGION_UNSPECIFIED = 0;
+
+  // Allows checks to run from locations within the United States of America.
+  USA = 1;
+
+  // Allows checks to run from locations within the continent of Europe.
+  EUROPE = 2;
+
+  // Allows checks to run from locations within the continent of South
+  // America.
+  SOUTH_AMERICA = 3;
+
+  // Allows checks to run from locations within the Asia Pacific area (ex:
+  // Singapore).
+  ASIA_PACIFIC = 4;
+}
+
 // An internal checker allows uptime checks to run on private/internal GCP
 // resources.
 message InternalChecker {
+  option deprecated = true;
+
+  // Operational states for an internal checker.
+  enum State {
+    // An internal checker should never be in the unspecified state.
+    UNSPECIFIED = 0;
+
+    // The checker is being created, provisioned, and configured. A checker in
+    // this state can be returned by ListInternalCheckers or GetInternalChecker,
+    // as well as by examining the longrunning.Operation that created it.
+    CREATING = 1;
+
+    // The checker is running and available for use. A checker in this state
+    // can be returned by ListInternalCheckers or GetInternalChecker as well
+    // as by examining the longrunning.Operation that created it.
+    // If a checker is being torn down, it is neither visible nor usable, so
+    // there is no "deleting" or "down" state.
+    RUNNING = 2;
+  }
+
   // A unique resource name for this InternalChecker. The format is:
-  //
   //
   //   `projects/[PROJECT_ID]/internalCheckers/[INTERNAL_CHECKER_ID]`.
   //
@@ -55,6 +95,26 @@ message InternalChecker {
   // The GCP project_id where the internal checker lives. Not necessary
   // the same as the workspace project.
   string peer_project_id = 6;
+
+  // The current operational state of the internal checker.
+  State state = 7;
+}
+
+// The supported resource types that can be used as values of
+// `group_resource.resource_type`.
+// `INSTANCE` includes `gce_instance` and `aws_ec2_instance` resource types.
+// The resource types `gae_app` and `uptime_url` are not valid here because
+// group checks on App Engine modules and URLs are not allowed.
+enum GroupResourceType {
+  // Default value (not valid).
+  RESOURCE_TYPE_UNSPECIFIED = 0;
+
+  // A group of instances from Google Cloud Platform (GCP) or
+  // Amazon Web Services (AWS).
+  INSTANCE = 1;
+
+  // A group of Amazon ELB load balancers.
+  AWS_ELB_LOAD_BALANCER = 2;
 }
 
 // This message configures which resources and services to monitor for
@@ -89,7 +149,8 @@ message UptimeCheckConfig {
 
     // The path to the page to run the check against. Will be combined with the
     // host (specified within the MonitoredResource) and port to construct the
-    // full URL. Optional (defaults to "/").
+    // full URL. Optional (defaults to "/"). If the provided path does not
+    // begin with "/", it will be prepended automatically.
     string path = 2;
 
     // The port to the page to run the check against. Will be combined with host
@@ -118,6 +179,11 @@ message UptimeCheckConfig {
     // cause the first to be overwritten by the second.
     // The maximum number of headers allowed is 100.
     map<string, string> headers = 6;
+
+    // Boolean specifying whether to validate SSL certificates.
+    // Only applies to uptime_url checks. If use_ssl is false, setting this to
+    // true has no effect.
+    bool validate_ssl = 7;
   }
 
   // Information required for a TCP uptime check request.
@@ -131,8 +197,33 @@ message UptimeCheckConfig {
   // Used to perform string matching. It allows substring and regular
   // expressions, together with their negations.
   message ContentMatcher {
+    // Options to perform content matching.
+    enum ContentMatcherOption {
+      // No content macher option specified. Treated as CONTAINS_STRING.
+      CONTENT_MATCHER_OPTION_UNSPECIFIED = 0;
+
+      // Allows checking substring matching.
+      // Default value for previous versions without option.
+      CONTAINS_STRING = 1;
+
+      // Allows checking negation of substring matching (doesn't contain the
+      // substring).
+      NOT_CONTAINS_STRING = 2;
+
+      // Allows checking regular expression matching.
+      MATCHES_REGEX = 3;
+
+      // Allows checking negation of regular expression matching.
+      NOT_MATCHES_REGEX = 4;
+    }
+
     // String or regex content to match (max 1024 bytes)
     string content = 1;
+
+    // The matcher representing content match options which the check will run
+    // with. If the field is not specified (in previous versions), the option is
+    // set to be CONTAINS_STRING which performs content substring matching.
+    ContentMatcherOption matcher = 2;
   }
 
   // A unique resource name for this UptimeCheckConfig. The format is:
@@ -179,7 +270,7 @@ message UptimeCheckConfig {
   // How often, in seconds, the uptime check is performed.
   // Currently, the only supported values are `60s` (1 minute), `300s`
   // (5 minutes), `600s` (10 minutes), and `900s` (15 minutes). Optional,
-  // defaults to `300s`.
+  // defaults to `60s`.
   google.protobuf.Duration period = 7;
 
   // The maximum amount of time to wait for the request to complete (must be
@@ -201,16 +292,10 @@ message UptimeCheckConfig {
   // regions.
   repeated UptimeCheckRegion selected_regions = 10;
 
-  // If this is true, then checks are made only from the 'internal_checkers'.
-  // If it is false, then checks are made only from the 'selected_regions'.
-  // It is an error to provide 'selected_regions' when is_internal is true,
-  // or to provide 'internal_checkers' when is_internal is false.
-  bool is_internal = 15;
-
   // The internal checkers that this check will egress from. If `is_internal` is
   // true and this list is empty, the check will egress from all the
   // InternalCheckers configured for the project that owns this CheckConfig.
-  repeated InternalChecker internal_checkers = 14;
+  repeated InternalChecker internal_checkers = 14 [deprecated = true];
 }
 
 // Contains the region, location, and list of IP
@@ -230,42 +315,4 @@ message UptimeCheckIp {
   // IP addresses being in IPv4 format indefinitely and should support
   // interpreting this field in either IPv4 or IPv6 format.
   string ip_address = 3;
-}
-
-// The regions from which an uptime check can be run.
-enum UptimeCheckRegion {
-  // Default value if no region is specified. Will result in uptime checks
-  // running from all regions.
-  REGION_UNSPECIFIED = 0;
-
-  // Allows checks to run from locations within the United States of America.
-  USA = 1;
-
-  // Allows checks to run from locations within the continent of Europe.
-  EUROPE = 2;
-
-  // Allows checks to run from locations within the continent of South
-  // America.
-  SOUTH_AMERICA = 3;
-
-  // Allows checks to run from locations within the Asia Pacific area (ex:
-  // Singapore).
-  ASIA_PACIFIC = 4;
-}
-
-// The supported resource types that can be used as values of
-// `group_resource.resource_type`.
-// `INSTANCE` includes `gce_instance` and `aws_ec2_instance` resource types.
-// The resource types `gae_app` and `uptime_url` are not valid here because
-// group checks on App Engine modules and URLs are not allowed.
-enum GroupResourceType {
-  // Default value (not valid).
-  RESOURCE_TYPE_UNSPECIFIED = 0;
-
-  // A group of instances from Google Cloud Platform (GCP) or
-  // Amazon Web Services (AWS).
-  INSTANCE = 1;
-
-  // A group of Amazon ELB load balancers.
-  AWS_ELB_LOAD_BALANCER = 2;
 }
