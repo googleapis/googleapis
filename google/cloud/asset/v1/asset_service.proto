@@ -21,6 +21,7 @@ import "google/api/annotations.proto";
 import "google/cloud/asset/v1/assets.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/timestamp.proto";
+import "google/api/client.proto";
 
 option csharp_namespace = "Google.Cloud.Asset.V1";
 option go_package = "google.golang.org/genproto/googleapis/cloud/asset/v1;asset";
@@ -29,9 +30,11 @@ option java_outer_classname = "AssetServiceProto";
 option java_package = "com.google.cloud.asset.v1";
 option php_namespace = "Google\\Cloud\\Asset\\V1";
 
-
 // Asset service definition.
 service AssetService {
+  option (google.api.default_host) = "cloudasset.googleapis.com";
+  option (google.api.oauth_scopes) = "https://www.googleapis.com/auth/cloud-platform";
+
   // Exports assets with time and resource types to a given Cloud Storage
   // location. The output format is newline-delimited JSON.
   // This API implements the [google.longrunning.Operation][google.longrunning.Operation] API allowing you
@@ -73,8 +76,8 @@ message ExportAssetsRequest {
   google.protobuf.Timestamp read_time = 2;
 
   // A list of asset types of which to take a snapshot for. For example:
-  // "compute.googleapis.com/Disk". If specified, only matching assets will be returned.
-  // See [Introduction to Cloud Asset
+  // "compute.googleapis.com/Disk". If specified, only matching assets will be
+  // returned. See [Introduction to Cloud Asset
   // Inventory](https://cloud.google.com/resource-manager/docs/cloud-asset-inventory/overview)
   // for all supported asset types.
   repeated string asset_types = 3;
@@ -111,7 +114,8 @@ message BatchGetAssetsHistoryRequest {
   // `//compute.googleapis.com/projects/my_project_123/zones/zone1/instances/instance1`.
   // See [Resource
   // Names](https://cloud.google.com/apis/design/resource_names#full_resource_name)
-  // and [Resource Name Format](https://cloud.google.com/resource-manager/docs/cloud-asset-inventory/resource-name-format)
+  // and [Resource Name
+  // Format](https://cloud.google.com/resource-manager/docs/cloud-asset-inventory/resource-name-format)
   // for more info.
   //
   // The request becomes a no-op if the asset name list is empty, and the max
@@ -142,6 +146,12 @@ message OutputConfig {
   oneof destination {
     // Destination on Cloud Storage.
     GcsDestination gcs_destination = 1;
+
+    // Destination on BigQuery. The output table stores the fields in asset
+    // proto as columns in BigQuery. The resource/iam_policy field is converted
+    // to a record with each field to a column, except metadata to a single JSON
+    // string.
+    BigQueryDestination bigquery_destination = 2;
   }
 }
 
@@ -155,7 +165,38 @@ message GcsDestination {
     // Metadata](https://cloud.google.com/storage/docs/viewing-editing-metadata)
     // for more information.
     string uri = 1;
+
+    // The uri prefix of all generated Cloud Storage objects. For example:
+    // "gs://bucket_name/object_name_prefix". Each object uri is in format:
+    // "gs://bucket_name/object_name_prefix/<asset type>/<shard number> and only
+    // contains assets for that type. <shard number> starts from 0. For example:
+    // "gs://bucket_name/object_name_prefix/compute.googleapis.com/Disk/0" is
+    // the first shard of output objects containing all
+    // compute.googleapis.com/Disk assets. An INVALID_ARGUMENT error will be
+    // returned if file with the same name "gs://bucket_name/object_name_prefix"
+    // already exists.
+    string uri_prefix = 2;
   }
+}
+
+// A BigQuery destination.
+message BigQueryDestination {
+  // Required. The BigQuery dataset in format
+  // "projects/projectId/datasets/datasetId", to which the snapshot result
+  // should be exported. If this dataset does not exist, the export call returns
+  // an error.
+  string dataset = 1;
+
+  // Required. The BigQuery table to which the snapshot result should be
+  // written. If this table does not exist, a new table with the given name
+  // will be created.
+  string table = 2;
+
+  // If the destination table already exists and this flag is `TRUE`, the
+  // table will be overwritten by the contents of assets snapshot. If the flag
+  // is not set and the destination table already exists, the export call
+  // returns an error.
+  bool force = 3;
 }
 
 // Asset content type.
@@ -168,4 +209,10 @@ enum ContentType {
 
   // The actual IAM policy set on a resource.
   IAM_POLICY = 2;
+
+  // The Cloud Organization Policy set on an asset.
+  ORG_POLICY = 4;
+
+  // The Cloud Access context mananger Policy set on an asset.
+  ACCESS_POLICY = 5;
 }
