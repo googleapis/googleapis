@@ -27,29 +27,20 @@ option java_package = "com.google.api";
 option objc_class_prefix = "GAPI";
 
 extend google.protobuf.FieldOptions {
-  // An annotation that describes a resource reference.
-  //
-  // Example:
-  //
-  //   message Subscription {
-  //     string topic = 2 [(google.api.resource_reference) = {
-  //       type: "pubsub.googleapis.com/Topic"
-  //     }];
-  //   }
+  // An annotation that describes a resource reference, see
+  // [ResourceReference][].
   google.api.ResourceReference resource_reference = 1055;
 }
 
+extend google.protobuf.FileOptions {
+  // An annotation that describes a resource definition without a corresponding
+  // message; see [ResourceDescriptor][].
+  repeated google.api.ResourceDescriptor resource_definition = 1053;
+}
+
 extend google.protobuf.MessageOptions {
-  // An annotation that describes a resource definition.
-  //
-  // Example:
-  //
-  //     message Topic {
-  //       option (google.api.resource) = {
-  //         type: "pubsub.googleapis.com/Topic"
-  //         pattern: "projects/{project}/topics/{topic}"
-  //       };
-  //     }
+  // An annotation that describes a resource definition, see
+  // [ResourceDescriptor][].
   google.api.ResourceDescriptor resource = 1053;
 }
 
@@ -61,30 +52,106 @@ extend google.protobuf.MessageOptions {
 //
 // Example:
 //
-//   message Topic {
-//     // Indicates this message defines a resource schema.
-//     // Declares the resource type in the format of {service}/{kind}.
-//     // For Kubernetes resources, the format is {api group}/{kind}.
-//     option (google.api.resource) = {
-//       type: "pubsub.googleapis.com/Topic"
-//       pattern: "projects/{project}/topics/{topic}"
-//     };
-//   }
+//     message Topic {
+//       // Indicates this message defines a resource schema.
+//       // Declares the resource type in the format of {service}/{kind}.
+//       // For Kubernetes resources, the format is {api group}/{kind}.
+//       option (google.api.resource) = {
+//         type: "pubsub.googleapis.com/Topic"
+//         name_descriptor: {
+//           pattern: "projects/{project}/topics/{topic}"
+//           parent_type: "cloudresourcemanager.googleapis.com/Project"
+//           parent_name_extractor: "projects/{project}"
+//         }
+//       };
+//     }
+//
+// The ResourceDescriptor Yaml config will look like:
+//
+//    resources:
+//    - type: "pubsub.googleapis.com/Topic"
+//      name_descriptor:
+//        - pattern: "projects/{project}/topics/{topic}"
+//          parent_type: "cloudresourcemanager.googleapis.com/Project"
+//          parent_name_extractor: "projects/{project}"
 //
 // Sometimes, resources have multiple patterns, typically because they can
 // live under multiple parents.
 //
 // Example:
 //
-//   message LogEntry {
-//     option (google.api.resource) = {
-//       type: "logging.googleapis.com/LogEntry"
-//       pattern: "projects/{project}/logs/{log}"
-//       pattern: "organizations/{organization}/logs/{log}"
-//       pattern: "folders/{folder}/logs/{log}"
-//       pattern: "billingAccounts/{billing_account}/logs/{log}"
-//     };
-//   }
+//     message LogEntry {
+//       option (google.api.resource) = {
+//         type: "logging.googleapis.com/LogEntry"
+//         name_descriptor: {
+//           pattern: "projects/{project}/logs/{log}"
+//           parent_type: "cloudresourcemanager.googleapis.com/Project"
+//           parent_name_extractor: "projects/{project}"
+//         }
+//         name_descriptor: {
+//           pattern: "folders/{folder}/logs/{log}"
+//           parent_type: "cloudresourcemanager.googleapis.com/Folder"
+//           parent_name_extractor: "folders/{folder}"
+//         }
+//         name_descriptor: {
+//           pattern: "organizations/{organization}/logs/{log}"
+//           parent_type: "cloudresourcemanager.googleapis.com/Organization"
+//           parent_name_extractor: "organizations/{organization}"
+//         }
+//         name_descriptor: {
+//           pattern: "billingAccounts/{billing_account}/logs/{log}"
+//           parent_type: "billing.googleapis.com/BillingAccount"
+//           parent_name_extractor: "billingAccounts/{billing_account}"
+//         }
+//       };
+//     }
+//
+// The ResourceDescriptor Yaml config will look like:
+//
+//     resources:
+//     - type: 'logging.googleapis.com/LogEntry'
+//       name_descriptor:
+//         - pattern: "projects/{project}/logs/{log}"
+//           parent_type: "cloudresourcemanager.googleapis.com/Project"
+//           parent_name_extractor: "projects/{project}"
+//         - pattern: "folders/{folder}/logs/{log}"
+//           parent_type: "cloudresourcemanager.googleapis.com/Folder"
+//           parent_name_extractor: "folders/{folder}"
+//         - pattern: "organizations/{organization}/logs/{log}"
+//           parent_type: "cloudresourcemanager.googleapis.com/Organization"
+//           parent_name_extractor: "organizations/{organization}"
+//         - pattern: "billingAccounts/{billing_account}/logs/{log}"
+//           parent_type: "billing.googleapis.com/BillingAccount"
+//           parent_name_extractor: "billingAccounts/{billing_account}"
+//
+// For flexible resources, the resource name doesn't contain parent names, but
+// the resource itself has parents for policy evaluation.
+//
+// Example:
+//
+//     message Shelf {
+//       option (google.api.resource) = {
+//         type: "library.googleapis.com/Shelf"
+//         name_descriptor: {
+//           pattern: "shelves/{shelf}"
+//           parent_type: "cloudresourcemanager.googleapis.com/Project"
+//         }
+//         name_descriptor: {
+//           pattern: "shelves/{shelf}"
+//           parent_type: "cloudresourcemanager.googleapis.com/Folder"
+//         }
+//       };
+//     }
+//
+// The ResourceDescriptor Yaml config will look like:
+//
+//     resources:
+//     - type: 'library.googleapis.com/Shelf'
+//       name_descriptor:
+//         - pattern: "shelves/{shelf}"
+//           parent_type: "cloudresourcemanager.googleapis.com/Project"
+//         - pattern: "shelves/{shelf}"
+//           parent_type: "cloudresourcemanager.googleapis.com/Folder"
 message ResourceDescriptor {
   // A description of the historical or future-looking state of the
   // resource pattern.
@@ -114,11 +181,20 @@ message ResourceDescriptor {
   // characters allowed for the `resource_type_kind` is 100.
   string type = 1;
 
-  // Optional. The valid resource name pattern(s) for this resource type.
+  // Optional. The relative resource name pattern associated with this resource
+  // type. The DNS prefix of the full resource name shouldn't be specified here.
+  //
+  // The path pattern must follow the syntax, which aligns with HTTP binding
+  // syntax:
+  //
+  //     Template = Segment { "/" Segment } ;
+  //     Segment = LITERAL | Variable ;
+  //     Variable = "{" LITERAL "}" ;
   //
   // Examples:
-  //   - "projects/{project}/topics/{topic}"
-  //   - "projects/{project}/knowledgeBases/{knowledge_base}"
+  //
+  //     - "projects/{project}/topics/{topic}"
+  //     - "projects/{project}/knowledgeBases/{knowledge_base}"
   //
   // The components in braces correspond to the IDs for each resource in the
   // hierarchy. It is expected that, if multiple patterns are provided,
@@ -133,36 +209,49 @@ message ResourceDescriptor {
   // Optional. The historical or future-looking state of the resource pattern.
   //
   // Example:
-  //   // The InspectTemplate message originally only supported resource
-  //   // names with organization, and project was added later.
-  //   message InspectTemplate {
-  //     option (google.api.resource) = {
-  //       type: "dlp.googleapis.com/InspectTemplate"
-  //       pattern:
-  //       "organizations/{organization}/inspectTemplates/{inspect_template}"
-  //       pattern: "projects/{project}/inspectTemplates/{inspect_template}"
-  //       history: ORIGINALLY_SINGLE_PATTERN
-  //     };
-  //   }
+  //
+  //     // The InspectTemplate message originally only supported resource
+  //     // names with organization, and project was added later.
+  //     message InspectTemplate {
+  //       option (google.api.resource) = {
+  //         type: "dlp.googleapis.com/InspectTemplate"
+  //         pattern:
+  //         "organizations/{organization}/inspectTemplates/{inspect_template}"
+  //         pattern: "projects/{project}/inspectTemplates/{inspect_template}"
+  //         history: ORIGINALLY_SINGLE_PATTERN
+  //       };
+  //     }
   History history = 4;
+
+  // The plural name used in the resource name, such as 'projects' for
+  // the name of 'projects/{project}'. It is the same concept of the `plural`
+  // field in k8s CRD spec
+  // https://kubernetes.io/docs/tasks/access-kubernetes-api/custom-resources/custom-resource-definitions/
+  string plural = 5;
+
+  // The same concept of the `singular` field in k8s CRD spec
+  // https://kubernetes.io/docs/tasks/access-kubernetes-api/custom-resources/custom-resource-definitions/
+  // Such as "project" for the `resourcemanager.googleapis.com/Project` type.
+  string singular = 6;
 }
 
-// Defines a proto annotation that describes a field that refers to a resource.
+// Defines a proto annotation that describes a string field that refers to
+// an API resource.
 message ResourceReference {
   // The resource type that the annotated field references.
   //
   // Example:
   //
-  //   message Subscription {
-  //     string topic = 2 [(google.api.resource_reference) = {
-  //       type = "pubsub.googleapis.com/Topic"
-  //     }];
-  //   }
+  //     message Subscription {
+  //       string topic = 2 [(google.api.resource_reference) = {
+  //         type: "pubsub.googleapis.com/Topic"
+  //       }];
+  //     }
   string type = 1;
 
   // The resource type of a child collection that the annotated field
-  // references. This is useful for `parent` fields where a resource has more
-  // than one possible type of parent.
+  // references. This is useful for annotating the `parent` field that
+  // doesn't have a fixed resource type.
   //
   // Example:
   //
