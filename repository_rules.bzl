@@ -131,13 +131,13 @@ def switched_rules_by_language(
         java and grpc and gapic,
         "@com_google_api_codegen//rules_gapic/java:java_gapic.bzl",
     )
+    rules["java_gapic_test"] = _switch(
+        java and grpc and gapic,
+        "@com_google_api_codegen//rules_gapic/java:java_gapic.bzl",
+    )
     rules["java_gapic_assembly_gradle_pkg"] = _switch(
         java and grpc and gapic,
         "@com_google_api_codegen//rules_gapic/java:java_gapic_pkg.bzl",
-    )
-    rules["java_test"] = _switch(
-        java and grpc and gapic,
-        "native.java_test",
     )
 
     #
