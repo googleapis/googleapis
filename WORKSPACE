@@ -44,8 +44,8 @@ protobuf_deps()
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-89ca580bf9534eaef2e06292c4b083c72dfa8ec1",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/89ca580bf9534eaef2e06292c4b083c72dfa8ec1.zip"],
+    strip_prefix = "gapic-generator-48288a4abc4a55161f13ac0f0a73b840cf037817",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/48288a4abc4a55161f13ac0f0a73b840cf037817.zip"],
 )
 
 ##############################################################################
@@ -99,8 +99,8 @@ apple_support_dependencies()
 
 http_archive(
     name = "com_google_api_gax_java",
-    strip_prefix = "gax-java-1.49.0",
-    urls = ["https://github.com/googleapis/gax-java/archive/v1.49.0.zip"],
+    strip_prefix = "gax-java-31b44b19cf7e312a1861310f049a18b69822eaca",
+    urls = ["https://github.com/googleapis/gax-java/archive/31b44b19cf7e312a1861310f049a18b69822eaca.zip"],
 )
 
 load("@com_google_api_gax_java//:repository_rules.bzl", "com_google_api_gax_java_properties")
