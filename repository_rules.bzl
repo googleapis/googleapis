@@ -97,7 +97,7 @@ def switched_rules_by_language(
         php (bool): Enable PHP specific rules. False by default.
         nodejs (bool): Enable Node.js specific rules. False by default.
         ruby (bool): Enable Ruby specific rules. False by default.
-        python (bool): Enable Python-specific rules. False by default. Not implemented yet.
+        python (bool): Enable Python-specific rules. False by default.
         csharp (bool): Enable C# specific rules. False by default.
         rules_override (dict): Custom rule overrides (for advanced usage).
     """
@@ -108,6 +108,10 @@ def switched_rules_by_language(
     # Common
     #
     rules["proto_library_with_info"] = _switch(
+        gapic,
+        "@com_google_api_codegen//rules_gapic:gapic.bzl",
+    )
+    rules["moved_proto_library"] = _switch(
         gapic,
         "@com_google_api_codegen//rules_gapic:gapic.bzl",
     )
@@ -141,6 +145,26 @@ def switched_rules_by_language(
     )
 
     #
+    # Python
+    #
+    rules["py_proto_library"] = _switch(
+        python,
+        "@com_github_grpc_grpc//bazel:python_rules.bzl",
+    )
+    rules["py_grpc_library"] = _switch(
+        python and grpc,
+        "@com_github_grpc_grpc//bazel:python_rules.bzl",
+    )
+    rules["py_gapic_library"] = _switch(
+        python and grpc and gapic,
+        "@com_google_api_codegen//rules_gapic/python:py_gapic.bzl",
+    )
+    rules["py_gapic_assembly_pkg"] = _switch(
+        python and grpc and gapic,
+        "@com_google_api_codegen//rules_gapic/python:py_gapic_pkg.bzl",
+    )
+
+    #
     # Go
     #
     rules["go_proto_library"] = _switch(
@@ -163,14 +187,6 @@ def switched_rules_by_language(
         go and grpc and gapic,
         "@com_google_api_codegen//rules_gapic/go:go_gapic_pkg.bzl",
     )
-
-    #
-    # Python rules are not yet supported in googleapis due to a lack of
-    # standard python rules in bazel / grpc. This placeholder enables
-    # other projects to provide their own macros.
-    # Please see https://github.com/grpc/grpc/issues/19255
-    #
-    rules["py_proto_library"] = _switch(False)
 
     #
     # C++

@@ -18,6 +18,7 @@ switched_rules_by_language(
     java = True,
     nodejs = True,
     php = True,
+    python = True,
     ruby = True,
 )
 
@@ -44,8 +45,8 @@ protobuf_deps()
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-c857a66d20ec00e739eb6334b7a95e27113397c7",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/c857a66d20ec00e739eb6334b7a95e27113397c7.zip"],
+    strip_prefix = "gapic-generator-34da60e810b93ca7556df6ba21d16b771baaae32",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/34da60e810b93ca7556df6ba21d16b771baaae32.zip"],
 )
 
 ##############################################################################
@@ -62,8 +63,8 @@ http_archive(
 
 http_archive(
     name = "com_github_grpc_grpc",
-    strip_prefix = "grpc-0542eb59d9b7a75f16edfd9e3010c8d7d399626d",  # this is 1.23.0 with fixes
-    urls = ["https://github.com/grpc/grpc/archive/0542eb59d9b7a75f16edfd9e3010c8d7d399626d.zip"],
+    strip_prefix = "grpc-8347f4753568b5b66e49111c60ae2841278d3f33",  # this is 1.25.0 with fixes
+    urls = ["https://github.com/grpc/grpc/archive/8347f4753568b5b66e49111c60ae2841278d3f33.zip"],
 )
 
 load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
@@ -88,19 +89,10 @@ apple_support_dependencies()
 # Java
 ##############################################################################
 
-# java_gapic artifacts runtime dependencies (gax-java)
-#
-# Keeping it here to see how this goes (what will be more maintainable: direct import of gax or via
-# gapic-generator).
-#
-#load("@com_google_api_codegen//rules_gapic/java:java_gapic_repositories.bzl", "java_gapic_repositories")
-#
-#java_gapic_repositories()
-
 http_archive(
     name = "com_google_api_gax_java",
-    strip_prefix = "gax-java-31b44b19cf7e312a1861310f049a18b69822eaca",
-    urls = ["https://github.com/googleapis/gax-java/archive/31b44b19cf7e312a1861310f049a18b69822eaca.zip"],
+    strip_prefix = "gax-java-1.50.1",
+    urls = ["https://github.com/googleapis/gax-java/archive/v1.50.1.zip"],
 )
 
 load("@com_google_api_gax_java//:repository_rules.bzl", "com_google_api_gax_java_properties")
@@ -141,6 +133,28 @@ load(
 )
 
 com_google_protoc_java_resource_names_plugin_repositories()
+
+##############################################################################
+# Python
+##############################################################################
+load("@com_google_api_codegen//rules_gapic/python:py_gapic_repositories.bzl", "py_gapic_repositories")
+
+py_gapic_repositories()
+
+local_repository(
+    name = "protoc_docs_plugin",
+    path = "/usr/local/google/home/vam/_/projects/github/vam-google/protoc-docs-plugin/protoc-docs-plugin",
+)
+
+load(
+    "@protoc_docs_plugin//:repositories.bzl",
+    "protoc_docs_plugin_repositories",
+    "protoc_docs_plugin_register_toolchains",
+)
+
+protoc_docs_plugin_repositories()
+
+protoc_docs_plugin_register_toolchains()
 
 ##############################################################################
 # Go
