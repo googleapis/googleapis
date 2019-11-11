@@ -18,6 +18,8 @@ syntax = "proto3";
 package google.privacy.dlp.v2;
 
 import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
 import "google/privacy/dlp/v2/storage.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
@@ -426,18 +428,6 @@ message ExcludeInfoTypes {
   repeated InfoType info_types = 1;
 }
 
-// Options describing which parts of the provided content should be scanned.
-enum ContentOption {
-  // Includes entire content of a file or a data stream.
-  CONTENT_UNSPECIFIED = 0;
-
-  // Text content within the data, excluding any metadata.
-  CONTENT_TEXT = 1;
-
-  // Images found in the data.
-  CONTENT_IMAGE = 2;
-}
-
 // The rule that specifies conditions when findings of infoTypes specified in
 // `InspectionRuleSet` are removed from results.
 message ExclusionRule {
@@ -454,6 +444,18 @@ message ExclusionRule {
 
   // How the rule is applied, see MatchingType documentation for details.
   MatchingType matching_type = 4;
+}
+
+// Options describing which parts of the provided content should be scanned.
+enum ContentOption {
+  // Includes entire content of a file or a data stream.
+  CONTENT_UNSPECIFIED = 0;
+
+  // Text content within the data, excluding any metadata.
+  CONTENT_TEXT = 1;
+
+  // Images found in the data.
+  CONTENT_IMAGE = 2;
 }
 
 // A single inspection rule to be applied to infoTypes, specified in
@@ -519,10 +521,9 @@ message InspectConfig {
   // system may automatically choose what detectors to run. By default this may
   // be all types, but may change over time as detectors are updated.
   //
-  // The special InfoType name "ALL_BASIC" can be used to trigger all detectors,
-  // but may change over time as new InfoTypes are added. If you need precise
-  // control and predictability as to what detectors are run you should specify
-  // specific InfoTypes listed in the reference.
+  // If you need precise control and predictability as to what detectors are
+  // run you should specify specific InfoTypes listed in the reference,
+  // otherwise a default list will be used, which may change over time.
   repeated InfoType info_types = 1;
 
   // Only returns findings equal or above this threshold. The default is
@@ -816,7 +817,9 @@ message RedactImageRequest {
   }
 
   // The parent resource name, for example projects/my-project-id.
-  string parent = 1;
+  string parent = 1 [(google.api.resource_reference) = {
+                       type: "cloudresourcemanager.googleapis.com/Project"
+                     }];
 
   // Configuration for the inspector.
   InspectConfig inspect_config = 2;
@@ -861,7 +864,9 @@ message RedactImageResponse {
 // Request to de-identify a list of items.
 message DeidentifyContentRequest {
   // The parent resource name, for example projects/my-project-id.
-  string parent = 1;
+  string parent = 1 [(google.api.resource_reference) = {
+                       type: "cloudresourcemanager.googleapis.com/Project"
+                     }];
 
   // Configuration for the de-identification of the content item.
   // Items specified here will override the template referenced by the
@@ -902,8 +907,13 @@ message DeidentifyContentResponse {
 
 // Request to re-identify an item.
 message ReidentifyContentRequest {
-  // The parent resource name.
-  string parent = 1;
+  // Required. The parent resource name.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudresourcemanager.googleapis.com/Project"
+    }
+  ];
 
   // Configuration for the re-identification of the content item.
   // This field shares the same proto message type that is used for
@@ -913,6 +923,7 @@ message ReidentifyContentRequest {
   // reverse. This requires that only reversible transformations
   // be provided here. The reversible transformations are:
   //
+  //  - `CryptoDeterministicConfig`
   //  - `CryptoReplaceFfxFpeConfig`
   DeidentifyConfig reidentify_config = 2;
 
@@ -950,7 +961,9 @@ message ReidentifyContentResponse {
 // Request to search for potentially sensitive info in a ContentItem.
 message InspectContentRequest {
   // The parent resource name, for example projects/my-project-id.
-  string parent = 1;
+  string parent = 1 [(google.api.resource_reference) = {
+                       type: "cloudresourcemanager.googleapis.com/Project"
+                     }];
 
   // Configuration for the inspector. What specified here will override
   // the template referenced by the inspect_template_name argument.
@@ -1701,7 +1714,7 @@ message TimePartConfig {
     // [1-7]
     DAY_OF_WEEK = 4;
 
-    // [1-52]
+    // [1-53]
     WEEK_OF_YEAR = 5;
 
     // [0-23]
@@ -1744,6 +1757,11 @@ message CryptoDeterministicConfig {
   // custom info type 'Surrogate'. This facilitates reversal of the
   // surrogate when it occurs in free text.
   //
+  // Note: For record transformations where the entire cell in a table is being
+  // transformed, surrogates are optional to use. Surrogates are used to denote
+  // the location of the token and are necessary for re-identification in free
+  // form text.
+  //
   // In order for inspection to work properly, the name of this info type must
   // not occur naturally anywhere in your data; otherwise, inspection may either
   //
@@ -1756,7 +1774,7 @@ message CryptoDeterministicConfig {
   // that are highly improbable to exist in your data.
   // For example, assuming your data is entered from a regular ASCII keyboard,
   // the symbol with the hex code point 29DD might be used like so:
-  // ⧝MY_TOKEN_TYPE
+  // ⧝MY_TOKEN_TYPE.
   InfoType surrogate_info_type = 2;
 
   // Optional. A context may be used for higher security and maintaining
@@ -1834,10 +1852,10 @@ message CharsToIgnore {
 // type. (This allows you to take a long like 123 and modify it to a string like
 // **3.
 message CharacterMaskConfig {
-  // Character to mask the sensitive values&mdash;for example, "*" for an
-  // alphabetic string such as name, or "0" for a numeric string such as ZIP
-  // code or credit card number. String must have length 1. If not supplied, we
-  // will default to "*" for strings, 0 for digits.
+  // Character to use to mask the sensitive values&mdash;for example, `*` for an
+  // alphabetic string such as a name, or `0` for a numeric string such as ZIP
+  // code or credit card number. This string must have a length of 1. If not
+  // supplied, this value defaults to `*` for strings, and `0` for digits.
   string masking_character = 1;
 
   // Number of characters to mask. If not set, all matching chars will be
@@ -1845,15 +1863,16 @@ message CharacterMaskConfig {
   int32 number_to_mask = 2;
 
   // Mask characters in reverse order. For example, if `masking_character` is
-  // '0', number_to_mask is 14, and `reverse_order` is false, then
-  // 1234-5678-9012-3456 -> 00000000000000-3456
-  // If `masking_character` is '*', `number_to_mask` is 3, and `reverse_order`
-  // is true, then 12345 -> 12***
+  // `0`, `number_to_mask` is `14`, and `reverse_order` is `false`, then the
+  // input string `1234-5678-9012-3456` is masked as `00000000000000-3456`.
+  // If `masking_character` is `*`, `number_to_mask` is `3`, and `reverse_order`
+  // is `true`, then the string `12345` is masked as `12***`.
   bool reverse_order = 3;
 
-  // When masking a string, items in this list will be skipped when replacing.
-  // For example, if your string is 555-555-5555 and you ask us to skip `-` and
-  // mask 5 chars with * we would produce ***-*55-5555.
+  // When masking a string, items in this list will be skipped when replacing
+  // characters. For example, if the input string is `555-555-5555` and you
+  // instruct Cloud DLP to skip `-` and mask 5 characters with `*`, Cloud DLP
+  // returns `***-**5-5555`.
   repeated CharsToIgnore characters_to_ignore = 4;
 }
 
@@ -1985,12 +2004,12 @@ message CryptoReplaceFfxFpeConfig {
     // that the FFX mode natively supports. This happens before/after
     // encryption/decryption.
     // Each character listed must appear only once.
-    // Number of characters must be in the range [2, 62].
+    // Number of characters must be in the range [2, 95].
     // This must be encoded as ASCII.
     // The order of characters does not matter.
     string custom_alphabet = 5;
 
-    // The native way to select the alphabet. Must be in the range [2, 62].
+    // The native way to select the alphabet. Must be in the range [2, 95].
     int32 radix = 6;
   }
 
@@ -2049,6 +2068,13 @@ message TransientCryptoKey {
   string name = 1;
 }
 
+// Using raw keys is prone to security risks due to accidentally
+// leaking the key. Choose another type of key if possible.
+message UnwrappedCryptoKey {
+  // A 128/192/256 bit key. [required]
+  bytes key = 1;
+}
+
 // Parts of the APIs which use certain infoTypes.
 enum InfoTypeSupportedBy {
   ENUM_TYPE_UNSPECIFIED = 0;
@@ -2058,13 +2084,6 @@ enum InfoTypeSupportedBy {
 
   // Supported by the risk analysis operations.
   RISK_ANALYSIS = 2;
-}
-
-// Using raw keys is prone to security risks due to accidentally
-// leaking the key. Choose another type of key if possible.
-message UnwrappedCryptoKey {
-  // A 128/192/256 bit key. [required]
-  bytes key = 1;
 }
 
 // Include to use an existing data crypto key wrapped by KMS.
@@ -2314,6 +2333,12 @@ message Schedule {
 // InspectConfig. See https://cloud.google.com/dlp/docs/concepts-templates
 // to learn more.
 message InspectTemplate {
+  option (google.api.resource) = {
+    type: "dlp.googleapis.com/InspectTemplate"
+    pattern: "organizations/{organization}/inspectTemplates/{inspect_template}"
+    pattern: "projects/{project}/inspectTemplates/{inspect_template}"
+  };
+
   // The template name. Output only.
   //
   // The template will have one of the following formats:
@@ -2340,6 +2365,12 @@ message InspectTemplate {
 // The DeidentifyTemplates contains instructions on how to deidentify content.
 // See https://cloud.google.com/dlp/docs/concepts-templates to learn more.
 message DeidentifyTemplate {
+  option (google.api.resource) = {
+    type: "dlp.googleapis.com/DeidentifyTemplate"
+    pattern: "organizations/{organization}/deidentifyTemplates/{deidentify_template}"
+    pattern: "projects/{project}/deidentifyTemplates/{deidentify_template}"
+  };
+
   // The template name. Output only.
   //
   // The template will have one of the following formats:
@@ -2376,6 +2407,11 @@ message Error {
 // Contains a configuration to make dlp api calls on a repeating basis.
 // See https://cloud.google.com/dlp/docs/concepts-job-triggers to learn more.
 message JobTrigger {
+  option (google.api.resource) = {
+    type: "dlp.googleapis.com/JobTrigger"
+    pattern: "projects/{project}/jobTriggers/{job_trigger}"
+  };
+
   // What event needs to occur for a new job to be started.
   message Trigger {
     oneof trigger {
@@ -2403,7 +2439,7 @@ message JobTrigger {
 
   // Unique resource name for the triggeredJob, assigned by the service when the
   // triggeredJob is created, for example
-  // `projects/dlp-test-project/triggeredJobs/53234423`.
+  // `projects/dlp-test-project/jobTriggers/53234423`.
   string name = 1;
 
   // Display name (max 100 chars)
@@ -2499,6 +2535,14 @@ message Action {
 
   }
 
+  // Enable Stackdriver metric dlp.googleapis.com/finding_count. This
+  // will publish a metric to stack driver on each infotype requested and
+  // how many findings were found for it. CustomDetectors will be bucketed
+  // as 'Custom' under the Stackdriver label 'info_type'.
+  message PublishToStackdriver {
+
+  }
+
   oneof action {
     // Save resulting findings in a provided location.
     SaveFindings save_findings = 1;
@@ -2515,14 +2559,22 @@ message Action {
     // Enable email notification to project owners and editors on job's
     // completion/failure.
     JobNotificationEmails job_notification_emails = 8;
+
+    // Enable Stackdriver metric dlp.googleapis.com/finding_count.
+    PublishToStackdriver publish_to_stackdriver = 9;
   }
 }
 
 // Request message for CreateInspectTemplate.
 message CreateInspectTemplateRequest {
-  // The parent resource name, for example projects/my-project-id or
+  // Required. The parent resource name, for example projects/my-project-id or
   // organizations/my-org-id.
-  string parent = 1;
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "dlp.googleapis.com/InspectTemplate"
+    }
+  ];
 
   // The InspectTemplate to create.
   InspectTemplate inspect_template = 2;
@@ -2536,10 +2588,15 @@ message CreateInspectTemplateRequest {
 
 // Request message for UpdateInspectTemplate.
 message UpdateInspectTemplateRequest {
-  // Resource name of organization and inspectTemplate to be updated, for
+  // Required. Resource name of organization and inspectTemplate to be updated, for
   // example `organizations/433245324/inspectTemplates/432452342` or
   // projects/project-id/inspectTemplates/432452342.
-  string name = 1;
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dlp.googleapis.com/InspectTemplate"
+    }
+  ];
 
   // New InspectTemplate value.
   InspectTemplate inspect_template = 2;
@@ -2550,17 +2607,27 @@ message UpdateInspectTemplateRequest {
 
 // Request message for GetInspectTemplate.
 message GetInspectTemplateRequest {
-  // Resource name of the organization and inspectTemplate to be read, for
+  // Required. Resource name of the organization and inspectTemplate to be read, for
   // example `organizations/433245324/inspectTemplates/432452342` or
   // projects/project-id/inspectTemplates/432452342.
-  string name = 1;
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dlp.googleapis.com/InspectTemplate"
+    }
+  ];
 }
 
 // Request message for ListInspectTemplates.
 message ListInspectTemplatesRequest {
-  // The parent resource name, for example projects/my-project-id or
+  // Required. The parent resource name, for example projects/my-project-id or
   // organizations/my-org-id.
-  string parent = 1;
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "dlp.googleapis.com/InspectTemplate"
+    }
+  ];
 
   // Optional page token to continue retrieval. Comes from previous call
   // to `ListInspectTemplates`.
@@ -2598,16 +2665,26 @@ message ListInspectTemplatesResponse {
 
 // Request message for DeleteInspectTemplate.
 message DeleteInspectTemplateRequest {
-  // Resource name of the organization and inspectTemplate to be deleted, for
+  // Required. Resource name of the organization and inspectTemplate to be deleted, for
   // example `organizations/433245324/inspectTemplates/432452342` or
   // projects/project-id/inspectTemplates/432452342.
-  string name = 1;
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dlp.googleapis.com/InspectTemplate"
+    }
+  ];
 }
 
 // Request message for CreateJobTrigger.
 message CreateJobTriggerRequest {
-  // The parent resource name, for example projects/my-project-id.
-  string parent = 1;
+  // Required. The parent resource name, for example projects/my-project-id.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudresourcemanager.googleapis.com/Project"
+    }
+  ];
 
   // The JobTrigger to create.
   JobTrigger job_trigger = 2;
@@ -2621,16 +2698,26 @@ message CreateJobTriggerRequest {
 
 // Request message for ActivateJobTrigger.
 message ActivateJobTriggerRequest {
-  // Resource name of the trigger to activate, for example
+  // Required. Resource name of the trigger to activate, for example
   // `projects/dlp-test-project/jobTriggers/53234423`.
-  string name = 1;
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dlp.googleapis.com/JobTrigger"
+    }
+  ];
 }
 
 // Request message for UpdateJobTrigger.
 message UpdateJobTriggerRequest {
-  // Resource name of the project and the triggeredJob, for example
+  // Required. Resource name of the project and the triggeredJob, for example
   // `projects/dlp-test-project/jobTriggers/53234423`.
-  string name = 1;
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dlp.googleapis.com/JobTrigger"
+    }
+  ];
 
   // New JobTrigger value.
   JobTrigger job_trigger = 2;
@@ -2641,17 +2728,27 @@ message UpdateJobTriggerRequest {
 
 // Request message for GetJobTrigger.
 message GetJobTriggerRequest {
-  // Resource name of the project and the triggeredJob, for example
+  // Required. Resource name of the project and the triggeredJob, for example
   // `projects/dlp-test-project/jobTriggers/53234423`.
-  string name = 1;
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dlp.googleapis.com/JobTrigger"
+    }
+  ];
 }
 
 // Request message for CreateDlpJobRequest. Used to initiate long running
 // jobs such as calculating risk metrics or inspecting Google Cloud
 // Storage.
 message CreateDlpJobRequest {
-  // The parent resource name, for example projects/my-project-id.
-  string parent = 1;
+  // Required. The parent resource name, for example projects/my-project-id.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudresourcemanager.googleapis.com/Project"
+    }
+  ];
 
   // The configuration details for the specific type of job to run.
   oneof job {
@@ -2669,8 +2766,13 @@ message CreateDlpJobRequest {
 
 // Request message for ListJobTriggers.
 message ListJobTriggersRequest {
-  // The parent resource name, for example `projects/my-project-id`.
-  string parent = 1;
+  // Required. The parent resource name, for example `projects/my-project-id`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudresourcemanager.googleapis.com/Project"
+    }
+  ];
 
   // Optional page token to continue retrieval. Comes from previous call
   // to ListJobTriggers. `order_by` field must not
@@ -2736,9 +2838,14 @@ message ListJobTriggersResponse {
 
 // Request message for DeleteJobTrigger.
 message DeleteJobTriggerRequest {
-  // Resource name of the project and the triggeredJob, for example
+  // Required. Resource name of the project and the triggeredJob, for example
   // `projects/dlp-test-project/jobTriggers/53234423`.
-  string name = 1;
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dlp.googleapis.com/JobTrigger"
+    }
+  ];
 }
 
 message InspectJobConfig {
@@ -2759,6 +2866,11 @@ message InspectJobConfig {
 
 // Combines all of the information about a DLP job.
 message DlpJob {
+  option (google.api.resource) = {
+    type: "dlp.googleapis.com/DlpJob"
+    pattern: "projects/{project}/dlpJobs/{dlp_job}"
+  };
+
   enum JobState {
     JOB_STATE_UNSPECIFIED = 0;
 
@@ -2812,6 +2924,17 @@ message DlpJob {
   repeated Error errors = 11;
 }
 
+// The request message for [DlpJobs.GetDlpJob][].
+message GetDlpJobRequest {
+  // Required. The name of the DlpJob resource.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dlp.googleapis.com/DlpJob"
+    }
+  ];
+}
+
 // Operators available for comparing the value of fields.
 enum RelationalOperator {
   RELATIONAL_OPERATOR_UNSPECIFIED = 0;
@@ -2838,16 +2961,15 @@ enum RelationalOperator {
   EXISTS = 7;
 }
 
-// The request message for [DlpJobs.GetDlpJob][].
-message GetDlpJobRequest {
-  // The name of the DlpJob resource.
-  string name = 1;
-}
-
 // The request message for listing DLP jobs.
 message ListDlpJobsRequest {
-  // The parent resource name, for example projects/my-project-id.
-  string parent = 4;
+  // Required. The parent resource name, for example projects/my-project-id.
+  string parent = 4 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudresourcemanager.googleapis.com/Project"
+    }
+  ];
 
   // Optional. Allows filtering.
   //
@@ -2915,21 +3037,36 @@ message ListDlpJobsResponse {
 
 // The request message for canceling a DLP job.
 message CancelDlpJobRequest {
-  // The name of the DlpJob resource to be cancelled.
-  string name = 1;
+  // Required. The name of the DlpJob resource to be cancelled.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dlp.googleapis.com/DlpJob"
+    }
+  ];
 }
 
 // The request message for deleting a DLP job.
 message DeleteDlpJobRequest {
-  // The name of the DlpJob resource to be deleted.
-  string name = 1;
+  // Required. The name of the DlpJob resource to be deleted.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dlp.googleapis.com/DlpJob"
+    }
+  ];
 }
 
 // Request message for CreateDeidentifyTemplate.
 message CreateDeidentifyTemplateRequest {
-  // The parent resource name, for example projects/my-project-id or
+  // Required. The parent resource name, for example projects/my-project-id or
   // organizations/my-org-id.
-  string parent = 1;
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "dlp.googleapis.com/DeidentifyTemplate"
+    }
+  ];
 
   // The DeidentifyTemplate to create.
   DeidentifyTemplate deidentify_template = 2;
@@ -2943,10 +3080,15 @@ message CreateDeidentifyTemplateRequest {
 
 // Request message for UpdateDeidentifyTemplate.
 message UpdateDeidentifyTemplateRequest {
-  // Resource name of organization and deidentify template to be updated, for
+  // Required. Resource name of organization and deidentify template to be updated, for
   // example `organizations/433245324/deidentifyTemplates/432452342` or
   // projects/project-id/deidentifyTemplates/432452342.
-  string name = 1;
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dlp.googleapis.com/DeidentifyTemplate"
+    }
+  ];
 
   // New DeidentifyTemplate value.
   DeidentifyTemplate deidentify_template = 2;
@@ -2957,17 +3099,27 @@ message UpdateDeidentifyTemplateRequest {
 
 // Request message for GetDeidentifyTemplate.
 message GetDeidentifyTemplateRequest {
-  // Resource name of the organization and deidentify template to be read, for
+  // Required. Resource name of the organization and deidentify template to be read, for
   // example `organizations/433245324/deidentifyTemplates/432452342` or
   // projects/project-id/deidentifyTemplates/432452342.
-  string name = 1;
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dlp.googleapis.com/DeidentifyTemplate"
+    }
+  ];
 }
 
 // Request message for ListDeidentifyTemplates.
 message ListDeidentifyTemplatesRequest {
-  // The parent resource name, for example projects/my-project-id or
+  // Required. The parent resource name, for example projects/my-project-id or
   // organizations/my-org-id.
-  string parent = 1;
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "dlp.googleapis.com/DeidentifyTemplate"
+    }
+  ];
 
   // Optional page token to continue retrieval. Comes from previous call
   // to `ListDeidentifyTemplates`.
@@ -3006,10 +3158,15 @@ message ListDeidentifyTemplatesResponse {
 
 // Request message for DeleteDeidentifyTemplate.
 message DeleteDeidentifyTemplateRequest {
-  // Resource name of the organization and deidentify template to be deleted,
+  // Required. Resource name of the organization and deidentify template to be deleted,
   // for example `organizations/433245324/deidentifyTemplates/432452342` or
   // projects/project-id/deidentifyTemplates/432452342.
-  string name = 1;
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dlp.googleapis.com/DeidentifyTemplate"
+    }
+  ];
 }
 
 // Configuration for a custom dictionary created from a data source of any size
@@ -3096,6 +3253,12 @@ message StoredInfoTypeVersion {
 // StoredInfoType resource message that contains information about the current
 // version and any pending updates.
 message StoredInfoType {
+  option (google.api.resource) = {
+    type: "dlp.googleapis.com/StoredInfoType"
+    pattern: "organizations/{organization}/storedInfoTypes/{stored_info_type}"
+    pattern: "projects/{project}/storedInfoTypes/{stored_info_type}"
+  };
+
   // Resource name.
   string name = 1;
 
@@ -3109,9 +3272,14 @@ message StoredInfoType {
 
 // Request message for CreateStoredInfoType.
 message CreateStoredInfoTypeRequest {
-  // The parent resource name, for example projects/my-project-id or
+  // Required. The parent resource name, for example projects/my-project-id or
   // organizations/my-org-id.
-  string parent = 1;
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "dlp.googleapis.com/StoredInfoType"
+    }
+  ];
 
   // Configuration of the storedInfoType to create.
   StoredInfoTypeConfig config = 2;
@@ -3125,10 +3293,15 @@ message CreateStoredInfoTypeRequest {
 
 // Request message for UpdateStoredInfoType.
 message UpdateStoredInfoTypeRequest {
-  // Resource name of organization and storedInfoType to be updated, for
+  // Required. Resource name of organization and storedInfoType to be updated, for
   // example `organizations/433245324/storedInfoTypes/432452342` or
   // projects/project-id/storedInfoTypes/432452342.
-  string name = 1;
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dlp.googleapis.com/StoredInfoType"
+    }
+  ];
 
   // Updated configuration for the storedInfoType. If not provided, a new
   // version of the storedInfoType will be created with the existing
@@ -3141,17 +3314,27 @@ message UpdateStoredInfoTypeRequest {
 
 // Request message for GetStoredInfoType.
 message GetStoredInfoTypeRequest {
-  // Resource name of the organization and storedInfoType to be read, for
+  // Required. Resource name of the organization and storedInfoType to be read, for
   // example `organizations/433245324/storedInfoTypes/432452342` or
   // projects/project-id/storedInfoTypes/432452342.
-  string name = 1;
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dlp.googleapis.com/StoredInfoType"
+    }
+  ];
 }
 
 // Request message for ListStoredInfoTypes.
 message ListStoredInfoTypesRequest {
-  // The parent resource name, for example projects/my-project-id or
+  // Required. The parent resource name, for example projects/my-project-id or
   // organizations/my-org-id.
-  string parent = 1;
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "dlp.googleapis.com/StoredInfoType"
+    }
+  ];
 
   // Optional page token to continue retrieval. Comes from previous call
   // to `ListStoredInfoTypes`.
@@ -3190,10 +3373,15 @@ message ListStoredInfoTypesResponse {
 
 // Request message for DeleteStoredInfoType.
 message DeleteStoredInfoTypeRequest {
-  // Resource name of the organization and storedInfoType to be deleted, for
+  // Required. Resource name of the organization and storedInfoType to be deleted, for
   // example `organizations/433245324/storedInfoTypes/432452342` or
   // projects/project-id/storedInfoTypes/432452342.
-  string name = 1;
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dlp.googleapis.com/StoredInfoType"
+    }
+  ];
 }
 
 // An enum to represent the various type of DLP jobs.
