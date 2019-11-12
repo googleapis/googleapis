@@ -141,9 +141,10 @@ load("@com_google_api_codegen//rules_gapic/python:py_gapic_repositories.bzl", "p
 
 py_gapic_repositories()
 
-local_repository(
+http_archive(
     name = "protoc_docs_plugin",
-    path = "/usr/local/google/home/vam/_/projects/github/vam-google/protoc-docs-plugin/protoc-docs-plugin",
+    strip_prefix = "protoc-docs-plugin-54363302011e25ff83455bbcb8e5ae802dab6354",
+    urls = ["https://github.com/googleapis/protoc-docs-plugin/archive/54363302011e25ff83455bbcb8e5ae802dab6354.zip"],
 )
 
 load(
