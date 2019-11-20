@@ -61,10 +61,9 @@ rules_proto_toolchains()
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-34da60e810b93ca7556df6ba21d16b771baaae32",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/34da60e810b93ca7556df6ba21d16b771baaae32.zip"],
+    strip_prefix = "gapic-generator-95b181cd7193bd6d10f345d53312630f07dcc951",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/95b181cd7193bd6d10f345d53312630f07dcc951.zip"],
 )
-
 
 ##############################################################################
 # C++
@@ -166,8 +165,8 @@ http_archive(
 
 load(
     "@protoc_docs_plugin//:repositories.bzl",
-    "protoc_docs_plugin_repositories",
     "protoc_docs_plugin_register_toolchains",
+    "protoc_docs_plugin_repositories",
 )
 
 protoc_docs_plugin_repositories()
@@ -185,7 +184,7 @@ http_archive(
     url = "https://github.com/bazelbuild/rules_go/releases/download/0.18.5/rules_go-0.18.5.tar.gz",
 )
 
-load("@io_bazel_rules_go//go:deps.bzl", "go_rules_dependencies", "go_register_toolchains")
+load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
 
 go_rules_dependencies()
 
