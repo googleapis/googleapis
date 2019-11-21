@@ -43,11 +43,12 @@ message Recommendation {
 
   // Contains an identifier for a subtype of recommendations produced for the
   // same recommender. Subtype is a function of content and impact, meaning a
-  // new subtype will be added when either content or primary impact category
-  // changes.
+  // new subtype might be added when significant changes to `content` or
+  // `primary_impact.category` are introduced. See the Recommenders section
+  // to see a list of subtypes for a given Recommender.
   //
   // Examples:
-  //   For recommender = "google.iam.policy.RoleRecommender",
+  //   For recommender = "google.iam.policy.Recommender",
   //   recommender_subtype can be one of "REMOVE_ROLE"/"REPLACE_ROLE"
   string recommender_subtype = 12;
 
@@ -90,8 +91,9 @@ message OperationGroup {
   repeated Operation operations = 1;
 }
 
-// Contains an operation for a resource inspired by the JSON-PATCH format with
-// support for:
+// Contains an operation for a resource loosely based on the JSON-PATCH format
+// with support for:
+//
 // * Custom filters for describing partial array patch.
 // * Extended path values for describing nested arrays.
 // * Custom fields for describing the resource for which the operation is being
@@ -100,7 +102,7 @@ message OperationGroup {
 // See https://tools.ietf.org/html/rfc6902 for details on the original RFC.
 message Operation {
   // Type of this operation. Contains one of 'and', 'remove', 'replace', 'move',
-  // 'copy', 'test' and custom operations. This field is case-insensitive and
+  // 'copy', 'test' and 'custom' operations. This field is case-insensitive and
   // always populated.
   string action = 1;
 
@@ -128,26 +130,57 @@ message Operation {
   // resource or source_resource, ignored if provided for other operation types.
   string source_path = 6;
 
-  // Value for the `path` field. Set if action is 'add'/'replace'/'test'.
-  google.protobuf.Value value = 7;
+  // One of the fields in the following block will be set and intend to
+  // describe a value for 'path' field.
+  oneof path_value {
+    // Value for the `path` field. Will be set for actions:'add'/'replace'.
+    // Maybe set for action: 'test'. Either this or `value_matcher` will be set
+    // for 'test' operation. An exact match must be performed.
+    google.protobuf.Value value = 7;
+
+    // Can be set for action 'test' for advanced matching for the value of
+    // 'path' field. Either this or `value` will be set for 'test' operation.
+    ValueMatcher value_matcher = 10;
+  }
 
   // Set of filters to apply if `path` refers to array elements or nested array
   // elements in order to narrow down to a single unique element that is being
   // tested/modified.
-  // Note that this is intended to be an exact match per filter.
-  // Example: {
+  // This is intended to be an exact match per filter. To perform advanced
+  // matching, use path_value_matchers.
+  //
+  // * Example: {
   //   "/versions/*/name" : "it-123"
   //   "/versions/*/targetSize/percent": 20
-  // }
-  // Example: {
+  //   }
+  // * Example: {
   //   "/bindings/*/role": "roles/admin"
   //   "/bindings/*/condition" : null
-  // }
-  // Example: {
+  //   }
+  // * Example: {
   //   "/bindings/*/role": "roles/admin"
   //   "/bindings/*/members/*" : ["x@google.com", "y@google.com"]
-  // }
+  //   }
+  // When both path_filters and path_value_matchers are set, an implicit AND
+  // must be performed.
   map<string, google.protobuf.Value> path_filters = 8;
+
+  // Similar to path_filters, this contains set of filters to apply if `path`
+  // field referes to array elements. This is meant to support value matching
+  // beyond exact match. To perform exact match, use path_filters.
+  // When both path_filters and path_value_matchers are set, an implicit AND
+  // must be performed.
+  map<string, ValueMatcher> path_value_matchers = 11;
+}
+
+// Contains various matching options for values for a GCP resource field.
+message ValueMatcher {
+  oneof match_variant {
+    // To be used for full regex matching. The regular expression is using the
+    // Google RE2 syntax (https://github.com/google/re2/wiki/Syntax), so to be
+    // used with RE2::FullMatch
+    string matches_pattern = 1;
+  }
 }
 
 // Contains metadata about how much money a recommendation can save or incur.
@@ -176,6 +209,9 @@ message Impact {
 
     // Indicates a potential increase or decrease in performance.
     PERFORMANCE = 3;
+
+    // Indicates a potential increase or decrease in manageability.
+    MANAGEABILITY = 4;
   }
 
   // Category that is being targeted.
@@ -190,7 +226,7 @@ message Impact {
 
 // Information for state. Contains state and metadata.
 message RecommendationStateInfo {
-  // Represents Recommendation State
+  // Represents Recommendation State.
   enum State {
     // Default state. Don't use directly.
     STATE_UNSPECIFIED = 0;
