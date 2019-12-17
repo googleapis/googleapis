@@ -11,7 +11,7 @@ def {rule_name}(**kwargs):
 {rule_name} = {native_rule_name}
 """
     enabled_rule_script = """
-load("{file_label}", _{rule_name} = "{rule_name}")
+load("{file_label}", _{rule_name} = "{loaded_rule_name}")
 """
     elabled_rule_scrip_alias = """
 {rule_name} = _{rule_name}
@@ -19,11 +19,18 @@ load("{file_label}", _{rule_name} = "{rule_name}")
     load_rules = []  # load() must go before everythin else in .bzl files since Bazel 0.25.0
     rules = []
 
-    for rule_name, value in ctx.attr.rules.items():
+    for rule_name, value_and_name in ctx.attr.rules.items():
+        value = value_and_name[0]
+        loaded_rule_name = value_and_name[1] if value_and_name[1] else rule_name
+
         if not value:
             rules.append(disabled_rule_script.format(rule_name = rule_name))
         elif value.startswith("@"):
-            load_rules.append(enabled_rule_script.format(file_label = value, rule_name = rule_name))
+            load_rules.append(enabled_rule_script.format(
+                file_label = value,
+                rule_name = rule_name,
+                loaded_rule_name = loaded_rule_name,
+            ))
             rules.append(elabled_rule_scrip_alias.format(rule_name = rule_name))
         elif value.startswith("native."):
             rules.append(
@@ -38,7 +45,7 @@ load("{file_label}", _{rule_name} = "{rule_name}")
 switched_rules = repository_rule(
     implementation = _switched_rules_impl,
     attrs = {
-        "rules": attr.string_dict(
+        "rules": attr.string_list_dict(
             allow_empty = True,
             mandatory = False,
             default = {},
@@ -280,5 +287,8 @@ def switched_rules_by_language(
         rules = rules,
     )
 
-def _switch(enabled, enabled_value = ""):
-    return enabled_value if enabled else ""
+def _switch(enabled, enabled_value = "", actual_name = ""):
+    if enabled:
+        return [enabled_value, actual_name]
+    else:
+        return ["", actual_name]
