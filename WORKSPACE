@@ -61,8 +61,8 @@ rules_proto_toolchains()
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-95b181cd7193bd6d10f345d53312630f07dcc951",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/95b181cd7193bd6d10f345d53312630f07dcc951.zip"],
+    strip_prefix = "gapic-generator-e4c0fcaf2b2e2016a468b341283a260581c2ee74",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/e4c0fcaf2b2e2016a468b341283a260581c2ee74.zip"],
 )
 
 ##############################################################################
@@ -135,8 +135,8 @@ load("@com_google_api_codegen//:repositories.bzl", "com_google_api_codegen_repos
 
 http_archive(
     name = "com_google_protoc_java_resource_names_plugin",
-    strip_prefix = "protoc-java-resource-names-plugin-f3f2b834340fcd2932f2354e77249ff7d76528d8",
-    urls = ["https://github.com/googleapis/protoc-java-resource-names-plugin/archive/f3f2b834340fcd2932f2354e77249ff7d76528d8.zip"],
+    strip_prefix = "protoc-java-resource-names-plugin-2e002340bb689744adf0e537617a3885155ee024",
+    urls = ["https://github.com/googleapis/protoc-java-resource-names-plugin/archive/2e002340bb689744adf0e537617a3885155ee024.zip"],
 )
 
 com_google_api_codegen_repositories()
@@ -159,8 +159,8 @@ py_gapic_repositories()
 
 http_archive(
     name = "protoc_docs_plugin",
-    strip_prefix = "protoc-docs-plugin-54363302011e25ff83455bbcb8e5ae802dab6354",
-    urls = ["https://github.com/googleapis/protoc-docs-plugin/archive/54363302011e25ff83455bbcb8e5ae802dab6354.zip"],
+    strip_prefix = "protoc-docs-plugin-abe1eff656bfdba4a5d5f9d9bb803e530fb61a03",
+    urls = ["https://github.com/googleapis/protoc-docs-plugin/archive/abe1eff656bfdba4a5d5f9d9bb803e530fb61a03.zip"],
 )
 
 load(
