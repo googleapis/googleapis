@@ -1,0 +1,227 @@
+// Copyright 2019 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
+syntax = "proto3";
+
+package google.cloud.bigquery.storage.v1beta2;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/bigquery/storage/v1beta2/arrow.proto";
+import "google/cloud/bigquery/storage/v1beta2/avro.proto";
+import "google/cloud/bigquery/storage/v1beta2/stream.proto";
+
+option go_package = "google.golang.org/genproto/googleapis/cloud/bigquery/storage/v1beta2;storage";
+option java_multiple_files = true;
+option java_outer_classname = "StorageProto";
+option java_package = "com.google.cloud.bigquery.storage.v1beta2";
+
+// BigQuery Read API.
+//
+// The Read API can be used to read data from BigQuery.
+service BigQueryRead {
+  option (google.api.default_host) = "bigquerystorage.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/bigquery,"
+      "https://www.googleapis.com/auth/bigquery.readonly,"
+      "https://www.googleapis.com/auth/cloud-platform";
+
+  // Creates a new read session. A read session divides the contents of a
+  // BigQuery table into one or more streams, which can then be used to read
+  // data from the table. The read session also specifies properties of the
+  // data to be read, such as a list of columns or a push-down filter describing
+  // the rows to be returned.
+  //
+  // A particular row can be read by at most one stream. When the caller has
+  // reached the end of each stream in the session, then all the data in the
+  // table has been read.
+  //
+  // Data is assigned to each stream such that roughly the same number of
+  // rows can be read from each stream. Because the server-side unit for
+  // assigning data is collections of rows, the API does not guarantee that
+  // each stream will return the same number or rows. Additionally, the
+  // limits are enforced based on the number of pre-filtered rows, so some
+  // filters can lead to lopsided assignments.
+  //
+  // Read sessions automatically expire 24 hours after they are created and do
+  // not require manual clean-up by the caller.
+  rpc CreateReadSession(CreateReadSessionRequest) returns (ReadSession) {
+    option (google.api.http) = {
+      post: "/v1beta2/{read_session.table=projects/*/datasets/*/tables/*}"
+      body: "*"
+    };
+    option (google.api.method_signature) =
+        "parent,read_session,max_stream_count";
+  }
+
+  // Reads rows from the stream in the format prescribed by the ReadSession.
+  // Each response contains one or more table rows, up to a maximum of 100 MiB
+  // per response; read requests which attempt to read individual rows larger
+  // than 100 MiB will fail.
+  //
+  // Each request also returns a set of stream statistics reflecting the current
+  // state of the stream.
+  rpc ReadRows(ReadRowsRequest) returns (stream ReadRowsResponse) {
+    option (google.api.http) = {
+      get: "/v1beta2/{read_stream=projects/*/locations/*/sessions/*/streams/*}"
+    };
+    option (google.api.method_signature) = "read_stream,offset";
+  }
+
+  // Splits a given `ReadStream` into two `ReadStream` objects. These
+  // `ReadStream` objects are referred to as the primary and the residual
+  // streams of the split. The original `ReadStream` can still be read from in
+  // the same manner as before. Both of the returned `ReadStream` objects can
+  // also be read from, and the rows returned by both child streams will be
+  // the same as the rows read from the original stream.
+  //
+  // Moreover, the two child streams will be allocated back-to-back in the
+  // original `ReadStream`. Concretely, it is guaranteed that for streams
+  // original, primary, and residual, that original[0-j] = primary[0-j] and
+  // original[j-n] = residual[0-m] once the streams have been read to
+  // completion.
+  rpc SplitReadStream(SplitReadStreamRequest)
+      returns (SplitReadStreamResponse) {
+    option (google.api.http) = {
+      get: "/v1beta2/{name=projects/*/locations/*/sessions/*/streams/*}"
+    };
+  }
+}
+
+// Request message for `CreateReadSession`.
+message CreateReadSessionRequest {
+  // Required. The request project that owns the session, in the form of
+  // `projects/{project_id}`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudresourcemanager.googleapis.com/Project"
+    }
+  ];
+
+  // Required. Session to be created.
+  ReadSession read_session = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Max initial number of streams. If unset or zero, the server will
+  // provide a value of streams so as to produce reasonable throughput. Must be
+  // non-negative. The number of streams may be lower than the requested number,
+  // depending on the amount parallelism that is reasonable for the table. Error
+  // will be returned if the max count is greater than the current system
+  // max limit of 1,000.
+  //
+  // Streams must be read starting from offset 0.
+  int32 max_stream_count = 3;
+}
+
+// Request message for `ReadRows`.
+message ReadRowsRequest {
+  // Required. Stream to read rows from.
+  string read_stream = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The offset requested must be less than the last row read from Read.
+  // Requesting a larger offset is undefined. If not specified, start reading
+  // from offset zero.
+  int64 offset = 2;
+}
+
+// Information on if the current connection is being throttled.
+message ThrottleState {
+  // How much this connection is being throttled. Zero means no throttling,
+  // 100 means fully throttled.
+  int32 throttle_percent = 1;
+}
+
+// Estimated stream statistics for a given Stream.
+message StreamStats {
+  message Progress {
+    // The fraction of rows assigned to the stream that have been processed by
+    // the server so far, not including the rows in the current response
+    // message.
+    //
+    // This value, along with `at_response_end`, can be used to interpolate
+    // the progress made as the rows in the message are being processed using
+    // the following formula: `at_response_start + (at_response_end -
+    // at_response_start) * rows_processed_from_response / rows_in_response`.
+    //
+    // Note that if a filter is provided, the `at_response_end` value of the
+    // previous response may not necessarily be equal to the
+    // `at_response_start` value of the current response.
+    double at_response_start = 1;
+
+    // Similar to `at_response_start`, except that this value includes the
+    // rows in the current response.
+    double at_response_end = 2;
+  }
+
+  // Represents the progress of the current stream.
+  Progress progress = 2;
+}
+
+// Response from calling `ReadRows` may include row data, progress and
+// throttling information.
+message ReadRowsResponse {
+  // Row data is returned in format specified during session creation.
+  oneof rows {
+    // Serialized row data in AVRO format.
+    AvroRows avro_rows = 3;
+
+    // Serialized row data in Arrow RecordBatch format.
+    ArrowRecordBatch arrow_record_batch = 4;
+  }
+
+  // Number of serialized rows in the rows block.
+  int64 row_count = 6;
+
+  // Statistics for the stream.
+  StreamStats stats = 2;
+
+  // Throttling state. If unset, the latest response still describes
+  // the current throttling status.
+  ThrottleState throttle_state = 5;
+}
+
+// Request message for `SplitReadStream`.
+message SplitReadStreamRequest {
+  // Required. Name of the stream to split.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "bigquerystorage.googleapis.com/ReadStream"
+    }
+  ];
+
+  // A value in the range (0.0, 1.0) that specifies the fractional point at
+  // which the original stream should be split. The actual split point is
+  // evaluated on pre-filtered rows, so if a filter is provided, then there is
+  // no guarantee that the division of the rows between the new child streams
+  // will be proportional to this fractional value. Additionally, because the
+  // server-side unit for assigning data is collections of rows, this fraction
+  // will always map to a data storage boundary on the server side.
+  double fraction = 2;
+}
+
+// Response message for `SplitReadStream`.
+message SplitReadStreamResponse {
+  // Primary stream, which contains the beginning portion of
+  // |original_stream|. An empty value indicates that the original stream can no
+  // longer be split.
+  ReadStream primary_stream = 1;
+
+  // Remainder stream, which contains the tail of |original_stream|. An empty
+  // value indicates that the original stream can no longer be split.
+  ReadStream remainder_stream = 2;
+}
