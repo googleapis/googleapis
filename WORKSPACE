@@ -61,8 +61,8 @@ rules_proto_toolchains()
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-08cef92e891da35cfc49a916c302d8817c88e1f2",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/08cef92e891da35cfc49a916c302d8817c88e1f2.zip"],
+    strip_prefix = "gapic-generator-49a071637a3922fff3bd7facd17cb8643b7e97bf",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/49a071637a3922fff3bd7facd17cb8643b7e97bf.zip"],
 )
 
 ##############################################################################
@@ -107,8 +107,8 @@ apple_support_dependencies()
 
 http_archive(
     name = "com_google_api_gax_java",
-    strip_prefix = "gax-java-1.50.1",
-    urls = ["https://github.com/googleapis/gax-java/archive/v1.50.1.zip"],
+    strip_prefix = "gax-java-9f83322606b982bebc4ebb2cd1d33485a1776396", # v1.52.0 plus bazel-2.0.0 compatibility fix
+    urls = ["https://github.com/googleapis/gax-java/archive/9f83322606b982bebc4ebb2cd1d33485a1776396.zip"],
 )
 
 load("@com_google_api_gax_java//:repository_rules.bzl", "com_google_api_gax_java_properties")
