@@ -1,4 +1,4 @@
-// Copyright 2016 Google Inc.
+// Copyright 2019 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,44 +11,81 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
 
 syntax = "proto3";
 
 package google.cloud.billing.v1;
 
 import "google/api/annotations.proto";
+import "google/iam/v1/iam_policy.proto";
+import "google/iam/v1/policy.proto";
+import "google/protobuf/field_mask.proto";
+import "google/api/client.proto";
 
 option go_package = "google.golang.org/genproto/googleapis/cloud/billing/v1;billing";
 option java_multiple_files = true;
 option java_outer_classname = "CloudBillingProto";
 option java_package = "com.google.cloud.billing.v1";
 
-// Retrieves Google Cloud Console billing accounts and associates them with
-// projects.
+// Retrieves GCP Console billing accounts and associates them with projects.
 service CloudBilling {
+  option (google.api.default_host) = "cloudbilling.googleapis.com";
+  option (google.api.oauth_scopes) = "https://www.googleapis.com/auth/cloud-platform";
+
   // Gets information about a billing account. The current authenticated user
-  // must be an [owner of the billing
-  // account](https://support.google.com/cloud/answer/4430947).
+  // must be a [viewer of the billing
+  // account](https://cloud.google.com/billing/docs/how-to/billing-access).
   rpc GetBillingAccount(GetBillingAccountRequest) returns (BillingAccount) {
     option (google.api.http) = {
       get: "/v1/{name=billingAccounts/*}"
     };
   }
 
-  // Lists the billing accounts that the current authenticated user
-  // [owns](https://support.google.com/cloud/answer/4430947).
-  rpc ListBillingAccounts(ListBillingAccountsRequest)
-      returns (ListBillingAccountsResponse) {
+  // Lists the billing accounts that the current authenticated user has
+  // permission to
+  // [view](https://cloud.google.com/billing/docs/how-to/billing-access).
+  rpc ListBillingAccounts(ListBillingAccountsRequest) returns (ListBillingAccountsResponse) {
     option (google.api.http) = {
       get: "/v1/billingAccounts"
     };
   }
 
+  // Updates a billing account's fields.
+  // Currently the only field that can be edited is `display_name`.
+  // The current authenticated user must have the `billing.accounts.update`
+  // IAM permission, which is typically given to the
+  // [administrator](https://cloud.google.com/billing/docs/how-to/billing-access)
+  // of the billing account.
+  rpc UpdateBillingAccount(UpdateBillingAccountRequest) returns (BillingAccount) {
+    option (google.api.http) = {
+      patch: "/v1/{name=billingAccounts/*}"
+      body: "account"
+    };
+  }
+
+  // Creates a billing account.
+  // This method can only be used to create
+  // [billing subaccounts](https://cloud.google.com/billing/docs/concepts)
+  // by GCP resellers.
+  // When creating a subaccount, the current authenticated user must have the
+  // `billing.accounts.update` IAM permission on the master account, which is
+  // typically given to billing account
+  // [administrators](https://cloud.google.com/billing/docs/how-to/billing-access).
+  // This method will return an error if the master account has not been
+  // provisioned as a reseller account.
+  rpc CreateBillingAccount(CreateBillingAccountRequest) returns (BillingAccount) {
+    option (google.api.http) = {
+      post: "/v1/billingAccounts"
+      body: "billing_account"
+    };
+  }
+
   // Lists the projects associated with a billing account. The current
-  // authenticated user must be an [owner of the billing
-  // account](https://support.google.com/cloud/answer/4430947).
-  rpc ListProjectBillingInfo(ListProjectBillingInfoRequest)
-      returns (ListProjectBillingInfoResponse) {
+  // authenticated user must have the `billing.resourceAssociations.list` IAM
+  // permission, which is often given to billing account
+  // [viewers](https://cloud.google.com/billing/docs/how-to/billing-access).
+  rpc ListProjectBillingInfo(ListProjectBillingInfoRequest) returns (ListProjectBillingInfoResponse) {
     option (google.api.http) = {
       get: "/v1/{name=billingAccounts/*}/projects"
     };
@@ -58,8 +95,7 @@ service CloudBilling {
   // must have [permission to view the
   // project](https://cloud.google.com/docs/permissions-overview#h.bgs0oxofvnoo
   // ).
-  rpc GetProjectBillingInfo(GetProjectBillingInfoRequest)
-      returns (ProjectBillingInfo) {
+  rpc GetProjectBillingInfo(GetProjectBillingInfoRequest) returns (ProjectBillingInfo) {
     option (google.api.http) = {
       get: "/v1/{name=projects/*}/billingInfo"
     };
@@ -74,14 +110,14 @@ service CloudBilling {
   // usage charges.
   //
   // *Note:* Incurred charges that have not yet been reported in the transaction
-  // history of the Google Cloud Console may be billed to the new billing
+  // history of the GCP Console might be billed to the new billing
   // account, even if the charge occurred before the new billing account was
   // assigned to the project.
   //
   // The current authenticated user must have ownership privileges for both the
   // [project](https://cloud.google.com/docs/permissions-overview#h.bgs0oxofvnoo
   // ) and the [billing
-  // account](https://support.google.com/cloud/answer/4430947).
+  // account](https://cloud.google.com/billing/docs/how-to/billing-access).
   //
   // You can disable billing on the project by setting the
   // `billing_account_name` field to empty. This action disassociates the
@@ -96,18 +132,48 @@ service CloudBilling {
   // resources used by the project will be shut down. Thus, unless you wish to
   // disable billing, you should always call this method with the name of an
   // *open* billing account.
-  rpc UpdateProjectBillingInfo(UpdateProjectBillingInfoRequest)
-      returns (ProjectBillingInfo) {
+  rpc UpdateProjectBillingInfo(UpdateProjectBillingInfoRequest) returns (ProjectBillingInfo) {
     option (google.api.http) = {
       put: "/v1/{name=projects/*}/billingInfo"
       body: "project_billing_info"
     };
   }
+
+  // Gets the access control policy for a billing account.
+  // The caller must have the `billing.accounts.getIamPolicy` permission on the
+  // account, which is often given to billing account
+  // [viewers](https://cloud.google.com/billing/docs/how-to/billing-access).
+  rpc GetIamPolicy(google.iam.v1.GetIamPolicyRequest) returns (google.iam.v1.Policy) {
+    option (google.api.http) = {
+      get: "/v1/{resource=billingAccounts/*}:getIamPolicy"
+    };
+  }
+
+  // Sets the access control policy for a billing account. Replaces any existing
+  // policy.
+  // The caller must have the `billing.accounts.setIamPolicy` permission on the
+  // account, which is often given to billing account
+  // [administrators](https://cloud.google.com/billing/docs/how-to/billing-access).
+  rpc SetIamPolicy(google.iam.v1.SetIamPolicyRequest) returns (google.iam.v1.Policy) {
+    option (google.api.http) = {
+      post: "/v1/{resource=billingAccounts/*}:setIamPolicy"
+      body: "*"
+    };
+  }
+
+  // Tests the access control policy for a billing account. This method takes
+  // the resource and a set of permissions as input and returns the subset of
+  // the input permissions that the caller is allowed for that resource.
+  rpc TestIamPermissions(google.iam.v1.TestIamPermissionsRequest) returns (google.iam.v1.TestIamPermissionsResponse) {
+    option (google.api.http) = {
+      post: "/v1/{resource=billingAccounts/*}:testIamPermissions"
+      body: "*"
+    };
+  }
 }
 
-// A billing account in [Google Cloud
-// Console](https://console.cloud.google.com/). You can assign a billing account
-// to one or more projects.
+// A billing account in [GCP Console](https://console.cloud.google.com/).
+// You can assign a billing account to one or more projects.
 message BillingAccount {
   // The resource name of the billing account. The resource name has the form
   // `billingAccounts/{billing_account_id}`. For example,
@@ -121,11 +187,18 @@ message BillingAccount {
   bool open = 2;
 
   // The display name given to the billing account, such as `My Billing
-  // Account`. This name is displayed in the Google Cloud Console.
+  // Account`. This name is displayed in the GCP Console.
   string display_name = 3;
+
+  // If this account is a
+  // [subaccount](https://cloud.google.com/billing/docs/concepts), then this
+  // will be the resource name of the master billing account that it is being
+  // resold through.
+  // Otherwise this will be empty.
+  string master_billing_account = 4;
 }
 
-// Encapsulation of billing information for a Cloud Console project. A project
+// Encapsulation of billing information for a GCP Console project. A project
 // has at most one associated billing account at a time (but a billing account
 // can be assigned to multiple projects).
 message ProjectBillingInfo {
@@ -168,6 +241,14 @@ message ListBillingAccountsRequest {
   // `next_page_token` value returned from a previous `ListBillingAccounts`
   // call. If unspecified, the first page of results is returned.
   string page_token = 2;
+
+  // Options for how to filter the returned billing accounts.
+  // Currently this only supports filtering for
+  // [subaccounts](https://cloud.google.com/billing/docs/concepts) under a
+  // single provided reseller billing account.
+  // (e.g. "master_billing_account=billingAccounts/012345-678901-ABCDEF").
+  // Boolean algebra and other fields are not currently supported.
+  string filter = 3;
 }
 
 // Response message for `ListBillingAccounts`.
@@ -179,6 +260,31 @@ message ListBillingAccountsResponse {
   // call `ListBillingAccounts` again with the `page_token` field set to this
   // value. This field is empty if there are no more results to retrieve.
   string next_page_token = 2;
+}
+
+// Request message for `CreateBillingAccount`.
+message CreateBillingAccountRequest {
+  // The billing account resource to create.
+  // Currently CreateBillingAccount only supports subaccount creation, so
+  // any created billing accounts must be under a provided master billing
+  // account.
+  // Cannot be set: name, open
+  // Can optionally be set: display_name
+  // Must be set: master_billing_account
+  BillingAccount billing_account = 1;
+}
+
+// Request message for `UpdateBillingAccount`.
+message UpdateBillingAccountRequest {
+  // The name of the billing account resource to be updated.
+  string name = 1;
+
+  // The billing account resource to replace the resource on the server.
+  BillingAccount account = 2;
+
+  // The update mask applied to the resource.
+  // Only "display_name" is currently supported.
+  google.protobuf.FieldMask update_mask = 3;
 }
 
 // Request message for `ListProjectBillingInfo`.
@@ -223,6 +329,6 @@ message UpdateProjectBillingInfoRequest {
   string name = 1;
 
   // The new billing information for the project. Read-only fields are ignored;
-  // thus, you may leave empty all fields except `billing_account_name`.
+  // thus, you can leave empty all fields except `billing_account_name`.
   ProjectBillingInfo project_billing_info = 2;
 }
