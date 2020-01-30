@@ -133,15 +133,10 @@ com_google_api_codegen_properties(
 
 load("@com_google_api_codegen//:repositories.bzl", "com_google_api_codegen_repositories")
 
-#http_archive(
-#    name = "com_google_protoc_java_resource_names_plugin",
-#    strip_prefix = "protoc-java-resource-names-plugin-8e88fb478f0c69f3a5716c7bd4301f52e75bf5d3",
-#    urls = ["https://github.com/googleapis/protoc-java-resource-names-plugin/archive/8e88fb478f0c69f3a5716c7bd4301f52e75bf5d3.zip"],
-#)
-
-local_repository(
+http_archive(
     name = "com_google_protoc_java_resource_names_plugin",
-    path = "/usr/local/google/home/vam/_/projects/github/vam-google/protoc-java-resource-names-plugin",
+    strip_prefix = "protoc-java-resource-names-plugin-8e88fb478f0c69f3a5716c7bd4301f52e75bf5d3",
+    urls = ["https://github.com/googleapis/protoc-java-resource-names-plugin/archive/8e88fb478f0c69f3a5716c7bd4301f52e75bf5d3.zip"],
 )
 
 com_google_api_codegen_repositories()
