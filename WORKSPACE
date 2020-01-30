@@ -61,8 +61,8 @@ rules_proto_toolchains()
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-bb0371cb9b1c35a498ab1614fa3bdcace4923c9a",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/bb0371cb9b1c35a498ab1614fa3bdcace4923c9a.zip"],
+    strip_prefix = "gapic-generator-b7033a61dbfc7f1ad856b17299cf8aeb688a94f4",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/b7033a61dbfc7f1ad856b17299cf8aeb688a94f4.zip"],
 )
 
 ##############################################################################
@@ -133,10 +133,15 @@ com_google_api_codegen_properties(
 
 load("@com_google_api_codegen//:repositories.bzl", "com_google_api_codegen_repositories")
 
-http_archive(
+#http_archive(
+#    name = "com_google_protoc_java_resource_names_plugin",
+#    strip_prefix = "protoc-java-resource-names-plugin-8e88fb478f0c69f3a5716c7bd4301f52e75bf5d3",
+#    urls = ["https://github.com/googleapis/protoc-java-resource-names-plugin/archive/8e88fb478f0c69f3a5716c7bd4301f52e75bf5d3.zip"],
+#)
+
+local_repository(
     name = "com_google_protoc_java_resource_names_plugin",
-    strip_prefix = "protoc-java-resource-names-plugin-8e88fb478f0c69f3a5716c7bd4301f52e75bf5d3",
-    urls = ["https://github.com/googleapis/protoc-java-resource-names-plugin/archive/8e88fb478f0c69f3a5716c7bd4301f52e75bf5d3.zip"],
+    path = "/usr/local/google/home/vam/_/projects/github/vam-google/protoc-java-resource-names-plugin",
 )
 
 com_google_api_codegen_repositories()
@@ -214,7 +219,9 @@ load("@com_google_api_codegen//rules_gapic/php:php_gapic_repositories.bzl", "php
 
 php(
     name = "php",
-    version = "7.1.30",
+    urls = ["https://www.php.net/distributions/php-7.1.30.tar.gz"],
+    strip_prefix = "php-7.1.30",
+    prebuilt_phps = ["@com_google_api_codegen//rules_gapic/php:resources/php-7.1.30_linux_x86_64.tar.gz"],
 )
 
 php_gapic_repositories()
