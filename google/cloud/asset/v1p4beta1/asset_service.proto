@@ -146,26 +146,6 @@ message AnalyzeIamPolicyRequest {
     // Default is false.
     bool expand_resources = 3 [(google.api.field_behavior) = OPTIONAL];
 
-    // Optional. If true, the identities and resource sections of the result will expand
-    // any service account impersonation if the identity has
-    // iam.serviceAccounts.actAs permission to a service account which is
-    // appearing in an IAM policy binding.
-    //
-    // For example, if the request analyzes for which resources user A has
-    // permission P, and there's an IAM policy states user A has
-    // iam.serviceAccounts.actAs permission to a service account SA, and there's
-    // another IAM policy states service account SA has permission P to a GCP
-    // folder, the results will also include the GCP folder.
-    //
-    // Another example, if the request analyzes for who has
-    // permission P to a GCP folder F, and there's an IAM policy states user A
-    // has iam.serviceAccounts.actAs permission to a service account SA, and
-    // there's another IAM policy states service account SA has permission P to
-    // the GCP folder F, the results will also include the user A.
-    //
-    // Default is false.
-    bool expand_service_accounts = 9 [(google.api.field_behavior) = OPTIONAL];
-
     // Optional. If true, the result will output resource edges, starting
     // from the policy attached resource, to any expanded resources.
     // Default is false.
@@ -176,11 +156,29 @@ message AnalyzeIamPolicyRequest {
     // Default is false.
     bool output_group_edges = 5 [(google.api.field_behavior) = OPTIONAL];
 
-    // Optional. If true, the result will output service account edges, starting from a
-    // user, group, domain or service account to the service accounts via
-    // iam.serviceAccounts.actAs permission.
+    // Optional. If true, the response will include access analysis from identities to
+    // resources via service account impersonation. This is a very expensive
+    // operation, because many derived queries will be executed. We highly
+    // recommend you use ExportIamPolicyAnalysis rpc instead.
+    //
+    // For example, if the request analyzes for which resources user A has
+    // permission P, and there's an IAM policy states user A has
+    // iam.serviceAccounts.getAccessToken permission to a service account SA,
+    // and there's another IAM policy states service account SA has permission P
+    // to a GCP folder F, then user A potentially has access to the GCP folder
+    // F. And those advanced analysis results will be included in
+    // [AnalyzeIamPolicyResponse.service_account_impersonation_analysis][google.cloud.asset.v1p4beta1.AnalyzeIamPolicyResponse.service_account_impersonation_analysis].
+    //
+    // Another example, if the request analyzes for who has
+    // permission P to a GCP folder F, and there's an IAM policy states user A
+    // has iam.serviceAccounts.actAs permission to a service account SA, and
+    // there's another IAM policy states service account SA has permission P to
+    // the GCP folder F, then user A potentially has access to the GCP folder
+    // F. And those advanced analysis results will be included in
+    // [AnalyzeIamPolicyResponse.service_account_impersonation_analysis][google.cloud.asset.v1p4beta1.AnalyzeIamPolicyResponse.service_account_impersonation_analysis].
+    //
     // Default is false.
-    bool output_service_account_edges = 10 [(google.api.field_behavior) = OPTIONAL];
+    bool analyze_service_account_impersonation = 6 [(google.api.field_behavior) = OPTIONAL];
 
     // Optional. Amount of time executable has to complete.  See JSON representation of
     // [Duration](https://developers.google.com/protocol-buffers/docs/proto3#json).
@@ -192,18 +190,18 @@ message AnalyzeIamPolicyRequest {
     // If it's not finished until then, you will get a  DEADLINE_EXCEEDED error.
     //
     // Default is empty.
-    google.protobuf.Duration execution_timeout = 6 [(google.api.field_behavior) = OPTIONAL];
+    google.protobuf.Duration execution_timeout = 7 [(google.api.field_behavior) = OPTIONAL];
 
     // Optional. The maximum number of fanouts per group when [expand_groups][google.cloud.asset.v1p4beta1.AnalyzeIamPolicyRequest.Options.expand_groups]
     // is enabled. This internal field is to help load testing and determine a
     // proper value, and won't be public in the future.
-    int32 max_fanouts_per_group = 7 [(google.api.field_behavior) = OPTIONAL];
+    int32 max_fanouts_per_group = 8 [(google.api.field_behavior) = OPTIONAL];
 
     // Optional. The maximum number of fanouts per parent resource, such as
     // GCP Project etc., when [expand_resources][google.cloud.asset.v1p4beta1.AnalyzeIamPolicyRequest.Options.expand_resources] is enabled. This internal
     // field is to help load testing and determine a proper value, and won't be
     // public in the future.
-    int32 max_fanouts_per_resource = 8 [(google.api.field_behavior) = OPTIONAL];
+    int32 max_fanouts_per_resource = 9 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Required. The request query.
@@ -215,17 +213,36 @@ message AnalyzeIamPolicyRequest {
 
 // A response message for [AssetService.AnalyzeIamPolicy][google.cloud.asset.v1p4beta1.AssetService.AnalyzeIamPolicy].
 message AnalyzeIamPolicyResponse {
-  // A list of [IamPolicyAnalysisResult][google.cloud.asset.v1p4beta1.IamPolicyAnalysisResult] that matches the request, or empty if
-  // no result is found.
-  repeated IamPolicyAnalysisResult analysis_results = 1;
+  // An analysis message to group the query and results.
+  message IamPolicyAnalysis {
+    // The analysis query.
+    IamPolicyAnalysisQuery analysis_query = 1;
 
-  // Represents whether all entries in the [analysis_results][google.cloud.asset.v1p4beta1.AnalyzeIamPolicyResponse.analysis_results] have been fully
-  // explored to answer the query in the request.
-  bool fully_explored = 2;
+    // A list of [IamPolicyAnalysisResult][google.cloud.asset.v1p4beta1.IamPolicyAnalysisResult] that matches the analysis query, or
+    // empty if no result is found.
+    repeated IamPolicyAnalysisResult analysis_results = 2;
+
+    // Represents whether all entries in the [analysis_results][google.cloud.asset.v1p4beta1.AnalyzeIamPolicyResponse.IamPolicyAnalysis.analysis_results] have been
+    // fully explored to answer the query.
+    bool fully_explored = 3;
+  }
+
+  // The main analysis that matches the original request.
+  IamPolicyAnalysis main_analysis = 1;
+
+  // The service account impersonation analysis if
+  // [AnalyzeIamPolicyRequest.analyze_service_account_impersonation][] is
+  // enabled.
+  repeated IamPolicyAnalysis service_account_impersonation_analysis = 2;
+
+  // Represents whether all entries in the [main_analysis][google.cloud.asset.v1p4beta1.AnalyzeIamPolicyResponse.main_analysis] and
+  // [service_account_impersonation_analysis][google.cloud.asset.v1p4beta1.AnalyzeIamPolicyResponse.service_account_impersonation_analysis] have been fully explored to
+  // answer the query in the request.
+  bool fully_explored = 3;
 
   // A list of non-critical errors happened during the request handling to
   // explain why `fully_explored` is false, or empty if no error happened.
-  repeated IamPolicyAnalysisResult.AnalysisState non_critical_errors = 3;
+  repeated IamPolicyAnalysisResult.AnalysisState non_critical_errors = 4;
 }
 
 // Output configuration for export IAM policy analysis destination.
@@ -285,41 +302,38 @@ message ExportIamPolicyAnalysisRequest {
     // Default is false.
     bool expand_resources = 3 [(google.api.field_behavior) = OPTIONAL];
 
-    // Optional. If true, the identities and resource sections of the result will expand
-    // any service account impersonation if the identity has
-    // iam.serviceAccounts.actAs permission to a service account which is
-    // appearing in an IAM policy binding.
+    // Optional. If true, the result will output resource edges, starting
+    // from the policy attached resource, to any expanded resources.
+    // Default is false.
+    bool output_resource_edges = 4 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. If true, the result will output group identity edges, starting
+    // from the binding's group members, to any expanded identities.
+    // Default is false.
+    bool output_group_edges = 5 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. If true, the response will include access analysis from identities to
+    // resources via service account impersonation. This is a very expensive
+    // operation, because many derived queries will be executed.
     //
     // For example, if the request analyzes for which resources user A has
     // permission P, and there's an IAM policy states user A has
-    // iam.serviceAccounts.actAs permission to a service account SA, and there's
-    // another IAM policy states service account SA has permission P to a GCP
-    // folder, the results will also include the GCP folder.
+    // iam.serviceAccounts.getAccessToken permission to a service account SA,
+    // and there's another IAM policy states service account SA has permission P
+    // to a GCP folder F, then user A potentially has access to the GCP folder
+    // F. And those advanced analysis results will be included in
+    // [AnalyzeIamPolicyResponse.service_account_impersonation_analysis][google.cloud.asset.v1p4beta1.AnalyzeIamPolicyResponse.service_account_impersonation_analysis].
     //
     // Another example, if the request analyzes for who has
     // permission P to a GCP folder F, and there's an IAM policy states user A
     // has iam.serviceAccounts.actAs permission to a service account SA, and
     // there's another IAM policy states service account SA has permission P to
-    // the GCP folder F, the results will also include the user A.
+    // the GCP folder F, then user A potentially has access to the GCP folder
+    // F. And those advanced analysis results will be included in
+    // [AnalyzeIamPolicyResponse.service_account_impersonation_analysis][google.cloud.asset.v1p4beta1.AnalyzeIamPolicyResponse.service_account_impersonation_analysis].
     //
     // Default is false.
-    bool expand_service_accounts = 4 [(google.api.field_behavior) = OPTIONAL];
-
-    // Optional. If true, the result will output resource edges, starting
-    // from the policy attached resource, to any expanded resources.
-    // Default is false.
-    bool output_resource_edges = 5 [(google.api.field_behavior) = OPTIONAL];
-
-    // Optional. If true, the result will output group identity edges, starting
-    // from the binding's group members, to any expanded identities.
-    // Default is false.
-    bool output_group_edges = 6 [(google.api.field_behavior) = OPTIONAL];
-
-    // Optional. If true, the result will output service account edges, starting from a
-    // user, group, domain or service account to the service accounts via
-    // iam.serviceAccounts.actAs permission.
-    // Default is false.
-    bool output_service_account_edges = 7 [(google.api.field_behavior) = OPTIONAL];
+    bool analyze_service_account_impersonation = 6 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Required. The request query.
