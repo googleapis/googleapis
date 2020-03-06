@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2020 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 
 syntax = "proto3";
 
@@ -271,8 +270,7 @@ message RepoSource {
   // project ID requesting the build is assumed.
   string project_id = 1;
 
-  // Name of the Cloud Source Repository. If omitted, the name "default" is
-  // assumed.
+  // Required. Name of the Cloud Source Repository.
   string repo_name = 2;
 
   // A revision within the Cloud Source Repository must be specified in
@@ -299,6 +297,14 @@ message RepoSource {
   // This must be a relative path. If a step's `dir` is specified and is an
   // absolute path, this value is ignored for that step's execution.
   string dir = 7;
+
+  // Only trigger a build if the revision regex does NOT match the revision
+  // regex.
+  bool invert_regex = 8;
+
+  // Substitutions to use in a triggered build.
+  // Should only be used with RunBuildTrigger
+  map<string, string> substitutions = 9;
 }
 
 // Location of the source in a supported storage service.
@@ -324,7 +330,7 @@ message BuiltImage {
   string digest = 3;
 
   // Output only. Stores timing information for pushing the specified image.
-  TimeSpan push_timing = 4;
+  TimeSpan push_timing = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A step in the build pipeline.
@@ -405,7 +411,7 @@ message BuildStep {
   repeated Volume volumes = 9;
 
   // Output only. Stores timing information for executing this build step.
-  TimeSpan timing = 10;
+  TimeSpan timing = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Stores timing information for pulling this build step's
   // builder image only.
@@ -520,13 +526,16 @@ message Build {
 
     // Build or step was canceled by a user.
     CANCELLED = 7;
+
+    // Build was enqueued for longer than the value of `queue_ttl`.
+    EXPIRED = 9;
   }
 
   // Output only. Unique identifier of the build.
-  string id = 1;
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. ID of the project.
-  string project_id = 16;
+  string project_id = 16 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Status of the build.
   Status status = 2;
@@ -541,19 +550,22 @@ message Build {
   repeated BuildStep steps = 11;
 
   // Output only. Results of the build.
-  Results results = 10;
+  Results results = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Time at which the request to create the build was received.
-  google.protobuf.Timestamp create_time = 6;
+  google.protobuf.Timestamp create_time = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Time at which execution of the build was started.
-  google.protobuf.Timestamp start_time = 7;
+  google.protobuf.Timestamp start_time = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Time at which execution of the build was finished.
   //
   // The difference between finish_time and start_time is the duration of the
   // build's execution.
-  google.protobuf.Timestamp finish_time = 8;
+  google.protobuf.Timestamp finish_time = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Amount of time that this build should be allowed to run, to second
   // granularity. If this amount of time elapses, work on the build will cease
@@ -595,7 +607,7 @@ message Build {
   BuildOptions options = 23;
 
   // Output only. URL to logs for this build in Google Cloud Console.
-  string log_url = 25;
+  string log_url = 25 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Substitutions data for `Build` resource.
   map<string, string> substitutions = 29;
@@ -615,7 +627,7 @@ message Build {
   //
   // If the build does not specify source or images,
   // these keys will not be included.
-  map<string, TimeSpan> timing = 33;
+  map<string, TimeSpan> timing = 33 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Artifacts produced by a build that should be uploaded upon
@@ -700,7 +712,8 @@ message SourceProvenance {
   //
   // If the build source came in a single package such as a gzipped tarfile
   // (`.tar.gz`), the `FileHash` will be for the single path to that file.
-  map<string, FileHashes> file_hashes = 4;
+  map<string, FileHashes> file_hashes = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Container message for hashes of byte content of files, used in
@@ -801,12 +814,17 @@ message CancelBuildRequest {
 // changes.
 message BuildTrigger {
   // Output only. Unique identifier of the trigger.
-  string id = 1;
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Human-readable description of this trigger.
   string description = 10;
 
-  // User assigned name of the trigger. Must be unique within the project.
+  // User-assigned name of the trigger. Must be unique within the project.
+  // Trigger names must meet the following requirements:
+  //
+  // + They must contain only alphanumeric characters and dashes.
+  // + They can be 1-64 characters long.
+  // + They must begin and end with an alphanumeric character.
   string name = 21;
 
   // Tags for annotation of a `BuildTrigger`
@@ -838,7 +856,8 @@ message BuildTrigger {
   }
 
   // Output only. Time when the trigger was created.
-  google.protobuf.Timestamp create_time = 5;
+  google.protobuf.Timestamp create_time = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // If true, the trigger will never result in a build.
   bool disabled = 9;
@@ -847,7 +866,7 @@ message BuildTrigger {
   map<string, string> substitutions = 11;
 
   // ignored_files and included_files are file glob matches using
-  // http://godoc/pkg/path/filepath#Match extended with support for "**".
+  // https://golang.org/pkg/path/filepath/#Match extended with support for "**".
   //
   // If ignored_files and changed files are both empty, then they are
   // not used to determine whether or not to trigger a build.
@@ -919,9 +938,12 @@ message PullRequestFilter {
     string branch = 2;
   }
 
-  // Whether to block builds on a "/gcbrun" comment from a repository owner or
+  // Whether to block builds on a "/gcbrun" comment from a repository admin or
   // collaborator.
   CommentControl comment_control = 5;
+
+  // If true, branches that do NOT match the git_ref will trigger a build.
+  bool invert_regex = 6;
 }
 
 // Push contains filter properties for matching GitHub git pushes.
@@ -941,6 +963,10 @@ message PushFilter {
     // RE2 and described at https://github.com/google/re2/wiki/Syntax
     string tag = 3;
   }
+
+  // When true, only trigger a build if the revision regex does NOT match the
+  // git_ref regex.
+  bool invert_regex = 4;
 }
 
 // Request to create a new `BuildTrigger`.
@@ -957,7 +983,7 @@ message GetBuildTriggerRequest {
   // Required. ID of the project that owns the trigger.
   string project_id = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // Required. ID of the `BuildTrigger` to get.
+  // Required. Identifier (`id` or `name`) of the `BuildTrigger` to get.
   string trigger_id = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
@@ -1087,9 +1113,10 @@ message BuildOptions {
   // Storage.
   LogStreamingOption log_streaming_option = 5;
 
-  // Option to specify a `WorkerPool` for the build. User specifies the pool
-  // with the format "[WORKERPOOL_PROJECT_ID]/[WORKERPOOL_NAME]".
-  // This is an experimental field.
+  // Option to specify a `WorkerPool` for the build.
+  // Format: projects/{project}/workerPools/{workerPool}
+  //
+  // This field is experimental.
   string worker_pool = 7;
 
   // Option to specify the logging mode, which determines where the logs are
