@@ -61,8 +61,8 @@ rules_proto_toolchains()
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-4e559adc40e7f671b7e0aae02346d57f78704e6f",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/4e559adc40e7f671b7e0aae02346d57f78704e6f.zip"],
+    strip_prefix = "gapic-generator-43a8733bac1590f13fe1a04c8dedb9e4a7069deb",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/43a8733bac1590f13fe1a04c8dedb9e4a7069deb.zip"],
 )
 
 ##############################################################################
