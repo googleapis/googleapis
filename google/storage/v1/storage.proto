@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC.
+// Copyright 2020 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 
 syntax = "proto3";
 
@@ -92,16 +91,16 @@ service Storage {
   }
 
   // Gets the IAM policy for the specified bucket.
-  rpc GetBucketIamPolicy(google.iam.v1.GetIamPolicyRequest) returns (google.iam.v1.Policy) {
+  rpc GetBucketIamPolicy(GetIamPolicyRequest) returns (google.iam.v1.Policy) {
   }
 
   // Updates an IAM policy for the specified bucket.
-  rpc SetBucketIamPolicy(google.iam.v1.SetIamPolicyRequest) returns (google.iam.v1.Policy) {
+  rpc SetBucketIamPolicy(SetIamPolicyRequest) returns (google.iam.v1.Policy) {
   }
 
   // Tests a set of permissions on the given bucket to see which, if
   // any, are held by the caller.
-  rpc TestBucketIamPermissions(google.iam.v1.TestIamPermissionsRequest) returns (google.iam.v1.TestIamPermissionsResponse) {
+  rpc TestBucketIamPermissions(TestIamPermissionsRequest) returns (google.iam.v1.TestIamPermissionsResponse) {
   }
 
   // Updates a bucket. Changes to the bucket will be readable immediately after
@@ -188,6 +187,12 @@ service Storage {
 
   // Retrieves ACL entries on the specified object.
   rpc ListObjectAccessControls(ListObjectAccessControlsRequest) returns (ListObjectAccessControlsResponse) {
+  }
+
+  // Patches an ACL entry on the specified object.  Patch is similar to update,
+  // but only applies or appends the specified fields in the
+  // object_access_control object.  Other fields are unaffected.
+  rpc PatchObjectAccessControl(PatchObjectAccessControlRequest) returns (ObjectAccessControl) {
   }
 
   // Updates an ACL entry on the specified object.
@@ -287,16 +292,16 @@ service Storage {
   }
 
   // Gets the IAM policy for the specified object.
-  rpc GetObjectIamPolicy(google.iam.v1.GetIamPolicyRequest) returns (google.iam.v1.Policy) {
+  rpc GetObjectIamPolicy(GetIamPolicyRequest) returns (google.iam.v1.Policy) {
   }
 
   // Updates an IAM policy for the specified object.
-  rpc SetObjectIamPolicy(google.iam.v1.SetIamPolicyRequest) returns (google.iam.v1.Policy) {
+  rpc SetObjectIamPolicy(SetIamPolicyRequest) returns (google.iam.v1.Policy) {
   }
 
   // Tests a set of permissions on the given object to see which, if
   // any, are held by the caller.
-  rpc TestObjectIamPermissions(google.iam.v1.TestIamPermissionsRequest) returns (google.iam.v1.TestIamPermissionsResponse) {
+  rpc TestObjectIamPermissions(TestIamPermissionsRequest) returns (google.iam.v1.TestIamPermissionsResponse) {
   }
 
   // Watch for changes on all objects in a bucket.
@@ -406,6 +411,7 @@ message PatchBucketAccessControlRequest {
   //
   // To specify ALL fields, equivalent to the JSON API's "update" function,
   // specify a single field with the value `*`.
+  //
   //
   // Not specifying any fields is an error.
   // Not specifying a field while setting that field to a non-default value is
@@ -870,7 +876,48 @@ message ListObjectAccessControlsRequest {
   CommonRequestParams common_request_params = 5;
 }
 
-// Request message for UpdateObjetAccessControl.
+// Request message for PatchObjectAccessControl.
+message PatchObjectAccessControlRequest {
+  // Required. Name of a bucket.
+  string bucket = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The entity holding the permission. Can be one of:
+  // * `user-`*userId*
+  // * `user-`*emailAddress*
+  // * `group-`*groupId*
+  // * `group-`*emailAddress*
+  // * `allUsers`
+  // * `allAuthenticatedUsers`
+  string entity = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Name of the object.
+  // Required.
+  string object = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // If present, selects a specific revision of this object (as opposed to the
+  // latest version, the default).
+  int64 generation = 4;
+
+  // The ObjectAccessControl for updating.
+  ObjectAccessControl object_access_control = 5;
+
+  // A set of parameters common to all Storage API requests.
+  CommonRequestParams common_request_params = 6;
+
+  // List of fields to be updated.
+  //
+  // To specify ALL fields, equivalent to the JSON API's "update" function,
+  // specify a single field with the value `*`. Note: not recommended. If a new
+  // field is introduced at a later time, an older client updating with the `*`
+  // may accidentally reset the new field's value.
+  //
+  // Not specifying any fields is an error.
+  // Not specifying a field while setting that field to a non-default value is
+  // an error.
+  google.protobuf.FieldMask update_mask = 7;
+}
+
+// Request message for UpdateObjectAccessControl.
 message UpdateObjectAccessControlRequest {
   // Required. Name of a bucket.
   string bucket = 1 [(google.api.field_behavior) = REQUIRED];
@@ -1212,6 +1259,10 @@ message GetObjectMediaResponse {
   // GetObjectMediaRequest, ContentRange will be populated on the first
   // GetObjectMediaResponse message of the read stream.
   ContentRange content_range = 3;
+
+  // Metadata of the object whose media is being returned.
+  // Only populated in the first response in the stream.
+  Object metadata = 4;
 }
 
 // Describes an attempt to insert an object, possibly over multiple requests.
@@ -1274,12 +1325,6 @@ message InsertObjectRequest {
   //
   // An incorrect value will cause an error.
   int64 write_offset = 3 [(google.api.field_behavior) = REQUIRED];
-
-  // For each InsertObjectRequest either a data buffer (data) or a reference to
-  // a slice of an existing object (reference) can be used.
-  // The client **may** leave both data and reference empty for any given
-  // request. This enables the client to inform the service that the request is
-  // still live while it is running an operation to generate more data.
 
   // A portion of the data for the object.
   oneof data {
@@ -1788,6 +1833,36 @@ message UpdateHmacKeyRequest {
 
   // A set of parameters common to all Storage API requests.
   CommonRequestParams common_request_params = 5;
+}
+
+// A wrapper around the IAM get policy request to support our
+// common_request_params.
+message GetIamPolicyRequest {
+  // The request sent to IAM.
+  google.iam.v1.GetIamPolicyRequest iam_request = 1;
+
+  // A set of parameters common to all Storage API requests.
+  CommonRequestParams common_request_params = 2;
+}
+
+// A wrapper around the IAM set policy request to support our
+// common_request_params.
+message SetIamPolicyRequest {
+  // The request sent to IAM.
+  google.iam.v1.SetIamPolicyRequest iam_request = 1;
+
+  // A set of parameters common to all Storage API requests.
+  CommonRequestParams common_request_params = 2;
+}
+
+// A wrapper around the IAM test iam permissions request to support our
+// common_request_params.
+message TestIamPermissionsRequest {
+  // The request sent to IAM.
+  google.iam.v1.TestIamPermissionsRequest iam_request = 1;
+
+  // A set of parameters common to all Storage API requests.
+  CommonRequestParams common_request_params = 2;
 }
 
 // Parameters that can be passed to any object request.
