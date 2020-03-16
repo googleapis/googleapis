@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2020 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 
 syntax = "proto3";
 
@@ -134,9 +133,7 @@ message CustomInfoType {
   // output. This should be used in conjunction with a field on the
   // transformation such as `surrogate_info_type`. This CustomInfoType does
   // not support the use of `detection_rules`.
-  message SurrogateType {
-
-  }
+  message SurrogateType {}
 
   // Deprecated; use `InspectionRuleSet` instead. Rule for modifying a
   // `CustomInfoType` to alter behavior under certain circumstances, depending
@@ -435,8 +432,11 @@ message BigQueryOptions {
   // Complete BigQuery table reference.
   BigQueryTable table_reference = 1;
 
-  // References to fields uniquely identifying rows within the table.
-  // Nested fields in the format, like `person.birthdate.year`, are allowed.
+  // Table fields that may uniquely identify a row within the table. When
+  // `actions.saveFindings.outputConfig.table` is specified, the values of
+  // columns specified here are available in the output table under
+  // `location.content_locations.record_location.record_key.id_values`. Nested
+  // fields such as `person.birthdate.year` are allowed.
   repeated FieldId identifying_fields = 2;
 
   // Max number of rows to scan. If the table has more rows than this value, the
@@ -495,14 +495,20 @@ message StorageConfig {
   }
 
   oneof type {
-    // Google Cloud Datastore options specification.
+    // Google Cloud Datastore options.
     DatastoreOptions datastore_options = 2;
 
-    // Google Cloud Storage options specification.
+    // Google Cloud Storage options.
     CloudStorageOptions cloud_storage_options = 3;
 
-    // BigQuery options specification.
+    // BigQuery options.
     BigQueryOptions big_query_options = 4;
+
+    // Hybrid inspection options.
+    // Early access feature is in a pre-release state and might change or have
+    // limited support. For more information, see
+    // https://cloud.google.com/products#product-launch-stages.
+    HybridOptions hybrid_options = 9;
   }
 
   TimespanConfig timespan_config = 6;
@@ -534,13 +540,52 @@ enum FileType {
   AVRO = 7;
 }
 
+// Configuration to control jobs where the content being inspected is outside
+// of Google Cloud Platform.
+message HybridOptions {
+  // A short description of where the data is coming from. Will be stored once
+  // in the job. 256 max length.
+  string description = 1;
+
+  // These are labels that each inspection request must include within their
+  // 'finding_labels' map. Request may contain others, but any missing one of
+  // these will be rejected.
+  //
+  // Label keys must be between 1 and 63 characters long and must conform
+  // to the following regular expression: \[a-z\](\[-a-z0-9\]*\[a-z0-9\])?.
+  //
+  // No more than 10 keys can be required.
+  repeated string required_finding_label_keys = 2;
+
+  // To organize findings, these labels will be added to each finding.
+  //
+  // Label keys must be between 1 and 63 characters long and must conform
+  // to the following regular expression: \[a-z\](\[-a-z0-9\]*\[a-z0-9\])?.
+  //
+  // Label values must be between 0 and 63 characters long and must conform
+  // to the regular expression (\[a-z\](\[-a-z0-9\]*\[a-z0-9\])?)?.
+  //
+  // No more than 10 labels can be associated with a given finding.
+  //
+  // Example: <code>"environment" : "production"</code>
+  // Example: <code>"pipeline" : "etl"</code>
+  map<string, string> labels = 3;
+
+  // If the container is a table, additional information to make findings
+  // meaningful such as the columns that are primary keys.
+  TableOptions table_options = 4;
+}
+
 // Row key for identifying a record in BigQuery table.
 message BigQueryKey {
   // Complete BigQuery table reference.
   BigQueryTable table_reference = 1;
 
-  // Absolute number of the row from the beginning of the table at the time
-  // of scanning.
+  // Row number inferred at the time the table was scanned. This value is
+  // nondeterministic, cannot be queried, and may be null for inspection
+  // jobs. To locate findings within a table, specify
+  // `inspect_job.storage_config.big_query_options.identifying_fields` in
+  // `CreateDlpJobRequest`.
   int64 row_number = 2;
 }
 
@@ -607,7 +652,7 @@ message RecordKey {
   }
 
   // Values of identifying columns in the given row. Order of values matches
-  // the order of field identifiers specified in the scanning request.
+  // the order of `identifying_fields` specified in the scanning request.
   repeated string id_values = 5;
 }
 
@@ -645,4 +690,13 @@ message BigQueryField {
 message EntityId {
   // Composite key indicating which field contains the entity identifier.
   FieldId field = 1;
+}
+
+// Instructions regarding the table content being inspected.
+message TableOptions {
+  // The columns that are the primary keys for table objects included in
+  // ContentItem. A copy of this cell's value will stored alongside alongside
+  // each finding so that the finding can be traced to the specific row it came
+  // from. No more than 3 may be provided.
+  repeated FieldId identifying_fields = 1;
 }
