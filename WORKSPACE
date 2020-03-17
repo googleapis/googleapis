@@ -107,8 +107,8 @@ apple_support_dependencies()
 
 http_archive(
     name = "com_google_api_gax_java",
-    strip_prefix = "gax-java-9f83322606b982bebc4ebb2cd1d33485a1776396", # v1.52.0 plus bazel-2.0.0 compatibility fix
-    urls = ["https://github.com/googleapis/gax-java/archive/9f83322606b982bebc4ebb2cd1d33485a1776396.zip"],
+    strip_prefix = "gax-java-1.54.0",
+    urls = ["https://github.com/googleapis/gax-java/archive/v1.54.0.zip"],
 )
 
 load("@com_google_api_gax_java//:repository_rules.bzl", "com_google_api_gax_java_properties")
