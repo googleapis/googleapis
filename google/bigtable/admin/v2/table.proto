@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2020 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 
 syntax = "proto3";
 
@@ -29,6 +28,28 @@ option java_multiple_files = true;
 option java_outer_classname = "TableProto";
 option java_package = "com.google.bigtable.admin.v2";
 option php_namespace = "Google\\Cloud\\Bigtable\\Admin\\V2";
+
+// Indicates the type of the restore source.
+enum RestoreSourceType {
+  // No restore associated.
+  RESTORE_SOURCE_TYPE_UNSPECIFIED = 0;
+
+  // A backup was used as the source of the restore.
+  BACKUP = 1;
+}
+
+// Information about a table restore.
+message RestoreInfo {
+  // The type of the restore source.
+  RestoreSourceType source_type = 1;
+
+  // Information about the source used to restore the table.
+  oneof source_info {
+    // Information about the backup used to restore the table. The backup
+    // may no longer exist.
+    BackupInfo backup_info = 2;
+  }
+}
 
 // A collection of user data indexed by row, column, and timestamp.
 // Each table is served using the resources of its parent cluster.
@@ -62,6 +83,11 @@ message Table {
       // replication delay, reads may not immediately reflect the state of the
       // table in other clusters.
       READY = 4;
+
+      // The table is fully created and ready for use after a restore, and is
+      // being optimized for performance. When optimizations are complete, the
+      // table will transition to `READY` state.
+      READY_OPTIMIZING = 5;
     }
 
     // Output only. The state of replication for the table in this cluster.
@@ -121,6 +147,10 @@ message Table {
   // If unspecified at creation time, the value will be set to `MILLIS`.
   // Views: `SCHEMA_VIEW`, `FULL`.
   TimestampGranularity granularity = 4;
+
+  // Output only. If this table was restored from another data source (e.g. a
+  // backup), this field will be populated with information about the restore.
+  RestoreInfo restore_info = 6;
 }
 
 // A set of columns within a table which share a common configuration.
@@ -201,16 +231,17 @@ message Snapshot {
   // Output only. The source table at the time the snapshot was taken.
   Table source_table = 2;
 
-  // Output only. The size of the data in the source table at the time the snapshot was
-  // taken. In some cases, this value may be computed asynchronously via a
-  // background process and a placeholder of 0 will be used in the meantime.
+  // Output only. The size of the data in the source table at the time the
+  // snapshot was taken. In some cases, this value may be computed
+  // asynchronously via a background process and a placeholder of 0 will be used
+  // in the meantime.
   int64 data_size_bytes = 3;
 
   // Output only. The time when the snapshot is created.
   google.protobuf.Timestamp create_time = 4;
 
-  // Output only. The time when the snapshot will be deleted. The maximum amount of time a
-  // snapshot can stay active is 365 days. If 'ttl' is not specified,
+  // Output only. The time when the snapshot will be deleted. The maximum amount
+  // of time a snapshot can stay active is 365 days. If 'ttl' is not specified,
   // the default maximum of 365 days will be used.
   google.protobuf.Timestamp delete_time = 5;
 
@@ -219,4 +250,91 @@ message Snapshot {
 
   // Output only. Description of the snapshot.
   string description = 7;
+}
+
+// A backup of a Cloud Bigtable table.
+message Backup {
+  option (google.api.resource) = {
+    type: "bigtable.googleapis.com/Backup"
+    pattern: "projects/{project}/instances/{instance}/clusters/{cluster}/backups/{backup}"
+  };
+
+  // Indicates the current state of the backup.
+  enum State {
+    // Not specified.
+    STATE_UNSPECIFIED = 0;
+
+    // The pending backup is still being created. Operations on the
+    // backup may fail with `FAILED_PRECONDITION` in this state.
+    CREATING = 1;
+
+    // The backup is complete and ready for use.
+    READY = 2;
+  }
+
+  // Output only. A globally unique identifier for the backup which cannot be
+  // changed. Values are of the form
+  // `projects/{project}/instances/{instance}/clusters/{cluster}/
+  //    backups/[_a-zA-Z0-9][-_.a-zA-Z0-9]*`
+  // The final segment of the name must be between 1 and 50 characters
+  // in length.
+  //
+  // The backup is stored in the cluster identified by the prefix of the backup
+  // name of the form
+  // `projects/{project}/instances/{instance}/clusters/{cluster}`.
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Required. Immutable. Name of the table from which this backup was created.
+  // This needs to be in the same instance as the backup. Values are of the form
+  // `projects/{project}/instances/{instance}/tables/{source_table}`.
+  string source_table = 2 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = REQUIRED
+  ];
+
+  // Required. The expiration time of the backup, with microseconds
+  // granularity that must be at least 6 hours and at most 30 days
+  // from the time the request is received. Once the `expire_time`
+  // has passed, Cloud Bigtable will delete the backup and free the
+  // resources used by the backup.
+  google.protobuf.Timestamp expire_time = 3
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Output only. `start_time` is the time that the backup was started
+  // (i.e. approximately the time the
+  // [CreateBackup][google.bigtable.admin.v2.BigtableTableAdmin.CreateBackup]
+  // request is received).  The row data in this backup will be no older than
+  // this timestamp.
+  google.protobuf.Timestamp start_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. `end_time` is the time that the backup was finished. The row
+  // data in the backup will be no newer than this timestamp.
+  google.protobuf.Timestamp end_time = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Size of the backup in bytes.
+  int64 size_bytes = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The current state of the backup.
+  State state = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Information about a backup.
+message BackupInfo {
+  // Output only. Name of the backup.
+  string backup = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time that the backup was started. Row data in the backup
+  // will be no older than this timestamp.
+  google.protobuf.Timestamp start_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. This time that the backup was finished. Row data in the
+  // backup will be no newer than this timestamp.
+  google.protobuf.Timestamp end_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Name of the table the backup was created from.
+  string source_table = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
