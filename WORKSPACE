@@ -61,9 +61,24 @@ rules_proto_toolchains()
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-15ec21be63aac27b8f02d5e1d3816b48c83d9fbe",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/15ec21be63aac27b8f02d5e1d3816b48c83d9fbe.zip"],
+    strip_prefix = "gapic-generator-0bf1e325040acab8bd0594555c71a0daad1c38dd",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/0bf1e325040acab8bd0594555c71a0daad1c38dd.zip"],
 )
+
+# rules_go (support Golang under bazel)
+# This is not in the Go section because we override the same, older dependency brought in by gRPC.
+# TODO(ndietz): move this back to the Go section if gRPC is updated per https://github.com/grpc/grpc/issues/22172
+http_archive(
+    name = "io_bazel_rules_go",
+    sha256 = "e6a6c016b0663e06fa5fccf1cd8152eab8aa8180c583ec20c872f4f9953a7ac5",
+    url = "https://github.com/bazelbuild/rules_go/releases/download/v0.22.1/rules_go-v0.22.1.tar.gz",
+)
+
+load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
+
+go_rules_dependencies()
+
+go_register_toolchains()
 
 ##############################################################################
 # C++
@@ -177,32 +192,28 @@ protoc_docs_plugin_register_toolchains()
 # Go
 ##############################################################################
 
-# rules_go (support Golang under bazel)
-http_archive(
-    name = "io_bazel_rules_go",
-    sha256 = "a82a352bffae6bee4e95f68a8d80a70e87f42c4741e6a448bec11998fcc82329",
-    url = "https://github.com/bazelbuild/rules_go/releases/download/0.18.5/rules_go-0.18.5.tar.gz",
-)
-
-load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
-
-go_rules_dependencies()
-
-go_register_toolchains()
-
 # bazel-gazelle (support Golang under bazel)
 http_archive(
     name = "bazel_gazelle",
-    strip_prefix = "bazel-gazelle-0.17.0",
-    urls = ["https://github.com/bazelbuild/bazel-gazelle/archive/0.17.0.zip"],
+    urls = ["https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.20.0/bazel-gazelle-v0.20.0.tar.gz"],
 )
 
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
 
 gazelle_dependencies()
 
-# go_gapic artifacts runtime dependencies (gax-go)
-load("@com_google_api_codegen//rules_gapic/go:go_gapic_repositories.bzl", "go_gapic_repositories")
+http_archive(
+    name = "com_googleapis_gapic_generator_go",
+    sha256 = "948122351e8a8de2a5045ef57556767b231dd03102ec31a138b066a36472655f",
+    strip_prefix = "gapic-generator-go-0.12.1",
+    urls = ["https://github.com/googleapis/gapic-generator-go/archive/v0.12.1.tar.gz"],
+)
+
+load("@com_googleapis_gapic_generator_go//:repositories.bzl", "com_googleapis_gapic_generator_go_repositories")
+
+com_googleapis_gapic_generator_go_repositories()
+
+load("@com_googleapis_gapic_generator_go//rules_go_gapic:go_gapic_repositories.bzl", "go_gapic_repositories")
 
 go_gapic_repositories()
 

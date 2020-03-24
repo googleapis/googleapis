@@ -188,11 +188,11 @@ def switched_rules_by_language(
     )
     rules["go_gapic_library"] = _switch(
         go and grpc and gapic,
-        "@com_google_api_codegen//rules_gapic/go:go_gapic.bzl",
+        "@com_googleapis_gapic_generator_go//rules_go_gapic:go_gapic.bzl",
     )
     rules["go_gapic_assembly_pkg"] = _switch(
         go and grpc and gapic,
-        "@com_google_api_codegen//rules_gapic/go:go_gapic_pkg.bzl",
+        "@com_googleapis_gapic_generator_go//rules_go_gapic:go_gapic_pkg.bzl",
     )
 
     #
