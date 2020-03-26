@@ -61,8 +61,8 @@ rules_proto_toolchains()
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-0bf1e325040acab8bd0594555c71a0daad1c38dd",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/0bf1e325040acab8bd0594555c71a0daad1c38dd.zip"],
+    strip_prefix = "gapic-generator-d1262f1528fa0465152bfe14090ff1cff3209f52",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/d1262f1528fa0465152bfe14090ff1cff3209f52.zip"],
 )
 
 # rules_go (support Golang under bazel)
@@ -204,9 +204,8 @@ gazelle_dependencies()
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
-    sha256 = "948122351e8a8de2a5045ef57556767b231dd03102ec31a138b066a36472655f",
-    strip_prefix = "gapic-generator-go-0.12.1",
-    urls = ["https://github.com/googleapis/gapic-generator-go/archive/v0.12.1.tar.gz"],
+    strip_prefix = "gapic-generator-go-0.12.5",
+    urls = ["https://github.com/googleapis/gapic-generator-go/archive/v0.12.5.tar.gz"],
 )
 
 load("@com_googleapis_gapic_generator_go//:repositories.bzl", "com_googleapis_gapic_generator_go_repositories")
