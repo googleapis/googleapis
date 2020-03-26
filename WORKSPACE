@@ -150,8 +150,8 @@ load("@com_google_api_codegen//:repositories.bzl", "com_google_api_codegen_repos
 
 http_archive(
     name = "com_google_protoc_java_resource_names_plugin",
-    strip_prefix = "protoc-java-resource-names-plugin-079274eb040ac2afe46b4865efb641561f530771",
-    urls = ["https://github.com/googleapis/protoc-java-resource-names-plugin/archive/079274eb040ac2afe46b4865efb641561f530771.zip"],
+    strip_prefix = "protoc-java-resource-names-plugin-7632facb0a1d9f76d9152eefe21422dc55e36524",
+    urls = ["https://github.com/googleapis/protoc-java-resource-names-plugin/archive/7632facb0a1d9f76d9152eefe21422dc55e36524.zip"],
 )
 
 com_google_api_codegen_repositories()
