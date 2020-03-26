@@ -12,7 +12,7 @@ set -eu
 add_gradle_publish() {
   postprocess_dir="${1}"
 
-  for f in $(find "${postprocess_dir}" -mindepth 2 -name build.gradle | sort); do
+  for f in $(find "${postprocess_dir}" -name build.gradle | sort); do
     cat >> "$f" <<EOF
 
 apply from: "./publish.gradle"
@@ -25,11 +25,12 @@ EOF
 #
 # Arguments:
 #   postprocess_dir: The directory that contains the Java files to postprocess.
-change_group_from_cloud() {
+change_group() {
   postprocess_dir="${1}"
   for f in $(find "${postprocess_dir}" -name "*.gradle" -type f); do
     sed -e "s/= 'com\.google\.cloud'/= 'com\.google\.maps'/g" "${f}" > "${f}.new" && mv "${f}.new" "${f}"
-  done
+    sed -e "s/= 'com\.google\.api\.grpc'/= 'com\.google\.maps'/g" "${f}" > "${f}.new" && mv "${f}.new" "${f}"
+done
 }
 
 # Main entry point
@@ -45,7 +46,7 @@ main() {
   fi
 
   add_gradle_publish "${postprocess_dir}"
-  change_group_from_cloud "${postprocess_dir}"
+  change_group "${postprocess_dir}"
 }
 
 main "$@"
