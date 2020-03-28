@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2020 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,14 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 
 syntax = "proto3";
 
 package google.cloud.asset.v1;
 
 import "google/api/resource.proto";
+import "google/cloud/orgpolicy/v1/orgpolicy.proto";
 import "google/iam/v1/policy.proto";
+import "google/identity/accesscontextmanager/v1/access_level.proto";
+import "google/identity/accesscontextmanager/v1/access_policy.proto";
+import "google/identity/accesscontextmanager/v1/service_perimeter.proto";
 import "google/protobuf/any.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
@@ -32,31 +35,34 @@ option java_outer_classname = "AssetProto";
 option java_package = "com.google.cloud.asset.v1";
 option php_namespace = "Google\\Cloud\\Asset\\V1";
 
-// Temporal asset. In addition to the asset, the temporal asset includes the
-// status of the asset and valid from and to time of it.
+// An asset in Google Cloud and its temporal metadata, including the time window
+// when it was observed and its status during that window.
 message TemporalAsset {
   // The time window when the asset data and state was observed.
   TimeWindow window = 1;
 
-  // If the asset is deleted or not.
+  // Whether the asset has been deleted or not.
   bool deleted = 2;
 
-  // Asset.
+  // An asset in Google Cloud.
   Asset asset = 3;
 }
 
-// A time window of (start_time, end_time].
+// A time window specified by its "start_time" and "end_time".
 message TimeWindow {
   // Start time of the time window (exclusive).
   google.protobuf.Timestamp start_time = 1;
 
-  // End time of the time window (inclusive).
-  // Current timestamp if not specified.
+  // End time of the time window (inclusive). If not specified, the current
+  // timestamp is used instead.
   google.protobuf.Timestamp end_time = 2;
 }
 
-// Cloud asset. This includes all Google Cloud Platform resources,
-// Cloud IAM policies, and other non-GCP assets.
+// An asset in Google Cloud. An asset can be any resource in the Google Cloud
+// [resource
+// hierarchy](https://cloud.google.com/resource-manager/docs/cloud-platform-resource-hierarchy),
+// a resource outside the Google Cloud resource hierarchy (such as Google
+// Kubernetes Engine clusters and objects), or a Cloud IAM policy.
 message Asset {
   option (google.api.resource) = {
     type: "cloudasset.googleapis.com/Asset"
@@ -64,53 +70,86 @@ message Asset {
   };
 
   // The full name of the asset. For example:
-  // `//compute.googleapis.com/projects/my_project_123/zones/zone1/instances/instance1`.
+  // "//compute.googleapis.com/projects/my_project_123/zones/zone1/instances/instance1"
+  //
   // See [Resource
-  // Names](https://cloud.google.com/apis/design/resource_names#full_resource_name)
+  // names](https://cloud.google.com/apis/design/resource_names#full_resource_name)
   // for more information.
   string name = 1;
 
-  // Type of the asset. Example: "compute.googleapis.com/Disk".
+  // The type of the asset. For example: "compute.googleapis.com/Disk"
+  //
+  // See [Supported asset
+  // types](https://cloud.google.com/asset-inventory/docs/supported-asset-types)
+  // for more information.
   string asset_type = 2;
 
-  // Representation of the resource.
+  // A representation of the resource.
   Resource resource = 3;
 
-  // Representation of the actual Cloud IAM policy set on a cloud resource. For
-  // each resource, there must be at most one Cloud IAM policy set on it.
+  // A representation of the Cloud IAM policy set on a Google Cloud resource.
+  // There can be a maximum of one Cloud IAM policy set on any given resource.
+  // In addition, Cloud IAM policies inherit their granted access scope from any
+  // policies set on parent resources in the resource hierarchy. Therefore, the
+  // effectively policy is the union of both the policy set on this resource
+  // and each policy set on all of the resource's ancestry resource levels in
+  // the hierarchy. See
+  // [this topic](https://cloud.google.com/iam/docs/policies#inheritance) for
+  // more information.
   google.iam.v1.Policy iam_policy = 4;
 
-  // Asset's ancestry path in Cloud Resource Manager (CRM) hierarchy,
-  // represented as a list of relative resource names. Ancestry path starts with
-  // the closest CRM ancestor and ends at root. If the asset is a CRM
-  // project/folder/organization, this starts from the asset itself.
+  // A representation of an [organization
+  // policy](https://cloud.google.com/resource-manager/docs/organization-policy/overview#organization_policy).
+  // There can be more than one organization policy with different constraints
+  // set on a given resource.
+  repeated google.cloud.orgpolicy.v1.Policy org_policy = 6;
+
+  // A representation of an [access
+  // policy](https://cloud.google.com/access-context-manager/docs/overview#access-policies).
+  oneof access_context_policy {
+    google.identity.accesscontextmanager.v1.AccessPolicy access_policy = 7;
+
+    google.identity.accesscontextmanager.v1.AccessLevel access_level = 8;
+
+    google.identity.accesscontextmanager.v1.ServicePerimeter service_perimeter = 9;
+  }
+
+  // The ancestry path of an asset in Google Cloud [resource
+  // hierarchy](https://cloud.google.com/resource-manager/docs/cloud-platform-resource-hierarchy),
+  // represented as a list of relative resource names. An ancestry path starts
+  // with the closest ancestor in the hierarchy and ends at root. If the asset
+  // is a project, folder, or organization, the ancestry path starts from the
+  // asset itself.
   //
-  // Example: ["projects/123456789", "folders/5432", "organizations/1234"]
+  // For example: `["projects/123456789", "folders/5432", "organizations/1234"]`
   repeated string ancestors = 10;
 }
 
-// Representation of a cloud resource.
+// A representation of a Google Cloud resource.
 message Resource {
-  // The API version. Example: "v1".
+  // The API version. For example: "v1"
   string version = 1;
 
   // The URL of the discovery document containing the resource's JSON schema.
   // For example:
-  // `"https://www.googleapis.com/discovery/v1/apis/compute/v1/rest"`.
-  // It will be left unspecified for resources without a discovery-based API,
-  // such as Cloud Bigtable.
+  // "https://www.googleapis.com/discovery/v1/apis/compute/v1/rest"
+  //
+  // This value is unspecified for resources that do not have an API based on a
+  // discovery document, such as Cloud Bigtable.
   string discovery_document_uri = 2;
 
-  // The JSON schema name listed in the discovery document.
-  // Example: "Project". It will be left unspecified for resources (such as
-  // Cloud Bigtable) without a discovery-based API.
+  // The JSON schema name listed in the discovery document. For example:
+  // "Project"
+  //
+  // This value is unspecified for resources that do not have an API based on a
+  // discovery document, such as Cloud Bigtable.
   string discovery_name = 3;
 
-  // The REST URL for accessing the resource. An HTTP GET operation using this
-  // URL returns the resource itself.
-  // Example:
-  // `https://cloudresourcemanager.googleapis.com/v1/projects/my-project-123`.
-  // It will be left unspecified for resources without a REST API.
+  // The REST URL for accessing the resource. An HTTP `GET` request using this
+  // URL returns the resource itself. For example:
+  // "https://cloudresourcemanager.googleapis.com/v1/projects/my-project-123"
+  //
+  // This value is unspecified for resources without a REST API.
   string resource_url = 4;
 
   // The full name of the immediate parent of this resource. See
@@ -118,15 +157,16 @@ message Resource {
   // Names](https://cloud.google.com/apis/design/resource_names#full_resource_name)
   // for more information.
   //
-  // For GCP assets, it is the parent resource defined in the [Cloud IAM policy
+  // For Google Cloud assets, this value is the parent resource defined in the
+  // [Cloud IAM policy
   // hierarchy](https://cloud.google.com/iam/docs/overview#policy_hierarchy).
   // For example:
-  // `"//cloudresourcemanager.googleapis.com/projects/my_project_123"`.
+  // "//cloudresourcemanager.googleapis.com/projects/my_project_123"
   //
-  // For third-party assets, it is up to the users to define.
+  // For third-party assets, this field may be set differently.
   string parent = 5;
 
-  // The content of the resource, in which some sensitive fields are scrubbed
-  // away and may not be present.
+  // The content of the resource, in which some sensitive fields are removed
+  // and may not be present.
   google.protobuf.Struct data = 6;
 }
