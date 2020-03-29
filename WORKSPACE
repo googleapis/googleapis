@@ -61,8 +61,8 @@ rules_proto_toolchains()
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-d1262f1528fa0465152bfe14090ff1cff3209f52",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/d1262f1528fa0465152bfe14090ff1cff3209f52.zip"],
+    strip_prefix = "gapic-generator-128224d3c06a23fe55a32abd5d3760515974291d",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/128224d3c06a23fe55a32abd5d3760515974291d.zip"],
 )
 
 # rules_go (support Golang under bazel)
