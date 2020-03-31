@@ -122,8 +122,8 @@ apple_support_dependencies()
 
 http_archive(
     name = "com_google_api_gax_java",
-    strip_prefix = "gax-java-1.54.0",
-    urls = ["https://github.com/googleapis/gax-java/archive/v1.54.0.zip"],
+    strip_prefix = "gax-java-730046855da122b26adbaa3fcf535becd8afa292", # 1.55.0 with fixes
+    urls = ["https://github.com/googleapis/gax-java/archive/730046855da122b26adbaa3fcf535becd8afa292.zip"],
 )
 
 load("@com_google_api_gax_java//:repository_rules.bzl", "com_google_api_gax_java_properties")
@@ -136,6 +136,10 @@ com_google_api_gax_java_properties(
 load("@com_google_api_gax_java//:repositories.bzl", "com_google_api_gax_java_repositories")
 
 com_google_api_gax_java_repositories()
+
+load("@io_grpc_grpc_java//:repositories.bzl", "grpc_java_repositories")
+
+grpc_java_repositories()
 
 # gapic-generator transitive
 # (goes AFTER java-gax, since both java gax and gapic-generator are written in java and may conflict)
@@ -224,9 +228,9 @@ load("@com_google_api_codegen//rules_gapic/php:php_gapic_repositories.bzl", "php
 
 php(
     name = "php",
-    urls = ["https://www.php.net/distributions/php-7.1.30.tar.gz"],
-    strip_prefix = "php-7.1.30",
     prebuilt_phps = ["@com_google_api_codegen//rules_gapic/php:resources/php-7.1.30_linux_x86_64.tar.gz"],
+    strip_prefix = "php-7.1.30",
+    urls = ["https://www.php.net/distributions/php-7.1.30.tar.gz"],
 )
 
 php_gapic_repositories()
