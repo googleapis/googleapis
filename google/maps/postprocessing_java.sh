@@ -11,13 +11,10 @@ set -eu
 #   postprocess_dir: The directory that contains the Java files to postprocess.
 add_gradle_publish() {
   postprocess_dir="${1}"
-
-  for f in $(find "${postprocess_dir}" -name build.gradle | sort); do
-    cat >> "$f" <<EOF
+  cat >> "${postprocess_dir}/build.gradle" <<EOF
 
 apply from: "./publish.gradle"
 EOF
-  done
   echo "INFO: Added gradle publish plugin."
 }
 
