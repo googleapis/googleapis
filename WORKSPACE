@@ -61,8 +61,8 @@ rules_proto_toolchains()
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-cd3c9ee706cd8a23233a1bfd9a0ddf5de088fb49",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/cd3c9ee706cd8a23233a1bfd9a0ddf5de088fb49.zip"],
+    strip_prefix = "gapic-generator-4cb5d58f258afdb8abc0b99706370b4a59252b22",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/4cb5d58f258afdb8abc0b99706370b4a59252b22.zip"],
 )
 
 # rules_go (support Golang under bazel)
@@ -154,8 +154,8 @@ load("@com_google_api_codegen//:repositories.bzl", "com_google_api_codegen_repos
 
 http_archive(
     name = "com_google_protoc_java_resource_names_plugin",
-    strip_prefix = "protoc-java-resource-names-plugin-706814edd72934b30a35dc47c04f1a3ba2dc4204",
-    urls = ["https://github.com/googleapis/protoc-java-resource-names-plugin/archive/706814edd72934b30a35dc47c04f1a3ba2dc4204.zip"],
+    strip_prefix = "protoc-java-resource-names-plugin-5bd90a1f67c1c128291702cc320d667060f40f95",
+    urls = ["https://github.com/googleapis/protoc-java-resource-names-plugin/archive/5bd90a1f67c1c128291702cc320d667060f40f95.zip"],
 )
 
 com_google_api_codegen_repositories()
