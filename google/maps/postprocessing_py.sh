@@ -4,21 +4,23 @@ set -eu
 
 # Performs Maps specific post-processing on a .tar.gz archive
 
-# Rename nox config file from nox.py to noxfile.py if it exists
-#
-# Arguments:
-#   postprocess_dir: The directory that contains the Java files to postprocess.
-rename_nox_file() {
-  postprocess_dir="${1}"
-
-  if [ -f "$postprocess_dir/nox.py" ]; then
-    mv "$postprocess_dir/nox.py" "$postprocess_dir/noxfile.py"
-  fi
+use_map_namespace() {
+  f="${1}/setup.py"
+  sed -e "s/google.cloud/google.maps/g" "${f}" > "${f}.new" && mv "${f}.new" "${f}"
 }
 
 use_markdown_readme() {
-  sed -e "s/= 'com\.google\.cloud'/= 'com\.google\.maps'/g" "${1}/${f}" > "${f}.new" && mv "${f}.new" "${f}"
+  f="${1}/setup.py"
+  sed -e "s/README.rst/README.md/g" "${f}" > "${f}.new" && mv "${f}.new" "${f}"
+  rm -f "${1}/README.rst"
+}
 
+update_python_versions() {
+  f="${1}/setup.py"
+  sed -e "/Python :: 2/d" "${f}" > "${f}.new" && mv "${f}.new" "${f}"
+  sed -e "/Python :: 3.4/d" "${f}" > "${f}.new" && mv "${f}.new" "${f}"
+  sed -e "/enum34/d" "${f}" > "${f}.new" && mv "${f}.new" "${f}"
+  sed -e "s/'Programming Language :: Python :: 3.6',/'Programming Language :: Python :: 3.6',\n        'Programming Language :: Python :: 3.7',/g" "${f}" > "${f}.new" && mv "${f}.new" "${f}"
 }
 
 # Main entry point
@@ -33,7 +35,9 @@ main() {
     exit 1
   fi
 
-  rename_nox_file "${postprocess_dir}"
+  use_markdown_readme "${postprocess_dir}"
+  update_python_versions "${postprocess_dir}"
+  use_map_namespace "${postprocess_dir}"
 }
 
 main "$@"
