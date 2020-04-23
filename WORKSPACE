@@ -208,8 +208,8 @@ gazelle_dependencies()
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
-    strip_prefix = "gapic-generator-go-0.13.2",
-    urls = ["https://github.com/googleapis/gapic-generator-go/archive/v0.13.2.tar.gz"],
+    strip_prefix = "gapic-generator-go-0.13.3",
+    urls = ["https://github.com/googleapis/gapic-generator-go/archive/v0.13.3.tar.gz"],
 )
 
 load("@com_googleapis_gapic_generator_go//:repositories.bzl", "com_googleapis_gapic_generator_go_repositories")
