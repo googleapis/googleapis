@@ -31,6 +31,14 @@ http_archive(
     urls = ["https://github.com/bazelbuild/bazel-skylib/releases/download/0.9.0/bazel_skylib-0.9.0.tar.gz"],
 )
 
+# Python rules should go early in the dependencies list, otherwise a wrong
+# version of the library will be selected as a transitive dependency of gRPC.
+http_archive(
+    name = "rules_python",
+    url = "https://github.com/bazelbuild/rules_python/archive/748aa53d7701e71101dfd15d800e100f6ff8e5d1.zip",
+    strip_prefix = "rules_python-748aa53d7701e71101dfd15d800e100f6ff8e5d1"
+)
+
 http_archive(
     name = "com_google_protobuf",
     strip_prefix = "protobuf-fe1790ca0df67173702f70d5646b82f48f412b99",  # this is 3.11.2
@@ -191,6 +199,32 @@ load(
 protoc_docs_plugin_repositories()
 
 protoc_docs_plugin_register_toolchains()
+
+load("@rules_python//python:repositories.bzl", "py_repositories")
+py_repositories()
+
+load("@rules_python//python:pip.bzl", "pip_repositories")
+pip_repositories()
+
+# Change upstream repository once PR is merged
+http_archive(
+    name = "gapic_generator_python",
+    urls = ["https://github.com/googleapis/gapic-generator-python/archive/d18ed416240a064fffac0fd7915b61f6415fe140.zip"],
+    strip_prefix = "gapic-generator-python-d18ed416240a064fffac0fd7915b61f6415fe140",
+)
+
+load("@gapic_generator_python//:repositories.bzl",
+    "gapic_generator_python",
+    "gapic_generator_register_toolchains"
+)
+
+gapic_generator_python()
+
+gapic_generator_register_toolchains()
+
+load("@gapic_generator_python_pip_deps//:requirements.bzl", "pip_install")
+
+pip_install()
 
 ##############################################################################
 # Go
