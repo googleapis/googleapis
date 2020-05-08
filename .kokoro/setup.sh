@@ -17,4 +17,3 @@ pyenv global 3.6.1
 
 BAZEL=${KOKORO_ROOT}/tools/bazel
 BAZEL_ROOT=${KOKORO_ROOT}/tools/bazel_root
-EXTRA_BUILD_FAGS="--extra_toolchains=@gapic_generator_python//:pyenv3_toolchain --define=gapic_gen_python=3.6"
