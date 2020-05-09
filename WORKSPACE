@@ -69,8 +69,8 @@ rules_proto_toolchains()
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-a59457d24bd6f3c962c8e699c708121c928eedc8",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/a59457d24bd6f3c962c8e699c708121c928eedc8.zip"],
+    strip_prefix = "gapic-generator-03abac35ec0716c6f426ffc1532f9a62f1c9e6a2",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/03abac35ec0716c6f426ffc1532f9a62f1c9e6a2.zip"],
 )
 
 # rules_go (support Golang under bazel)
@@ -209,8 +209,8 @@ pip_repositories()
 # Change upstream repository once PR is merged
 http_archive(
     name = "gapic_generator_python",
-    urls = ["https://github.com/googleapis/gapic-generator-python/archive/d18ed416240a064fffac0fd7915b61f6415fe140.zip"],
-    strip_prefix = "gapic-generator-python-d18ed416240a064fffac0fd7915b61f6415fe140",
+    urls = ["https://github.com/googleapis/gapic-generator-python/archive/2d332245b0a7b38f0770a051ed6ed0e631fc9296.zip"],
+    strip_prefix = "gapic-generator-python-2d332245b0a7b38f0770a051ed6ed0e631fc9296",
 )
 
 load("@gapic_generator_python//:repositories.bzl",
