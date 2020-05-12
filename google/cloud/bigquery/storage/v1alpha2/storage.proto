@@ -46,6 +46,97 @@ message CreateWriteStreamRequest {
   WriteStream write_stream = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
+// BigQuery Write API.
+//
+// The Write API can be used to write data to BigQuery.
+service BigQueryWrite {
+  option (google.api.default_host) = "bigquerystorage.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/bigquery,"
+      "https://www.googleapis.com/auth/bigquery.insertdata,"
+      "https://www.googleapis.com/auth/cloud-platform";
+
+  // Creates a write stream to the given table.
+  rpc CreateWriteStream(CreateWriteStreamRequest) returns (WriteStream) {
+    option (google.api.http) = {
+      post: "/v1alpha2/{parent=projects/*/datasets/*/tables/*}"
+      body: "write_stream"
+    };
+    option (google.api.method_signature) = "parent,write_stream";
+  }
+
+  // Appends data to the given stream.
+  //
+  // If `offset` is specified, the `offset` is checked against the end of
+  // stream. The server returns `OUT_OF_RANGE` in `AppendRowsResponse` if an
+  // attempt is made to append to an offset beyond the current end of the stream
+  // or `ALREADY_EXISTS` if user provids an `offset` that has already been
+  // written to. User can retry with adjusted offset within the same RPC
+  // stream. If `offset` is not specified, append happens at the end of the
+  // stream.
+  //
+  // The response contains the offset at which the append happened. Responses
+  // are received in the same order in which requests are sent. There will be
+  // one response for each successful request. If the `offset` is not set in
+  // response, it means append didn't happen due to some errors. If one request
+  // fails, all the subsequent requests will also fail until a success request
+  // is made again.
+  //
+  // If the stream is of `PENDING` type, data will only be available for read
+  // operations after the stream is committed.
+  rpc AppendRows(stream AppendRowsRequest) returns (stream AppendRowsResponse) {
+    option (google.api.http) = {
+      post: "/v1alpha2/{write_stream=projects/*/datasets/*/tables/*/streams/*}"
+      body: "*"
+    };
+    option (google.api.method_signature) = "write_stream";
+  }
+
+  // Gets a write stream.
+  rpc GetWriteStream(GetWriteStreamRequest) returns (WriteStream) {
+    option (google.api.http) = {
+      post: "/v1alpha2/{name=projects/*/datasets/*/tables/*/streams/*}"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Finalize a write stream so that no new data can be appended to the
+  // stream.
+  rpc FinalizeWriteStream(FinalizeWriteStreamRequest) returns (FinalizeWriteStreamResponse) {
+    option (google.api.http) = {
+      post: "/v1alpha2/{name=projects/*/datasets/*/tables/*/streams/*}"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Atomically commits a group of `PENDING` streams that belong to the same
+  // `parent` table.
+  // Streams must be finalized before commit and cannot be committed multiple
+  // times. Once a stream is committed, data in the stream becomes available
+  // for read operations.
+  rpc BatchCommitWriteStreams(BatchCommitWriteStreamsRequest) returns (BatchCommitWriteStreamsResponse) {
+    option (google.api.http) = {
+      get: "/v1alpha2/{parent=projects/*/datasets/*/tables/*}"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Flushes rows to a BUFFERED stream.
+  // If users are appending rows to BUFFERED stream, flush operation is
+  // required in order for the rows to become available for reading. A
+  // Flush operation flushes up to any previously flushed offset in a BUFFERED
+  // stream, to the offset specified in the request.
+  rpc FlushRows(FlushRowsRequest) returns (FlushRowsResponse) {
+    option (google.api.http) = {
+      post: "/v1alpha2/{write_stream=projects/*/datasets/*/tables/*/streams/*}"
+      body: "*"
+    };
+    option (google.api.method_signature) = "write_stream";
+  }
+}
+
 // Request message for `AppendRows`.
 message AppendRowsRequest {
   message ProtoData {
@@ -143,81 +234,23 @@ message FinalizeWriteStreamResponse {
   int64 row_count = 1;
 }
 
-// BigQuery Write API.
-//
-// The Write API can be used to write data to BigQuery.
-service BigQueryWrite {
-  option (google.api.default_host) = "bigquerystorage.googleapis.com";
-  option (google.api.oauth_scopes) =
-      "https://www.googleapis.com/auth/bigquery,"
-      "https://www.googleapis.com/auth/bigquery.insertdata,"
-      "https://www.googleapis.com/auth/cloud-platform";
+// Request message for `FlushRows`.
+message FlushRowsRequest {
+  // Required. The stream that is the target of the flush operation.
+  string write_stream = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "bigquerystorage.googleapis.com/WriteStream"
+    }
+  ];
 
-  // Creates a write stream to the given table.
-  rpc CreateWriteStream(CreateWriteStreamRequest) returns (WriteStream) {
-    option (google.api.http) = {
-      post: "/v1alpha2/{parent=projects/*/datasets/*/tables/*}"
-      body: "write_stream"
-    };
-    option (google.api.method_signature) = "parent,write_stream";
-  }
+  // Ending offset of the flush operation. Rows before this offset(including
+  // this offset) will be flushed.
+  int64 offset = 2;
+}
 
-  // Appends data to the given stream.
-  //
-  // If `offset` is specified, the `offset` is checked against the end of
-  // stream. The server returns `OUT_OF_RANGE` in `AppendRowsResponse` if an
-  // attempt is made to append to an offset beyond the current end of the stream
-  // or `ALREADY_EXISTS` if user provids an `offset` that has already been
-  // written to. User can retry with adjusted offset within the same RPC
-  // stream. If `offset` is not specified, append happens at the end of the
-  // stream.
-  //
-  // The response contains the offset at which the append happened. Responses
-  // are received in the same order in which requests are sent. There will be
-  // one response for each successful request. If the `offset` is not set in
-  // response, it means append didn't happen due to some errors. If one request
-  // fails, all the subsequent requests will also fail until a success request
-  // is made again.
-  //
-  // If the stream is of `PENDING` type, data will only be available for read
-  // operations after the stream is committed.
-  rpc AppendRows(stream AppendRowsRequest) returns (stream AppendRowsResponse) {
-    option (google.api.http) = {
-      post: "/v1alpha2/{write_stream=projects/*/datasets/*/tables/*/streams/*}"
-      body: "*"
-    };
-    option (google.api.method_signature) = "write_stream";
-  }
-
-  // Gets a write stream.
-  rpc GetWriteStream(GetWriteStreamRequest) returns (WriteStream) {
-    option (google.api.http) = {
-      post: "/v1alpha2/{name=projects/*/datasets/*/tables/*/streams/*}"
-      body: "*"
-    };
-    option (google.api.method_signature) = "name";
-  }
-
-  // Finalize a write stream so that no new data can be appended to the
-  // stream.
-  rpc FinalizeWriteStream(FinalizeWriteStreamRequest) returns (FinalizeWriteStreamResponse) {
-    option (google.api.http) = {
-      post: "/v1alpha2/{name=projects/*/datasets/*/tables/*/streams/*}"
-      body: "*"
-    };
-    option (google.api.method_signature) = "name";
-  }
-
-  // Atomically commits a group of `PENDING` streams that belong to the same
-  // `parent` table.
-  // Streams must be finalized before commit and cannot be committed multiple
-  // times. Once a stream is committed, data in the stream becomes available
-  // for read operations.
-  rpc BatchCommitWriteStreams(BatchCommitWriteStreamsRequest) returns (BatchCommitWriteStreamsResponse) {
-    option (google.api.http) = {
-      get: "/v1alpha2/{parent=projects/*/datasets/*/tables/*}"
-    };
-    option (google.api.method_signature) = "parent";
-  }
-
+// Respond message for `FlushRows`.
+message FlushRowsResponse {
+  // The rows before this offset (including this offset) are flushed.
+  int64 offset = 1;
 }
