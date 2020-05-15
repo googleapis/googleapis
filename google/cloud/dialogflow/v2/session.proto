@@ -18,11 +18,13 @@ syntax = "proto3";
 package google.cloud.dialogflow.v2;
 
 import "google/api/annotations.proto";
-import "google/api/resource.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
 import "google/cloud/dialogflow/v2/audio_config.proto";
 import "google/cloud/dialogflow/v2/context.proto";
 import "google/cloud/dialogflow/v2/intent.proto";
 import "google/cloud/dialogflow/v2/session_entity_type.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";
 import "google/rpc/status.proto";
 import "google/type/latlng.proto";
@@ -40,6 +42,11 @@ option objc_class_prefix = "DF";
 // [StreamingDetectIntent][google.cloud.dialogflow.v2.Sessions.StreamingDetectIntent]) method to determine
 // user intent and respond.
 service Sessions {
+  option (google.api.default_host) = "dialogflow.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform,"
+      "https://www.googleapis.com/auth/dialogflow";
+
   // Processes a natural language query and returns structured, actionable data
   // as a result. This method is not idempotent, because it may cause contexts
   // and session entity types to be updated, which in turn might affect
@@ -49,6 +56,7 @@ service Sessions {
       post: "/v2/{session=projects/*/agent/sessions/*}:detectIntent"
       body: "*"
     };
+    option (google.api.method_signature) = "session,query_input";
   }
 
   // Processes a natural language query in audio format in a streaming fashion
@@ -65,10 +73,10 @@ message DetectIntentRequest {
   // caller to choose an appropriate session ID. It can be a random number or
   // some type of user identifier (preferably hashed). The length of the session
   // ID must not exceed 36 bytes.
-  string session = 1;
+  string session = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. The parameters of this query.
-  QueryParameters query_params = 2;
+  QueryParameters query_params = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. The input specification. It can be set to:
   //
@@ -78,17 +86,17 @@ message DetectIntentRequest {
   // 2.  a conversational query in the form of text, or
   //
   // 3.  an event that specifies which intent to trigger.
-  QueryInput query_input = 3;
+  QueryInput query_input = 3 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. Instructs the speech synthesizer how to generate the output
   // audio. If this field is not set and agent-level speech synthesizer is not
   // configured, no output audio is generated.
-  OutputAudioConfig output_audio_config = 4;
+  OutputAudioConfig output_audio_config = 4 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The natural language speech audio to be processed. This field
   // should be populated iff `query_input` is set to an input audio config.
   // A single request can contain up to 1 minute of speech audio data.
-  bytes input_audio = 5;
+  bytes input_audio = 5 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // The message returned from the DetectIntent method.
@@ -122,31 +130,31 @@ message QueryParameters {
   // [time zone database](https://www.iana.org/time-zones), e.g.,
   // America/New_York, Europe/Paris. If not provided, the time zone specified in
   // agent settings is used.
-  string time_zone = 1;
+  string time_zone = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The geo location of this conversational query.
-  google.type.LatLng geo_location = 2;
+  google.type.LatLng geo_location = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The collection of contexts to be activated before this query is
   // executed.
-  repeated Context contexts = 3;
+  repeated Context contexts = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Specifies whether to delete all contexts in the current session
   // before the new ones are activated.
-  bool reset_contexts = 4;
+  bool reset_contexts = 4 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Additional session entity types to replace or extend developer
   // entity types with. The entity synonyms apply to all languages and persist
   // for the session of this query.
-  repeated SessionEntityType session_entity_types = 5;
+  repeated SessionEntityType session_entity_types = 5 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. This field can be used to pass custom data into the webhook
   // associated with the agent. Arbitrary JSON objects are supported.
-  google.protobuf.Struct payload = 6;
+  google.protobuf.Struct payload = 6 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Configures the type of sentiment analysis to perform. If not
   // provided, sentiment analysis is not performed.
-  SentimentAnalysisRequestConfig sentiment_analysis_request_config = 10;
+  SentimentAnalysisRequestConfig sentiment_analysis_request_config = 10 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Represents the query input. It can contain either:
@@ -174,17 +182,19 @@ message QueryInput {
 // Represents the result of conversational query or event processing.
 message QueryResult {
   // The original conversational query text:
+  //
   // - If natural language text was provided as input, `query_text` contains
   //   a copy of the input.
   // - If natural language speech audio was provided as input, `query_text`
   //   contains the speech recognition result. If speech recognizer produced
   //   multiple alternatives, a particular one is picked.
-  // - If an event was provided as input, `query_text` is not set.
+  // - If automatic spell correction is enabled, `query_text` will contain the
+  //   corrected user input.
   string query_text = 1;
 
   // The language that was triggered during intent detection.
   // See [Language
-  // Support](https://cloud.google.com/dialogflow-enterprise/docs/reference/language)
+  // Support](https://cloud.google.com/dialogflow/docs/reference/language)
   // for a list of the currently supported language codes.
   string language_code = 15;
 
@@ -206,6 +216,7 @@ message QueryResult {
   google.protobuf.Struct parameters = 4;
 
   // This field is set to:
+  //
   // - `false` if the matched intent has required parameters and not all of
   //    the required parameter values have been collected.
   // - `true` if all required parameter values have been collected, or if the
@@ -235,11 +246,15 @@ message QueryResult {
 
   // The intent that matched the conversational query. Some, not
   // all fields are filled in this message, including but not limited to:
-  // `name`, `display_name` and `webhook_state`.
+  // `name`, `display_name`, `end_interaction` and `is_fallback`.
   Intent intent = 11;
 
   // The intent detection confidence. Values range from 0.0
   // (completely uncertain) to 1.0 (completely certain).
+  // This value is for informational purpose only and is only used to
+  // help match the best intent within the classification threshold.
+  // This value may change for the same end-user expression at any time due to a
+  // model retraining or change in implementation.
   // If there are `multiple knowledge_answers` messages, this value is set to
   // the greatest `knowledgeAnswers.match_confidence` value in the list.
   float intent_detection_confidence = 12;
@@ -255,27 +270,43 @@ message QueryResult {
 }
 
 // The top-level message sent by the client to the
-// `StreamingDetectIntent` method.
+// [StreamingDetectIntent][] method.
 //
 // Multiple request messages should be sent in order:
 //
-// 1.  The first message must contain `session`, `query_input` plus optionally
-//     `query_params` and/or `single_utterance`. The message must not contain `input_audio`.
+// 1.  The first message must contain [StreamingDetectIntentRequest.session][google.cloud.dialogflow.v2.StreamingDetectIntentRequest.session],
+//     [StreamingDetectIntentRequest.query_input] plus optionally
+//     [StreamingDetectIntentRequest.query_params]. If the client wants to
+//     receive an audio response, it should also contain
+//     [StreamingDetectIntentRequest.output_audio_config][google.cloud.dialogflow.v2.StreamingDetectIntentRequest.output_audio_config]. The message
+//     must not contain [StreamingDetectIntentRequest.input_audio][google.cloud.dialogflow.v2.StreamingDetectIntentRequest.input_audio].
+// 2.  If [StreamingDetectIntentRequest.query_input][google.cloud.dialogflow.v2.StreamingDetectIntentRequest.query_input] was set to
+//     [StreamingDetectIntentRequest.query_input.audio_config][], all subsequent
+//     messages must contain [StreamingDetectIntentRequest.input_audio] to
+//     continue with Speech recognition.
+//     If you decide to rather detect an intent from text input after you
+//     already started Speech recognition, please send a message with
+//     [StreamingDetectIntentRequest.query_input.text][].
 //
-// 2.  If `query_input` was set to a streaming input audio config,
-//     all subsequent messages must contain only `input_audio`.
-//     Otherwise, finish the request stream.
+//     However, note that:
+//
+//     * Dialogflow will bill you for the audio duration so far.
+//     * Dialogflow discards all Speech recognition results in favor of the
+//       input text.
+//     * Dialogflow will use the language code from the first message.
+//
+// After you sent all input, you must half-close or abort the request stream.
 message StreamingDetectIntentRequest {
   // Required. The name of the session the query is sent to.
   // Format of the session name:
-  // `projects/<Project ID>/agent/sessions/<Session ID>`. It’s up to the API
+  // `projects/<Project ID>/agent/sessions/<Session ID>`. It's up to the API
   // caller to choose an appropriate `Session ID`. It can be a random number or
   // some type of user identifier (preferably hashed). The length of the session
   // ID must not exceed 36 characters.
-  string session = 1;
+  string session = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. The parameters of this query.
-  QueryParameters query_params = 2;
+  QueryParameters query_params = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. The input specification. It can be set to:
   //
@@ -285,27 +316,30 @@ message StreamingDetectIntentRequest {
   // 2.  a conversational query in the form of text, or
   //
   // 3.  an event that specifies which intent to trigger.
-  QueryInput query_input = 3;
+  QueryInput query_input = 3 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. If `false` (default), recognition does not cease until the
-  // client closes the stream.
-  // If `true`, the recognizer will detect a single spoken utterance in input
-  // audio. Recognition ceases when it detects the audio's voice has
-  // stopped or paused. In this case, once a detected intent is received, the
-  // client should close the stream and start a new request with a new stream as
-  // needed.
+  // Optional. Please use [InputAudioConfig.single_utterance][google.cloud.dialogflow.v2.InputAudioConfig.single_utterance] instead.
+  // If `false` (default), recognition does not cease until
+  // the client closes the stream. If `true`, the recognizer will detect a
+  // single spoken utterance in input audio. Recognition ceases when it detects
+  // the audio's voice has stopped or paused. In this case, once a detected
+  // intent is received, the client should close the stream and start a new
+  // request with a new stream as needed.
   // This setting is ignored when `query_input` is a piece of text or an event.
-  bool single_utterance = 4;
+  bool single_utterance = 4 [
+    deprecated = true,
+    (google.api.field_behavior) = OPTIONAL
+  ];
 
   // Optional. Instructs the speech synthesizer how to generate the output
   // audio. If this field is not set and agent-level speech synthesizer is not
   // configured, no output audio is generated.
-  OutputAudioConfig output_audio_config = 5;
+  OutputAudioConfig output_audio_config = 5 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The input audio content to be recognized. Must be sent if
   // `query_input` was set to a streaming input audio config. The complete audio
   // over all streaming messages must not exceed 1 minute.
-  bytes input_audio = 6;
+  bytes input_audio = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // The top-level message returned from the
@@ -335,11 +369,14 @@ message StreamingDetectIntentResponse {
   google.rpc.Status webhook_status = 4;
 
   // The audio data bytes encoded as specified in the request.
+  // Note: The output audio is generated based on the values of default platform
+  // text responses found in the `query_result.fulfillment_messages` field. If
+  // multiple default text responses exist, they will be concatenated when
+  // generating audio. If no default platform text responses exist, the
+  // generated audio content will be empty.
   bytes output_audio = 5;
 
-  // Instructs the speech synthesizer how to generate the output audio. This
-  // field is populated from the agent-level speech synthesizer configuration,
-  // if enabled.
+  // The config used by the speech synthesizer to generate the output audio.
   OutputAudioConfig output_audio_config = 6;
 }
 
@@ -362,7 +399,7 @@ message StreamingDetectIntentResponse {
 //
 // 6.  transcript: " that is"
 //
-// 7.  message_type: `MESSAGE_TYPE_END_OF_SINGLE_UTTERANCE`
+// 7.  message_type: `END_OF_SINGLE_UTTERANCE`
 //
 // 8.  transcript: " that is the question"
 //     is_final: true
@@ -373,9 +410,9 @@ message StreamingDetectIntentResponse {
 //
 // In each response we populate:
 //
-// *  for `MESSAGE_TYPE_TRANSCRIPT`: `transcript` and possibly `is_final`.
+// *  for `TRANSCRIPT`: `transcript` and possibly `is_final`.
 //
-// *  for `MESSAGE_TYPE_END_OF_SINGLE_UTTERANCE`: only `message_type`.
+// *  for `END_OF_SINGLE_UTTERANCE`: only `message_type`.
 message StreamingRecognitionResult {
   // Type of the response message.
   enum MessageType {
@@ -386,12 +423,12 @@ message StreamingRecognitionResult {
     TRANSCRIPT = 1;
 
     // Event indicates that the server has detected the end of the user's speech
-    // utterance and expects no additional speech. Therefore, the server will
-    // not process additional audio (although it may subsequently return
-    // additional results). The client should stop sending additional audio
-    // data, half-close the gRPC connection, and wait for any additional results
-    // until the server closes the gRPC connection. This message is only sent if
-    // `single_utterance` was set to `true`, and is not used otherwise.
+    // utterance and expects no additional inputs.
+    // Therefore, the server will not process additional audio (although it may subsequently return additional results). The
+    // client should stop sending additional audio data, half-close the gRPC
+    // connection, and wait for any additional results until the server closes
+    // the gRPC connection. This message is only sent if `single_utterance` was
+    // set to `true`, and is not used otherwise.
     END_OF_SINGLE_UTTERANCE = 2;
   }
 
@@ -399,13 +436,13 @@ message StreamingRecognitionResult {
   MessageType message_type = 1;
 
   // Transcript text representing the words that the user spoke.
-  // Populated if and only if `message_type` = `MESSAGE_TYPE_TRANSCRIPT`.
+  // Populated if and only if `message_type` = `TRANSCRIPT`.
   string transcript = 2;
 
   // If `false`, the `StreamingRecognitionResult` represents an
   // interim result that may change. If `true`, the recognizer will not return
   // any further hypotheses about this piece of the audio. May only be populated
-  // for `message_type` = `MESSAGE_TYPE_TRANSCRIPT`.
+  // for `message_type` = `TRANSCRIPT`.
   bool is_final = 3;
 
   // The Speech confidence between 0.0 and 1.0 for the current portion of audio.
@@ -418,94 +455,17 @@ message StreamingRecognitionResult {
   float confidence = 4;
 }
 
-// Instructs the speech recognizer how to process the audio content.
-message InputAudioConfig {
-  // Required. Audio encoding of the audio content to process.
-  AudioEncoding audio_encoding = 1;
-
-  // Required. Sample rate (in Hertz) of the audio content sent in the query.
-  // Refer to
-  // [Cloud Speech API
-  // documentation](https://cloud.google.com/speech-to-text/docs/basics) for
-  // more details.
-  int32 sample_rate_hertz = 2;
-
-  // Required. The language of the supplied audio. Dialogflow does not do
-  // translations. See [Language
-  // Support](https://cloud.google.com/dialogflow-enterprise/docs/reference/language)
-  // for a list of the currently supported language codes. Note that queries in
-  // the same session do not necessarily need to specify the same language.
-  string language_code = 3;
-
-  // Optional. The collection of phrase hints which are used to boost accuracy
-  // of speech recognition.
-  // Refer to
-  // [Cloud Speech API
-  // documentation](https://cloud.google.com/speech-to-text/docs/basics#phrase-hints)
-  // for more details.
-  repeated string phrase_hints = 4;
-}
-
 // Represents the natural language text to be processed.
 message TextInput {
   // Required. The UTF-8 encoded natural language text to be processed.
   // Text length must not exceed 256 characters.
-  string text = 1;
+  string text = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. The language of this conversational query. See [Language
-  // Support](https://cloud.google.com/dialogflow-enterprise/docs/reference/language)
+  // Support](https://cloud.google.com/dialogflow/docs/reference/language)
   // for a list of the currently supported language codes. Note that queries in
   // the same session do not necessarily need to specify the same language.
-  string language_code = 2;
-}
-
-// Audio encoding of the audio content sent in the conversational query request.
-// Refer to the
-// [Cloud Speech API
-// documentation](https://cloud.google.com/speech-to-text/docs/basics) for more
-// details.
-enum AudioEncoding {
-  // Not specified.
-  AUDIO_ENCODING_UNSPECIFIED = 0;
-
-  // Uncompressed 16-bit signed little-endian samples (Linear PCM).
-  AUDIO_ENCODING_LINEAR_16 = 1;
-
-  // [`FLAC`](https://xiph.org/flac/documentation.html) (Free Lossless Audio
-  // Codec) is the recommended encoding because it is lossless (therefore
-  // recognition is not compromised) and requires only about half the
-  // bandwidth of `LINEAR16`. `FLAC` stream encoding supports 16-bit and
-  // 24-bit samples, however, not all fields in `STREAMINFO` are supported.
-  AUDIO_ENCODING_FLAC = 2;
-
-  // 8-bit samples that compand 14-bit audio samples using G.711 PCMU/mu-law.
-  AUDIO_ENCODING_MULAW = 3;
-
-  // Adaptive Multi-Rate Narrowband codec. `sample_rate_hertz` must be 8000.
-  AUDIO_ENCODING_AMR = 4;
-
-  // Adaptive Multi-Rate Wideband codec. `sample_rate_hertz` must be 16000.
-  AUDIO_ENCODING_AMR_WB = 5;
-
-  // Opus encoded audio frames in Ogg container
-  // ([OggOpus](https://wiki.xiph.org/OggOpus)).
-  // `sample_rate_hertz` must be 16000.
-  AUDIO_ENCODING_OGG_OPUS = 6;
-
-  // Although the use of lossy encodings is not recommended, if a very low
-  // bitrate encoding is required, `OGG_OPUS` is highly preferred over
-  // Speex encoding. The [Speex](https://speex.org/) encoding supported by
-  // Dialogflow API has a header byte in each block, as in MIME type
-  // `audio/x-speex-with-header-byte`.
-  // It is a variant of the RTP Speex encoding defined in
-  // [RFC 5574](https://tools.ietf.org/html/rfc5574).
-  // The stream is a sequence of blocks, one block per RTP packet. Each block
-  // starts with a byte containing the length of the block, in bytes, followed
-  // by one or more frames of Speex data, padded to an integral number of
-  // bytes (octets) as specified in RFC 5574. In other words, each RTP header
-  // is replaced with a single byte containing the block length. Only Speex
-  // wideband is supported. `sample_rate_hertz` must be 16000.
-  AUDIO_ENCODING_SPEEX_WITH_HEADER_BYTE = 7;
+  string language_code = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
 // Events allow for matching intents by event name instead of the natural
@@ -515,16 +475,16 @@ enum AudioEncoding {
 // `"Hello #welcome_event.name! What can I do for you today?"`.
 message EventInput {
   // Required. The unique identifier of the event.
-  string name = 1;
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. The collection of parameters associated with the event.
-  google.protobuf.Struct parameters = 2;
+  google.protobuf.Struct parameters = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. The language of this query. See [Language
-  // Support](https://cloud.google.com/dialogflow-enterprise/docs/reference/language)
+  // Support](https://cloud.google.com/dialogflow/docs/reference/language)
   // for a list of the currently supported language codes. Note that queries in
   // the same session do not necessarily need to specify the same language.
-  string language_code = 3;
+  string language_code = 3 [(google.api.field_behavior) = REQUIRED];
 }
 
 // Configures the types of sentiment analysis to perform.
@@ -532,7 +492,7 @@ message SentimentAnalysisRequestConfig {
   // Optional. Instructs the service to perform sentiment analysis on
   // `query_text`. If not provided, sentiment analysis is not performed on
   // `query_text`.
-  bool analyze_query_text_sentiment = 1;
+  bool analyze_query_text_sentiment = 1 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // The result of sentiment analysis as configured by

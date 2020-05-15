@@ -5,7 +5,7 @@ buffer](https://developers.google.com/protocol-buffers/) definitions for the
 [Google Ads API](https://developers.google.com/google-ads/api/). To use this
 API, we encourage you to take a look at our [official client
 libraries](https://developers.google.com/google-ads/api/docs/client-libs) for
-Java, Ruby, PHP, or .NET. Refer to the
+Java, Ruby, PHP, Python or .NET. Refer to the
 [Quickstart](https://developers.google.com/google-ads/api/docs/first-call/overview)
 to learn how to make your first API call.
 

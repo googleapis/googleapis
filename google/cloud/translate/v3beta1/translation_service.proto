@@ -18,6 +18,9 @@ syntax = "proto3";
 package google.cloud.translation.v3beta1;
 
 import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -34,11 +37,20 @@ option ruby_package = "Google::Cloud::Translate::V3beta1";
 
 // Provides natural language translation operations.
 service TranslationService {
+  option (google.api.default_host) = "translate.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform,"
+      "https://www.googleapis.com/auth/cloud-translation";
+
   // Translates input text and returns translated text.
   rpc TranslateText(TranslateTextRequest) returns (TranslateTextResponse) {
     option (google.api.http) = {
       post: "/v3beta1/{parent=projects/*/locations/*}:translateText"
       body: "*"
+      additional_bindings {
+        post: "/v3beta1/{parent=projects/*}:translateText"
+        body: "*"
+      }
     };
   }
 
@@ -47,14 +59,23 @@ service TranslationService {
     option (google.api.http) = {
       post: "/v3beta1/{parent=projects/*/locations/*}:detectLanguage"
       body: "*"
+      additional_bindings {
+        post: "/v3beta1/{parent=projects/*}:detectLanguage"
+        body: "*"
+      }
     };
+    option (google.api.method_signature) = "parent,model,mime_type";
   }
 
   // Returns a list of supported languages for translation.
   rpc GetSupportedLanguages(GetSupportedLanguagesRequest) returns (SupportedLanguages) {
     option (google.api.http) = {
       get: "/v3beta1/{parent=projects/*/locations/*}/supportedLanguages"
+      additional_bindings {
+        get: "/v3beta1/{parent=projects/*}/supportedLanguages"
+      }
     };
+    option (google.api.method_signature) = "parent,display_language_code,model";
   }
 
   // Translates a large volume of text in asynchronous batch mode.
@@ -69,6 +90,10 @@ service TranslationService {
       post: "/v3beta1/{parent=projects/*/locations/*}:batchTranslateText"
       body: "*"
     };
+    option (google.longrunning.operation_info) = {
+      response_type: "BatchTranslateResponse"
+      metadata_type: "BatchTranslateMetadata"
+    };
   }
 
   // Creates a glossary and returns the long-running operation. Returns
@@ -78,6 +103,11 @@ service TranslationService {
       post: "/v3beta1/{parent=projects/*/locations/*}/glossaries"
       body: "glossary"
     };
+    option (google.api.method_signature) = "parent,glossary";
+    option (google.longrunning.operation_info) = {
+      response_type: "Glossary"
+      metadata_type: "CreateGlossaryMetadata"
+    };
   }
 
   // Lists glossaries in a project. Returns NOT_FOUND, if the project doesn't
@@ -86,6 +116,8 @@ service TranslationService {
     option (google.api.http) = {
       get: "/v3beta1/{parent=projects/*/locations/*}/glossaries"
     };
+    option (google.api.method_signature) = "parent";
+    option (google.api.method_signature) = "parent,filter";
   }
 
   // Gets a glossary. Returns NOT_FOUND, if the glossary doesn't
@@ -94,6 +126,7 @@ service TranslationService {
     option (google.api.http) = {
       get: "/v3beta1/{name=projects/*/locations/*/glossaries/*}"
     };
+    option (google.api.method_signature) = "name";
   }
 
   // Deletes a glossary, or cancels glossary construction
@@ -103,6 +136,11 @@ service TranslationService {
     option (google.api.http) = {
       delete: "/v3beta1/{name=projects/*/locations/*/glossaries/*}"
     };
+    option (google.api.method_signature) = "name";
+    option (google.longrunning.operation_info) = {
+      response_type: "DeleteGlossaryResponse"
+      metadata_type: "DeleteGlossaryMetadata"
+    };
   }
 }
 
@@ -111,73 +149,102 @@ service TranslationService {
 message TranslateTextGlossaryConfig {
   // Required. Specifies the glossary used for this translation. Use
   // this format: projects/*/locations/*/glossaries/*
-  string glossary = 1;
+  string glossary = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. Indicates whether we should do a case-insensitive match.
+  // Optional. Indicates match is case-insensitive.
   // Default value is false if missing.
-  bool ignore_case = 2;
+  bool ignore_case = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // The request message for synchronous translation.
 message TranslateTextRequest {
   // Required. The content of the input in string format.
-  // We recommend the total contents to be less than 30k codepoints.
-  // Please use BatchTranslateText for larger text.
-  repeated string contents = 1;
+  // We recommend the total content be less than 30k codepoints.
+  // Use BatchTranslateText for larger text.
+  repeated string contents = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. The format of the source text, for example, "text/html",
-  //  "text/plain". If left blank, the MIME type is assumed to be "text/html".
-  string mime_type = 3;
+  //  "text/plain". If left blank, the MIME type defaults to "text/html".
+  string mime_type = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The BCP-47 language code of the input text if
   // known, for example, "en-US" or "sr-Latn". Supported language codes are
   // listed in Language Support. If the source language isn't specified, the API
   // attempts to identify the source language automatically and returns the
-  // the source language within the response.
-  string source_language_code = 4;
+  // source language within the response.
+  string source_language_code = 4 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. The BCP-47 language code to use for translation of the input
   // text, set to one of the language codes listed in Language Support.
-  string target_language_code = 5;
+  string target_language_code = 5 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. Only used when making regionalized call.
-  // Format:
-  // projects/{project-id}/locations/{location-id}.
+  // Required. Project or location to make a call. Must refer to a caller's
+  // project.
   //
-  // Only custom model/glossary within the same location-id can be used.
-  // Otherwise 400 is returned.
-  string parent = 8;
+  // Format: `projects/{project-id}` or
+  // `projects/{project-id}/locations/{location-id}`.
+  //
+  // For global calls, use `projects/{project-id}/locations/global` or
+  // `projects/{project-id}`.
+  //
+  // Non-global location is required for requests using AutoML models or
+  // custom glossaries.
+  //
+  // Models and glossaries must be within the same region (have same
+  // location-id), otherwise an INVALID_ARGUMENT (400) error is returned.
+  string parent = 8 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
 
   // Optional. The `model` type requested for this translation.
   //
-  // The format  depends on model type:
-  // 1. Custom models:
-  // projects/{project-id}/locations/{location-id}/models/{model-id}.
-  // 2. General (built-in) models:
-  // projects/{project-id}/locations/{location-id}/models/general/nmt
-  // projects/{project-id}/locations/{location-id}/models/general/base
+  // The format depends on model type:
   //
-  // For global (non-regionalized) requests, use {location-id} 'global'.
+  // - AutoML Translation models:
+  //   `projects/{project-id}/locations/{location-id}/models/{model-id}`
+  //
+  // - General (built-in) models:
+  //   `projects/{project-id}/locations/{location-id}/models/general/nmt`,
+  //   `projects/{project-id}/locations/{location-id}/models/general/base`
+  //
+  //
+  // For global (non-regionalized) requests, use `location-id` `global`.
   // For example,
-  // projects/{project-id}/locations/global/models/general/nmt
+  // `projects/{project-id}/locations/global/models/general/nmt`.
   //
   // If missing, the system decides which google base model to use.
-  string model = 6;
+  string model = 6 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Glossary to be applied. The glossary needs to be in the same
-  // region as the model, otherwise an INVALID_ARGUMENT error is returned.
-  TranslateTextGlossaryConfig glossary_config = 7;
+  // Optional. Glossary to be applied. The glossary must be
+  // within the same region (have the same location-id) as the model, otherwise
+  // an INVALID_ARGUMENT (400) error is returned.
+  TranslateTextGlossaryConfig glossary_config = 7 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The labels with user-defined metadata for the request.
+  //
+  // Label keys and values can be no longer than 63 characters
+  // (Unicode codepoints), can only contain lowercase letters, numeric
+  // characters, underscores and dashes. International characters are allowed.
+  // Label values are optional. Label keys must start with a letter.
+  //
+  // See https://cloud.google.com/translate/docs/labels for more information.
+  map<string, string> labels = 10 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// The main language translation response message.
 message TranslateTextResponse {
   // Text translation responses with no glossary applied.
-  // This field has the same length as `contents` in TranslateTextRequest.
+  // This field has the same length as
+  // [`contents`][google.cloud.translation.v3beta1.TranslateTextRequest.contents].
   repeated Translation translations = 1;
 
   // Text translation responses if a glossary is provided in the request.
-  // This could be the same as 'translation' above if no terms apply.
-  // This field has the same length as `contents` in TranslateTextRequest.
+  // This can be the same as
+  // [`translations`][google.cloud.translation.v3beta1.TranslateTextResponse.translations] if no terms apply.
+  // This field has the same length as
+  // [`contents`][google.cloud.translation.v3beta1.TranslateTextRequest.contents].
   repeated Translation glossary_translations = 3;
 }
 
@@ -193,7 +260,7 @@ message Translation {
   // The BCP-47 language code of source text in the initial request, detected
   // automatically, if no source language was passed within the initial
   // request. If the source language was passed, auto-detection of the language
-  // does not occur and this field will be empty.
+  // does not occur and this field is empty.
   string detected_language_code = 4;
 
   // The `glossary_config` used for this translation.
@@ -202,18 +269,34 @@ message Translation {
 
 // The request message for language detection.
 message DetectLanguageRequest {
-  // Optional. Only used when making regionalized call.
-  // Format:
-  // projects/{project-id}/locations/{location-id}.
+  // Required. Project or location to make a call. Must refer to a caller's
+  // project.
   //
-  // Only custom model within the same location-id can be used.
-  // Otherwise 400 is returned.
-  string parent = 5;
+  // Format: `projects/{project-id}/locations/{location-id}` or
+  // `projects/{project-id}`.
+  //
+  // For global calls, use `projects/{project-id}/locations/global` or
+  // `projects/{project-id}`.
+  //
+  // Only models within the same region (has same location-id) can be used.
+  // Otherwise an INVALID_ARGUMENT (400) error is returned.
+  string parent = 5 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
 
   // Optional. The language detection model to be used.
-  // projects/{project-id}/locations/{location-id}/models/language-detection/{model-id}
-  // If not specified, default will be used.
-  string model = 4;
+  //
+  // Format:
+  // `projects/{project-id}/locations/{location-id}/models/language-detection/{model-id}`
+  //
+  // Only one language detection model is currently supported:
+  // `projects/{project-id}/locations/{location-id}/models/language-detection/default`.
+  //
+  // If not specified, the default model is used.
+  string model = 4 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. The source of the document from which to detect the language.
   oneof source {
@@ -222,8 +305,18 @@ message DetectLanguageRequest {
   }
 
   // Optional. The format of the source text, for example, "text/html",
-  // "text/plain". If left blank, the MIME type is assumed to be "text/html".
-  string mime_type = 3;
+  // "text/plain". If left blank, the MIME type defaults to "text/html".
+  string mime_type = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The labels with user-defined metadata for the request.
+  //
+  // Label keys and values can be no longer than 63 characters
+  // (Unicode codepoints), can only contain lowercase letters, numeric
+  // characters, underscores and dashes. International characters are allowed.
+  // Label values are optional. Label keys must start with a letter.
+  //
+  // See https://cloud.google.com/translate/docs/labels for more information.
+  map<string, string> labels = 6;
 }
 
 // The response message for language detection.
@@ -245,29 +338,46 @@ message DetectLanguageResponse {
 
 // The request message for discovering supported languages.
 message GetSupportedLanguagesRequest {
-  // Optional. Used for making regionalized calls.
-  // Format: projects/{project-id}/locations/{location-id}.
-  // For global calls, use projects/{project-id}/locations/global.
-  // If missing, the call is treated as a global call.
+  // Required. Project or location to make a call. Must refer to a caller's
+  // project.
   //
-  // Only custom model within the same location-id can be used.
-  // Otherwise 400 is returned.
-  string parent = 3;
+  // Format: `projects/{project-id}` or
+  // `projects/{project-id}/locations/{location-id}`.
+  //
+  // For global calls, use `projects/{project-id}/locations/global` or
+  // `projects/{project-id}`.
+  //
+  // Non-global location is required for AutoML models.
+  //
+  // Only models within the same region (have same location-id) can be used,
+  // otherwise an INVALID_ARGUMENT (400) error is returned.
+  string parent = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
 
   // Optional. The language to use to return localized, human readable names
-  // of supported languages. If missing, default language is ENGLISH.
-  string display_language_code = 1;
+  // of supported languages. If missing, then display names are not returned
+  // in a response.
+  string display_language_code = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Get supported languages of this model.
+  //
   // The format depends on model type:
-  // 1. Custom models:
-  // projects/{project-id}/locations/{location-id}/models/{model-id}.
-  // 2. General (built-in) models:
-  // projects/{project-id}/locations/{location-id}/models/general/nmt
-  // projects/{project-id}/locations/{location-id}/models/general/base
+  //
+  // - AutoML Translation models:
+  //   `projects/{project-id}/locations/{location-id}/models/{model-id}`
+  //
+  // - General (built-in) models:
+  //   `projects/{project-id}/locations/{location-id}/models/general/nmt`,
+  //   `projects/{project-id}/locations/{location-id}/models/general/base`
+  //
+  //
   // Returns languages supported by the specified model.
-  // If missing, we get supported languages of Google general NMT model.
-  string model = 2;
+  // If missing, we get supported languages of Google general base (PBMT) model.
+  string model = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // The response message for discovering supported languages.
@@ -297,19 +407,19 @@ message SupportedLanguage {
   bool support_target = 4;
 }
 
-// The GCS location for the input content.
+// The Google Cloud Storage location for the input content.
 message GcsSource {
   // Required. Source data URI. For example, `gs://my_bucket/my_object`.
-  string input_uri = 1;
+  string input_uri = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
-// Input configuration.
+// Input configuration for BatchTranslateText request.
 message InputConfig {
   // Optional. Can be "text/plain" or "text/html".
   // For `.tsv`, "text/html" is used if mime_type is missing.
   // For `.html`, this field must be "text/html" or empty.
   // For `.txt`, this field must be "text/plain" or empty.
-  string mime_type = 1;
+  string mime_type = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. Specify the input.
   oneof source {
@@ -323,6 +433,11 @@ message InputConfig {
     // second column is the actual text to be
     //  translated. We recommend each row be <= 10K Unicode codepoints,
     // otherwise an error might be returned.
+    // Note that the input tsv must be RFC 4180 compliant.
+    //
+    // You could use https://github.com/Clever/csvlint to check potential
+    // formatting errors in your tsv file.
+    // csvlint --delimiter='\t' your_input_file.tsv
     //
     // The other supported file extensions are `.txt` or `.html`, which is
     // treated as a single large chunk of text.
@@ -330,14 +445,15 @@ message InputConfig {
   }
 }
 
-// The GCS location for the output content
+// The Google Cloud Storage location for the output content.
 message GcsDestination {
   // Required. There must be no files under 'output_uri_prefix'.
-  // 'output_uri_prefix' must end with "/". Otherwise error 400 is returned.
-  string output_uri_prefix = 1;
+  // 'output_uri_prefix' must end with "/" and start with "gs://", otherwise an
+  // INVALID_ARGUMENT (400) error is returned.
+  string output_uri_prefix = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
-// Output configuration.
+// Output configuration for BatchTranslateText request.
 message OutputConfig {
   // Required. The destination of output.
   oneof destination {
@@ -364,13 +480,13 @@ message OutputConfig {
     // errors_file contains the errors during processing of the file. (details
     // below). Both translations_file and errors_file could be empty
     // strings if we have no content to output.
-    // glossary_translations_file,glossary_errors_file are always empty string
-    // if input_file is tsv. They could also be empty if we have no content to
-    // output.
+    // glossary_translations_file and glossary_errors_file are always empty
+    // strings if the input_file is tsv. They could also be empty if we have no
+    // content to output.
     //
     // Once a row is present in index.csv, the input/output matching never
     // changes. Callers should also expect all the content in input_file are
-    // processed and ready to be consumed (that is, No partial output file is
+    // processed and ready to be consumed (that is, no partial output file is
     // written).
     //
     // The format of translations_file (for target language code 'trg') is:
@@ -396,8 +512,8 @@ message OutputConfig {
     // The format of errors file (for target language code 'trg') is:
     // gs://translation_test/a_b_c_'trg'_errors.[extension]
     //
-    // If the input file extension is tsv, errors_file has the
-    // following Column 1: ID of the request provided in the input, if it's not
+    // If the input file extension is tsv, errors_file contains the following:
+    // Column 1: ID of the request provided in the input, if it's not
     // provided in the input, then the input row number is used (0-based).
     // Column 2: source sentence.
     // Column 3: Error detail for the translation. Could be empty.
@@ -413,49 +529,70 @@ message OutputConfig {
 
 // The batch translation request.
 message BatchTranslateTextRequest {
-  // Optional. Only used when making regionalized call.
-  // Format:
-  // projects/{project-id}/locations/{location-id}.
+  // Required. Location to make a call. Must refer to a caller's project.
   //
-  // Only custom models/glossaries within the same location-id can be used.
-  // Otherwise 400 is returned.
-  string parent = 1;
+  // Format: `projects/{project-id}/locations/{location-id}`.
+  //
+  // The `global` location is not supported for batch translation.
+  //
+  // Only AutoML Translation models or glossaries within the same region (have
+  // the same location-id) can be used, otherwise an INVALID_ARGUMENT (400)
+  // error is returned.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
 
   // Required. Source language code.
-  string source_language_code = 2;
+  string source_language_code = 2 [(google.api.field_behavior) = REQUIRED];
 
   // Required. Specify up to 10 language codes here.
-  repeated string target_language_codes = 3;
+  repeated string target_language_codes = 3 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. The models to use for translation. Map's key is target language
   // code. Map's value is model name. Value can be a built-in general model,
-  // or a custom model built by AutoML.
+  // or an AutoML Translation model.
   //
   // The value format depends on model type:
-  // 1. Custom models:
-  // projects/{project-id}/locations/{location-id}/models/{model-id}.
-  // 2. General (built-in) models:
-  // projects/{project-id}/locations/{location-id}/models/general/nmt
-  // projects/{project-id}/locations/{location-id}/models/general/base
+  //
+  // - AutoML Translation models:
+  //   `projects/{project-id}/locations/{location-id}/models/{model-id}`
+  //
+  // - General (built-in) models:
+  //   `projects/{project-id}/locations/{location-id}/models/general/nmt`,
+  //   `projects/{project-id}/locations/{location-id}/models/general/base`
+  //
   //
   // If the map is empty or a specific model is
-  // not requested for a language pair, then default google model is used.
-  map<string, string> models = 4;
+  // not requested for a language pair, then default google model (nmt) is used.
+  map<string, string> models = 4 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. Input configurations.
   // The total number of files matched should be <= 1000.
   // The total content size should be <= 100M Unicode codepoints.
   // The files must use UTF-8 encoding.
-  repeated InputConfig input_configs = 5;
+  repeated InputConfig input_configs = 5 [(google.api.field_behavior) = REQUIRED];
 
   // Required. Output configuration.
   // If 2 input configs match to the same file (that is, same input path),
   // we don't generate output for duplicate inputs.
-  OutputConfig output_config = 6;
+  OutputConfig output_config = 6 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. Glossaries to be applied for translation.
   // It's keyed by target language code.
-  map<string, TranslateTextGlossaryConfig> glossaries = 7;
+  map<string, TranslateTextGlossaryConfig> glossaries = 7 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The labels with user-defined metadata for the request.
+  //
+  // Label keys and values can be no longer than 63 characters
+  // (Unicode codepoints), can only contain lowercase letters, numeric
+  // characters, underscores and dashes. International characters are allowed.
+  // Label values are optional. Label keys must start with a letter.
+  //
+  // See https://cloud.google.com/translate/docs/labels for more information.
+  map<string, string> labels = 9 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // State metadata for the batch translation operation.
@@ -468,11 +605,11 @@ message BatchTranslateMetadata {
     // Request is being processed.
     RUNNING = 1;
 
-    // The batch is processed, and at least one item has been successfully
+    // The batch is processed, and at least one item was successfully
     // processed.
     SUCCEEDED = 2;
 
-    // The batch is done and no item has been successfully processed.
+    // The batch is done and no item was successfully processed.
     FAILED = 3;
 
     // Request is in the process of being canceled after caller invoked
@@ -497,7 +634,7 @@ message BatchTranslateMetadata {
 
   // Total number of characters (Unicode codepoints).
   // This is the total number of codepoints from input files times the number of
-  // target languages. It appears here shortly after the call is submitted.
+  // target languages and appears here shortly after the call is submitted.
   int64 total_characters = 4;
 
   // Time when the operation was submitted.
@@ -529,12 +666,12 @@ message GlossaryInputConfig {
   // Required. Specify the input.
   oneof source {
     // Required. Google Cloud Storage location of glossary data.
-    // File format is determined based on file name extension. API returns
+    // File format is determined based on the filename extension. API returns
     // [google.rpc.Code.INVALID_ARGUMENT] for unsupported URI-s and file
     // formats. Wildcards are not allowed. This must be a single file in one of
     // the following formats:
     //
-    // For `UNIDIRECTIONAL` glossaries:
+    // For unidirectional glossaries:
     //
     // - TSV/CSV (`.tsv`/`.csv`): 2 column file, tab- or comma-separated.
     //   The first column is source text. The second column is target text.
@@ -544,19 +681,24 @@ message GlossaryInputConfig {
     // - TMX (`.tmx`): TMX file with parallel data defining source/target term
     // pairs.
     //
-    // For `EQUIVALENT_TERMS_SET` glossaries:
+    // For equivalent term sets glossaries:
     //
     // - CSV (`.csv`): Multi-column CSV file defining equivalent glossary terms
     //   in multiple languages. The format is defined for Google Translation
-    //   Toolkit and documented here:
-    //   `https://support.google.com/translatortoolkit/answer/6306379?hl=en`.
+    //   Toolkit and documented in [Use a
+    //   glossary](https://support.google.com/translatortoolkit/answer/6306379?hl=en).
     GcsSource gcs_source = 1;
   }
 }
 
 // Represents a glossary built from user provided data.
 message Glossary {
-  // Used with UNIDIRECTIONAL.
+  option (google.api.resource) = {
+    type: "translate.googleapis.com/Glossary"
+    pattern: "projects/{project}/locations/{location}/glossaries/{glossary}"
+  };
+
+  // Used with unidirectional glossaries.
   message LanguageCodePair {
     // Required. The BCP-47 language code of the input text, for example,
     // "en-US". Expected to be an exact match for GlossaryTerm.language_code.
@@ -567,7 +709,7 @@ message Glossary {
     string target_language_code = 2;
   }
 
-  // Used with EQUIVALENT_TERMS_SET.
+  // Used with equivalent term set glossaries.
   message LanguageCodesSet {
     // The BCP-47 language code(s) for terms defined in the glossary.
     // All entries are unique. The list contains at least two entries.
@@ -577,14 +719,14 @@ message Glossary {
 
   // Required. The resource name of the glossary. Glossary names have the form
   // `projects/{project-id}/locations/{location-id}/glossaries/{glossary-id}`.
-  string name = 1;
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Languages supported by the glossary.
   oneof languages {
-    // Used with UNIDIRECTIONAL.
+    // Used with unidirectional glossaries.
     LanguageCodePair language_pair = 3;
 
-    // Used with EQUIVALENT_TERMS_SET.
+    // Used with equivalent term set glossaries.
     LanguageCodesSet language_codes_set = 4;
   }
 
@@ -593,55 +735,75 @@ message Glossary {
   GlossaryInputConfig input_config = 5;
 
   // Output only. The number of entries defined in the glossary.
-  int32 entry_count = 6;
+  int32 entry_count = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. When CreateGlossary was called.
-  google.protobuf.Timestamp submit_time = 7;
+  google.protobuf.Timestamp submit_time = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. When the glossary creation was finished.
-  google.protobuf.Timestamp end_time = 8;
+  google.protobuf.Timestamp end_time = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Request message for CreateGlossary.
 message CreateGlossaryRequest {
   // Required. The project name.
-  string parent = 1;
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
 
   // Required. The glossary to create.
-  Glossary glossary = 2;
+  Glossary glossary = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
 // Request message for GetGlossary.
 message GetGlossaryRequest {
   // Required. The name of the glossary to retrieve.
-  string name = 1;
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "translate.googleapis.com/Glossary"
+    }
+  ];
 }
 
 // Request message for DeleteGlossary.
 message DeleteGlossaryRequest {
   // Required. The name of the glossary to delete.
-  string name = 1;
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "translate.googleapis.com/Glossary"
+    }
+  ];
 }
 
 // Request message for ListGlossaries.
 message ListGlossariesRequest {
   // Required. The name of the project from which to list all of the glossaries.
-  string parent = 1;
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
 
   // Optional. Requested page size. The server may return fewer glossaries than
   // requested. If unspecified, the server picks an appropriate default.
-  int32 page_size = 2;
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. A token identifying a page of results the server should return.
   // Typically, this is the value of [ListGlossariesResponse.next_page_token]
   // returned from the previous call to `ListGlossaries` method.
   // The first page is returned if `page_token`is empty or missing.
-  string page_token = 3;
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Filter specifying constraints of a list operation.
-  // For example, `tags.glossary_name="products*"`.
+  // Filtering is not supported yet, and the parameter currently has no effect.
   // If missing, no filtering is performed.
-  string filter = 4;
+  string filter = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Response message for ListGlossaries.
@@ -666,7 +828,7 @@ message CreateGlossaryMetadata {
     // Request is being processed.
     RUNNING = 1;
 
-    // The glossary has been successfully created.
+    // The glossary was successfully created.
     SUCCEEDED = 2;
 
     // Failed to create the glossary.
@@ -676,7 +838,7 @@ message CreateGlossaryMetadata {
     // longrunning.Operations.CancelOperation on the request id.
     CANCELLING = 4;
 
-    // The glossary creation request has been successfully canceled.
+    // The glossary creation request was successfully canceled.
     CANCELLED = 5;
   }
 
@@ -711,7 +873,7 @@ message DeleteGlossaryMetadata {
     // longrunning.Operations.CancelOperation on the request id.
     CANCELLING = 4;
 
-    // The glossary deletion request has been successfully canceled.
+    // The glossary deletion request was successfully canceled.
     CANCELLED = 5;
   }
 

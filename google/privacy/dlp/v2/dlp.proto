@@ -18,7 +18,6 @@ syntax = "proto3";
 package google.privacy.dlp.v2;
 
 import "google/api/annotations.proto";
-import "google/api/resource.proto";
 import "google/privacy/dlp/v2/storage.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
@@ -28,6 +27,7 @@ import "google/rpc/status.proto";
 import "google/type/date.proto";
 import "google/type/dayofweek.proto";
 import "google/type/timeofday.proto";
+import "google/api/client.proto";
 
 option csharp_namespace = "Google.Cloud.Dlp.V2";
 option go_package = "google.golang.org/genproto/googleapis/privacy/dlp/v2;dlp";
@@ -46,6 +46,9 @@ option php_namespace = "Google\\Cloud\\Dlp\\V2";
 // To learn more about concepts and find how-to guides see
 // https://cloud.google.com/dlp/docs/.
 service DlpService {
+  option (google.api.default_host) = "dlp.googleapis.com";
+  option (google.api.oauth_scopes) = "https://www.googleapis.com/auth/cloud-platform";
+
   // Finds potentially sensitive info in content.
   // This method has limits on input size, processing time, and output size.
   //
@@ -566,6 +569,8 @@ message ByteContentItem {
     IMAGE_SVG = 4;
 
     TEXT_UTF8 = 5;
+
+    AVRO = 11;
   }
 
   // The type of data stored in the bytes string. Default will be TEXT_UTF8.
@@ -2447,7 +2452,10 @@ message Action {
     OutputStorageConfig output_config = 1;
   }
 
-  // Publish the results of a DlpJob to a pub sub channel.
+  // Publish a message into given Pub/Sub topic when DlpJob has completed. The
+  // message contains a single field, `DlpJobName`, which is equal to the
+  // finished job's
+  // [`DlpJob.name`](/dlp/docs/reference/rest/v2/projects.dlpJobs#DlpJob).
   // Compatible with: Inspect, Risk
   message PublishToPubSub {
     // Cloud Pub/Sub topic to send notifications to. The topic must have given
@@ -2471,6 +2479,20 @@ message Action {
 
   }
 
+  // Publish findings of a DlpJob to Cloud Data Catalog. Labels summarizing the
+  // results of the DlpJob will be applied to the entry for the resource scanned
+  // in Cloud Data Catalog. Any labels previously written by another DlpJob will
+  // be deleted. InfoType naming patterns are strictly enforced when using this
+  // feature. Note that the findings will be persisted in Cloud Data Catalog
+  // storage and are governed by Data Catalog service-specific policy, see
+  // https://cloud.google.com/terms/service-terms
+  // Only a single instance of this action can be specified and only allowed if
+  // all resources being scanned are BigQuery tables.
+  // Compatible with: Inspect
+  message PublishFindingsToCloudDataCatalog {
+
+  }
+
   // Enable email notification to project owners and editors on jobs's
   // completion/failure.
   message JobNotificationEmails {
@@ -2486,6 +2508,9 @@ message Action {
 
     // Publish summary to Cloud Security Command Center (Alpha).
     PublishSummaryToCscc publish_summary_to_cscc = 3;
+
+    // Publish findings to Cloud Datahub.
+    PublishFindingsToCloudDataCatalog publish_findings_to_cloud_data_catalog = 5;
 
     // Enable email notification to project owners and editors on job's
     // completion/failure.
@@ -2728,8 +2753,7 @@ message InspectJobConfig {
   // template.
   string inspect_template_name = 3;
 
-  // Actions to execute at the completion of the job. Are executed in the order
-  // provided.
+  // Actions to execute at the completion of the job.
   repeated Action actions = 4;
 }
 
@@ -2788,12 +2812,6 @@ message DlpJob {
   repeated Error errors = 11;
 }
 
-// The request message for [DlpJobs.GetDlpJob][].
-message GetDlpJobRequest {
-  // The name of the DlpJob resource.
-  string name = 1;
-}
-
 // Operators available for comparing the value of fields.
 enum RelationalOperator {
   RELATIONAL_OPERATOR_UNSPECIFIED = 0;
@@ -2820,6 +2838,12 @@ enum RelationalOperator {
   EXISTS = 7;
 }
 
+// The request message for [DlpJobs.GetDlpJob][].
+message GetDlpJobRequest {
+  // The name of the DlpJob resource.
+  string name = 1;
+}
+
 // The request message for listing DLP jobs.
 message ListDlpJobsRequest {
   // The parent resource name, for example projects/my-project-id.
@@ -2837,8 +2861,12 @@ message ListDlpJobsRequest {
   //     - `state` - PENDING|RUNNING|CANCELED|FINISHED|FAILED
   //     - `inspected_storage` - DATASTORE|CLOUD_STORAGE|BIGQUERY
   //     - `trigger_name` - The resource name of the trigger that created job.
+  //     - 'end_time` - Corresponds to time the job finished.
+  //     - 'start_time` - Corresponds to time the job finished.
   // * Supported fields for risk analysis jobs:
   //     - `state` - RUNNING|CANCELED|FINISHED|FAILED
+  //     - 'end_time` - Corresponds to time the job finished.
+  //     - 'start_time` - Corresponds to time the job finished.
   // * The operator must be `=` or `!=`.
   //
   // Examples:
@@ -2846,6 +2874,7 @@ message ListDlpJobsRequest {
   // * inspected_storage = cloud_storage AND state = done
   // * inspected_storage = cloud_storage OR inspected_storage = bigquery
   // * inspected_storage = cloud_storage AND (state = done OR state = canceled)
+  // * end_time > \"2017-12-12T00:00:00+00:00\"
   //
   // The length of this field should be no more than 500 characters.
   string filter = 1;
@@ -3005,6 +3034,12 @@ message LargeCustomDictionaryConfig {
   }
 }
 
+// Summary statistics of a custom dictionary.
+message LargeCustomDictionaryStats {
+  // Approximate number of distinct phrases in the dictionary.
+  int64 approx_num_phrases = 1;
+}
+
 // Configuration for a StoredInfoType.
 message StoredInfoTypeConfig {
   // Display name of the StoredInfoType (max 256 characters).
@@ -3016,6 +3051,14 @@ message StoredInfoTypeConfig {
   oneof type {
     // StoredInfoType where findings are defined by a dictionary of phrases.
     LargeCustomDictionaryConfig large_custom_dictionary = 3;
+  }
+}
+
+// Statistics for a StoredInfoType.
+message StoredInfoTypeStats {
+  oneof type {
+    // StoredInfoType where findings are defined by a dictionary of phrases.
+    LargeCustomDictionaryStats large_custom_dictionary = 1;
   }
 }
 
@@ -3045,6 +3088,9 @@ message StoredInfoTypeVersion {
   // storedInfoType to continue using it, reusing the same `config` if it was
   // not the source of the error.
   repeated Error errors = 4;
+
+  // Statistics about this storedInfoType version.
+  StoredInfoTypeStats stats = 5;
 }
 
 // StoredInfoType resource message that contains information about the current

@@ -11,7 +11,7 @@ libraries, documentation, and other artifacts.
 ### Bazel
 
 The recommended way to build the API client libraries is through
-[Bazel](https://bazel.build/) >= 0.23.0.
+[Bazel](https://bazel.build/) >= 0.29.1.
 
 First, [install bazel](https://docs.bazel.build/versions/master/install.html).
 
