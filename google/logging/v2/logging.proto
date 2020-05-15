@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2019 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,18 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
 
 syntax = "proto3";
 
 package google.logging.v2;
 
-import "google/api/annotations.proto";
 import "google/api/monitored_resource.proto";
 import "google/logging/v2/log_entry.proto";
+import "google/logging/v2/logging_config.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
+import "google/api/annotations.proto";
+import "google/api/client.proto";
 
 option cc_enable_arenas = true;
 option csharp_namespace = "Google.Cloud.Logging.V2";
@@ -30,40 +33,89 @@ option go_package = "google.golang.org/genproto/googleapis/logging/v2;logging";
 option java_multiple_files = true;
 option java_outer_classname = "LoggingProto";
 option java_package = "com.google.logging.v2";
-
+option php_namespace = "Google\\Cloud\\Logging\\V2";
 
 // Service for ingesting and querying logs.
 service LoggingServiceV2 {
+  option (google.api.default_host) = "logging.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform,"
+      "https://www.googleapis.com/auth/cloud-platform.read-only,"
+      "https://www.googleapis.com/auth/logging.admin,"
+      "https://www.googleapis.com/auth/logging.read,"
+      "https://www.googleapis.com/auth/logging.write";
+
   // Deletes all the log entries in a log.
   // The log reappears if it receives new entries.
   // Log entries written shortly before the delete operation might not be
   // deleted.
   rpc DeleteLog(DeleteLogRequest) returns (google.protobuf.Empty) {
-    option (google.api.http) = { delete: "/v2beta1/{log_name=projects/*/logs/*}" };
+    option (google.api.http) = {
+      delete: "/v2/{log_name=projects/*/logs/*}"
+      additional_bindings {
+        delete: "/v2/{log_name=*/*/logs/*}"
+      }
+      additional_bindings {
+        delete: "/v2/{log_name=organizations/*/logs/*}"
+      }
+      additional_bindings {
+        delete: "/v2/{log_name=folders/*/logs/*}"
+      }
+      additional_bindings {
+        delete: "/v2/{log_name=billingAccounts/*/logs/*}"
+      }
+    };
   }
 
-  // Writes log entries to Stackdriver Logging.
+  // Writes log entries to Logging. This API method is the
+  // only way to send log entries to Logging. This method
+  // is used, directly or indirectly, by the Logging agent
+  // (fluentd) and all logging libraries configured to use Logging.
+  // A single request may contain log entries for a maximum of 1000
+  // different resources (projects, organizations, billing accounts or
+  // folders)
   rpc WriteLogEntries(WriteLogEntriesRequest) returns (WriteLogEntriesResponse) {
-    option (google.api.http) = { post: "/v2/entries:write" body: "*" };
+    option (google.api.http) = {
+      post: "/v2/entries:write"
+      body: "*"
+    };
   }
 
-  // Lists log entries.  Use this method to retrieve log entries from
-  // Stackdriver Logging.  For ways to export log entries, see
-  // [Exporting Logs](/logging/docs/export).
+  // Lists log entries.  Use this method to retrieve log entries that originated
+  // from a project/folder/organization/billing account.  For ways to export log
+  // entries, see [Exporting Logs](/logging/docs/export).
   rpc ListLogEntries(ListLogEntriesRequest) returns (ListLogEntriesResponse) {
-    option (google.api.http) = { post: "/v2/entries:list" body: "*" };
+    option (google.api.http) = {
+      post: "/v2/entries:list"
+      body: "*"
+    };
   }
 
-  // Lists the descriptors for monitored resource types used by Stackdriver
-  // Logging.
+  // Lists the descriptors for monitored resource types used by Logging.
   rpc ListMonitoredResourceDescriptors(ListMonitoredResourceDescriptorsRequest) returns (ListMonitoredResourceDescriptorsResponse) {
-    option (google.api.http) = { get: "/v2/monitoredResourceDescriptors" };
+    option (google.api.http) = {
+      get: "/v2/monitoredResourceDescriptors"
+    };
   }
 
   // Lists the logs in projects, organizations, folders, or billing accounts.
   // Only logs that have entries are listed.
   rpc ListLogs(ListLogsRequest) returns (ListLogsResponse) {
-    option (google.api.http) = { get: "/v2/{parent=projects/*}/logs" };
+    option (google.api.http) = {
+      get: "/v2/{parent=*/*}/logs"
+      additional_bindings {
+        get: "/v2/{parent=projects/*}/logs"
+      }
+      additional_bindings {
+        get: "/v2/{parent=organizations/*}/logs"
+      }
+      additional_bindings {
+        get: "/v2/{parent=folders/*}/logs"
+      }
+      additional_bindings {
+        get: "/v2/{parent=billingAccounts/*}/logs"
+      }
+    };
   }
 }
 
@@ -94,11 +146,15 @@ message WriteLogEntriesRequest {
   //     "billingAccounts/[BILLING_ACCOUNT_ID]/logs/[LOG_ID]"
   //     "folders/[FOLDER_ID]/logs/[LOG_ID]"
   //
-  // `[LOG_ID]` must be URL-encoded. For example,
-  // `"projects/my-project-id/logs/syslog"` or
-  // `"organizations/1234567890/logs/cloudresourcemanager.googleapis.com%2Factivity"`.
-  // For more information about log names, see
-  // [LogEntry][google.logging.v2.LogEntry].
+  // `[LOG_ID]` must be URL-encoded. For example:
+  //
+  //     "projects/my-project-id/logs/syslog"
+  //     "organizations/1234567890/logs/cloudresourcemanager.googleapis.com%2Factivity"
+  //
+  // The permission <code>logging.logEntries.create</code> is needed on each
+  // project, organization, billing account, or folder that is receiving
+  // new log entries, whether the resource is specified in
+  // <code>logName</code> or in an individual log entry.
   string log_name = 1;
 
   // Optional. A default monitored resource object that is assigned to all log
@@ -117,21 +173,29 @@ message WriteLogEntriesRequest {
   // See [LogEntry][google.logging.v2.LogEntry].
   map<string, string> labels = 3;
 
-  // Required.  The log entries to write. Values supplied for the fields
-  // `log_name`, `resource`, and `labels` in this `entries.write` request are
-  // inserted into those log entries in this list that do not provide their own
-  // values.
+  // Required. The log entries to send to Logging. The order of log
+  // entries in this list does not matter. Values supplied in this method's
+  // `log_name`, `resource`, and `labels` fields are copied into those log
+  // entries in this list that do not include values for their corresponding
+  // fields. For more information, see the
+  // [LogEntry][google.logging.v2.LogEntry] type.
   //
-  // Stackdriver Logging also creates and inserts values for `timestamp` and
-  // `insert_id` if the entries do not provide them. The created `insert_id` for
-  // the N'th entry in this list will be greater than earlier entries and less
-  // than later entries.  Otherwise, the order of log entries in this list does
-  // not matter.
+  // If the `timestamp` or `insert_id` fields are missing in log entries, then
+  // this method supplies the current time or a unique identifier, respectively.
+  // The supplied values are chosen so that, among the log entries that did not
+  // supply their own values, the entries earlier in the list will sort before
+  // the entries later in the list. See the `entries.list` method.
+  //
+  // Log entries with timestamps that are more than the
+  // [logs retention period](/logging/quota-policy) in the past or more than
+  // 24 hours in the future will not be available when calling `entries.list`.
+  // However, those log entries can still be
+  // [exported with LogSinks](/logging/docs/api/tasks/exporting-logs).
   //
   // To improve throughput and to avoid exceeding the
   // [quota limit](/logging/quota-policy) for calls to `entries.write`,
-  // you should write multiple log entries at once rather than
-  // calling this method for each individual log entry.
+  // you should try to include several log entries in this list,
+  // rather than calling this method for each individual log entry.
   repeated LogEntry entries = 4;
 
   // Optional. Whether valid entries should be written even if some other
@@ -140,6 +204,11 @@ message WriteLogEntriesRequest {
   // with one of the failed entries and the response includes error details
   // keyed by the entries' zero-based index in the `entries.write` method.
   bool partial_success = 5;
+
+  // Optional. If true, the request should expect normal response, but the
+  // entries won't be persisted nor exported. Useful for checking whether the
+  // logging API endpoints are working properly before sending valuable data.
+  bool dry_run = 6;
 }
 
 // Result returned from WriteLogEntries.
@@ -163,10 +232,8 @@ message WriteLogEntriesPartialErrors {
 message ListLogEntriesRequest {
   // Deprecated. Use `resource_names` instead.  One or more project identifiers
   // or project numbers from which to retrieve log entries.  Example:
-  // `"my-project-1A"`. If present, these project identifiers are converted to
-  // resource name format and added to the list of resources in
-  // `resource_names`.
-  repeated string project_ids = 1;
+  // `"my-project-1A"`.
+  repeated string project_ids = 1 [deprecated = true];
 
   // Required. Names of one or more parent resources from which to
   // retrieve log entries:
@@ -175,6 +242,7 @@ message ListLogEntriesRequest {
   //     "organizations/[ORGANIZATION_ID]"
   //     "billingAccounts/[BILLING_ACCOUNT_ID]"
   //     "folders/[FOLDER_ID]"
+  //
   //
   // Projects listed in the `project_ids` field are added to this list.
   repeated string resource_names = 8;
@@ -210,7 +278,9 @@ message ListLogEntriesRequest {
 
 // Result returned from `ListLogEntries`.
 message ListLogEntriesResponse {
-  // A list of log entries.
+  // A list of log entries.  If `entries` is empty, `nextPageToken` may still be
+  // returned, indicating that more entries may exist.  See `nextPageToken` for
+  // more information.
   repeated LogEntry entries = 1;
 
   // If there might be more results than those appearing in this response, then
@@ -276,8 +346,8 @@ message ListLogsRequest {
 // Result returned from ListLogs.
 message ListLogsResponse {
   // A list of log names. For example,
-  // `"projects/my-project/syslog"` or
-  // `"organizations/123/cloudresourcemanager.googleapis.com%2Factivity"`.
+  // `"projects/my-project/logs/syslog"` or
+  // `"organizations/123/logs/cloudresourcemanager.googleapis.com%2Factivity"`.
   repeated string log_names = 3;
 
   // If there might be more results than those appearing in this response, then
