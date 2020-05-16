@@ -39,8 +39,8 @@ Google Service Control works with a set of *managed services* and their
 *operations* (activities), *checks* whether an operation is allowed to proceed,
 and *reports* completed operations. Behind the scenes, it leverages other
 Google Cloud services, such as
-[Google Service Management](/service-management),
-[Stackdriver Logging](/logging), and [Stackdriver Monitoring](/monitoring),
+[Google Service Management](https://cloud.google.com/service-management),
+[Stackdriver Logging](https://cloud.google.com/logging), and [Stackdriver Monitoring](https://cloud.google.com/monitoring),
 while hiding their complexity from service producers. It enables service
 producers to send telemetry data to their consumers. It uses caching,
 batching, aggregation, and retries to deliver higher performance and
@@ -48,7 +48,7 @@ availability than the individual backend systems it encapsulates.
 
 <figure id="fig-arch" class="center">
 <div style="width: 70%;margin: auto">
-  <img src="/service-control/images/arch.svg"
+  <img src="https://cloud.google.com/service-control/images/arch.svg"
     alt="The overall architecture of a service that uses Google Service Control.">
 </div>
 <figcaption><b>Figure 1</b>: Using Google Service Control.</figcaption>
@@ -56,10 +56,10 @@ availability than the individual backend systems it encapsulates.
 
 The Service Control API provides two methods:
 
-* [`services.check`](/service-control/reference/rest/v1/services/check), used for:
+* [`services.check`](https://cloud.google.com/service-control/reference/rest/v1/services/check), used for:
     * Ensuring valid consumer status
     * Validating API keys
-* [`services.report`](/service-control/reference/rest/v1/services/report), used for:
+* [`services.report`](https://cloud.google.com/service-control/reference/rest/v1/services/report), used for:
     * Sending logs to Stackdriver Logging
     * Sending metrics to Stackdriver Monitoring
 
@@ -67,9 +67,9 @@ We’ll look at these in more detail in the rest of this overview.
 
 ## Managed services
 
-A [managed service](/service-management/reference/rest/v1/services) is
+A [managed service](https://cloud.google.com/service-management/reference/rest/v1/services) is
 a network service managed by
-[Google Service Management](/service-management). Each managed service has a
+[Google Service Management](https://cloud.google.com/service-management). Each managed service has a
 unique name, such as `example.googleapis.com`, which must be a valid
 fully-qualified DNS name, as per RFC 1035.
 
@@ -93,11 +93,11 @@ activities of a managed service, such as API calls and resource usage. Each
 operation is associated with a managed service and a specific service
 consumer, and has a set of properties that describe the operation, such as
 the API method name and resource usage amount. For more information, see the
-[Operation definition](/service-control/rest/v1/Operation).
+[Operation definition](https://cloud.google.com/service-control/reference/rest/v1/Operation).
 
 ## Check
 
-The [`services.check`](/service-control/reference/rest/v1/services/check)
+The [`services.check`](https://cloud.google.com/service-control/reference/rest/v1/services/check)
 method determines whether an operation should be allowed to proceed
 for a managed service.
 
@@ -113,7 +113,7 @@ service producers compared to checking with multiple backend systems.
 
 ## Report
 
-The [`services.report`](/service-control/reference/rest/v1/services/report)
+The [`services.report`](https://cloud.google.com/service-control/reference/rest/v1/services/report)
 method reports completed operations for
 a managed service to backend systems, such as logging and monitoring. The
 reported data can be seen in Google API Console and Google Cloud Console,
@@ -122,5 +122,5 @@ Stackdriver Monitoring APIs.
 
 ## Next steps
 
-* Read our [Getting Started guide](/service-control/getting-started) to find out
+* Read our [Getting Started guide](https://cloud.google.com/service-control/getting-started) to find out
   how to set up and use the Google Service Control API.
