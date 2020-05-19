@@ -1,0 +1,188 @@
+// Copyright 2020 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.pubsublite.v1;
+
+import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option cc_enable_arenas = true;
+option go_package = "google.golang.org/genproto/googleapis/cloud/pubsublite/v1;pubsublite";
+option java_multiple_files = true;
+option java_outer_classname = "CommonProto";
+option java_package = "com.google.cloud.pubsublite.proto";
+
+// The values associated with a key of an attribute.
+message AttributeValues {
+  // The list of values associated with a key.
+  repeated bytes values = 1;
+}
+
+// A message that is published by publishers and delivered to subscribers.
+message PubSubMessage {
+  // The key used for routing messages to partitions or for compaction (e.g.,
+  // keep the last N messages per key). If the key is empty, the message is
+  // routed to an arbitrary partition.
+  bytes key = 1;
+
+  // The payload of the message.
+  bytes data = 2;
+
+  // Optional attributes that can be used for message metadata/headers.
+  map<string, AttributeValues> attributes = 3;
+
+  // An optional, user-specified event time.
+  google.protobuf.Timestamp event_time = 4;
+}
+
+// A cursor that describes the position of a message within a topic partition.
+message Cursor {
+  // The offset of a message within a topic partition. Must be greater than or
+  // equal 0.
+  int64 offset = 1;
+}
+
+message SequencedMessage {
+  // The position of a message within the partition where it is stored.
+  Cursor cursor = 1;
+
+  // The time when the message was received by the server when it was first
+  // published.
+  google.protobuf.Timestamp publish_time = 2;
+
+  // The user message.
+  PubSubMessage message = 3;
+
+  // The size in bytes of this message for flow control and quota purposes.
+  int64 size_bytes = 4;
+}
+
+// Metadata about a topic resource.
+message Topic {
+  option (google.api.resource) = {
+    type: "pubsublite.googleapis.com/Topic"
+    pattern: "projects/{project}/locations/{location}/topics/{topic}"
+  };
+
+  // The settings for a topic's partitions.
+  message PartitionConfig {
+    // The number of partitions in the topic. Must be at least 1.
+    int64 count = 1;
+
+    // Every partition in the topic is allocated throughput equivalent to
+    // `scale` times the standard partition throughput (4 MiB/s). This is also
+    // reflected in the cost of this topic; a topic with `scale` of 2 and count
+    // of 10 is charged for 20 partitions. This value must be in the range
+    // [1,4].
+    int32 scale = 2;
+  }
+
+  // The settings for a topic's message retention.
+  message RetentionConfig {
+    // The provisioned storage, in bytes, per partition. If the number of bytes
+    // stored in any of the topic's partitions grows beyond this value, older
+    // messages will be dropped to make room for newer ones, regardless of the
+    // value of `period`.
+    int64 per_partition_bytes = 1;
+
+    // How long a published message is retained. If unset, messages will be
+    // retained as long as the bytes retained for each partition is below
+    // `per_partition_bytes`.
+    google.protobuf.Duration period = 2;
+  }
+
+  // The name of the topic.
+  // Structured like:
+  // projects/{project_number}/locations/{location}/topics/{topic_id}
+  string name = 1;
+
+  // The settings for this topic's partitions.
+  PartitionConfig partition_config = 2;
+
+  // The settings for this topic's message retention.
+  RetentionConfig retention_config = 3;
+}
+
+// Metadata about a subscription resource.
+message Subscription {
+  option (google.api.resource) = {
+    type: "pubsublite.googleapis.com/Subscription"
+    pattern: "projects/{project}/locations/{location}/subscriptions/{subscription}"
+  };
+
+  // The settings for a subscription's message delivery.
+  message DeliveryConfig {
+    // When this subscription should send messages to subscribers relative to
+    // messages persistence in storage.
+    enum DeliveryRequirement {
+      // Default value. This value is unused.
+      DELIVERY_REQUIREMENT_UNSPECIFIED = 0;
+
+      // The server does not wait for a published message to be successfully
+      // written to storage before delivering it to subscribers. As such, a
+      // subscriber may receive a message for which the write to storage failed.
+      // If the subscriber re-reads the offset of that message later on (e.g.,
+      // after a `Seek` operation), there may be a gap at that offset. Even if
+      // not re-reading messages, the delivery of messages for which the write
+      // to storage fails may be inconsistent across subscriptions, with some
+      // receiving the message (e.g., those connected at the time the message is
+      // published) and others not receiving it (e.g., those disconnected at
+      // publish time). Note that offsets are never reused, so even if
+      // DELIVER_IMMEDIATELY is used, subscribers will not receive different
+      // messages when re-reading, they will just see gaps. EXAMPLE:
+      //   (0) Topic 'topic1' is created with a single partition.
+      //   (1) Two subscriptions 'sub1' and 'sub2' are created on topic1. sub1
+      //       has 'DELIVER_IMMEDIATELY', sub2 has 'DELIVER_AFTER_STORED'.
+      //   (2) A stream is opened for sub1 but not sub2.
+      //   (3) A stream is opened for a publisher client using pub1.
+      //   (4) pub1 successfully publishes m0 at offset 0 and m0 is delivered to
+      //       sub1.
+      //   (5) pub1 publishes m1 at offset 1 and m1 is delivered to sub1 but the
+      //       write to storage fails (their stream then breaks).
+      //   (6) A stream is reopened for pub1.
+      //   (6) pub1 successfully publishes m2 at offset 2 and m2 is delivered to
+      //       sub1.
+      //   (some time elapses...)
+      //   (7) A stream is opened for sub2 and it receives m0 and m2 but not m1.
+      //   (8) sub1 seeks to offset 1 but only receives m2 and not m1.
+      DELIVER_IMMEDIATELY = 1;
+
+      // The server will not deliver a published message to subscribers until
+      // the message has been successfully written to storage. This will result
+      // in higher end-to-end latency, but consistent delivery.
+      DELIVER_AFTER_STORED = 2;
+    }
+
+    // The DeliveryRequirement for this subscription.
+    DeliveryRequirement delivery_requirement = 3;
+  }
+
+  // The name of the subscription.
+  // Structured like:
+  // projects/{project_number}/locations/{location}/subscriptions/{subscription_id}
+  string name = 1;
+
+  // The name of the topic this subscription is attached to.
+  // Structured like:
+  // projects/{project_number}/locations/{location}/topics/{topic_id}
+  string topic = 2 [(google.api.resource_reference) = {
+                      type: "pubsublite.googleapis.com/Topic"
+                    }];
+
+  // The settings for this subscription's message delivery.
+  DeliveryConfig delivery_config = 3;
+}
