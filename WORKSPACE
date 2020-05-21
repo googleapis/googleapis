@@ -186,8 +186,8 @@ py_gapic_repositories()
 
 http_archive(
     name = "protoc_docs_plugin",
-    strip_prefix = "protoc-docs-plugin-b2502d56b5ec2d47e063976da773206af295362d",
-    urls = ["https://github.com/googleapis/protoc-docs-plugin/archive/b2502d56b5ec2d47e063976da773206af295362d.zip"],
+    strip_prefix = "protoc-docs-plugin-074aa05203b5f1b87df4986671855e7a4b153c2d",
+    urls = ["https://github.com/googleapis/protoc-docs-plugin/archive/074aa05203b5f1b87df4986671855e7a4b153c2d.zip"],
 )
 
 load(
