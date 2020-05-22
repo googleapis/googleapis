@@ -1,4 +1,10 @@
-workspace(name = "com_google_googleapis")
+workspace(
+    name = "com_google_googleapis",
+    # This tells Bazel that the node_modules directory is special and
+    # is managed by the package manager.
+    # https://bazelbuild.github.io/rules_nodejs/install.html
+    managed_directories = {"@npm": ["@gapic_generator_typescript//:node_modules"]}
+)
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
@@ -253,6 +259,48 @@ com_googleapis_gapic_generator_go_repositories()
 load("@com_googleapis_gapic_generator_go//rules_go_gapic:go_gapic_repositories.bzl", "go_gapic_repositories")
 
 go_gapic_repositories()
+
+##############################################################################
+# TypeScript
+##############################################################################
+
+### TypeScript generator
+http_archive(
+    name = "gapic_generator_typescript",
+    urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v0.99.0.tar.gz"],
+    strip_prefix = "gapic-generator-typescript-0.99.0",
+)
+
+### Dependencies of the TypeScript generator
+http_archive(
+    name = "build_bazel_rules_nodejs",
+    sha256 = "d14076339deb08e5460c221fae5c5e9605d2ef4848eee1f0c81c9ffdc1ab31c1",
+    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/1.6.1/rules_nodejs-1.6.1.tar.gz"],
+)
+
+load("@build_bazel_rules_nodejs//:index.bzl", "node_repositories", "yarn_install")
+node_repositories(
+    package_json = ["@gapic_generator_typescript//:package.json"]
+)
+yarn_install(
+    name = "npm",
+    package_json = "@gapic_generator_typescript//:package.json",
+    yarn_lock = "@gapic_generator_typescript//:yarn.lock",
+)
+load("@npm//:install_bazel_dependencies.bzl", "install_bazel_dependencies")
+install_bazel_dependencies()
+
+load("@npm_bazel_typescript//:index.bzl", "ts_setup_workspace")
+ts_setup_workspace()
+
+# Note: TypeScript libraries use third-party protobuf dependency,
+# protobuf.js, and official Bazel rules have a special rule to
+# install this dependency and its transitive dependencies.
+yarn_install(
+    name = "build_bazel_rules_typescript_protobufs_compiletime_deps",
+    package_json = "@npm_bazel_labs//protobufjs:package.json",
+    yarn_lock = "@npm_bazel_labs//protobufjs:yarn.lock",
+)
 
 ##############################################################################
 # PHP

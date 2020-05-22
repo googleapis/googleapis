@@ -243,11 +243,13 @@ def switched_rules_by_language(
     #
     rules["nodejs_gapic_library"] = _switch(
         nodejs and grpc and gapic,
-        "@com_google_api_codegen//rules_gapic/nodejs:nodejs_gapic.bzl",
+        "@gapic_generator_typescript//rules_typescript_gapic:typescript_gapic.bzl",
+        "typescript_gapic_library",
     )
     rules["nodejs_gapic_assembly_pkg"] = _switch(
         nodejs and grpc and gapic,
-        "@com_google_api_codegen//rules_gapic/nodejs:nodejs_gapic_pkg.bzl",
+        "@gapic_generator_typescript//rules_typescript_gapic:typescript_gapic_pkg.bzl",
+        "typescript_gapic_assembly_pkg",
     )
 
     #
