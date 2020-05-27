@@ -47,8 +47,8 @@ http_archive(
 
 http_archive(
     name = "com_google_protobuf",
-    strip_prefix = "protobuf-fe1790ca0df67173702f70d5646b82f48f412b99",  # this is 3.11.2
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/fe1790ca0df67173702f70d5646b82f48f412b99.zip"],
+    strip_prefix = "protobuf-a37cc13b2f6d11303811011b0bfbc867e7c0bf2b",  # this is 3.12.1
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/a37cc13b2f6d11303811011b0bfbc867e7c0bf2b.zip"],
 )
 
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
@@ -84,8 +84,11 @@ http_archive(
 # TODO(ndietz): move this back to the Go section if gRPC is updated per https://github.com/grpc/grpc/issues/22172
 http_archive(
     name = "io_bazel_rules_go",
-    sha256 = "e6a6c016b0663e06fa5fccf1cd8152eab8aa8180c583ec20c872f4f9953a7ac5",
-    url = "https://github.com/bazelbuild/rules_go/releases/download/v0.22.1/rules_go-v0.22.1.tar.gz",
+    urls = [
+        "https://github.com/bazelbuild/rules_go/archive/v0.23.0.zip",
+    ],
+    strip_prefix = "rules_go-0.23.0",
+    sha256 = "4707e6ba7c01fcfc4f0d340d123bc16e43c2b8ea3f307663d95712b36d2a0e88",
 )
 
 load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
@@ -239,7 +242,11 @@ pip_install()
 # bazel-gazelle (support Golang under bazel)
 http_archive(
     name = "bazel_gazelle",
-    urls = ["https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.20.0/bazel-gazelle-v0.20.0.tar.gz"],
+    urls = [
+        "https://storage.googleapis.com/bazel-mirror/github.com/bazelbuild/bazel-gazelle/releases/download/v0.21.0/bazel-gazelle-v0.21.0.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.21.0/bazel-gazelle-v0.21.0.tar.gz",
+    ],
+    sha256 = "bfd86b3cbe855d6c16c6fce60d76bd51f5c8dbc9cfcaef7a2bb5c1aafd0710e8",
 )
 
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
@@ -248,8 +255,8 @@ gazelle_dependencies()
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
-    strip_prefix = "gapic-generator-go-0.13.3",
-    urls = ["https://github.com/googleapis/gapic-generator-go/archive/v0.13.3.tar.gz"],
+    strip_prefix = "gapic-generator-go-0.14.1",
+    urls = ["https://github.com/googleapis/gapic-generator-go/archive/v0.14.1.tar.gz"],
 )
 
 load("@com_googleapis_gapic_generator_go//:repositories.bzl", "com_googleapis_gapic_generator_go_repositories")
