@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2020 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ syntax = "proto3";
 package google.api.servicecontrol.v1;
 
 import "google/api/annotations.proto";
+import "google/api/client.proto";
 import "google/api/servicecontrol/v1/check_error.proto";
 import "google/api/servicecontrol/v1/operation.proto";
 import "google/rpc/status.proto";
@@ -33,20 +34,28 @@ option objc_class_prefix = "GASC";
 // Lets clients check and report operations against a [managed
 // service](https://cloud.google.com/service-management/reference/rpc/google.api/servicemanagement.v1#google.api.servicemanagement.v1.ManagedService).
 service ServiceController {
-  // Checks an operation with Google Service Control to decide whether
-  // the given operation should proceed. It should be called before the
-  // operation is executed.
+  option (google.api.default_host) = "servicecontrol.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform,"
+      "https://www.googleapis.com/auth/servicecontrol";
+
+  // Checks whether an operation on a service should be allowed to proceed
+  // based on the configuration of the service and related policies. It must be
+  // called before the operation is executed.
   //
   // If feasible, the client should cache the check results and reuse them for
-  // 60 seconds. In case of server errors, the client can rely on the cached
-  // results for longer time.
+  // 60 seconds. In case of any server errors, the client should rely on the
+  // cached results for much longer time to avoid outage.
+  // WARNING: There is general 60s delay for the configuration and policy
+  // propagation, therefore callers MUST NOT depend on the `Check` method having
+  // the latest policy information.
   //
   // NOTE: the [CheckRequest][google.api.servicecontrol.v1.CheckRequest] has the
   // size limit of 64KB.
   //
   // This method requires the `servicemanagement.services.check` permission
   // on the specified service. For more information, see
-  // [Google Cloud IAM](https://cloud.google.com/iam).
+  // [Cloud IAM](https://cloud.google.com/iam).
   rpc Check(CheckRequest) returns (CheckResponse) {
     option (google.api.http) = {
       post: "/v1/services/{service_name}:check"
@@ -64,7 +73,7 @@ service ServiceController {
   // for business and compliance reasons.
   //
   // NOTE: the [ReportRequest][google.api.servicecontrol.v1.ReportRequest] has
-  // the size limit of 1MB.
+  // the size limit (wire-format byte size) of 1MB.
   //
   // This method requires the `servicemanagement.services.report` permission
   // on the specified service. For more information, see
@@ -100,25 +109,56 @@ message CheckRequest {
 
 // Response message for the Check method.
 message CheckResponse {
+  // Contains additional information about the check operation.
   message CheckInfo {
     // Consumer info of this check.
     ConsumerInfo consumer_info = 2;
   }
 
-  // `ConsumerInfo` provides information about the consumer project.
+  // `ConsumerInfo` provides information about the consumer.
   message ConsumerInfo {
+    // The type of the consumer as defined in
+    // [Google Resource Manager](https://cloud.google.com/resource-manager/).
+    enum ConsumerType {
+      // This is never used.
+      CONSUMER_TYPE_UNSPECIFIED = 0;
+
+      // The consumer is a Google Cloud Project.
+      PROJECT = 1;
+
+      // The consumer is a Google Cloud Folder.
+      FOLDER = 2;
+
+      // The consumer is a Google Cloud Organization.
+      ORGANIZATION = 3;
+
+      // Service-specific resource container which is defined by the service
+      // producer to offer their users the ability to manage service control
+      // functionalities at a finer level of granularity than the PROJECT.
+      SERVICE_SPECIFIC = 4;
+    }
+
     // The Google cloud project number, e.g. 1234567890. A value of 0 indicates
     // no project number is found.
+    //
+    // NOTE: This field is deprecated after Service Control support flexible
+    // consumer id. New code should not depend on this field anymore.
     int64 project_number = 1;
+
+    // The type of the consumer which should have been defined in
+    // [Google Resource Manager](https://cloud.google.com/resource-manager/).
+    ConsumerType type = 2;
+
+    // The consumer identity number, can be Google cloud project number, folder
+    // number or organization number e.g. 1234567890. A value of 0 indicates no
+    // consumer number is found.
+    int64 consumer_number = 3;
   }
 
   // The same operation_id value used in the
   // [CheckRequest][google.api.servicecontrol.v1.CheckRequest]. Used for logging
   // and diagnostics purposes.
   string operation_id = 1;
-
-  // The current service rollout id used to process the request.
-  string service_rollout_id = 11;
 
   // Indicate the decision of the check.
   //
@@ -129,6 +169,9 @@ message CheckResponse {
 
   // The actual config id used to process the request.
   string service_config_id = 5;
+
+  // The current service rollout id used to process the request.
+  string service_rollout_id = 11;
 
   // Feedback data returned from the server during processing a Check request.
   CheckInfo check_info = 6;
@@ -151,8 +194,8 @@ message ReportRequest {
   // be used only when multiple operations are natually available at the time
   // of the report.
   //
-  // If multiple operations are in a single request, the total request size
-  // should be no larger than 1MB. See
+  // There is no limit on the number of operations in the same ReportRequest,
+  // however the ReportRequest size should be no larger than 1MB. See
   // [ReportResponse.report_errors][google.api.servicecontrol.v1.ReportResponse.report_errors]
   // for partial failure behavior.
   repeated Operation operations = 2;

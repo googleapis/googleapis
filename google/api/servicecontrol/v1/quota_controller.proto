@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2020 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -78,12 +78,18 @@ message QuotaOperation {
     // the service configuration or specified using the quota metrics. If the
     // amount is higher than the available quota, allocation error will be
     // returned and no quota will be allocated.
+    // If multiple quotas are part of the request, and one fails, none of the
+    // quotas are allocated or released.
     NORMAL = 1;
 
     // The operation allocates quota for the amount specified in the service
     // configuration or specified using the quota metrics. If the amount is
     // higher than the available quota, request does not fail but all available
     // quota will be allocated.
+    // For rate quota, BEST_EFFORT will continue to deduct from other groups
+    // even if one does not have enough quota. For allocation, it will find the
+    // minimum available amount across all groups and deduct that amount from
+    // all the affected groups.
     BEST_EFFORT = 2;
 
     // For AllocateQuota request, only checks if there is enough quota
@@ -96,16 +102,20 @@ message QuotaOperation {
   // of the service that generated the operation, and guarantees idempotency in
   // case of retries.
   //
-  // UUID version 4 is recommended, though not required. In scenarios where an
-  // operation is computed from existing information and an idempotent id is
-  // desirable for deduplication purpose, UUID version 5 is recommended. See
-  // RFC 4122 for details.
+  // In order to ensure best performance and latency in the Quota backends,
+  // operation_ids are optimally associated with time, so that related
+  // operations can be accessed fast in storage. For this reason, the
+  // recommended token for services that intend to operate at a high QPS is
+  // Unix time in nanos + UUID
   string operation_id = 1;
 
   // Fully qualified name of the API method for which this quota operation is
   // requested. This name is used for matching quota rules or metric rules and
-  // billing status rules defined in service configuration. This field is not
-  // required if the quota operation is performed on non-API resources.
+  // billing status rules defined in service configuration.
+  //
+  // This field should not be set if any of the following is true:
+  // (1) the quota operation is performed on non-API resources.
+  // (2) quota_metrics is set because the caller is doing quota override.
   //
   // Example of an RPC method name:
   //     google.example.library.v1.LibraryService.CreateShelf
@@ -132,6 +142,8 @@ message QuotaOperation {
   // label value combinations. If a request has such duplicated MetricValue
   // instances, the entire request is rejected with
   // an invalid argument error.
+  //
+  // This field is mutually exclusive with method_name.
   repeated MetricValueSet quota_metrics = 5;
 
   // Quota mode for this operation.
@@ -176,7 +188,8 @@ message QuotaError {
     UNSPECIFIED = 0;
 
     // Quota allocation failed.
-    // Same as [google.rpc.Code.RESOURCE_EXHAUSTED][].
+    // Same as
+    // [google.rpc.Code.RESOURCE_EXHAUSTED][google.rpc.Code.RESOURCE_EXHAUSTED].
     RESOURCE_EXHAUSTED = 8;
 
     // Consumer cannot access the service because the service requires active
