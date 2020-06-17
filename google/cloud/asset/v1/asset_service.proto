@@ -22,6 +22,7 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/asset/v1/assets.proto";
 import "google/longrunning/operations.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
@@ -41,10 +42,16 @@ service AssetService {
       "https://www.googleapis.com/auth/cloud-platform";
 
   // Exports assets with time and resource types to a given Cloud Storage
-  // location. The output format is newline-delimited JSON.
-  // This API implements the
-  // [google.longrunning.Operation][google.longrunning.Operation] API allowing
-  // you to keep track of the export.
+  // location/BigQuery table. For Cloud Storage location destinations, the
+  // output format is newline-delimited JSON. Each line represents a
+  // [google.cloud.asset.v1.Asset][google.cloud.asset.v1.Asset] in the JSON
+  // format; for BigQuery table destinations, the output table stores the fields
+  // in asset proto as columns. This API implements the
+  // [google.longrunning.Operation][google.longrunning.Operation] API , which
+  // allows you to keep track of the export. We recommend intervals of at least
+  // 2 seconds with exponential retry to poll the export operation result. For
+  // regular-size resource parent, the export operation usually finishes within
+  // 5 minutes.
   rpc ExportAssets(ExportAssetsRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
       post: "/v1/{parent=*/*}:exportAssets"
@@ -57,10 +64,10 @@ service AssetService {
   }
 
   // Batch gets the update history of assets that overlap a time window.
-  // For RESOURCE content, this API outputs history with asset in both
-  // non-delete or deleted status.
   // For IAM_POLICY content, this API outputs history when the asset and its
   // attached IAM POLICY both exist. This can create gaps in the output history.
+  // Otherwise, this API outputs history with asset in both non-delete or
+  // deleted status.
   // If a specified asset does not exist, this API returns an INVALID_ARGUMENT
   // error.
   rpc BatchGetAssetsHistory(BatchGetAssetsHistoryRequest)
@@ -158,7 +165,7 @@ message ExportAssetsRequest {
   // running the same query may get different results.
   google.protobuf.Timestamp read_time = 2;
 
-  // A list of asset types of which to take a snapshot for. For example:
+  // A list of asset types of which to take a snapshot for. Example:
   // "compute.googleapis.com/Disk". If specified, only matching assets will be
   // returned. See [Introduction to Cloud Asset
   // Inventory](https://cloud.google.com/asset-inventory/docs/overview)
@@ -170,7 +177,7 @@ message ExportAssetsRequest {
   ContentType content_type = 4;
 
   // Required. Output configuration indicating where the results will be output
-  // to. All results will be in newline delimited JSON format.
+  // to.
   OutputConfig output_config = 5 [(google.api.field_behavior) = REQUIRED];
 }
 
@@ -184,7 +191,6 @@ message ExportAssetsResponse {
   google.protobuf.Timestamp read_time = 1;
 
   // Output configuration indicating where the results were output to.
-  // All results are in JSON format.
   OutputConfig output_config = 2;
 }
 
@@ -200,13 +206,11 @@ message BatchGetAssetsHistoryRequest {
     }
   ];
 
-  // A list of the full names of the assets. For example:
+  // A list of the full names of the assets.
+  // See: https://cloud.google.com/asset-inventory/docs/resource-name-format
+  // Example:
+  //
   // `//compute.googleapis.com/projects/my_project_123/zones/zone1/instances/instance1`.
-  // See [Resource
-  // Names](https://cloud.google.com/apis/design/resource_names#full_resource_name)
-  // and [Resource Name
-  // Format](https://cloud.google.com/asset-inventory/docs/resource-name-format)
-  // for more info.
   //
   // The request becomes a no-op if the asset name list is empty, and the max
   // size of the asset name list is 100 in one request.
@@ -310,9 +314,7 @@ message OutputConfig {
     GcsDestination gcs_destination = 1;
 
     // Destination on BigQuery. The output table stores the fields in asset
-    // proto as columns in BigQuery. The resource/iam_policy field is converted
-    // to a record with each field to a column, except metadata to a single JSON
-    // string.
+    // proto as columns in BigQuery.
     BigQueryDestination bigquery_destination = 2;
   }
 }
@@ -322,16 +324,16 @@ message GcsDestination {
   // Required.
   oneof object_uri {
     // The uri of the Cloud Storage object. It's the same uri that is used by
-    // gsutil. For example: "gs://bucket_name/object_name". See [Viewing and
+    // gsutil. Example: "gs://bucket_name/object_name". See [Viewing and
     // Editing Object
     // Metadata](https://cloud.google.com/storage/docs/viewing-editing-metadata)
     // for more information.
     string uri = 1;
 
-    // The uri prefix of all generated Cloud Storage objects. For example:
+    // The uri prefix of all generated Cloud Storage objects. Example:
     // "gs://bucket_name/object_name_prefix". Each object uri is in format:
     // "gs://bucket_name/object_name_prefix/<asset type>/<shard number> and only
-    // contains assets for that type. <shard number> starts from 0. For example:
+    // contains assets for that type. <shard number> starts from 0. Example:
     // "gs://bucket_name/object_name_prefix/compute.googleapis.com/Disk/0" is
     // the first shard of output objects containing all
     // compute.googleapis.com/Disk assets. An INVALID_ARGUMENT error will be
@@ -341,7 +343,7 @@ message GcsDestination {
   }
 }
 
-// A BigQuery destination.
+// A BigQuery destination for exporting assets to.
 message BigQueryDestination {
   // Required. The BigQuery dataset in format
   // "projects/projectId/datasets/datasetId", to which the snapshot result
@@ -364,7 +366,7 @@ message BigQueryDestination {
 // A Pub/Sub destination.
 message PubsubDestination {
   // The name of the Pub/Sub topic to publish to.
-  // For example: `projects/PROJECT_ID/topics/TOPIC_ID`.
+  // Example: `projects/PROJECT_ID/topics/TOPIC_ID`.
   string topic = 1;
 }
 
@@ -402,8 +404,8 @@ message Feed {
 
   // A list of the full names of the assets to receive updates. You must specify
   // either or both of asset_names and asset_types. Only asset updates matching
-  // specified asset_names and asset_types are exported to the feed. For
-  // example:
+  // specified asset_names or asset_types are exported to the feed.
+  // Example:
   // `//compute.googleapis.com/projects/my_project_123/zones/zone1/instances/instance1`.
   // See [Resource
   // Names](https://cloud.google.com/apis/design/resource_names#full_resource_name)
@@ -412,8 +414,8 @@ message Feed {
 
   // A list of types of the assets to receive updates. You must specify either
   // or both of asset_names and asset_types. Only asset updates matching
-  // specified asset_names and asset_types are exported to the feed.
-  // For example: `"compute.googleapis.com/Disk"`
+  // specified asset_names or asset_types are exported to the feed.
+  // Example: `"compute.googleapis.com/Disk"`
   //
   // See [this
   // topic](https://cloud.google.com/asset-inventory/docs/supported-asset-types)
@@ -428,6 +430,16 @@ message Feed {
   // published to.
   FeedOutputConfig feed_output_config = 5
       [(google.api.field_behavior) = REQUIRED];
+
+  // A condition which determines whether an asset update should be published.
+  // If specified, an asset will be returned only when the expression evaluates
+  // to true.
+  // When set, `expression` field in the `Expr` must be a valid [CEL expression]
+  // (https://github.com/google/cel-spec) on a TemporalAsset with name
+  // `temporal_asset`. Example: a Feed with expression ("temporal_asset.deleted
+  // == true") will only publish Asset deletions. Other fields in `Expr` are
+  // optional.
+  google.type.Expr condition = 6;
 }
 
 // Search all resources request.
