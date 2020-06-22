@@ -139,8 +139,8 @@ apple_support_dependencies()
 
 http_archive(
     name = "com_google_api_gax_java",
-    strip_prefix = "gax-java-730046855da122b26adbaa3fcf535becd8afa292", # 1.55.0 with fixes
-    urls = ["https://github.com/googleapis/gax-java/archive/730046855da122b26adbaa3fcf535becd8afa292.zip"],
+    strip_prefix = "gax-java-77a4cc373914396dd343891e38cf743166668c96", # 1.57.0 with dependency updates.
+    urls = ["https://github.com/googleapis/gax-java/archive/77a4cc373914396dd343891e38cf743166668c96.zip"],
 )
 
 load("@com_google_api_gax_java//:repository_rules.bzl", "com_google_api_gax_java_properties")
@@ -171,8 +171,8 @@ load("@com_google_api_codegen//:repositories.bzl", "com_google_api_codegen_repos
 
 http_archive(
     name = "com_google_protoc_java_resource_names_plugin",
-    strip_prefix = "protoc-java-resource-names-plugin-64dafb71ea9a385a8da89989f0b9dab925bf4610",
-    urls = ["https://github.com/googleapis/protoc-java-resource-names-plugin/archive/64dafb71ea9a385a8da89989f0b9dab925bf4610.zip"],
+    strip_prefix = "protoc-java-resource-names-plugin-ac2dea266b6e1c701dae55b63a54951545ebb4c8",
+    urls = ["https://github.com/googleapis/protoc-java-resource-names-plugin/archive/ac2dea266b6e1c701dae55b63a54951545ebb4c8.zip"],
 )
 
 com_google_api_codegen_repositories()
