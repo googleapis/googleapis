@@ -111,13 +111,17 @@ go_register_toolchains()
 
 http_archive(
     name = "com_github_grpc_grpc",
-    strip_prefix = "grpc-8347f4753568b5b66e49111c60ae2841278d3f33",  # this is 1.25.0 with fixes
-    urls = ["https://github.com/grpc/grpc/archive/8347f4753568b5b66e49111c60ae2841278d3f33.zip"],
+    strip_prefix = "grpc-1.30.0",
+    urls = ["https://github.com/grpc/grpc/archive/v1.30.0.zip"],
 )
 
 load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
 
 grpc_deps()
+
+load("@com_github_grpc_grpc//bazel:grpc_extra_deps.bzl", "grpc_extra_deps")
+
+grpc_extra_deps()
 
 load("@upb//bazel:repository_defs.bzl", "bazel_version_repository")
 
