@@ -279,8 +279,8 @@ go_gapic_repositories()
 ### TypeScript generator
 http_archive(
     name = "gapic_generator_typescript",
-    urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v1.0.3.tar.gz"],
-    strip_prefix = "gapic-generator-typescript-1.0.3",
+    urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v1.0.4.tar.gz"],
+    strip_prefix = "gapic-generator-typescript-1.0.4",
 )
 
 load("@gapic_generator_typescript//:repositories.bzl", "gapic_generator_typescript_repositories")
@@ -300,15 +300,6 @@ install_bazel_dependencies()
 
 load("@npm_bazel_typescript//:index.bzl", "ts_setup_workspace")
 ts_setup_workspace()
-
-# Note: TypeScript libraries use third-party protobuf dependency,
-# protobuf.js, and official Bazel rules have a special rule to
-# install this dependency and its transitive dependencies.
-yarn_install(
-    name = "build_bazel_rules_typescript_protobufs_compiletime_deps",
-    package_json = "@npm_bazel_labs//protobufjs:package.json",
-    yarn_lock = "@npm_bazel_labs//protobufjs:yarn.lock",
-)
 
 ##############################################################################
 # PHP
