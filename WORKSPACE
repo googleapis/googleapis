@@ -47,9 +47,9 @@ http_archive(
 
 http_archive(
     name = "com_google_protobuf",
-    sha256 = "e5265d552e12c1f39c72842fa91d84941726026fa056d914ea6a25cd58d7bbf8",
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.12.3.zip"],
-    strip_prefix = "protobuf-3.12.3",
+    sha256 = "bba884e1dce7b9ba5bce566bfa2d23ea2c824aa928a9133139c5485cefa69139",
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/9ce8c330e736b99c2bb00bdc6a60f00ab600c283.zip"],
+    strip_prefix = "protobuf-9ce8c330e736b99c2bb00bdc6a60f00ab600c283",
 )
 
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
@@ -322,8 +322,8 @@ php_gapic_repositories()
 
 http_archive(
     name = "gapic_generator_csharp",
-    urls = ["https://github.com/googleapis/gapic-generator-csharp/archive/master.zip"],
-    strip_prefix = "gapic-generator-csharp-master",
+    urls = ["https://github.com/googleapis/gapic-generator-csharp/archive/v1.2.0.zip"],
+    strip_prefix = "gapic-generator-csharp-1.2.0",
 )
 
 load("@gapic_generator_csharp//:repositories.bzl", "gapic_generator_csharp_repositories")
