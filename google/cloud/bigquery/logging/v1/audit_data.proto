@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2020 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,7 +16,8 @@ syntax = "proto3";
 
 package google.cloud.bigquery.logging.v1;
 
-import "google/api/annotations.proto";
+import "google/iam/v1/iam_policy.proto";
+import "google/iam/v1/policy.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
@@ -59,6 +60,9 @@ message AuditData {
 
     // Table data-list request.
     TableDataListRequest table_data_list_request = 8;
+
+    // Iam policy request.
+    google.iam.v1.SetIamPolicyRequest set_iam_policy_request = 20;
   }
 
   // Response data for each BigQuery method.
@@ -87,10 +91,16 @@ message AuditData {
     // Deprecated: Job query-done response. Use this information for usage
     // analysis.
     JobQueryDoneResponse job_query_done_response = 15;
+
+    // Iam Policy.
+    google.iam.v1.Policy policy_response = 21;
   }
 
   // A job completion event.
   JobCompletedEvent job_completed_event = 17;
+
+  // Information about the table access events.
+  repeated TableDataReadEvent table_data_read_events = 19;
 }
 
 // Table insert request.
@@ -222,6 +232,18 @@ message JobCompletedEvent {
   Job job = 2;
 }
 
+// Table data read event. Only present for tables, not views, and is only
+// included in the log record for the project that owns the table.
+message TableDataReadEvent {
+  // Name of the accessed table.
+  TableName table_name = 1;
+
+  // A list of referenced fields. This information is not included by default.
+  // To enable this in the logs, please contact BigQuery support or open a bug
+  // in the BigQuery issue tracker.
+  repeated string referenced_fields = 2;
+}
+
 // Table data-list request.
 message TableDataListRequest {
   // Starting row offset.
@@ -261,6 +283,12 @@ message Table {
   // The time the table was last truncated
   // by an operation with a `writeDisposition` of `WRITE_TRUNCATE`.
   google.protobuf.Timestamp truncate_time = 7;
+
+  // The time the table was last modified.
+  google.protobuf.Timestamp update_time = 9;
+
+  // The table encryption information. Set when non-default encryption is used.
+  EncryptionInfo encryption = 10;
 }
 
 // User-provided metadata for a table.
@@ -271,6 +299,9 @@ message TableInfo {
   // A long description, perhaps several paragraphs,
   // describing the table contents in detail.
   string description = 2;
+
+  // Labels provided for the table.
+  map<string, string> labels = 3;
 }
 
 // Describes a virtual table defined by a SQL query.
@@ -313,6 +344,9 @@ message DatasetInfo {
   // A long description, perhaps several paragraphs,
   // describing the dataset contents in detail.
   string description = 2;
+
+  // Labels provided for the dataset.
+  map<string, string> labels = 3;
 }
 
 // An access control list.
@@ -384,6 +418,17 @@ message JobConfiguration {
 
     // Describes data sources outside BigQuery, if needed.
     repeated TableDefinition table_definitions = 6;
+
+    // Describes the priority given to the query:
+    // `QUERY_INTERACTIVE` or `QUERY_BATCH`.
+    string query_priority = 7;
+
+    // Result table encryption information. Set when non-default encryption is
+    // used.
+    EncryptionInfo destination_table_encryption = 8;
+
+    // Type of the statement (e.g. SELECT, INSERT, CREATE_TABLE, CREATE_MODEL..)
+    string statement_type = 9;
   }
 
   // Describes a load job, which loads data from an external source via
@@ -406,6 +451,10 @@ message JobConfiguration {
     // Describes how writes affect existing tables:
     // `WRITE_TRUNCATE`, `WRITE_APPEND`, `WRITE_EMPTY`.
     string write_disposition = 5;
+
+    // Result table encryption information. Set when non-default encryption is
+    // used.
+    EncryptionInfo destination_table_encryption = 7;
   }
 
   // Describes an extract job, which exports data to an external source
@@ -433,6 +482,10 @@ message JobConfiguration {
     // Describes how writes affect existing tables:
     // `WRITE_TRUNCATE`, `WRITE_APPEND`, `WRITE_EMPTY`.
     string write_disposition = 4;
+
+    // Result table encryption information. Set when non-default encryption is
+    // used.
+    EncryptionInfo destination_table_encryption = 5;
   }
 
   // Job configuration information.
@@ -452,6 +505,9 @@ message JobConfiguration {
 
   // If true, don't actually run the job. Just check that it would run.
   bool dry_run = 9;
+
+  // Labels provided for the job.
+  map<string, string> labels = 3;
 }
 
 // Describes an external data source used in a query.
@@ -470,10 +526,23 @@ message JobStatus {
 
   // If the job did not complete successfully, this field describes why.
   google.rpc.Status error = 2;
+
+  // Errors encountered during the running of the job. Do not necessarily mean
+  // that the job has completed or was unsuccessful.
+  repeated google.rpc.Status additional_errors = 3;
 }
 
 // Job statistics that may change after a job starts.
 message JobStatistics {
+  // Job resource usage breakdown by reservation.
+  message ReservationResourceUsage {
+    // Reservation name or "unreserved" for on-demand resources usage.
+    string name = 1;
+
+    // Total slot milliseconds used by the reservation for a particular job.
+    int64 slot_ms = 2;
+  }
+
   // Time when the job was created.
   google.protobuf.Timestamp create_time = 1;
 
@@ -491,6 +560,38 @@ message JobStatistics {
 
   // The tier assigned by CPU-based billing.
   int32 billing_tier = 7;
+
+  // The total number of slot-ms consumed by the query job.
+  int64 total_slot_ms = 8;
+
+  // Reservation usage.
+  repeated ReservationResourceUsage reservation_usage = 14;
+
+  // The first N tables accessed by the query job. Older queries that
+  // reference a large number of tables may not have all of their
+  // tables in this list. You can use the total_tables_processed count to
+  // know how many total tables were read in the query. For new queries,
+  // there is currently no limit.
+  repeated TableName referenced_tables = 9;
+
+  // Total number of unique tables referenced in the query.
+  int32 total_tables_processed = 10;
+
+  // The first N views accessed by the query job. Older queries that
+  // reference a large number of views may not have all of their
+  // views in this list. You can use the total_tables_processed count to
+  // know how many total tables were read in the query. For new queries,
+  // there is currently no limit.
+  repeated TableName referenced_views = 11;
+
+  // Total number of unique views referenced in the query.
+  int32 total_views_processed = 12;
+
+  // Number of output rows produced by the query job.
+  int64 query_output_row_count = 15;
+
+  // Total bytes loaded for an import job.
+  int64 total_load_output_bytes = 13;
 }
 
 // The fully-qualified name for a dataset.
@@ -521,4 +622,13 @@ message JobName {
 
   // The job ID within the project.
   string job_id = 2;
+
+  // The job location.
+  string location = 3;
+}
+
+// Describes encryption properties for a table or a job
+message EncryptionInfo {
+  // unique identifier for cloud kms key
+  string kms_key_name = 1;
 }
