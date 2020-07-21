@@ -36,6 +36,26 @@ service SubscriberService {
   }
 }
 
+// The service that a subscriber client application uses to determine which
+// partitions it should connect to.
+//
+// This is an under development API being published to build client libraries.
+// Users will not be able to access it until fully launched.
+service PartitionAssignmentService {
+  option (google.api.default_host) = "pubsublite.googleapis.com";
+  option (google.api.oauth_scopes) = "https://www.googleapis.com/auth/cloud-platform";
+
+  // Assign partitions for this client to handle for the specified subscription.
+  //
+  // The client must send an InitialPartitionAssignmentRequest first.
+  // The server will then send at most one unacknowledged PartitionAssignment
+  // outstanding on the stream at a time.
+  // The client should send a PartitionAssignmentAck after updating the
+  // partitions it is connected to to reflect the new assignment.
+  rpc AssignPartitions(stream PartitionAssignmentRequest) returns (stream PartitionAssignment) {
+  }
+}
+
 // The first request that must be sent on a newly-opened stream. The client must
 // wait for the response before sending subsequent requests on the stream.
 message InitialSubscribeRequest {
@@ -136,5 +156,52 @@ message SubscribeResponse {
 
     // Response containing messages from the topic partition.
     MessageResponse messages = 3;
+  }
+}
+
+// The first request that must be sent on a newly-opened stream. The client must
+// wait for the response before sending subsequent requests on the stream.
+message InitialPartitionAssignmentRequest {
+  // The subscription name. Structured like:
+  // projects/<project number>/locations/<zone name>/subscriptions/<subscription
+  // id>
+  string subscription = 1;
+
+  // An opaque, unique client identifier. This field must be exactly 16 bytes
+  // long and is interpreted as an unsigned 128 bit integer. Other size values
+  // will be rejected and the stream will be failed with a non-retryable error.
+  //
+  // This field is large enough to fit a uuid from standard uuid algorithms like
+  // uuid1 or uuid4, which should be used to generate this number. The same
+  // identifier should be reused following disconnections with retryable stream
+  // errors.
+  bytes client_id = 2;
+}
+
+// PartitionAssignments should not race with acknowledgements. There
+// should be exactly one unacknowledged PartitionAssignment at a time. If not,
+// the client must break the stream.
+message PartitionAssignment {
+  // The list of partition numbers this subscriber is assigned to.
+  repeated int64 partitions = 1;
+}
+
+// Acknowledge receipt and handling of the previous assignment.
+// If not sent within a short period after receiving the assignment,
+// partitions may remain unassigned for a period of time until the
+// client is known to be inactive, after which time the server will break the
+// stream.
+message PartitionAssignmentAck {
+
+}
+
+// A request on the PartitionAssignment stream.
+message PartitionAssignmentRequest {
+  oneof request {
+    // Initial request on the stream.
+    InitialPartitionAssignmentRequest initial = 1;
+
+    // Acknowledgement of a partition assignment.
+    PartitionAssignmentAck ack = 2;
   }
 }
