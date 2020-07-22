@@ -279,8 +279,8 @@ go_gapic_repositories()
 ### TypeScript generator
 http_archive(
     name = "gapic_generator_typescript",
-    urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v1.0.5.tar.gz"],
-    strip_prefix = "gapic-generator-typescript-1.0.5",
+    urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v1.0.6.tar.gz"],
+    strip_prefix = "gapic-generator-typescript-1.0.6",
 )
 
 load("@gapic_generator_typescript//:repositories.bzl", "gapic_generator_typescript_repositories")
@@ -295,11 +295,6 @@ yarn_install(
     package_json = "@gapic_generator_typescript//:package.json",
     yarn_lock = "@gapic_generator_typescript//:yarn.lock",
 )
-load("@npm//:install_bazel_dependencies.bzl", "install_bazel_dependencies")
-install_bazel_dependencies()
-
-load("@npm_bazel_typescript//:index.bzl", "ts_setup_workspace")
-ts_setup_workspace()
 
 ##############################################################################
 # PHP
