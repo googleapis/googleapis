@@ -112,8 +112,8 @@ go_register_toolchains()
 
 http_archive(
     name = "com_github_grpc_grpc",
-    strip_prefix = "grpc-1.30.0",
-    urls = ["https://github.com/grpc/grpc/archive/v1.30.0.zip"],
+    strip_prefix = "grpc-1.30.2",
+    urls = ["https://github.com/grpc/grpc/archive/v1.30.2.zip"],
 )
 
 load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
@@ -324,3 +324,23 @@ http_archive(
 load("@gapic_generator_csharp//:repositories.bzl", "gapic_generator_csharp_repositories")
 
 gapic_generator_csharp_repositories()
+
+##############################################################################
+# Ruby
+##############################################################################
+
+# local_repository(
+#     name = "gapic_generator_ruby",
+#     path = "/usr/local/google/home/aohren/src/gapic-generator-ruby"
+# )
+
+http_archive(
+    name = "gapic_generator_ruby",
+    sha256 = "fdc5f34d25556228ecbd4ef35eee9bf5d2f31c65e476701c84bd46df745e1b22",
+    urls = ["https://github.com/googleapis/gapic-generator-ruby/archive/e465d3377c5cf60d47726f900f7e06dc00737774.tar.gz"],
+    strip_prefix = "gapic-generator-ruby-e465d3377c5cf60d47726f900f7e06dc00737774",
+)
+
+load("@gapic_generator_ruby//rules_ruby_gapic:repositories.bzl", "gapic_generator_ruby_repositories")
+
+gapic_generator_ruby_repositories()
