@@ -329,11 +329,6 @@ gapic_generator_csharp_repositories()
 # Ruby
 ##############################################################################
 
-# local_repository(
-#     name = "gapic_generator_ruby",
-#     path = "/usr/local/google/home/aohren/src/gapic-generator-ruby"
-# )
-
 http_archive(
     name = "gapic_generator_ruby",
     sha256 = "fdc5f34d25556228ecbd4ef35eee9bf5d2f31c65e476701c84bd46df745e1b22",
