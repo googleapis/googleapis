@@ -257,15 +257,23 @@ def switched_rules_by_language(
     #
     rules["ruby_proto_library"] = _switch(
         ruby,
-        "@com_google_api_codegen//rules_gapic/ruby:ruby_gapic.bzl",
+        "@gapic_generator_ruby//rules_ruby_gapic:ruby_gapic.bzl",
     )
     rules["ruby_grpc_library"] = _switch(
         ruby and grpc,
-        "@com_google_api_codegen//rules_gapic/ruby:ruby_gapic.bzl",
+        "@gapic_generator_ruby//rules_ruby_gapic:ruby_gapic.bzl",
     )
     rules["ruby_gapic_library"] = _switch(
         ruby and grpc and gapic,
         "@com_google_api_codegen//rules_gapic/ruby:ruby_gapic.bzl",
+    )
+    rules["ruby_ads_gapic_library"] = _switch(
+        ruby and grpc and gapic,
+        "@gapic_generator_ruby//rules_ruby_gapic:ruby_gapic.bzl",
+    )
+    rules["ruby_cloud_gapic_library"] = _switch(
+        ruby and grpc and gapic,
+        "@gapic_generator_ruby//rules_ruby_gapic:ruby_gapic.bzl",
     )
     rules["ruby_gapic_assembly_pkg"] = _switch(
         ruby and grpc and gapic,
