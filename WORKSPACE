@@ -142,10 +142,11 @@ apple_support_dependencies()
 # Java
 ##############################################################################
 
+_gax_java_version="1.58.2"
 http_archive(
     name = "com_google_api_gax_java",
-    strip_prefix = "gax-java-1.57.2",
-    urls = ["https://github.com/googleapis/gax-java/archive/v1.57.2.zip"],
+    strip_prefix = "gax-java-%s" % _gax_java_version,
+    urls = ["https://github.com/googleapis/gax-java/archive/v%s.zip" % _gax_java_version],
 )
 
 load("@com_google_api_gax_java//:repository_rules.bzl", "com_google_api_gax_java_properties")
