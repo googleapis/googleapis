@@ -19,6 +19,8 @@ package google.analytics.data.v1alpha;
 import "google/analytics/data/v1alpha/data.proto";
 import "google/api/annotations.proto";
 import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
 
 option go_package = "google.golang.org/genproto/googleapis/analytics/data/v1alpha;data";
 option java_multiple_files = true;
@@ -75,6 +77,37 @@ service AlphaAnalyticsData {
       body: "*"
     };
   }
+
+  // Returns metadata for dimensions and metrics available in reporting methods.
+  // Used to explore the dimensions and metrics. Dimensions and metrics will be
+  // mostly added over time, but renames and deletions may occur.
+  rpc GetMetadata(GetMetadataRequest) returns (Metadata) {
+    option (google.api.http) = {
+      get: "/v1alpha/{name=metadata}"
+      additional_bindings {
+        get: "/v1alpha/{name=properties/*/metadata}"
+      }
+    };
+    option (google.api.method_signature) = "name";
+  }
+}
+
+// The dimensions and metrics currently accepted in reporting methods.
+message Metadata {
+  option (google.api.resource) = {
+    type: "analyticsdata.googleapis.com/Metadata"
+    pattern: "metadata"
+    pattern: "properties/{property}/metadata"
+  };
+
+  // Resource name of this metadata.
+  string name = 3;
+
+  // The dimensions descriptions.
+  repeated DimensionMetadata dimensions = 1;
+
+  // The metric descriptions.
+  repeated MetricMetadata metrics = 2;
 }
 
 // The request to generate a report.
@@ -92,25 +125,28 @@ message RunReportRequest {
   // Date ranges of data to read. If multiple date ranges are requested, each
   // response row will contain a zero based date range index. If two date
   // ranges overlap, the event data for the overlapping days is included in the
-  // response rows for both date ranges.
+  // response rows for both date ranges. In a cohort request, this `dateRanges`
+  // must be unspecified.
   repeated DateRange date_ranges = 4;
 
   // The row count of the start row. The first row is counted as row 0.
   int64 offset = 5;
 
-  // The number of rows to return.
-  // If zero or unspecified, all rows are returned.
+  // The number of rows to return. If unspecified, 10 rows are returned. If
+  // -1, all rows are returned.
   int64 limit = 6;
 
   // Aggregation of metrics. Aggregated metric values will be shown in rows
   // where the dimension_values are set to "RESERVED_(MetricAggregation)".
   repeated MetricAggregation metric_aggregations = 7;
 
-  // The filter clause of dimensions.
+  // The filter clause of dimensions. Dimensions must be requested to be used in
+  // this filter. Metrics cannot be used in this filter.
   FilterExpression dimension_filter = 8;
 
   // The filter clause of metrics. Applied at post aggregation phase, similar to
-  // SQL having-clause.
+  // SQL having-clause. Metrics must be requested to be used in this filter.
+  // Dimensions cannot be used in this filter.
   FilterExpression metric_filter = 9;
 
   // Specifies how rows are ordered in the response.
@@ -124,7 +160,9 @@ message RunReportRequest {
   // in the request the 'cohort' dimension must be present.
   CohortSpec cohort_spec = 12;
 
-  // If false, rows with metrics being 0 will not be returned.
+  // If false or unspecified, each row with all metrics equal to 0 will not be
+  // returned. If true, these rows will be returned if they are not separately
+  // removed by a filter.
   bool keep_empty_rows = 13;
 
   // Toggles whether to return the current state of this Analytics Property's
@@ -134,7 +172,12 @@ message RunReportRequest {
 
 // The response report table corresponding to a request.
 message RunReportResponse {
-  // Describes metric columns.
+  // Describes dimension columns. The number of DimensionHeaders and ordering of
+  // DimensionHeaders matches the dimensions present in rows.
+  repeated DimensionHeader dimension_headers = 11;
+
+  // Describes metric columns. The number of MetricHeaders and ordering of
+  // MetricHeaders matches the metrics present in rows.
   repeated MetricHeader metric_headers = 1;
 
   // Rows of dimension value combinations and metric values in the report.
@@ -171,14 +214,13 @@ message RunPivotReportRequest {
   // metric_filter, order_bys.
   repeated Metric metrics = 3;
 
-  // The filter clause of dimensions. Requests are validated that all
-  // field_names in the dimension_filter are dimensions and are defined in
-  // Dimensions.
+  // The filter clause of dimensions. Dimensions must be requested to be used in
+  // this filter. Metrics cannot be used in this filter.
   FilterExpression dimension_filter = 4;
 
   // The filter clause of metrics. Applied at post aggregation phase, similar to
-  // SQL having-clause. Requests are validated that all field_names in the
-  // metric_filter are metrics and are defined in Metrics.
+  // SQL having-clause. Metrics must be requested to be used in this filter.
+  // Dimensions cannot be used in this filter.
   FilterExpression metric_filter = 5;
 
   // Describes the visual format of the report's dimensions in columns or rows.
@@ -191,7 +233,7 @@ message RunPivotReportRequest {
   // ranges are specified, event data from each date range is used in the
   // report. A special dimension with field name "dateRange" can be included in
   // a Pivot's field names; if included, the report compares between date
-  // ranges. This dateRanges field is not used in cohorts reports.
+  // ranges. In a cohort request, this `dateRanges` must be unspecified.
   repeated DateRange date_ranges = 7;
 
   // A currency code in ISO4217 format, such as "AED", "USD", "JPY".
@@ -202,7 +244,9 @@ message RunPivotReportRequest {
   // in the request the 'cohort' dimension must be present.
   CohortSpec cohort_spec = 9;
 
-  // If false, rows with metrics being 0 will not be returned.
+  // If false or unspecified, each row with all metrics equal to 0 will not be
+  // returned. If true, these rows will be returned if they are not separately
+  // removed by a filter.
   bool keep_empty_rows = 10;
 
   // Toggles whether to return the current state of this Analytics Property's
@@ -250,7 +294,12 @@ message RunPivotReportResponse {
   //     }]
   repeated PivotHeader pivot_headers = 1;
 
-  // Describes metric columns.
+  // Describes dimension columns. The number of DimensionHeaders and ordering of
+  // DimensionHeaders matches the dimensions present in rows.
+  repeated DimensionHeader dimension_headers = 7;
+
+  // Describes metric columns. The number of MetricHeaders and ordering of
+  // MetricHeaders matches the metrics present in rows.
   repeated MetricHeader metric_headers = 2;
 
   // Rows of dimension value combinations and metric values in the report.
@@ -303,4 +352,18 @@ message BatchRunPivotReportsRequest {
 message BatchRunPivotReportsResponse {
   // Individual responses. Each response has a separate pivot report request.
   repeated RunPivotReportResponse pivot_reports = 1;
+}
+
+// Request for dimension and metric metadata.
+message GetMetadataRequest {
+  // Required. The name of the metadata to retrieve. Either has the form
+  // 'metadata' or 'properties/{property}/metadata'. This name field is
+  // specified in the URL path and not URL parameters. Property is a numeric
+  // Google Analytics App + Web Property Id.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "analyticsdata.googleapis.com/Metadata"
+    }
+  ];
 }

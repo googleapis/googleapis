@@ -357,16 +357,17 @@ message Pivot {
   repeated string field_names = 1;
 
   // Specifies how dimensions are ordered in the pivot. In the first Pivot, the
-  // OrderBys determine Row and DimensionHeader ordering; in subsequent Pivots,
-  // the OrderBys determine only DimensionHeader ordering. Dimensions specified
-  // in these OrderBys must be a subset of Pivot.field_names.
+  // OrderBys determine Row and PivotDimensionHeader ordering; in subsequent
+  // Pivots, the OrderBys determine only PivotDimensionHeader ordering.
+  // Dimensions specified in these OrderBys must be a subset of
+  // Pivot.field_names.
   repeated OrderBy order_bys = 2;
 
   // The row count of the start row. The first row is counted as row 0.
   int64 offset = 3;
 
-  // The number of rows to return in this pivot.
-  // If zero or unspecified, all rows are returned.
+  // The number of rows to return in this pivot. If unspecified, 10 rows are
+  // returned. If -1, all rows are returned.
   int64 limit = 4;
 
   // Aggregate the metrics by dimensions in this pivot using the specified
@@ -391,7 +392,9 @@ message CohortSpec {
 // belong to the same cohort.
 message Cohort {
   // Assigns a name to this cohort. The dimension `cohort` is valued to this
-  // name in a report response. If not set, a cohort is named the empty string.
+  // name in a report response. If set, cannot begin with `cohort_` or
+  // `RESERVED_`. If not set, cohorts are named by their zero based index
+  // `cohort_0`, `cohort_1`, etc.
   string name = 1;
 
   // The dimension used by cohort. Only supports `firstTouchDate` for retention
@@ -399,12 +402,14 @@ message Cohort {
   string dimension = 2;
 
   // The cohort selects users whose first visit date is between start date
-  // and end date defined in the date_range. The date range should be aligned
-  // with the cohort's granularity.
-  // If CohortsRange uses daily granularity, the date range can be aligned to
-  // any day.
-  // If CohortsRange uses weekly granularity, the date range should be aligned
-  // to the week boundary, starting at Sunday and ending Saturday. If
+  // and end date defined in the `dateRange`. In a cohort request, this
+  // `dateRange` is required and the `dateRanges` in the `RunReportRequest` or
+  // `RunPivotReportRequest` must be unspecified.
+  //
+  // The date range should be aligned with the cohort's granularity. If
+  // CohortsRange uses daily granularity, the date range can be aligned to any
+  // day. If CohortsRange uses weekly granularity, the date range should be
+  // aligned to the week boundary, starting at Sunday and ending Saturday. If
   // CohortsRange uses monthly granularity, the date range should be aligned to
   // the month, starting at the first and ending on the last day of the month.
   DateRange date_range = 3;
@@ -412,17 +417,9 @@ message Cohort {
 
 // Settings of a cohort report.
 message CohortReportSettings {
-  // If true, accumulates the result from first visit day to the end day.
+  // If true, accumulates the result from first visit day to the end day. Not
+  // supported in `RunReportRequest`.
   bool accumulate = 1;
-
-  // If true, the report is for lifetime value report and should pivot on user
-  // event.
-  bool pivot_on_user_event = 2;
-
-  // If some values are missing while computing ratios, we want to compute the
-  // ratios only based on non-missing values.
-  // This field should be set to true only for a totals request.
-  bool missing_value_as_zero = 4;
 }
 
 // Describes date range for a cohort report.
@@ -462,27 +459,39 @@ message ResponseMetaData {
   bool data_loss_from_other_row = 3;
 }
 
-// Describes the metric column in the report.
+// Describes a dimension column in the report. Dimensions requested in a report
+// produce column entries within rows and DimensionHeaders. However, dimensions
+// used exclusively within filters or expressions do not produce columns in a
+// report; correspondingly, those dimensions do not produce headers.
+message DimensionHeader {
+  // The dimension's name.
+  string name = 1;
+}
+
+// Describes a metric column in the report. Visible metrics requested in a
+// report produce column entries within rows and MetricHeaders. However,
+// metrics used exclusively within filters or expressions do not produce columns
+// in a report; correspondingly, those metrics do not produce headers.
 message MetricHeader {
-  // Metric name.
+  // The metric's name.
   string name = 1;
 
-  // Metric data type.
+  // The metric's data type.
   MetricType type = 2;
 }
 
-// Dimensions' values in a pivot.
+// Dimensions' values in a single pivot.
 message PivotHeader {
   // The size is the same as the cardinality of the corresponding dimension
   // combinations.
-  repeated DimensionHeader dimension_headers = 1;
+  repeated PivotDimensionHeader pivot_dimension_headers = 1;
 
   // The cardinality of the pivot as if offset = 0 and limit = -1.
   int32 row_count = 2;
 }
 
-// The header for the dimensions.
-message DimensionHeader {
+// Summarizes dimension values from a row for this pivot.
+message PivotDimensionHeader {
   // Values of multiple dimensions in a pivot.
   repeated DimensionValue dimension_values = 1;
 }
@@ -583,6 +592,54 @@ message QuotaStatus {
   int32 remaining = 2;
 }
 
+// Explains a dimension.
+message DimensionMetadata {
+  // This dimension's name. Useable in [Dimension](#Dimension)'s `name`. For
+  // example, `eventName`.
+  string api_name = 1;
+
+  // This dimension's name within the Google Analytics user interface. For
+  // example, `Event name`.
+  string ui_name = 2;
+
+  // Description of how this dimension is used and calculated.
+  string description = 3;
+
+  // Still usable but deprecated names for this dimension. If populated, this
+  // dimension is available by either `apiName` or one of `deprecatedApiNames`
+  // for a period of time. After the deprecation period, the dimension will be
+  // available only by `apiName`.
+  repeated string deprecated_api_names = 4;
+}
+
+// Explains a metric.
+message MetricMetadata {
+  // A metric name. Useable in [Metric](#Metric)'s `name`. For example,
+  // `eventCount`.
+  string api_name = 1;
+
+  // This metric's name within the Google Analytics user interface. For example,
+  // `Event count`.
+  string ui_name = 2;
+
+  // Description of how this metric is used and calculated.
+  string description = 3;
+
+  // Still usable but deprecated names for this metric. If populated, this
+  // metric is available by either `apiName` or one of `deprecatedApiNames`
+  // for a period of time. After the deprecation period, the metric will be
+  // available only by `apiName`.
+  repeated string deprecated_api_names = 4;
+
+  // The type of this metric.
+  MetricType type = 5;
+
+  // The mathematical expression for this derived metric. Can be used in
+  // [Metric](#Metric)'s `expression` field for equivalent reports. Most metrics
+  // are not expressions, and for non-expressions, this field is empty.
+  string expression = 6;
+}
+
 // Represents aggregation of metrics.
 enum MetricAggregation {
   // Unspecified operator.
@@ -601,7 +658,7 @@ enum MetricAggregation {
   COUNT = 4;
 }
 
-// Type of a metric value.
+// A metric's value type.
 enum MetricType {
   // Unspecified type.
   METRIC_TYPE_UNSPECIFIED = 0;
@@ -611,4 +668,10 @@ enum MetricType {
 
   // Floating point type.
   TYPE_FLOAT = 2;
+
+  // A duration of seconds; a special floating point type.
+  TYPE_SECONDS = 4;
+
+  // An amount of money; a special floating point type.
+  TYPE_CURRENCY = 9;
 }
