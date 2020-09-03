@@ -117,7 +117,7 @@ change to the API.
 To generate gRPC source code for Google APIs in this repository, you
 first need to install both Protocol Buffers and gRPC on your local
 machine, then you can run `make LANGUAGE=xxx all` to generate the
-source code. You need to integrated the generated source code into
+source code. You need to integrate the generated source code into
 your application build system.
 
 **NOTE:** The Makefile is only intended to generate source code for the
