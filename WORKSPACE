@@ -318,10 +318,10 @@ php_gapic_repositories()
 
 # Required to access the C#-specific common resources config.
 http_archive(
-    name = "google_cloud_dotnet",
-    urls = ["https://github.com/googleapis/google-cloud-dotnet/archive/1b0afcc7b11b02aaea3456f822c8030d5e9f361c.zip"],
-    strip_prefix = "google-cloud-dotnet-1b0afcc7b11b02aaea3456f822c8030d5e9f361c",
-    build_file_content = "exports_files([\"CommonResourcesConfig.json\"])",
+    name = "gax_dotnet",
+    urls = ["https://github.com/googleapis/gax-dotnet/archive/b4bf8c3e67a89e558f06af60f777bd12abe84392.zip"],
+    strip_prefix = "gax-dotnet-b4bf8c3e67a89e558f06af60f777bd12abe84392",
+    build_file_content = "exports_files([\"Google.Api.Gax/ResourceNames/CommonResourcesConfig.json\"])",
 )
 
 http_archive(
