@@ -316,6 +316,14 @@ php_gapic_repositories()
 # C#
 ##############################################################################
 
+# Required to access the C#-specific common resources config.
+http_archive(
+    name = "gax_dotnet",
+    urls = ["https://github.com/googleapis/gax-dotnet/archive/b4bf8c3e67a89e558f06af60f777bd12abe84392.zip"],
+    strip_prefix = "gax-dotnet-b4bf8c3e67a89e558f06af60f777bd12abe84392",
+    build_file_content = "exports_files([\"Google.Api.Gax/ResourceNames/CommonResourcesConfig.json\"])",
+)
+
 http_archive(
     name = "gapic_generator_csharp",
     urls = ["https://github.com/googleapis/gapic-generator-csharp/archive/v1.2.0.zip"],
