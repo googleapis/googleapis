@@ -326,8 +326,8 @@ http_archive(
 
 http_archive(
     name = "gapic_generator_csharp",
-    urls = ["https://github.com/googleapis/gapic-generator-csharp/archive/v1.2.0.zip"],
-    strip_prefix = "gapic-generator-csharp-1.2.0",
+    urls = ["https://github.com/googleapis/gapic-generator-csharp/archive/v1.3.1.zip"],
+    strip_prefix = "gapic-generator-csharp-1.3.1",
 )
 
 load("@gapic_generator_csharp//:repositories.bzl", "gapic_generator_csharp_repositories")
