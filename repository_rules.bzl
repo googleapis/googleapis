@@ -151,6 +151,24 @@ def switched_rules_by_language(
         "@com_google_api_codegen//rules_gapic/java:java_gapic_pkg.bzl",
     )
 
+    # Java microgenerator.
+    # These will eventually replace the monolith Java rules.
+    rules["java_microgenerator_gapic_library"] = _switch(
+        java and grpc and gapic,
+        "@com_google_api_generator//rules_java_gapic:java_gapic.bzl",
+        "java_gapic_library",
+    )
+    rules["java_microgenerator_gapic_test"] = _switch(
+        java and grpc and gapic,
+        "@com_google_api_generator//rules_java_gapic:java_gapic.bzl",
+        "java_gapic_test",
+    )
+    rules["java_microgenerator_gapic_assembly_gradle_pkg"] = _switch(
+        java and grpc and gapic,
+        "@com_google_api_generator//rules_java_gapic:java_gapic_pkg.bzl",
+        "java_gapic_assembly_gradle_pkg",
+    )
+
     #
     # Python
     #
