@@ -142,15 +142,31 @@ apple_support_dependencies()
 # Java
 ##############################################################################
 # Java microgenerator.
-_java_microgenerator_version = "3f098c4e21daa7b211cd43e6c4af03d627e754e4"  # Will change often in dev.
-
+"""
 http_archive(
-    name = "com_google_api_generator",
-    strip_prefix = "gapic-generator-java-%s" % _java_microgenerator_version,
-    urls = ["https://github.com/googleapis/gapic-generator/archive/%s.zip" % _java_microgenerator_version],
+    name = "gapic_generator_java",
+    strip_prefix = "gapic-generator-java-3f098c4e21daa7b211cd43e6c4af03d627e754e4",
+    urls = ["https://github.com/googleapis/gapic-generator-java/archive/3f098c4e21daa7b211cd43e6c4af03d627e754e4.zip"],
+)
+"""
+
+local_repository(
+    name = "gapic_generator_java",
+    path = "/usr/local/google/home/miraleung/dev/ggj2",
 )
 
-_gax_java_version = "1.58.2"
+load("@gapic_generator_java//:repository_rules.bzl", "gapic_generator_java_properties")
+
+gapic_generator_java_properties(
+    name = "gapic_generator_java_properties",
+    file = "@gapic_generator_java//:dependencies.properties",
+)
+
+load("@gapic_generator_java//:repositories.bzl", "gapic_generator_java_repositories")
+
+gapic_generator_java_repositories()
+
+_gax_java_version = "1.58.3"
 
 http_archive(
     name = "com_google_api_gax_java",
