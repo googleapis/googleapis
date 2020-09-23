@@ -224,8 +224,8 @@ pip_repositories()
 # Change upstream repository once PR is merged
 http_archive(
     name = "gapic_generator_python",
-    urls = ["https://github.com/googleapis/gapic-generator-python/archive/v0.33.5.zip"],
-    strip_prefix = "gapic-generator-python-0.33.5",
+    urls = ["https://github.com/googleapis/gapic-generator-python/archive/v0.33.6.zip"],
+    strip_prefix = "gapic-generator-python-0.33.6",
 )
 
 load("@gapic_generator_python//:repositories.bzl",
