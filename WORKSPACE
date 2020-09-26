@@ -144,8 +144,8 @@ apple_support_dependencies()
 # Java microgenerator.
 http_archive(
     name = "gapic_generator_java",
-    strip_prefix = "gapic-generator-java-3f098c4e21daa7b211cd43e6c4af03d627e754e4",
-    urls = ["https://github.com/googleapis/gapic-generator-java/archive/3f098c4e21daa7b211cd43e6c4af03d627e754e4.zip"],
+    strip_prefix = "gapic-generator-java-7cde9ec5b71106df33ed30a55efa461b3e40443e",
+    urls = ["https://github.com/googleapis/gapic-generator-java/archive/7cde9ec5b71106df33ed30a55efa461b3e40443e.zip"],
 )
 
 load("@gapic_generator_java//:repository_rules.bzl", "gapic_generator_java_properties")
