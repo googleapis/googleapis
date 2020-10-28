@@ -54,10 +54,11 @@ message Budget {
 
   // Optional. Rules that trigger alerts (notifications of thresholds
   // being crossed) when spend exceeds the specified percentages of the budget.
-  repeated ThresholdRule threshold_rules = 5 [(google.api.field_behavior) = OPTIONAL];
+  repeated ThresholdRule threshold_rules = 5
+      [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Rules to apply to all updates to the actual spend, regardless
-  // of the thresholds set in `threshold_rules`.
+  // Optional. Rules to apply to notifications sent based on budget spend and
+  // thresholds.
   AllUpdatesRule all_updates_rule = 6 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Etag to validate that the object is unchanged for a
@@ -86,9 +87,7 @@ message BudgetAmount {
 // that is, there are no other options yet.
 // Future configuration will be described here (for example, configuring a
 // percentage of last period's spend).
-message LastPeriodAmount {
-
-}
+message LastPeriodAmount {}
 
 // ThresholdRule contains a definition of a threshold which triggers
 // an alert (a notification of a threshold being crossed) to be sent when
@@ -121,27 +120,44 @@ message ThresholdRule {
   Basis spend_basis = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// AllUpdatesRule defines notifications that are sent on every update to the
-// billing account's spend, regardless of the thresholds defined using
-// threshold rules.
+// AllUpdatesRule defines notifications that are sent based on budget spend
+// and thresholds.
 message AllUpdatesRule {
-  // Required. The name of the Cloud Pub/Sub topic where budget related messages will be
-  // published, in the form `projects/{project_id}/topics/{topic_id}`. Updates
-  // are sent at regular intervals to the topic.
-  // The topic needs to be created before the budget is created; see
+  // Optional. The name of the Pub/Sub topic where budget related messages will
+  // be published, in the form `projects/{project_id}/topics/{topic_id}`.
+  // Updates are sent at regular intervals to the topic. The topic needs to be
+  // created before the budget is created; see
   // https://cloud.google.com/billing/docs/how-to/budgets#manage-notifications
   // for more details.
   // Caller is expected to have
   // `pubsub.topics.setIamPolicy` permission on the topic when it's set for a
   // budget, otherwise, the API call will fail with PERMISSION_DENIED. See
-  // https://cloud.google.com/pubsub/docs/access-control for more details on
-  // Pub/Sub roles and permissions.
-  string pubsub_topic = 1 [(google.api.field_behavior) = REQUIRED];
+  // https://cloud.google.com/billing/docs/how-to/budgets-programmatic-notifications
+  // for more details on Pub/Sub roles and permissions.
+  string pubsub_topic = 1 [(google.api.field_behavior) = OPTIONAL];
 
-  // Required. The schema version of the notification.
+  // Optional. The schema version of the notification sent to `pubsub_topic`.
   // Only "1.0" is accepted. It represents the JSON schema as defined in
-  // https://cloud.google.com/billing/docs/how-to/budgets#notification_format
-  string schema_version = 2 [(google.api.field_behavior) = REQUIRED];
+  // https://cloud.google.com/billing/docs/how-to/budgets-programmatic-notifications#notification_format
+  string schema_version = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Targets to send notifications to when a threshold is exceeded.
+  // This is in addition to default recipients who have billing account IAM
+  // roles. The value is the full REST resource name of a monitoring
+  // notification channel with the form
+  // `projects/{project_id}/notificationChannels/{channel_id}`. A maximum of 5
+  // channels are allowed. See
+  // https://cloud.google.com/billing/docs/how-to/budgets-notification-recipients
+  // for more details.
+  repeated string monitoring_notification_channels = 3
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. When set to true, disables default notifications sent when a
+  // threshold is exceeded. Default notifications are sent to those with Billing
+  // Account Administrator and Billing Account User IAM roles for the target
+  // account.
+  bool disable_default_iam_recipients = 4
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // A filter for a budget, limiting the scope of the cost to calculate.
@@ -158,6 +174,10 @@ message Filter {
     // All types of credit are added to the net cost to determine the spend for
     // threshold calculations.
     EXCLUDE_ALL_CREDITS = 2;
+
+    // Credit types specified in the credit_types field are subtracted from the
+    // gross cost to determine the spend for threshold calculations.
+    INCLUDE_SPECIFIED_CREDITS = 3;
   }
 
   // Optional. A set of projects of the form `projects/{project}`,
@@ -167,8 +187,18 @@ message Filter {
   // Only zero or one project can be specified currently.
   repeated string projects = 1 [(google.api.field_behavior) = OPTIONAL];
 
+  // Optional. A list of credit types to be subtracted from gross cost to
+  // determine the spend for threshold calculations if and only if
+  // credit_types_treatment is INCLUDE_SPECIFIED_CREDITS. If
+  // credit_types_treatment is not INCLUDE_SPECIFIED_CREDITS, this field must be
+  // empty. See credits.type at
+  // https://cloud.google.com/billing/docs/how-to/export-data-bigquery-tables#data-schema
+  // for a list of acceptable credit type values in this field.
+  repeated string credit_types = 7 [(google.api.field_behavior) = OPTIONAL];
+
   // Optional. If not set, default behavior is `INCLUDE_ALL_CREDITS`.
-  CreditTypesTreatment credit_types_treatment = 4 [(google.api.field_behavior) = OPTIONAL];
+  CreditTypesTreatment credit_types_treatment = 4
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. A set of services of the form `services/{service_id}`,
   // specifying that usage from only this set of services should be
@@ -178,16 +208,18 @@ message Filter {
   // https://cloud.google.com/billing/v1/how-tos/catalog-api.
   repeated string services = 3 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. A set of subaccounts of the form `billingAccounts/{account_id}`, specifying
-  // that usage from only this set of subaccounts should be included in the
-  // budget. If a subaccount is set to the name of the master account, usage
-  // from the master account will be included. If omitted, the report will
-  // include usage from the master account and all subaccounts, if they exist.
+  // Optional. A set of subaccounts of the form `billingAccounts/{account_id}`,
+  // specifying that usage from only this set of subaccounts should be included
+  // in the budget. If a subaccount is set to the name of the parent account,
+  // usage from the parent account will be included. If omitted, the
+  // report will include usage from the parent account and all
+  // subaccounts, if they exist.
   repeated string subaccounts = 5 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. A single label and value pair specifying that usage from only this set of
-  // labeled resources should be included in the budget. Currently, multiple
-  // entries or multiple values per entry are not allowed. If omitted, the
-  // report will include all labeled and unlabeled usage.
-  map<string, google.protobuf.ListValue> labels = 6 [(google.api.field_behavior) = OPTIONAL];
+  // Optional. A single label and value pair specifying that usage from only
+  // this set of labeled resources should be included in the budget. Currently,
+  // multiple entries or multiple values per entry are not allowed. If omitted,
+  // the report will include all labeled and unlabeled usage.
+  map<string, google.protobuf.ListValue> labels = 6
+      [(google.api.field_behavior) = OPTIONAL];
 }
