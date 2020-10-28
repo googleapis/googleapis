@@ -137,10 +137,17 @@ apple_support_dependencies()
 # Java
 ##############################################################################
 # Java microgenerator.
+"""
 http_archive(
     name = "gapic_generator_java",
     strip_prefix = "gapic-generator-java-89fed885c17ef141584b43324347b64cc632e2c8",
     urls = ["https://github.com/googleapis/gapic-generator-java/archive/89fed885c17ef141584b43324347b64cc632e2c8.zip"],
+)
+"""
+
+local_repository(
+    name = "gapic_generator_java",
+    path = "/usr/local/google/home/miraleung/dev/gapic-generator-java",
 )
 
 load("@gapic_generator_java//:repository_rules.bzl", "gapic_generator_java_properties")
