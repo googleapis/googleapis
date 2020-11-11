@@ -18,6 +18,7 @@ package google.cloud.osconfig.v1;
 
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/cloud/osconfig/v1/osconfig_common.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -43,9 +44,10 @@ message ExecutePatchJobRequest {
   // to 1024 characters.
   string description = 2;
 
-  // Required. Instances to patch, either explicitly or filtered by some criteria such
-  // as zone or labels.
-  PatchInstanceFilter instance_filter = 7 [(google.api.field_behavior) = REQUIRED];
+  // Required. Instances to patch, either explicitly or filtered by some
+  // criteria such as zone or labels.
+  PatchInstanceFilter instance_filter = 7
+      [(google.api.field_behavior) = REQUIRED];
 
   // Patch configuration being applied. If omitted, instances are
   // patched using the default configurations.
@@ -61,6 +63,9 @@ message ExecutePatchJobRequest {
 
   // Display name for this patch job. This does not have to be unique.
   string display_name = 8;
+
+  // Rollout strategy of the patch job.
+  PatchRollout rollout = 9;
 }
 
 // Request to get an active or completed patch job.
@@ -76,7 +81,8 @@ message GetPatchJobRequest {
 
 // Request to list details for all instances that are part of a patch job.
 message ListPatchJobInstanceDetailsRequest {
-  // Required. The parent for the instances are in the form of `projects/*/patchJobs/*`.
+  // Required. The parent for the instances are in the form of
+  // `projects/*/patchJobs/*`.
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -113,8 +119,8 @@ message ListPatchJobInstanceDetailsResponse {
 message PatchJobInstanceDetails {
   // The instance name in the form `projects/*/zones/*/instances/*`
   string name = 1 [(google.api.resource_reference) = {
-                     type: "compute.googleapis.com/Instance"
-                   }];
+    type: "compute.googleapis.com/Instance"
+  }];
 
   // The unique identifier for the instance. This identifier is
   // defined by the server.
@@ -165,7 +171,7 @@ message ListPatchJobsResponse {
 // A high level representation of a patch job that is either in progress
 // or has completed.
 //
-// Instances details are not included in the job. To paginate through instance
+// Instance details are not included in the job. To paginate through instance
 // details, use ListPatchJobInstanceDetails.
 //
 // For more information about patch jobs, see
@@ -275,7 +281,7 @@ message PatchJob {
   // Last time this patch job was updated.
   google.protobuf.Timestamp update_time = 4;
 
-  // The current state of the PatchJob .
+  // The current state of the PatchJob.
   State state = 5;
 
   // Instances to patch.
@@ -310,6 +316,9 @@ message PatchJob {
       type: "osconfig.googleapis.com/PatchDeployment"
     }
   ];
+
+  // Rollout strategy being applied.
+  PatchRollout rollout = 16;
 }
 
 // Patch configuration specifications. Contains details on how to apply the
@@ -416,8 +425,6 @@ message Instance {
     // service.
     NO_AGENT_DETECTED = 15;
   }
-
-
 }
 
 // Message for canceling a patch job.
@@ -484,9 +491,7 @@ message YumSettings {
 }
 
 // Googet patching is performed by running `googet update`.
-message GooSettings {
-
-}
+message GooSettings {}
 
 // Zypper patching is performed by running `zypper patch`.
 // See also https://en.opensuse.org/SDB:Zypper_manual.
@@ -682,4 +687,53 @@ message PatchInstanceFilter {
   // labels, this is another way to group VMs when targeting configs, for
   // example prefix="prod-".
   repeated string instance_name_prefixes = 5;
+}
+
+// Patch rollout configuration specifications. Contains details on the
+// concurrency control when applying patch(es) to all targeted VMs.
+message PatchRollout {
+  // Type of the rollout.
+  enum Mode {
+    // Mode must be specified.
+    MODE_UNSPECIFIED = 0;
+
+    // Patches are applied one zone at a time. The patch job begins in the
+    // region with the lowest number of targeted VMs. Within the region,
+    // patching begins in the zone with the lowest number of targeted VMs. If
+    // multiple regions (or zones within a region) have the same number of
+    // targeted VMs, a tie-breaker is achieved by sorting the regions or zones
+    // in alphabetical order.
+    ZONE_BY_ZONE = 1;
+
+    // Patches are applied to VMs in all zones at the same time.
+    CONCURRENT_ZONES = 2;
+  }
+
+  // Mode of the patch rollout.
+  Mode mode = 1;
+
+  // The maximum number (or percentage) of VMs per zone to disrupt at any given
+  // moment. The number of VMs calculated from multiplying the percentage by the
+  // total number of VMs in a zone is rounded up.
+  //
+  // During patching, a VM is considered disrupted from the time the agent is
+  // notified to begin until patching has completed. This disruption time
+  // includes the time to complete reboot and any post-patch steps.
+  //
+  // A VM contributes to the disruption budget if its patching operation fails
+  // either when applying the patches, running pre or post patch steps, or if it
+  // fails to respond with a success notification before timing out. VMs that
+  // are not running or do not have an active agent do not count toward this
+  // disruption budget.
+  //
+  // For zone-by-zone rollouts, if the disruption budget in a zone is exceeded,
+  // the patch job stops, because continuing to the next zone requires
+  // completion of the patch process in the previous zone.
+  //
+  // For example, if the disruption budget has a fixed value of `10`, and 8 VMs
+  // fail to patch in the current zone, the patch job continues to patch 2 VMs
+  // at a time until the zone is completed. When that zone is completed
+  // successfully, patching begins with 10 VMs at a time in the next zone. If 10
+  // VMs in the next zone fail to patch, the patch job stops.
+  FixedOrPercent disruption_budget = 2;
 }
