@@ -294,12 +294,15 @@ go_gapic_repositories()
 # TypeScript
 ##############################################################################
 
+_gapic_generator_typescript_version = "1.2.4"
+_gapic_generator_typescript_sha256 = "50f5defff50e4df311e054581ae7434fe2a243c486a4280a9ae1f0750cef40d6"
+
 ### TypeScript generator
 http_archive(
     name = "gapic_generator_typescript",
-    strip_prefix = "gapic-generator-typescript-1.2.3",
-    sha256 = "67fd0c183ef766ac28a1319729ccf96a60a196383a4f6b1dca3394f5e05dbc12",
-    urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v1.2.3.tar.gz"],
+    strip_prefix = "gapic-generator-typescript-%s" % _gapic_generator_typescript_version,
+    sha256 = _gapic_generator_typescript_sha256,
+    urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v%s.tar.gz" % _gapic_generator_typescript_version],
 )
 
 load("@gapic_generator_typescript//:repositories.bzl", "gapic_generator_typescript_repositories")
