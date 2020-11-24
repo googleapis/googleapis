@@ -137,7 +137,8 @@ apple_support_dependencies()
 # Java
 ##############################################################################
 # Java microgenerator.
-_gapic_generator_java_version = "0.0.1"
+_gapic_generator_java_version = "0.0.2"
+
 http_archive(
     name = "gapic_generator_java",
     strip_prefix = "gapic-generator-java-%s" % _gapic_generator_java_version,
@@ -295,13 +296,14 @@ go_gapic_repositories()
 ##############################################################################
 
 _gapic_generator_typescript_version = "1.2.6"
+
 _gapic_generator_typescript_sha256 = "ed62484bd8c1d0ed3cf440891ca0ce2d035f75d265067bbeff79d6ce9a62205d"
 
 ### TypeScript generator
 http_archive(
     name = "gapic_generator_typescript",
-    strip_prefix = "gapic-generator-typescript-%s" % _gapic_generator_typescript_version,
     sha256 = _gapic_generator_typescript_sha256,
+    strip_prefix = "gapic-generator-typescript-%s" % _gapic_generator_typescript_version,
     urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v%s.tar.gz" % _gapic_generator_typescript_version],
 )
 
