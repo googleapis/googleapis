@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2020 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 
 syntax = "proto3";
 
@@ -20,8 +19,12 @@ package google.container.v1beta1;
 import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "google/rpc/code.proto";
+import "google/rpc/status.proto";
 
 option csharp_namespace = "Google.Cloud.Container.V1Beta1";
 option go_package = "google.golang.org/genproto/googleapis/container/v1beta1;container";
@@ -30,6 +33,10 @@ option java_outer_classname = "ClusterServiceProto";
 option java_package = "com.google.container.v1beta1";
 option php_namespace = "Google\\Cloud\\Container\\V1beta1";
 option ruby_package = "Google::Cloud::Container::V1beta1";
+option (google.api.resource_definition) = {
+  type: "pubsub.googleapis.com/Topic"
+  pattern: "projects/{project}/topics/{topic}"
+};
 
 // Google Kubernetes Engine Cluster Manager v1beta1
 service ClusterManager {
@@ -63,7 +70,8 @@ service ClusterManager {
   // Compute Engine instances.
   //
   // By default, the cluster is created in the project's
-  // [default network](https://cloud.google.com/compute/docs/networks-and-firewalls#networks).
+  // [default
+  // network](https://cloud.google.com/compute/docs/networks-and-firewalls#networks).
   //
   // One firewall is added for the cluster. After cluster creation,
   // the Kubelet creates routes for each node to allow the containers
@@ -161,7 +169,11 @@ service ClusterManager {
   }
 
   // Sets the locations for a specific cluster.
+  // Deprecated. Use
+  // [projects.locations.clusters.update](https://cloud.google.com/kubernetes-engine/docs/reference/rest/v1beta1/projects.locations.clusters/update)
+  // instead.
   rpc SetLocations(SetLocationsRequest) returns (Operation) {
+    option deprecated = true;
     option (google.api.http) = {
       post: "/v1beta1/{name=projects/*/locations/*/clusters/*}:setLocations"
       body: "*"
@@ -274,6 +286,16 @@ service ClusterManager {
       }
     };
     option (google.api.method_signature) = "project_id,zone,cluster_id";
+  }
+
+  // Gets the public component of the cluster signing keys in
+  // JSON Web Key format.
+  // This API is not yet intended for general use, and is not available for all
+  // clusters.
+  rpc GetJSONWebKeys(GetJSONWebKeysRequest) returns (GetJSONWebKeysResponse) {
+    option (google.api.http) = {
+      get: "/v1beta1/{parent=projects/*/locations/*/clusters/*}/jwks"
+    };
   }
 
   // Retrieves the requested node pool.
@@ -445,14 +467,67 @@ service ClusterManager {
   }
 }
 
+// Parameters that can be configured on Linux nodes.
+message LinuxNodeConfig {
+  // The Linux kernel parameters to be applied to the nodes and all pods running
+  // on the nodes.
+  //
+  // The following parameters are supported.
+  //
+  // net.core.netdev_max_backlog
+  // net.core.rmem_max
+  // net.core.wmem_default
+  // net.core.wmem_max
+  // net.core.optmem_max
+  // net.core.somaxconn
+  // net.ipv4.tcp_rmem
+  // net.ipv4.tcp_wmem
+  // net.ipv4.tcp_tw_reuse
+  map<string, string> sysctls = 1;
+}
+
+// Node kubelet configs.
+message NodeKubeletConfig {
+  // Control the CPU management policy on the node.
+  // See
+  // https://kubernetes.io/docs/tasks/administer-cluster/cpu-management-policies/
+  //
+  // The following values are allowed.
+  //   - "none": the default, which represents the existing scheduling behavior.
+  //   - "static": allows pods with certain resource characteristics to be
+  //               granted increased CPU affinity and exclusivity on the node.
+  //  The default value is 'none' if unspecified.
+  string cpu_manager_policy = 1;
+
+  // Enable CPU CFS quota enforcement for containers that specify CPU limits.
+  //
+  // This option is enabled by default which makes kubelet use CFS quota
+  // (https://www.kernel.org/doc/Documentation/scheduler/sched-bwc.txt) to
+  // enforce container CPU limits. Otherwise, CPU limits will not be enforced at
+  // all.
+  //
+  // Disable this option to mitigate CPU throttling problems while still having
+  // your pods to be in Guaranteed QoS class by specifying the CPU limits.
+  //
+  // The default value is 'true' if unspecified.
+  google.protobuf.BoolValue cpu_cfs_quota = 2;
+
+  // Set the CPU CFS quota period value 'cpu.cfs_period_us'.
+  //
+  // The string must be a sequence of decimal numbers, each with optional
+  // fraction and a unit suffix, such as "300ms".
+  // Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+  // The value must be a positive duration.
+  string cpu_cfs_quota_period = 3;
+}
+
 // Parameters that describe the nodes in a cluster.
 message NodeConfig {
   // The name of a Google Compute Engine [machine
-  // type](https://cloud.google.com/compute/docs/machine-types) (e.g.
-  // `n1-standard-1`).
+  // type](https://cloud.google.com/compute/docs/machine-types).
   //
   // If unspecified, the default machine type is
-  // `n1-standard-1`.
+  // `e2-medium`.
   string machine_type = 1;
 
   // Size of the disk attached to each node, specified in GB.
@@ -471,42 +546,47 @@ message NodeConfig {
   // persistent storage on your nodes.
   // * `https://www.googleapis.com/auth/devstorage.read_only` is required for
   // communicating with **gcr.io**
-  // (the [Google Container Registry](https://cloud.google.com/container-registry/)).
+  // (the [Google Container
+  // Registry](https://cloud.google.com/container-registry/)).
   //
   // If unspecified, no scopes are added, unless Cloud Logging or Cloud
   // Monitoring are enabled, in which case their required scopes will be added.
   repeated string oauth_scopes = 3;
 
-  // The Google Cloud Platform Service Account to be used by the node VMs. If
-  // no Service Account is specified, the "default" service account is used.
+  // The Google Cloud Platform Service Account to be used by the node VMs.
+  // Specify the email address of the Service Account; otherwise, if no Service
+  // Account is specified, the "default" service account is used.
   string service_account = 9;
 
   // The metadata key/value pairs assigned to instances in the cluster.
   //
-  // Keys must conform to the regexp [a-zA-Z0-9-_]+ and be less than 128 bytes
+  // Keys must conform to the regexp `[a-zA-Z0-9-_]+` and be less than 128 bytes
   // in length. These are reflected as part of a URL in the metadata server.
   // Additionally, to avoid ambiguity, keys must not conflict with any other
   // metadata keys for the project or be one of the reserved keys:
-  //  "cluster-location"
-  //  "cluster-name"
-  //  "cluster-uid"
-  //  "configure-sh"
-  //  "containerd-configure-sh"
-  //  "enable-oslogin"
-  //  "gci-ensure-gke-docker"
-  //  "gci-metrics-enabled"
-  //  "gci-update-strategy"
-  //  "instance-template"
-  //  "kube-env"
-  //  "startup-script"
-  //  "user-data"
-  //  "disable-address-manager"
-  //  "windows-startup-script-ps1"
-  //  "common-psm1"
-  //  "k8s-node-setup-psm1"
-  //  "install-ssh-psm1"
-  //  "user-profile-psm1"
-  //  "serial-port-logging-enable"
+  //  - "cluster-location"
+  //  - "cluster-name"
+  //  - "cluster-uid"
+  //  - "configure-sh"
+  //  - "containerd-configure-sh"
+  //  - "enable-oslogin"
+  //  - "gci-ensure-gke-docker"
+  //  - "gci-metrics-enabled"
+  //  - "gci-update-strategy"
+  //  - "instance-template"
+  //  - "kube-env"
+  //  - "startup-script"
+  //  - "user-data"
+  //  - "disable-address-manager"
+  //  - "windows-startup-script-ps1"
+  //  - "common-psm1"
+  //  - "k8s-node-setup-psm1"
+  //  - "install-ssh-psm1"
+  //  - "user-profile-psm1"
+  //
+  // The following keys are reserved for Windows nodes:
+  //  - "serial-port-logging-enable"
+  //
   // Values are free-form strings, and only have meaning as interpreted by
   // the image running in the instance. The only restriction placed on them is
   // that each value's size must be less than or equal to 32 KB.
@@ -552,7 +632,23 @@ message NodeConfig {
   // support for GPUs.
   repeated AcceleratorConfig accelerators = 11;
 
-  // Type of the disk attached to each node (e.g. 'pd-standard' or 'pd-ssd')
+  // Sandbox configuration for this node.
+  SandboxConfig sandbox_config = 17;
+
+  // Setting this field will assign instances of this
+  // pool to run on the specified node group. This is useful for running
+  // workloads on [sole tenant
+  // nodes](https://cloud.google.com/compute/docs/nodes/sole-tenant-nodes).
+  string node_group = 18;
+
+  // The optional reservation affinity. Setting this field will apply
+  // the specified [Zonal Compute
+  // Reservation](https://cloud.google.com/compute/docs/instances/reserving-zonal-resources)
+  // to this node pool.
+  ReservationAffinity reservation_affinity = 19;
+
+  // Type of the disk attached to each node (e.g. 'pd-standard', 'pd-ssd' or
+  // 'pd-balanced')
   //
   // If unspecified, the default disk type is 'pd-standard'
   string disk_type = 12;
@@ -560,11 +656,10 @@ message NodeConfig {
   // Minimum CPU platform to be used by this instance. The instance may be
   // scheduled on the specified or newer CPU platform. Applicable values are the
   // friendly names of CPU platforms, such as
-  // <code>minCpuPlatform: &quot;Intel Haswell&quot;</code> or
-  // <code>minCpuPlatform: &quot;Intel Sandy Bridge&quot;</code>. For more
+  // `minCpuPlatform: "Intel Haswell"` or
+  // `minCpuPlatform: "Intel Sandy Bridge"`. For more
   // information, read [how to specify min CPU
   // platform](https://cloud.google.com/compute/docs/instances/specify-min-cpu-platform)
-  // To unset the min cpu platform field pass "automatic" as field value.
   string min_cpu_platform = 13;
 
   // The workload metadata configuration for this node.
@@ -576,8 +671,27 @@ message NodeConfig {
   // https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
   repeated NodeTaint taints = 15;
 
+  //
+  // The Customer Managed Encryption Key used to encrypt the boot disk attached
+  // to each node in the node pool. This should be of the form
+  // projects/[KEY_PROJECT_ID]/locations/[LOCATION]/keyRings/[RING_NAME]/cryptoKeys/[KEY_NAME].
+  // For more information about protecting resources with Cloud KMS Keys please
+  // see:
+  // https://cloud.google.com/compute/docs/disks/customer-managed-encryption
+  string boot_disk_kms_key = 23;
+
   // Shielded Instance options.
   ShieldedInstanceConfig shielded_instance_config = 20;
+
+  // Parameters that can be configured on Linux nodes.
+  LinuxNodeConfig linux_node_config = 21;
+
+  // Node kubelet configs.
+  NodeKubeletConfig kubelet_config = 22;
+
+  // Parameters for the ephemeral storage filesystem.
+  // If unspecified, ephemeral storage is backed by the boot disk.
+  EphemeralStorageConfig ephemeral_storage_config = 24;
 }
 
 // A set of Shielded Instance options.
@@ -598,11 +712,71 @@ message ShieldedInstanceConfig {
   bool enable_integrity_monitoring = 2;
 }
 
+// SandboxConfig contains configurations of the sandbox to use for the node.
+message SandboxConfig {
+  // Possible types of sandboxes.
+  enum Type {
+    // Default value. This should not be used.
+    UNSPECIFIED = 0;
+
+    // Run sandbox using gvisor.
+    GVISOR = 1;
+  }
+
+  // Type of the sandbox to use for the node (e.g. 'gvisor')
+  string sandbox_type = 1 [deprecated = true];
+
+  // Type of the sandbox to use for the node.
+  Type type = 2;
+}
+
+// EphemeralStorageConfig contains configuration for the ephemeral storage
+// filesystem.
+message EphemeralStorageConfig {
+  // Number of local SSDs to use to back ephemeral storage. Uses NVMe
+  // interfaces. Each local SSD is 375 GB in size.
+  // If zero, it means to disable using local SSDs as ephemeral storage.
+  int32 local_ssd_count = 1;
+}
+
+// [ReservationAffinity](https://cloud.google.com/compute/docs/instances/reserving-zonal-resources)
+// is the configuration of desired reservation which instances could take
+// capacity from.
+message ReservationAffinity {
+  // Indicates whether to consume capacity from a reservation or not.
+  enum Type {
+    // Default value. This should not be used.
+    UNSPECIFIED = 0;
+
+    // Do not consume from any reserved capacity.
+    NO_RESERVATION = 1;
+
+    // Consume any reservation available.
+    ANY_RESERVATION = 2;
+
+    // Must consume from a specific reservation. Must specify key value fields
+    // for specifying the reservations.
+    SPECIFIC_RESERVATION = 3;
+  }
+
+  // Corresponds to the type of reservation consumption.
+  Type consume_reservation_type = 1;
+
+  // Corresponds to the label key of a reservation resource. To target a
+  // SPECIFIC_RESERVATION by name, specify "googleapis.com/reservation-name" as
+  // the key and specify the name of your reservation as its value.
+  string key = 2;
+
+  // Corresponds to the label value(s) of reservation resource(s).
+  repeated string values = 3;
+}
+
 // Kubernetes taint is comprised of three fields: key, value, and effect. Effect
 // can only be one of three types:  NoSchedule, PreferNoSchedule or NoExecute.
 //
-// For more information, including usage and the valid values, see:
-// https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+// See
+// [here](https://kubernetes.io/docs/concepts/configuration/taint-and-toleration)
+// for more information, including usage and the valid values.
 message NodeTaint {
   // Possible values for Effect in taint.
   enum Effect {
@@ -636,21 +810,29 @@ message MasterAuth {
   // The username to use for HTTP basic authentication to the master endpoint.
   // For clusters v1.6.0 and later, basic authentication can be disabled by
   // leaving username unspecified (or setting it to the empty string).
-  string username = 1;
+  //
+  // Warning: basic authentication is deprecated, and will be removed in GKE
+  // control plane versions 1.19 and newer. For a list of recommended
+  // authentication methods, see:
+  // https://cloud.google.com/kubernetes-engine/docs/how-to/api-server-authentication
+  string username = 1 [deprecated = true];
 
   // The password to use for HTTP basic authentication to the master endpoint.
   // Because the master endpoint is open to the Internet, you should create a
   // strong password.  If a password is provided for cluster creation, username
   // must be non-empty.
-  string password = 2;
+  //
+  // Warning: basic authentication is deprecated, and will be removed in GKE
+  // control plane versions 1.19 and newer. For a list of recommended
+  // authentication methods, see:
+  // https://cloud.google.com/kubernetes-engine/docs/how-to/api-server-authentication
+  string password = 2 [deprecated = true];
 
   // Configuration for client certificate authentication on the cluster. For
   // clusters before v1.12, if no configuration is specified, a client
   // certificate is issued.
   ClientCertificateConfig client_certificate_config = 3;
 
-  // [Output only] Base64-encoded public certificate that is the root of
-  // trust for the cluster.
   string cluster_ca_certificate = 100;
 
   // [Output only] Base64-encoded public certificate used by clients to
@@ -700,6 +882,20 @@ message AddonsConfig {
   // enabled in order to enable Cloud Run addon. This option can only be enabled
   // at cluster creation time.
   CloudRunConfig cloud_run_config = 7;
+
+  // Configuration for NodeLocalDNS, a dns cache running on cluster nodes
+  DnsCacheConfig dns_cache_config = 8;
+
+  // Configuration for the ConfigConnector add-on, a Kubernetes
+  // extension to manage hosted GCP services through the Kubernetes API
+  ConfigConnectorConfig config_connector_config = 10;
+
+  // Configuration for the Compute Engine Persistent Disk CSI driver.
+  GcePersistentDiskCsiDriverConfig gce_persistent_disk_csi_driver_config = 11;
+
+  // Configuration for the KALM addon, which manages the lifecycle of k8s
+  // applications.
+  KalmConfig kalm_config = 12;
 }
 
 // Configuration options for the HTTP (L7) load balancing controller addon,
@@ -716,8 +912,8 @@ message HttpLoadBalancing {
 // has based on the resource usage of the existing pods.
 message HorizontalPodAutoscaling {
   // Whether the Horizontal Pod Autoscaling feature is enabled in the cluster.
-  // When enabled, it ensures that a Heapster pod is running in the cluster,
-  // which is also used by the Cloud Monitoring service.
+  // When enabled, it ensures that metrics are collected into Stackdriver
+  // Monitoring.
   bool disabled = 1;
 }
 
@@ -733,6 +929,37 @@ message KubernetesDashboard {
 message NetworkPolicyConfig {
   // Whether NetworkPolicy is enabled for this cluster.
   bool disabled = 1;
+}
+
+// Configuration for NodeLocal DNSCache
+message DnsCacheConfig {
+  // Whether NodeLocal DNSCache is enabled for this cluster.
+  bool enabled = 1;
+}
+
+// Configuration options for the KALM addon.
+message KalmConfig {
+  // Whether KALM is enabled for this cluster.
+  bool enabled = 1;
+}
+
+// Configuration options for the Config Connector add-on.
+message ConfigConnectorConfig {
+  // Whether Cloud Connector is enabled for this cluster.
+  bool enabled = 1;
+}
+
+// Configuration for the Compute Engine PD CSI driver. This option can only be
+// enabled at cluster creation time.
+message GcePersistentDiskCsiDriverConfig {
+  // Whether the Compute Engine PD CSI driver is enabled for this cluster.
+  bool enabled = 1;
+}
+
+// Configuration for controlling master global access settings.
+message PrivateClusterMasterGlobalAccessConfig {
+  // Whenever master is accessible globally or not.
+  bool enabled = 1;
 }
 
 // Configuration options for private clusters.
@@ -756,6 +983,12 @@ message PrivateClusterConfig {
 
   // Output only. The external IP address of this cluster's master endpoint.
   string public_endpoint = 5;
+
+  // Output only. The peering name in the customer VPC used by this cluster.
+  string peering_name = 7;
+
+  // Controls master global access settings.
+  PrivateClusterMasterGlobalAccessConfig master_global_access_config = 8;
 }
 
 // Configuration options for Istio addon.
@@ -778,8 +1011,23 @@ message IstioConfig {
 
 // Configuration options for the Cloud Run feature.
 message CloudRunConfig {
+  // Load balancer type of ingress service of Cloud Run.
+  enum LoadBalancerType {
+    // Load balancer type for Cloud Run is unspecified.
+    LOAD_BALANCER_TYPE_UNSPECIFIED = 0;
+
+    // Install external load balancer for Cloud Run.
+    LOAD_BALANCER_TYPE_EXTERNAL = 1;
+
+    // Install internal load balancer for Cloud Run.
+    LOAD_BALANCER_TYPE_INTERNAL = 2;
+  }
+
   // Whether Cloud Run addon is enabled for this cluster.
   bool disabled = 1;
+
+  // Which load balancer type is installed for Cloud Run.
+  LoadBalancerType load_balancer_type = 3;
 }
 
 // Configuration options for the master authorized networks feature. Enabled
@@ -836,6 +1084,9 @@ message NetworkPolicy {
 // Configuration for controlling how IPs are allocated in the cluster.
 message IPAllocationPolicy {
   // Whether alias IPs will be used for pod IPs in the cluster.
+  // This is used in conjunction with use_routes. It cannot
+  // be true if use_routes is true. If both use_ip_aliases and use_routes are
+  // false, then the server picks the default IP allocation mode
   bool use_ip_aliases = 1;
 
   // Whether a new subnetwork will be created automatically for the cluster.
@@ -954,7 +1205,14 @@ message IPAllocationPolicy {
   // notation (e.g. `10.96.0.0/14`) from the RFC-1918 private networks (e.g.
   // `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) to pick a specific range
   // to use.
+  // This field is deprecated, use cluster.tpu_config.ipv4_cidr_block instead.
   string tpu_ipv4_cidr_block = 13;
+
+  // Whether routes will be used for pod IPs in the cluster.
+  // This is used in conjunction with use_ip_aliases. It cannot be true if
+  // use_ip_aliases is true. If both use_ip_aliases and use_routes are false,
+  // then the server picks the default IP allocation mode
+  bool use_routes = 15;
 }
 
 // Configuration for Binary Authorization.
@@ -980,6 +1238,27 @@ message AuthenticatorGroupsConfig {
   // The name of the security group-of-groups to be used. Only relevant
   // if enabled = true.
   string security_group = 2;
+}
+
+// Telemetry integration for the cluster.
+message ClusterTelemetry {
+  // Type of the integration.
+  enum Type {
+    // Not set.
+    UNSPECIFIED = 0;
+
+    // Monitoring integration is disabled.
+    DISABLED = 1;
+
+    // Monitoring integration is enabled.
+    ENABLED = 2;
+
+    // Only system components are monitored and logged.
+    SYSTEM_ONLY = 3;
+  }
+
+  // Type of the integration.
+  Type type = 1;
 }
 
 // A Google Kubernetes Engine cluster.
@@ -1060,24 +1339,34 @@ message Cluster {
   // The logging service the cluster should use to write logs.
   // Currently available options:
   //
-  // * `logging.googleapis.com` - the Google Cloud Logging service.
+  // * `logging.googleapis.com/kubernetes` - The Cloud Logging
+  // service with a Kubernetes-native resource model
+  // * `logging.googleapis.com` - The legacy Cloud Logging service (no longer
+  //   available as of GKE 1.15).
   // * `none` - no logs will be exported from the cluster.
-  // * if left as an empty string,`logging.googleapis.com` will be used.
+  //
+  // If left as an empty string,`logging.googleapis.com/kubernetes` will be
+  // used for GKE 1.14+ or `logging.googleapis.com` for earlier versions.
   string logging_service = 6;
 
   // The monitoring service the cluster should use to write metrics.
   // Currently available options:
   //
-  // * `monitoring.googleapis.com` - the Google Cloud Monitoring service.
-  // * `none` - no metrics will be exported from the cluster.
-  // * if left as an empty string, `monitoring.googleapis.com` will be used.
+  // * "monitoring.googleapis.com/kubernetes" - The Cloud Monitoring
+  // service with a Kubernetes-native resource model
+  // * `monitoring.googleapis.com` - The legacy Cloud Monitoring service (no
+  //   longer available as of GKE 1.15).
+  // * `none` - No metrics will be exported from the cluster.
+  //
+  // If left as an empty string,`monitoring.googleapis.com/kubernetes` will be
+  // used for GKE 1.14+ or `monitoring.googleapis.com` for earlier versions.
   string monitoring_service = 7;
 
   // The name of the Google Compute Engine
-  // [network](https://cloud.google.com/compute/docs/networks-and-firewalls#networks) to which the
-  // cluster is connected. If left unspecified, the `default` network
-  // will be used. On output this shows the network ID instead of
-  // the name.
+  // [network](https://cloud.google.com/compute/docs/networks-and-firewalls#networks)
+  // to which the cluster is connected. If left unspecified, the `default`
+  // network will be used. On output this shows the network ID instead of the
+  // name.
   string network = 8;
 
   // The IP address range of the container pods in this cluster, in
@@ -1090,8 +1379,8 @@ message Cluster {
   AddonsConfig addons_config = 10;
 
   // The name of the Google Compute Engine
-  // [subnetwork](https://cloud.google.com/compute/docs/subnetworks) to which the
-  // cluster is connected. On output this shows the subnetwork ID instead of
+  // [subnetwork](https://cloud.google.com/compute/docs/subnetworks) to which
+  // the cluster is connected. On output this shows the subnetwork ID instead of
   // the name.
   string subnetwork = 11;
 
@@ -1101,8 +1390,16 @@ message Cluster {
   repeated NodePool node_pools = 12;
 
   // The list of Google Compute Engine
-  // [zones](https://cloud.google.com/compute/docs/zones#available) in which the cluster's nodes
-  // should be located.
+  // [zones](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster's nodes should be located.
+  //
+  // This field provides a default value if
+  // [NodePool.Locations](https://cloud.google.com/kubernetes-engine/docs/reference/rest/v1/projects.locations.clusters.nodePools#NodePool.FIELDS.locations)
+  // are not specified during node pool creation.
+  //
+  // Warning: changing cluster locations will update the
+  // [NodePool.Locations](https://cloud.google.com/kubernetes-engine/docs/reference/rest/v1/projects.locations.clusters.nodePools#NodePool.FIELDS.locations)
+  // of all node pools and will result in nodes being added and/or removed.
   repeated string locations = 13;
 
   // Kubernetes alpha features are enabled on this cluster. This includes alpha
@@ -1179,13 +1476,34 @@ message Cluster {
   // Cluster-level Vertical Pod Autoscaling configuration.
   VerticalPodAutoscaling vertical_pod_autoscaling = 39;
 
+  // Shielded Nodes configuration.
+  ShieldedNodes shielded_nodes = 40;
+
+  // Release channel configuration.
+  ReleaseChannel release_channel = 41;
+
+  // Configuration for the use of Kubernetes Service Accounts in GCP IAM
+  // policies.
+  WorkloadIdentityConfig workload_identity_config = 43;
+
+  // Telemetry integration for the cluster.
+  ClusterTelemetry cluster_telemetry = 46;
+
+  // Configuration for Cloud TPU support;
+  TpuConfig tpu_config = 47;
+
+  // Notification configuration of the cluster.
+  NotificationConfig notification_config = 49;
+
+  // Configuration of Confidential Nodes
+  ConfidentialNodes confidential_nodes = 50;
+
   // [Output only] Server-defined URL for the resource.
   string self_link = 100;
 
   // [Output only] The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field is deprecated, use location instead.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field is deprecated, use location instead.
   string zone = 101 [deprecated = true];
 
   // [Output only] The IP address of this cluster's master endpoint.
@@ -1228,7 +1546,8 @@ message Cluster {
   // [Output only] The current status of this cluster.
   Status status = 107;
 
-  // [Output only] Additional information about the current status of this
+  // [Output only] Deprecated. Use conditions instead.
+  // Additional information about the current status of this
   // cluster, if available.
   string status_message = 108 [deprecated = true];
 
@@ -1257,12 +1576,14 @@ message Cluster {
   string expire_time = 113;
 
   // [Output only] The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/regions-zones/regions-zones#available) or
-  // [region](https://cloud.google.com/compute/docs/regions-zones/regions-zones#available) in which
-  // the cluster resides.
+  // [zone](https://cloud.google.com/compute/docs/regions-zones/regions-zones#available)
+  // or
+  // [region](https://cloud.google.com/compute/docs/regions-zones/regions-zones#available)
+  // in which the cluster resides.
   string location = 114;
 
   // Enable the ability to use Cloud TPUs in this cluster.
+  // This field is deprecated, use tpu_config.enabled instead.
   bool enable_tpu = 115;
 
   // [Output only] The IP address range of the Cloud TPUs in this cluster, in
@@ -1275,6 +1596,9 @@ message Cluster {
 
   // Which conditions caused the current cluster state.
   repeated StatusCondition conditions = 118;
+
+  // Configuration for master components.
+  Master master = 124;
 }
 
 // ClusterUpdate describes an update to the cluster. Exactly one update can
@@ -1297,10 +1621,14 @@ message ClusterUpdate {
   // The monitoring service the cluster should use to write metrics.
   // Currently available options:
   //
-  // * "monitoring.googleapis.com/kubernetes" - the Google Cloud Monitoring
-  // service with Kubernetes-native resource model
-  // * "monitoring.googleapis.com" - the Google Cloud Monitoring service
-  // * "none" - no metrics will be exported from the cluster
+  // * "monitoring.googleapis.com/kubernetes" - The Cloud Monitoring
+  // service with a Kubernetes-native resource model
+  // * `monitoring.googleapis.com` - The legacy Cloud Monitoring service (no
+  //   longer available as of GKE 1.15).
+  // * `none` - No metrics will be exported from the cluster.
+  //
+  // If left as an empty string,`monitoring.googleapis.com/kubernetes` will be
+  // used for GKE 1.14+ or `monitoring.googleapis.com` for earlier versions.
   string desired_monitoring_service = 5;
 
   // Configurations for the various addons available to run in the cluster.
@@ -1323,12 +1651,13 @@ message ClusterUpdate {
   NodePoolAutoscaling desired_node_pool_autoscaling = 9;
 
   // The desired list of Google Compute Engine
-  // [zones](https://cloud.google.com/compute/docs/zones#available) in which the cluster's nodes
-  // should be located. Changing the locations a cluster is in will result
-  // in nodes being either created or removed from the cluster, depending on
-  // whether locations are being added or removed.
+  // [zones](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster's nodes should be located.
   //
   // This list must always include the cluster's primary zone.
+  //
+  // Warning: changing cluster locations will update the locations of all node
+  // pools and will result in nodes being added and/or removed.
   repeated string desired_locations = 10;
 
   // The desired configuration options for master authorized networks feature.
@@ -1343,13 +1672,17 @@ message ClusterUpdate {
   // The desired configuration options for the Binary Authorization feature.
   BinaryAuthorization desired_binary_authorization = 16;
 
-  // The logging service the cluster should use to write metrics.
+  // The logging service the cluster should use to write logs.
   // Currently available options:
   //
-  // * "logging.googleapis.com/kubernetes" - the Google Cloud Logging
-  // service with Kubernetes-native resource model
-  // * "logging.googleapis.com" - the Google Cloud Logging service
-  // * "none" - no logs will be exported from the cluster
+  // * `logging.googleapis.com/kubernetes` - The Cloud Logging
+  // service with a Kubernetes-native resource model
+  // * `logging.googleapis.com` - The legacy Cloud Logging service (no longer
+  //   available as of GKE 1.15).
+  // * `none` - no logs will be exported from the cluster.
+  //
+  // If left as an empty string,`logging.googleapis.com/kubernetes` will be
+  // used for GKE 1.14+ or `logging.googleapis.com` for earlier versions.
   string desired_logging_service = 19;
 
   // The desired configuration for exporting resource usage.
@@ -1358,8 +1691,29 @@ message ClusterUpdate {
   // Cluster-level Vertical Pod Autoscaling configuration.
   VerticalPodAutoscaling desired_vertical_pod_autoscaling = 22;
 
+  // The desired private cluster configuration.
+  PrivateClusterConfig desired_private_cluster_config = 25;
+
   // The desired config of Intra-node visibility.
   IntraNodeVisibilityConfig desired_intra_node_visibility_config = 26;
+
+  // The desired status of whether to disable default sNAT for this cluster.
+  DefaultSnatStatus desired_default_snat_status = 28;
+
+  // The desired telemetry integration for the cluster.
+  ClusterTelemetry desired_cluster_telemetry = 30;
+
+  // The desired release channel configuration.
+  ReleaseChannel desired_release_channel = 31;
+
+  // The desired Cloud TPU configuration.
+  TpuConfig desired_tpu_config = 38;
+
+  // The desired datapath provider for the cluster.
+  DatapathProvider desired_datapath_provider = 50;
+
+  // The desired notification configuration.
+  NotificationConfig desired_notification_config = 55;
 
   // The Kubernetes version to change the master to. The only valid value is the
   // latest supported version.
@@ -1373,6 +1727,18 @@ message ClusterUpdate {
   // - "1.X.Y-gke.N": picks an explicit Kubernetes version
   // - "-": picks the default Kubernetes version
   string desired_master_version = 100;
+
+  // Configuration of etcd encryption.
+  DatabaseEncryption desired_database_encryption = 46;
+
+  // Configuration for Workload Identity.
+  WorkloadIdentityConfig desired_workload_identity_config = 47;
+
+  // Configuration for Shielded Nodes.
+  ShieldedNodes desired_shielded_nodes = 48;
+
+  // Configuration for master components.
+  Master desired_master = 52;
 }
 
 // This operation resource represents operations that may have happened or are
@@ -1454,9 +1820,8 @@ message Operation {
   string name = 1;
 
   // The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the operation
-  // is taking place.
-  // This field is deprecated, use location instead.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // operation is taking place. This field is deprecated, use location instead.
   string zone = 2 [deprecated = true];
 
   // The operation type.
@@ -1468,8 +1833,12 @@ message Operation {
   // Detailed operation progress, if available.
   string detail = 8;
 
-  // If an error has occurred, a textual description of the error.
-  string status_message = 5 [deprecated = true];
+  // Output only. If an error has occurred, a textual description of the error.
+  // Deprecated. Use field error instead.
+  string status_message = 5 [
+    deprecated = true,
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
 
   // Server-defined URL for the resource.
   string self_link = 6;
@@ -1478,9 +1847,10 @@ message Operation {
   string target_link = 7;
 
   // [Output only] The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/regions-zones/regions-zones#available) or
-  // [region](https://cloud.google.com/compute/docs/regions-zones/regions-zones#available) in which
-  // the cluster resides.
+  // [zone](https://cloud.google.com/compute/docs/regions-zones/regions-zones#available)
+  // or
+  // [region](https://cloud.google.com/compute/docs/regions-zones/regions-zones#available)
+  // in which the cluster resides.
   string location = 9;
 
   // [Output only] The time the operation started, in
@@ -1491,23 +1861,27 @@ message Operation {
   // [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
   string end_time = 11;
 
-  // [Output only] Progress information for an operation.
-  OperationProgress progress = 12;
+  // Output only. [Output only] Progress information for an operation.
+  OperationProgress progress = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Which conditions caused the current cluster state.
-  repeated StatusCondition cluster_conditions = 13;
+  // Deprecated. Use field error instead.
+  repeated StatusCondition cluster_conditions = 13 [deprecated = true];
 
   // Which conditions caused the current node pool state.
-  repeated StatusCondition nodepool_conditions = 14;
+  // Deprecated. Use field error instead.
+  repeated StatusCondition nodepool_conditions = 14 [deprecated = true];
+
+  // The error result of the operation in case of failure.
+  google.rpc.Status error = 15;
 }
 
 // Information about operation (or operation stage) progress.
 message OperationProgress {
   // Progress metric is (string, int|float|string) pair.
   message Metric {
-    // Metric name, required.
-    // e.g., "nodes total", "percent done"
-    string name = 1;
+    // Required. Metric name, e.g., "nodes total", "percent done".
+    string name = 1 [(google.api.field_behavior) = REQUIRED];
 
     // Strictly one of the values is required.
     oneof value {
@@ -1553,16 +1927,16 @@ message CreateClusterRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the parent field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the parent
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
   ];
 
   // Required. A [cluster
-  // resource](https://cloud.google.com/container-engine/reference/rest/v1beta1/projects.zones.clusters)
+  // resource](https://cloud.google.com/container-engine/reference/rest/v1beta1/projects.locations.clusters)
   Cluster cluster = 3 [(google.api.field_behavior) = REQUIRED];
 
   // The parent (project and location) where the cluster will be created.
@@ -1581,9 +1955,9 @@ message GetClusterRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -1612,9 +1986,9 @@ message UpdateClusterRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -1646,9 +2020,9 @@ message UpdateNodePoolRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -1684,13 +2058,29 @@ message UpdateNodePoolRequest {
   // Required. The desired image type for the node pool.
   string image_type = 6 [(google.api.field_behavior) = REQUIRED];
 
-  // The desired image type for the node pool.
+  // The desired list of Google Compute Engine
+  // [zones](https://cloud.google.com/compute/docs/zones#available) in which the
+  // node pool's nodes should be located. Changing the locations for a node pool
+  // will result in nodes being either created or removed from the node pool,
+  // depending on whether locations are being added or removed.
+  repeated string locations = 13;
+
+  // The desired workload metadata config for the node pool.
   WorkloadMetadataConfig workload_metadata_config = 14;
 
   // The name (project, location, cluster, node pool) of the node pool to
   // update. Specified in the format
   // `projects/*/locations/*/clusters/*/nodePools/*`.
   string name = 8;
+
+  // Upgrade settings control disruption and speed of the upgrade.
+  NodePool.UpgradeSettings upgrade_settings = 15;
+
+  // Parameters that can be configured on Linux nodes.
+  LinuxNodeConfig linux_node_config = 19;
+
+  // Node kubelet configs.
+  NodeKubeletConfig kubelet_config = 20;
 }
 
 // SetNodePoolAutoscalingRequest sets the autoscaler settings of a node pool.
@@ -1704,9 +2094,9 @@ message SetNodePoolAutoscalingRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -1746,9 +2136,9 @@ message SetLoggingServiceRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -1761,11 +2151,17 @@ message SetLoggingServiceRequest {
     (google.api.field_behavior) = REQUIRED
   ];
 
-  // Required. The logging service the cluster should use to write metrics.
+  // Required. The logging service the cluster should use to write logs.
   // Currently available options:
   //
-  // * "logging.googleapis.com" - the Google Cloud Logging service
-  // * "none" - no metrics will be exported from the cluster
+  // * `logging.googleapis.com/kubernetes` - The Cloud Logging
+  // service with a Kubernetes-native resource model
+  // * `logging.googleapis.com` - The legacy Cloud Logging service (no longer
+  //   available as of GKE 1.15).
+  // * `none` - no logs will be exported from the cluster.
+  //
+  // If left as an empty string,`logging.googleapis.com/kubernetes` will be
+  // used for GKE 1.14+ or `logging.googleapis.com` for earlier versions.
   string logging_service = 4 [(google.api.field_behavior) = REQUIRED];
 
   // The name (project, location, cluster) of the cluster to set logging.
@@ -1784,9 +2180,9 @@ message SetMonitoringServiceRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -1802,8 +2198,14 @@ message SetMonitoringServiceRequest {
   // Required. The monitoring service the cluster should use to write metrics.
   // Currently available options:
   //
-  // * "monitoring.googleapis.com" - the Google Cloud Monitoring service
-  // * "none" - no metrics will be exported from the cluster
+  // * "monitoring.googleapis.com/kubernetes" - The Cloud Monitoring
+  // service with a Kubernetes-native resource model
+  // * `monitoring.googleapis.com` - The legacy Cloud Monitoring service (no
+  //   longer available as of GKE 1.15).
+  // * `none` - No metrics will be exported from the cluster.
+  //
+  // If left as an empty string,`monitoring.googleapis.com/kubernetes` will be
+  // used for GKE 1.14+ or `monitoring.googleapis.com` for earlier versions.
   string monitoring_service = 4 [(google.api.field_behavior) = REQUIRED];
 
   // The name (project, location, cluster) of the cluster to set monitoring.
@@ -1822,9 +2224,9 @@ message SetAddonsConfigRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -1857,9 +2259,9 @@ message SetLocationsRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -1873,10 +2275,10 @@ message SetLocationsRequest {
   ];
 
   // Required. The desired list of Google Compute Engine
-  // [zones](https://cloud.google.com/compute/docs/zones#available) in which the cluster's nodes
-  // should be located. Changing the locations a cluster is in will result
-  // in nodes being either created or removed from the cluster, depending on
-  // whether locations are being added or removed.
+  // [zones](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster's nodes should be located. Changing the locations a cluster is in
+  // will result in nodes being either created or removed from the cluster,
+  // depending on whether locations are being added or removed.
   //
   // This list must always include the cluster's primary zone.
   repeated string locations = 4 [(google.api.field_behavior) = REQUIRED];
@@ -1897,9 +2299,9 @@ message UpdateMasterRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -1958,9 +2360,9 @@ message SetMasterAuthRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -1995,9 +2397,9 @@ message DeleteClusterRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -2026,9 +2428,9 @@ message ListClustersRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides, or "-" for all zones.
-  // This field has been deprecated and replaced by the parent field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides, or "-" for all zones. This field has been deprecated and
+  // replaced by the parent field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -2062,9 +2464,9 @@ message GetOperationRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -2093,8 +2495,9 @@ message ListOperationsRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) to return operations for, or `-` for
-  // all zones. This field has been deprecated and replaced by the parent field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) to return
+  // operations for, or `-` for all zones. This field has been deprecated and
+  // replaced by the parent field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -2117,8 +2520,9 @@ message CancelOperationRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the operation resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // operation resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -2157,8 +2561,9 @@ message GetServerConfigRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) to return operations for.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) to return
+  // operations for. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -2171,10 +2576,38 @@ message GetServerConfigRequest {
 
 // Kubernetes Engine service configuration.
 message ServerConfig {
+  // ReleaseChannelConfig exposes configuration for a release channel.
+  message ReleaseChannelConfig {
+    // Deprecated.
+    message AvailableVersion {
+      option deprecated = true;
+
+      // Kubernetes version.
+      string version = 1;
+
+      // Reason for availability.
+      string reason = 2;
+    }
+
+    // The release channel this configuration applies to.
+    ReleaseChannel.Channel channel = 1;
+
+    // The default version for newly created clusters on the channel.
+    string default_version = 2;
+
+    // Deprecated.
+    // This field has been deprecated and replaced with the valid_versions
+    // field.
+    repeated AvailableVersion available_versions = 3 [deprecated = true];
+
+    // List of valid versions for the channel.
+    repeated string valid_versions = 4;
+  }
+
   // Version of Kubernetes the service deploys by default.
   string default_cluster_version = 1;
 
-  // List of valid node upgrade target versions.
+  // List of valid node upgrade target versions, in descending order.
   repeated string valid_node_versions = 3;
 
   // Default image type.
@@ -2183,8 +2616,11 @@ message ServerConfig {
   // List of valid image types.
   repeated string valid_image_types = 5;
 
-  // List of valid master versions.
+  // List of valid master versions, in descending order.
   repeated string valid_master_versions = 6;
+
+  // List of release channel configurations.
+  repeated ReleaseChannelConfig channels = 9;
 }
 
 // CreateNodePoolRequest creates a node pool for a cluster.
@@ -2198,9 +2634,9 @@ message CreateNodePoolRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the parent field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the parent
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -2233,9 +2669,9 @@ message DeleteNodePoolRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -2272,9 +2708,9 @@ message ListNodePoolsRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the parent field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the parent
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -2303,9 +2739,9 @@ message GetNodePoolRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -2338,6 +2774,40 @@ message GetNodePoolRequest {
 // during pod scheduling. They may also be resized up or down, to accommodate
 // the workload.
 message NodePool {
+  // These upgrade settings control the level of parallelism and the level of
+  // disruption caused by an upgrade.
+  //
+  // maxUnavailable controls the number of nodes that can be simultaneously
+  // unavailable.
+  //
+  // maxSurge controls the number of additional nodes that can be added to the
+  // node pool temporarily for the time of the upgrade to increase the number of
+  // available nodes.
+  //
+  // (maxUnavailable + maxSurge) determines the level of parallelism (how many
+  // nodes are being upgraded at the same time).
+  //
+  // Note: upgrades inevitably introduce some disruption since workloads need to
+  // be moved from old nodes to new, upgraded ones. Even if maxUnavailable=0,
+  // this holds true. (Disruption stays within the limits of
+  // PodDisruptionBudget, if it is configured.)
+  //
+  // Consider a hypothetical node pool with 5 nodes having maxSurge=2,
+  // maxUnavailable=1. This means the upgrade process upgrades 3 nodes
+  // simultaneously. It creates 2 additional (upgraded) nodes, then it brings
+  // down 3 old (not yet upgraded) nodes at the same time. This ensures that
+  // there are always at least 4 nodes available.
+  message UpgradeSettings {
+    // The maximum number of nodes that can be created beyond the current size
+    // of the node pool during the upgrade process.
+    int32 max_surge = 1;
+
+    // The maximum number of nodes that can be simultaneously unavailable during
+    // the upgrade process. A node is considered available if its status is
+    // Ready.
+    int32 max_unavailable = 2;
+  }
+
   // The current status of the node pool instance.
   enum Status {
     // Not set.
@@ -2381,6 +2851,18 @@ message NodePool {
   // firewall and routes quota.
   int32 initial_node_count = 3;
 
+  // The list of Google Compute Engine
+  // [zones](https://cloud.google.com/compute/docs/zones#available) in which the
+  // NodePool's nodes should be located.
+  //
+  // If this value is unspecified during node pool creation, the
+  // [Cluster.Locations](https://cloud.google.com/kubernetes-engine/docs/reference/rest/v1/projects.locations.clusters#Cluster.FIELDS.locations)
+  // value will be used, instead.
+  //
+  // Warning: changing node pool locations will result in nodes being added
+  // and/or removed.
+  repeated string locations = 13;
+
   // [Output only] Server-defined URL for the resource.
   string self_link = 100;
 
@@ -2395,7 +2877,8 @@ message NodePool {
   // [Output only] The status of the nodes in this pool instance.
   Status status = 103;
 
-  // [Output only] Additional information about the current status of this
+  // [Output only] Deprecated. Use conditions instead.
+  // Additional information about the current status of this
   // node pool instance, if available.
   string status_message = 104 [deprecated = true];
 
@@ -2415,6 +2898,9 @@ message NodePool {
 
   // [Output only] The pod CIDR block size per node in this node pool.
   int32 pod_ipv4_cidr_size = 7;
+
+  // Upgrade settings control disruption and speed of the upgrade.
+  UpgradeSettings upgrade_settings = 107;
 }
 
 // NodeManagement defines the set of node management services turned on for the
@@ -2451,7 +2937,7 @@ message MaintenancePolicy {
   // A hash identifying the version of this policy, so that updates to fields of
   // the policy won't accidentally undo intermediate changes (and so that users
   // of the API unaware of some fields won't accidentally remove other fields).
-  // Make a <code>get()</code> request to the cluster to get the current
+  // Make a `get()` request to the cluster to get the current
   // resource version and include it with requests to set the policy.
   string resource_version = 3;
 }
@@ -2495,25 +2981,30 @@ message RecurringTimeWindow {
   // end time.
   //
   // For example, to have something repeat every weekday, you'd use:
-  //   <code>FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR</code>
+  // `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR`
+  //
   // To repeat some window daily (equivalent to the DailyMaintenanceWindow):
-  //   <code>FREQ=DAILY</code>
+  // `FREQ=DAILY`
+  //
   // For the first weekend of every month:
-  //   <code>FREQ=MONTHLY;BYSETPOS=1;BYDAY=SA,SU</code>
+  // `FREQ=MONTHLY;BYSETPOS=1;BYDAY=SA,SU`
+  //
   // This specifies how frequently the window starts. Eg, if you wanted to have
   // a 9-5 UTC-4 window every weekday, you'd use something like:
-  // <code>
-  //   start time = 2019-01-01T09:00:00-0400
-  //   end time = 2019-01-01T17:00:00-0400
-  //   recurrence = FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR
-  // </code>
+  // ```
+  // start time = 2019-01-01T09:00:00-0400
+  // end time = 2019-01-01T17:00:00-0400
+  // recurrence = FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR
+  // ```
+  //
   // Windows can span multiple days. Eg, to make the window encompass every
   // weekend from midnight Saturday till the last minute of Sunday UTC:
-  // <code>
-  //   start time = 2019-01-05T00:00:00Z
-  //   end time = 2019-01-07T23:59:00Z
-  //   recurrence = FREQ=WEEKLY;BYDAY=SA
-  // </code>
+  // ```
+  // start time = 2019-01-05T00:00:00Z
+  // end time = 2019-01-07T23:59:00Z
+  // recurrence = FREQ=WEEKLY;BYDAY=SA
+  // ```
+  //
   // Note the start and end time's specific dates are largely arbitrary except
   // to specify duration of the window and when it first starts.
   // The FREQ values of HOURLY, MINUTELY, and SECONDLY are not supported.
@@ -2543,9 +3034,9 @@ message SetNodePoolManagementRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -2586,9 +3077,9 @@ message SetNodePoolSizeRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -2630,9 +3121,9 @@ message RollbackNodePoolUpgradeRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -2669,6 +3160,18 @@ message ListNodePoolsResponse {
 // the size of the cluster and create/delete
 // node pools based on the current needs.
 message ClusterAutoscaling {
+  // Defines possible options for autoscaling_profile field.
+  enum AutoscalingProfile {
+    // No change to autoscaling configuration.
+    PROFILE_UNSPECIFIED = 0;
+
+    // Prioritize optimizing utilization of resources.
+    OPTIMIZE_UTILIZATION = 1;
+
+    // Use default (balanced) autoscaling configuration.
+    BALANCED = 2;
+  }
+
   // Enables automatic node pool creation and deletion.
   bool enable_node_autoprovisioning = 1;
 
@@ -2676,25 +3179,84 @@ message ClusterAutoscaling {
   // amount of resources in the cluster.
   repeated ResourceLimit resource_limits = 2;
 
+  // Defines autoscaling behaviour.
+  AutoscalingProfile autoscaling_profile = 3;
+
   // AutoprovisioningNodePoolDefaults contains defaults for a node pool
   // created by NAP.
   AutoprovisioningNodePoolDefaults autoprovisioning_node_pool_defaults = 4;
 
-  // The list of Google Compute Engine [zones](https://cloud.google.com/compute/docs/zones#available)
-  // in which the NodePool's nodes can be created by NAP.
+  // The list of Google Compute Engine
+  // [zones](https://cloud.google.com/compute/docs/zones#available) in which the
+  // NodePool's nodes can be created by NAP.
   repeated string autoprovisioning_locations = 5;
 }
 
 // AutoprovisioningNodePoolDefaults contains defaults for a node pool created
 // by NAP.
 message AutoprovisioningNodePoolDefaults {
-  // Scopes that are used by NAP when creating node pools. If oauth_scopes are
-  // specified, service_account should be empty.
+  // The set of Google API scopes to be made available on all of the
+  // node VMs under the "default" service account.
+  //
+  // The following scopes are recommended, but not required, and by default are
+  // not included:
+  //
+  // * `https://www.googleapis.com/auth/compute` is required for mounting
+  // persistent storage on your nodes.
+  // * `https://www.googleapis.com/auth/devstorage.read_only` is required for
+  // communicating with **gcr.io**
+  // (the [Google Container
+  // Registry](https://cloud.google.com/container-registry/)).
+  //
+  // If unspecified, no scopes are added, unless Cloud Logging or Cloud
+  // Monitoring are enabled, in which case their required scopes will be added.
   repeated string oauth_scopes = 1;
 
-  // The Google Cloud Platform Service Account to be used by the node VMs. If
-  // service_account is specified, scopes should be empty.
+  // The Google Cloud Platform Service Account to be used by the node VMs.
+  // Specify the email address of the Service Account; otherwise, if no Service
+  // Account is specified, the "default" service account is used.
   string service_account = 2;
+
+  // Upgrade settings control disruption and speed of the upgrade.
+  NodePool.UpgradeSettings upgrade_settings = 3;
+
+  // NodeManagement configuration for this NodePool.
+  NodeManagement management = 4;
+
+  // Minimum CPU platform to be used by this instance. The instance may be
+  // scheduled on the specified or newer CPU platform. Applicable values are the
+  // friendly names of CPU platforms, such as
+  // `minCpuPlatform: "Intel Haswell"` or
+  // `minCpuPlatform: "Intel Sandy Bridge"`. For more
+  // information, read [how to specify min CPU
+  // platform](https://cloud.google.com/compute/docs/instances/specify-min-cpu-platform)
+  // To unset the min cpu platform field pass "automatic"
+  // as field value.
+  string min_cpu_platform = 5;
+
+  // Size of the disk attached to each node, specified in GB.
+  // The smallest allowed disk size is 10GB.
+  //
+  // If unspecified, the default disk size is 100GB.
+  int32 disk_size_gb = 6;
+
+  // Type of the disk attached to each node (e.g. 'pd-standard', 'pd-ssd' or
+  // 'pd-balanced')
+  //
+  // If unspecified, the default disk type is 'pd-standard'
+  string disk_type = 7;
+
+  // Shielded Instance options.
+  ShieldedInstanceConfig shielded_instance_config = 8;
+
+  //
+  // The Customer Managed Encryption Key used to encrypt the boot disk attached
+  // to each node in the node pool. This should be of the form
+  // projects/[KEY_PROJECT_ID]/locations/[LOCATION]/keyRings/[RING_NAME]/cryptoKeys/[KEY_NAME].
+  // For more information about protecting resources with Cloud KMS Keys please
+  // see:
+  // https://cloud.google.com/compute/docs/disks/customer-managed-encryption
+  string boot_disk_kms_key = 9;
 }
 
 // Contains information about amount of some resource in the cluster.
@@ -2741,9 +3303,9 @@ message SetLabelsRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -2763,7 +3325,7 @@ message SetLabelsRequest {
   // used to detect conflicts. The fingerprint is initially generated by
   // Kubernetes Engine and changes after every request to modify or update
   // labels. You must always provide an up-to-date fingerprint hash when
-  // updating or changing labels. Make a <code>get()</code> request to the
+  // updating or changing labels. Make a `get()` request to the
   // resource to get the latest fingerprint.
   string label_fingerprint = 5 [(google.api.field_behavior) = REQUIRED];
 
@@ -2784,9 +3346,9 @@ message SetLegacyAbacRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -2819,9 +3381,9 @@ message StartIPRotationRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -2853,9 +3415,9 @@ message CompleteIPRotationRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -2904,11 +3466,39 @@ message WorkloadMetadataConfig {
 
     // Expose all VM metadata to pods.
     EXPOSE = 2;
+
+    // Run the GKE Metadata Server on this node. The GKE Metadata Server exposes
+    // a metadata API to workloads that is compatible with the V1 Compute
+    // Metadata APIs exposed by the Compute Engine and App Engine Metadata
+    // Servers. This feature can only be enabled if Workload Identity is enabled
+    // at the cluster level.
+    GKE_METADATA_SERVER = 3;
+  }
+
+  // Mode is the configuration for how to expose metadata to workloads running
+  // on the node.
+  enum Mode {
+    // Not set.
+    MODE_UNSPECIFIED = 0;
+
+    // Expose all Compute Engine metadata to pods.
+    GCE_METADATA = 1;
+
+    // Run the GKE Metadata Server on this node. The GKE Metadata Server exposes
+    // a metadata API to workloads that is compatible with the V1 Compute
+    // Metadata APIs exposed by the Compute Engine and App Engine Metadata
+    // Servers. This feature can only be enabled if Workload Identity is enabled
+    // at the cluster level.
+    GKE_METADATA = 2;
   }
 
   // NodeMetadata is the configuration for how to expose metadata to the
   // workloads running on the node.
-  NodeMetadata node_metadata = 1;
+  NodeMetadata node_metadata = 1 [deprecated = true];
+
+  // Mode is the configuration for how to expose metadata to workloads running
+  // on the node pool.
+  Mode mode = 2;
 }
 
 // SetNetworkPolicyRequest enables/disables network policy for a cluster.
@@ -2922,9 +3512,9 @@ message SetNetworkPolicyRequest {
   ];
 
   // Required. Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
-  // This field has been deprecated and replaced by the name field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides. This field has been deprecated and replaced by the name
+  // field.
   string zone = 2 [
     deprecated = true,
     (google.api.field_behavior) = REQUIRED
@@ -2952,8 +3542,8 @@ message SetMaintenancePolicyRequest {
   string project_id = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the cluster
-  // resides.
+  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
+  // cluster resides.
   string zone = 2 [(google.api.field_behavior) = REQUIRED];
 
   // Required. The name of the cluster to update.
@@ -3024,7 +3614,8 @@ message StatusCondition {
     // UNKNOWN indicates a generic condition.
     UNKNOWN = 0;
 
-    // GCE_STOCKOUT indicates a Google Compute Engine stockout.
+    // GCE_STOCKOUT indicates that Google Compute Engine resources are
+    // temporarily unavailable.
     GCE_STOCKOUT = 1;
 
     // GKE_SERVICE_ACCOUNT_DELETED indicates that the user deleted their robot
@@ -3044,28 +3635,43 @@ message StatusCondition {
   }
 
   // Machine-friendly representation of the condition
-  Code code = 1;
+  // Deprecated. Use canonical_code instead.
+  Code code = 1 [deprecated = true];
 
   // Human-friendly representation of the condition
   string message = 2;
+
+  // Canonical code of the condition.
+  google.rpc.Code canonical_code = 3;
 }
 
 // NetworkConfig reports the relative names of network & subnetwork.
 message NetworkConfig {
   // Output only. The relative name of the Google Compute Engine
-  // [network][google.container.v1beta1.NetworkConfig.network](https://cloud.google.com/compute/docs/networks-and-firewalls#networks) to which
-  // the cluster is connected.
-  // Example: projects/my-project/global/networks/my-network
+  // [network][google.container.v1beta1.NetworkConfig.network](https://cloud.google.com/compute/docs/networks-and-firewalls#networks)
+  // to which the cluster is connected. Example:
+  // projects/my-project/global/networks/my-network
   string network = 1;
 
   // Output only. The relative name of the Google Compute Engine
-  // [subnetwork](https://cloud.google.com/compute/docs/vpc) to which the cluster is connected.
-  // Example: projects/my-project/regions/us-central1/subnetworks/my-subnet
+  // [subnetwork](https://cloud.google.com/compute/docs/vpc) to which the
+  // cluster is connected. Example:
+  // projects/my-project/regions/us-central1/subnetworks/my-subnet
   string subnetwork = 2;
 
   // Whether Intra-node visibility is enabled for this cluster.
   // This makes same node pod to pod traffic visible for VPC network.
   bool enable_intra_node_visibility = 5;
+
+  // Whether the cluster disables default in-node sNAT rules. In-node sNAT rules
+  // will be disabled when default_snat_status is disabled. When disabled is set
+  // to false, default IP masquerade rules will be applied to the nodes to
+  // prevent sNAT on cluster internal traffic.
+  DefaultSnatStatus default_snat_status = 7;
+
+  // The desired datapath provider for this cluster. By default, uses the
+  // IPTables-based kube-proxy implementation.
+  DatapathProvider datapath_provider = 11;
 }
 
 // ListUsableSubnetworksRequest requests the list of usable subnetworks.
@@ -3172,6 +3778,13 @@ message VerticalPodAutoscaling {
   bool enabled = 1;
 }
 
+// DefaultSnatStatus contains the desired state of whether default sNAT should
+// be disabled on the cluster.
+message DefaultSnatStatus {
+  // Disables cluster default sNAT rules.
+  bool disabled = 1;
+}
+
 // IntraNodeVisibilityConfig contains the desired config of the intra-node
 // visibility on this cluster.
 message IntraNodeVisibilityConfig {
@@ -3185,6 +3798,19 @@ message MaxPodsConstraint {
   int64 max_pods_per_node = 1;
 }
 
+// Configuration for the use of Kubernetes Service Accounts in GCP IAM
+// policies.
+message WorkloadIdentityConfig {
+  // IAM Identity Namespace to attach all Kubernetes Service Accounts to.
+  string identity_namespace = 1 [deprecated = true];
+
+  // The workload pool to attach all Kubernetes service accounts to.
+  string workload_pool = 2;
+
+  // identity provider is the third party identity provider.
+  string identity_provider = 3;
+}
+
 // Configuration of etcd encryption.
 message DatabaseEncryption {
   // State of etcd encryption.
@@ -3196,7 +3822,7 @@ message DatabaseEncryption {
     ENCRYPTED = 1;
 
     // Secrets in etcd are stored in plain text (at etcd level) - this is
-    // unrelated to Google Compute Engine level full disk encryption.
+    // unrelated to Compute Engine level full disk encryption.
     DECRYPTED = 2;
   }
 
@@ -3233,4 +3859,219 @@ message ResourceUsageExportConfig {
 
   // Configuration to enable resource consumption metering.
   ConsumptionMeteringConfig consumption_metering_config = 3;
+}
+
+// Configuration of Shielded Nodes feature.
+message ShieldedNodes {
+  // Whether Shielded Nodes features are enabled on all nodes in this cluster.
+  bool enabled = 1;
+}
+
+// GetOpenIDConfigRequest gets the OIDC discovery document for the
+// cluster. See the OpenID Connect Discovery 1.0 specification for details.
+message GetOpenIDConfigRequest {
+  // The cluster (project, location, cluster id) to get the discovery document
+  // for. Specified in the format `projects/*/locations/*/clusters/*`.
+  string parent = 1;
+}
+
+// GetOpenIDConfigResponse is an OIDC discovery document for the cluster.
+// See the OpenID Connect Discovery 1.0 specification for details.
+message GetOpenIDConfigResponse {
+  // OIDC Issuer.
+  string issuer = 1;
+
+  // JSON Web Key uri.
+  string jwks_uri = 2;
+
+  // Supported response types.
+  repeated string response_types_supported = 3;
+
+  // Supported subject types.
+  repeated string subject_types_supported = 4;
+
+  // supported ID Token signing Algorithms.
+  repeated string id_token_signing_alg_values_supported = 5;
+
+  // Supported claims.
+  repeated string claims_supported = 6;
+
+  // Supported grant types.
+  repeated string grant_types = 7;
+}
+
+// GetJSONWebKeysRequest gets the public component of the keys used by the
+// cluster to sign token requests. This will be the jwks_uri for the discover
+// document returned by getOpenIDConfig. See the OpenID Connect
+// Discovery 1.0 specification for details.
+message GetJSONWebKeysRequest {
+  // The cluster (project, location, cluster id) to get keys for. Specified in
+  // the format `projects/*/locations/*/clusters/*`.
+  string parent = 1;
+}
+
+// Jwk is a JSON Web Key as specified in RFC 7517
+message Jwk {
+  // Key Type.
+  string kty = 1;
+
+  // Algorithm.
+  string alg = 2;
+
+  // Permitted uses for the public keys.
+  string use = 3;
+
+  // Key ID.
+  string kid = 4;
+
+  // Used for RSA keys.
+  string n = 5;
+
+  // Used for RSA keys.
+  string e = 6;
+
+  // Used for ECDSA keys.
+  string x = 7;
+
+  // Used for ECDSA keys.
+  string y = 8;
+
+  // Used for ECDSA keys.
+  string crv = 9;
+}
+
+// GetJSONWebKeysResponse is a valid JSON Web Key Set as specififed in rfc 7517
+message GetJSONWebKeysResponse {
+  // The public component of the keys used by the cluster to sign token
+  // requests.
+  repeated Jwk keys = 1;
+}
+
+// ReleaseChannel indicates which release channel a cluster is
+// subscribed to. Release channels are arranged in order of risk.
+//
+// When a cluster is subscribed to a release channel, Google maintains
+// both the master version and the node version. Node auto-upgrade
+// defaults to true and cannot be disabled.
+message ReleaseChannel {
+  // Possible values for 'channel'.
+  enum Channel {
+    // No channel specified.
+    UNSPECIFIED = 0;
+
+    // RAPID channel is offered on an early access basis for customers who want
+    // to test new releases.
+    //
+    // WARNING: Versions available in the RAPID Channel may be subject to
+    // unresolved issues with no known workaround and are not subject to any
+    // SLAs.
+    RAPID = 1;
+
+    // Clusters subscribed to REGULAR receive versions that are considered GA
+    // quality. REGULAR is intended for production users who want to take
+    // advantage of new features.
+    REGULAR = 2;
+
+    // Clusters subscribed to STABLE receive versions that are known to be
+    // stable and reliable in production.
+    STABLE = 3;
+  }
+
+  // channel specifies which release channel the cluster is subscribed to.
+  Channel channel = 1;
+}
+
+// Configuration for Cloud TPU.
+message TpuConfig {
+  // Whether Cloud TPU integration is enabled or not.
+  bool enabled = 1;
+
+  // Whether to use service networking for Cloud TPU or not.
+  bool use_service_networking = 2;
+
+  // IPv4 CIDR block reserved for Cloud TPU in the VPC.
+  string ipv4_cidr_block = 3;
+}
+
+// Master is the configuration for components on master.
+message Master {
+
+}
+
+// NotificationConfig is the configuration of notifications.
+message NotificationConfig {
+  // Pub/Sub specific notification config.
+  message PubSub {
+    // Enable notifications for Pub/Sub.
+    bool enabled = 1;
+
+    // The desired Pub/Sub topic to which notifications will be
+    // sent by GKE. Format is `projects/{project}/topics/{topic}`.
+    string topic = 2 [(google.api.resource_reference) = {
+                        type: "pubsub.googleapis.com/Topic"
+                      }];
+  }
+
+  // Notification config for Pub/Sub.
+  PubSub pubsub = 1;
+}
+
+// ConfidentialNodes is configuration for the confidential nodes feature, which
+// makes nodes run on confidential VMs.
+message ConfidentialNodes {
+  // Whether Confidential Nodes feature is enabled for all nodes in this
+  // cluster.
+  bool enabled = 1;
+}
+
+// UpgradeEvent is a notification sent to customers by the cluster server when
+// a resource is upgrading.
+message UpgradeEvent {
+  // Required. The resource type that is upgrading.
+  UpgradeResourceType resource_type = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The operation associated with this upgrade.
+  string operation = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The time when the operation was started.
+  google.protobuf.Timestamp operation_start_time = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The current version before the upgrade.
+  string current_version = 4 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The target version for the upgrade.
+  string target_version = 5 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Optional relative path to the resource. For example in node pool upgrades,
+  // the relative path of the node pool.
+  string resource = 6 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The datapath provider selects the implementation of the Kubernetes networking
+// // model for service resolution and network policy enforcement.
+enum DatapathProvider {
+  // Default value.
+  DATAPATH_PROVIDER_UNSPECIFIED = 0;
+
+  // Use the IPTables implementation based on kube-proxy.
+  LEGACY_DATAPATH = 1;
+
+  // Use the eBPF based GKE Dataplane V2 with additional features. See the [GKE
+  // Dataplane V2
+  // documentation](https://cloud.google.com/kubernetes-enginw/docs/how-to/dataplane-v2)
+  // for more.
+  ADVANCED_DATAPATH = 2;
+}
+
+// UpgradeResourceType is the resource type that is upgrading. It is used
+// in upgrade notifications.
+enum UpgradeResourceType {
+  // Default value. This shouldn't be used.
+  UPGRADE_RESOURCE_TYPE_UNSPECIFIED = 0;
+
+  // Master / control plane
+  MASTER = 1;
+
+  // Node pool
+  NODE_POOL = 2;
 }
