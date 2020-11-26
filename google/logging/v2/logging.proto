@@ -125,6 +125,15 @@ service LoggingServiceV2 {
     };
     option (google.api.method_signature) = "parent";
   }
+
+  // Streaming read of log entries as they are ingested. Until the stream is
+  // terminated, it will continue reading logs.
+  rpc TailLogEntries(stream TailLogEntriesRequest) returns (stream TailLogEntriesResponse) {
+    option (google.api.http) = {
+      post: "/v2/entries:tail"
+      body: "*"
+    };
+  }
 }
 
 // The parameters to DeleteLog.
@@ -254,6 +263,11 @@ message ListLogEntriesRequest {
   //     "billingAccounts/[BILLING_ACCOUNT_ID]"
   //     "folders/[FOLDER_ID]"
   //
+  // May alternatively be one or more views
+  //   projects/[PROJECT_ID]/locations/[LOCATION_ID]/buckets/[BUCKET_ID]/views/[VIEW_ID]
+  //   organization/[ORGANIZATION_ID]/locations/[LOCATION_ID]/buckets/[BUCKET_ID]/views/[VIEW_ID]
+  //   billingAccounts/[BILLING_ACCOUNT_ID]/locations/[LOCATION_ID]/buckets/[BUCKET_ID]/views/[VIEW_ID]
+  //   folders/[FOLDER_ID]/locations/[LOCATION_ID]/buckets/[BUCKET_ID]/views/[VIEW_ID]
   //
   // Projects listed in the `project_ids` field are added to this list.
   repeated string resource_names = 8 [
@@ -363,6 +377,19 @@ message ListLogsRequest {
   // `nextPageToken` from the previous response.  The values of other method
   // parameters should be identical to those in the previous call.
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The resource name that owns the logs:
+  //   projects/[PROJECT_ID]/locations/[LOCATION_ID]/buckets/[BUCKET_ID]/views/[VIEW_ID]
+  //   organization/[ORGANIZATION_ID]/locations/[LOCATION_ID]/buckets/[BUCKET_ID]/views/[VIEW_ID]
+  //   billingAccounts/[BILLING_ACCOUNT_ID]/locations/[LOCATION_ID]/buckets/[BUCKET_ID]/views/[VIEW_ID]
+  //   folders/[FOLDER_ID]/locations/[LOCATION_ID]/buckets/[BUCKET_ID]/views/[VIEW_ID]
+  //
+  // To support legacy queries, it could also be:
+  //     "projects/[PROJECT_ID]"
+  //     "organizations/[ORGANIZATION_ID]"
+  //     "billingAccounts/[BILLING_ACCOUNT_ID]"
+  //     "folders/[FOLDER_ID]"
+  repeated string resource_names = 8 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Result returned from ListLogs.
@@ -376,4 +403,76 @@ message ListLogsResponse {
   // `nextPageToken` is included.  To get the next set of results, call this
   // method again using the value of `nextPageToken` as `pageToken`.
   string next_page_token = 2;
+}
+
+// The parameters to `TailLogEntries`.
+message TailLogEntriesRequest {
+  // Required. Name of a parent resource from which to retrieve log entries:
+  //
+  //     "projects/[PROJECT_ID]"
+  //     "organizations/[ORGANIZATION_ID]"
+  //     "billingAccounts/[BILLING_ACCOUNT_ID]"
+  //     "folders/[FOLDER_ID]"
+  //
+  // May alternatively be one or more views:
+  //     "projects/[PROJECT_ID]/locations/[LOCATION_ID]/buckets/[BUCKET_ID]/views/[VIEW_ID]"
+  //     "organization/[ORGANIZATION_ID]/locations/[LOCATION_ID]/buckets/[BUCKET_ID]/views/[VIEW_ID]"
+  //     "billingAccounts/[BILLING_ACCOUNT_ID]/locations/[LOCATION_ID]/buckets/[BUCKET_ID]/views/[VIEW_ID]"
+  //     "folders/[FOLDER_ID]/locations/[LOCATION_ID]/buckets/[BUCKET_ID]/views/[VIEW_ID]"
+  repeated string resource_names = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. A filter that chooses which log entries to return.  See [Advanced
+  // Logs Filters](https://cloud.google.com/logging/docs/view/advanced_filters).
+  // Only log entries that match the filter are returned.  An empty filter
+  // matches all log entries in the resources listed in `resource_names`.
+  // Referencing a parent resource that is not in `resource_names` will cause
+  // the filter to return no results. The maximum length of the filter is 20000
+  // characters.
+  string filter = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The amount of time to buffer log entries at the server before
+  // being returned to prevent out of order results due to late arriving log
+  // entries. Valid values are between 0-60000 milliseconds. Defaults to 2000
+  // milliseconds.
+  google.protobuf.Duration buffer_window = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Result returned from `TailLogEntries`.
+message TailLogEntriesResponse {
+  // Information about entries that were omitted from the session.
+  message SuppressionInfo {
+    // An indicator of why entries were omitted.
+    enum Reason {
+      // Unexpected default.
+      REASON_UNSPECIFIED = 0;
+
+      // Indicates suppression occurred due to relevant entries being
+      // received in excess of rate limits. For quotas and limits, see
+      // [Logging API quotas and
+      // limits](https://cloud.google.com/logging/quotas#api-limits).
+      RATE_LIMIT = 1;
+
+      // Indicates suppression occurred due to the client not consuming
+      // responses quickly enough.
+      NOT_CONSUMED = 2;
+    }
+
+    // The reason that entries were omitted from the session.
+    Reason reason = 1;
+
+    // A lower bound on the count of entries omitted due to `reason`.
+    int32 suppressed_count = 2;
+  }
+
+  // A list of log entries. Each response in the stream will order entries with
+  // increasing values of `LogEntry.timestamp`. Ordering is not guaranteed
+  // between separate responses.
+  repeated LogEntry entries = 1;
+
+  // If entries that otherwise would have been included in the session were not
+  // sent back to the client, counts of relevant entries omitted from the
+  // session with the reason that they were not included. There will be at most
+  // one of each reason per response. The counts represent the number of
+  // suppressed entries since the last streamed response.
+  repeated SuppressionInfo suppression_info = 2;
 }
