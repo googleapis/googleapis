@@ -295,9 +295,8 @@ go_gapic_repositories()
 # TypeScript
 ##############################################################################
 
-_gapic_generator_typescript_version = "1.2.6"
-
-_gapic_generator_typescript_sha256 = "ed62484bd8c1d0ed3cf440891ca0ce2d035f75d265067bbeff79d6ce9a62205d"
+_gapic_generator_typescript_version = "1.2.7"
+_gapic_generator_typescript_sha256 = "83623f1efb680cf0212dbd031382082ec247edcd07984156e3821a9ae6e2715d"
 
 ### TypeScript generator
 http_archive(
