@@ -387,20 +387,37 @@ message AppendRowsRequest {
     ProtoData proto_rows = 4;
   }
 
-  // Only initial request setting is respected. If true, drop unknown input
-  // fields. Otherwise, the extra fields will cause append to fail. Default
-  // value is false.
-  bool ignore_unknown_fields = 5;
+  // Id set by client to annotate its identity. Only initial request setting is
+  // respected.
+  string trace_id = 6;
 }
 
 // Response message for `AppendRows`.
 message AppendRowsResponse {
-  oneof response {
-    // The row offset at which the last append occurred.
-    int64 offset = 1;
+  // A success append result.
+  message AppendResult {
+    // The row offset at which the last append occurred. The offset will not be
+    // set if appending using default streams.
+    google.protobuf.Int64Value offset = 1;
+  }
 
-    // Error in case of append failure. If set, it means rows are not accepted
-    // into the system. Users can retry within the same connection.
+  oneof response {
+    // Result if the append is successful.
+    AppendResult append_result = 1;
+
+    // Error in case of request failed. If set, it means rows are not accepted
+    // into the system. Users can retry or continue with other requests within
+    // the same connection.
+    // ALREADY_EXISTS: happens when offset is specified, it means the entire
+    //   request is already appended, it is safe to ignore this error.
+    // OUT_OF_RANGE: happens when offset is specified, it means the specified
+    //   offset is beyond the end of the stream.
+    // INVALID_ARGUMENT: error caused by malformed request or data.
+    // RESOURCE_EXHAUSTED: request rejected due to throttling. Only happens when
+    //   append without offset.
+    // ABORTED: request processing is aborted because of prior failures, request
+    //   can be retried if previous failure is fixed.
+    // INTERNAL: server side errors that can be retried.
     google.rpc.Status error = 2;
   }
 
@@ -435,7 +452,12 @@ message BatchCommitWriteStreamsRequest {
 // Response message for `BatchCommitWriteStreams`.
 message BatchCommitWriteStreamsResponse {
   // The time at which streams were committed in microseconds granularity.
+  // This field will only exist when there is no stream errors.
   google.protobuf.Timestamp commit_time = 1;
+
+  // Stream level error if commit failed. Only streams with error will be in
+  // the list.
+  repeated StorageError stream_errors = 2;
 }
 
 // Request message for invoking `FinalizeWriteStream`.
@@ -475,4 +497,42 @@ message FlushRowsRequest {
 message FlushRowsResponse {
   // The rows before this offset (including this offset) are flushed.
   int64 offset = 1;
+}
+
+// Structured custom BigQuery Storage error message. The error can be attached
+// as error details in the returned rpc Status. User can use the info to process
+// errors in a structural way, rather than having to parse error messages.
+message StorageError {
+  // Error code for `StorageError`.
+  enum StorageErrorCode {
+    // Default error.
+    STORAGE_ERROR_CODE_UNSPECIFIED = 0;
+
+    // Table is not found in the system.
+    TABLE_NOT_FOUND = 1;
+
+    // Stream is already committed.
+    STREAM_ALREADY_COMMITTED = 2;
+
+    // Stream is not found.
+    STREAM_NOT_FOUND = 3;
+
+    // Invalid Stream type.
+    // For example, you try to commit a stream that is not pending.
+    INVALID_STREAM_TYPE = 4;
+
+    // Invalid Stream state.
+    // For example, you try to commit a stream that is not fianlized or is
+    // garbaged.
+    INVALID_STREAM_STATE = 5;
+  }
+
+  // BigQuery Storage specific error code.
+  StorageErrorCode code = 1;
+
+  // Name of the failed entity.
+  string entity = 2;
+
+  // Message that describes the error.
+  string error_message = 3;
 }
