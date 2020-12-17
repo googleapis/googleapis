@@ -1,4 +1,4 @@
-# Service Infrastructure Example API
+# Service Infrastructure Codelab
 
 This is an example API that demonstrates how to design a networked API following
 [API Design Guide](https://cloud.google.com/apis/design), implement the API
