@@ -41,8 +41,8 @@ http_archive(
 # version of the library will be selected as a transitive dependency of gRPC.
 http_archive(
     name = "rules_python",
-    strip_prefix = "rules_python-748aa53d7701e71101dfd15d800e100f6ff8e5d1",
-    url = "https://github.com/bazelbuild/rules_python/archive/748aa53d7701e71101dfd15d800e100f6ff8e5d1.zip",
+    strip_prefix = "rules_python-0.1.0",
+    url = "https://github.com/bazelbuild/rules_python/archive/0.1.0.tar.gz",
 )
 
 http_archive(
@@ -230,18 +230,14 @@ protoc_docs_plugin_repositories()
 
 protoc_docs_plugin_register_toolchains()
 
-load("@rules_python//python:repositories.bzl", "py_repositories")
-
-py_repositories()
-
 load("@rules_python//python:pip.bzl", "pip_repositories")
 
 pip_repositories()
 
 http_archive(
     name = "gapic_generator_python",
-    strip_prefix = "gapic-generator-python-0.37.1",
-    urls = ["https://github.com/googleapis/gapic-generator-python/archive/v0.37.1.zip"],
+    strip_prefix = "gapic-generator-python-0.39.1",
+    urls = ["https://github.com/googleapis/gapic-generator-python/archive/v0.39.1.zip"],
 )
 
 load(
@@ -254,9 +250,6 @@ gapic_generator_python()
 
 gapic_generator_register_toolchains()
 
-load("@gapic_generator_python_pip_deps//:requirements.bzl", "pip_install")
-
-pip_install()
 
 ##############################################################################
 # Go
