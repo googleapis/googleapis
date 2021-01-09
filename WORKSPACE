@@ -137,7 +137,7 @@ apple_support_dependencies()
 # Java
 ##############################################################################
 # Java microgenerator.
-_gapic_generator_java_version = "0.0.16"
+_gapic_generator_java_version = "0.0.18"
 
 http_archive(
     name = "gapic_generator_java",
@@ -250,7 +250,6 @@ gapic_generator_python()
 
 gapic_generator_register_toolchains()
 
-
 ##############################################################################
 # Go
 ##############################################################################
@@ -358,8 +357,8 @@ gapic_generator_csharp_repositories()
 
 http_archive(
     name = "gapic_generator_ruby",
-    strip_prefix = "gapic-generator-ruby-3b24615422fece2fe6c0f60c58695f3ac4060785",
     sha256 = "bd8dec9a2cc3306f1fa7c5fe9afff90ac1ff79ffad554161d96483347fa9cce5",
+    strip_prefix = "gapic-generator-ruby-3b24615422fece2fe6c0f60c58695f3ac4060785",
     urls = ["https://github.com/googleapis/gapic-generator-ruby/archive/3b24615422fece2fe6c0f60c58695f3ac4060785.zip"],
 )
 
