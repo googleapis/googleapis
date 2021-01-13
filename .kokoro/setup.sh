@@ -3,6 +3,21 @@
 set -e
 
 #
+# Update GCC
+#
+update_gcc() {
+  sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
+  sudo apt-get update
+  sudo apt-get install -y gcc-6 g++-6
+}
+
+time {
+  update_gcc || sleep 10 || update_gcc || sleep 20 || update_gcc
+}
+export CXX=g++-6
+export CC=gcc-6
+
+#
 # Install bazelisk
 #
 mkdir ${KOKORO_ROOT}/tools
