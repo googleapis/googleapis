@@ -47,9 +47,9 @@ http_archive(
 
 http_archive(
     name = "com_google_protobuf",
-    sha256 = "1c744a6a1f2c901e68c5521bc275e22bdc66256eeb605c2781923365b7087e5f",
-    strip_prefix = "protobuf-3.13.0",
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.13.0.zip"],
+    sha256 = "d0f5f605d0d656007ce6c8b5a82df3037e1d8fe8b121ed42e536f569dec16113",
+    strip_prefix = "protobuf-3.14.0",
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.14.0.tar.gz"],
 )
 
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
@@ -85,10 +85,10 @@ http_archive(
 # TODO(ndietz): move this back to the Go section if gRPC is updated per https://github.com/grpc/grpc/issues/22172
 http_archive(
     name = "io_bazel_rules_go",
-    sha256 = "d1ffd055969c8f8d431e2d439813e42326961d0942bdf734d2c95dc30c369566",
+    sha256 = "dbf5a9ef855684f84cac2e7ae7886c5a001d4f66ae23f6904da0faaaef0d61fc",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.24.5/rules_go-v0.24.5.tar.gz",
-        "https://github.com/bazelbuild/rules_go/releases/download/v0.24.5/rules_go-v0.24.5.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.24.11/rules_go-v0.24.11.tar.gz",
+        "https://github.com/bazelbuild/rules_go/releases/download/v0.24.11/rules_go-v0.24.11.tar.gz",
     ],
 )
 
@@ -270,8 +270,8 @@ gazelle_dependencies()
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
-    strip_prefix = "gapic-generator-go-0.17.0",
-    urls = ["https://github.com/googleapis/gapic-generator-go/archive/v0.17.0.tar.gz"],
+    strip_prefix = "gapic-generator-go-0.17.1",
+    urls = ["https://github.com/googleapis/gapic-generator-go/archive/v0.17.1.tar.gz"],
 )
 
 load("@com_googleapis_gapic_generator_go//:repositories.bzl", "com_googleapis_gapic_generator_go_repositories")
