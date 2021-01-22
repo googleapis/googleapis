@@ -20,6 +20,7 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
@@ -219,6 +220,12 @@ service Spanner {
   // transactions. However, it can also happen for a variety of other
   // reasons. If `Commit` returns `ABORTED`, the caller should re-attempt
   // the transaction from the beginning, re-using the same session.
+  //
+  // On very rare occasions, `Commit` might return `UNKNOWN`. This can happen,
+  // for example, if the client job experiences a 1+ hour networking failure.
+  // At that point, Cloud Spanner has lost track of the transaction outcome and
+  // we recommend that you perform another read from the database to see the
+  // state of things as they are now.
   rpc Commit(CommitRequest) returns (CommitResponse) {
     option (google.api.http) = {
       post: "/v1/{session=projects/*/instances/*/databases/*/sessions/*}:commit"
@@ -331,9 +338,8 @@ message Session {
     pattern: "projects/{project}/instances/{instance}/databases/{database}/sessions/{session}"
   };
 
-  // The name of the session. This is always system-assigned; values provided
-  // when creating a session are ignored.
-  string name = 1;
+  // Output only. The name of the session. This is always system-assigned.
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // The labels for the session.
   //
@@ -347,11 +353,11 @@ message Session {
   map<string, string> labels = 2;
 
   // Output only. The timestamp when the session is created.
-  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp create_time = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The approximate timestamp when the session is last used. It is
   // typically earlier than the actual last use time.
-  google.protobuf.Timestamp approximate_last_use_time = 4;
+  google.protobuf.Timestamp approximate_last_use_time = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // The request for [GetSession][google.spanner.v1.Spanner.GetSession].
@@ -438,6 +444,9 @@ message ExecuteSqlRequest {
     // SPANNER_SYS.SUPPORTED_OPTIMIZER_VERSIONS. Executing a SQL statement
     // with an invalid optimizer version will fail with a syntax error
     // (`INVALID_ARGUMENT`) status.
+    // See
+    // https://cloud.google.com/spanner/docs/query-optimizer/manage-query-optimizer
+    // for more information on managing the query optimizer.
     //
     // The `optimizer_version` statement hint has precedence over this setting.
     string optimizer_version = 1;
@@ -483,8 +492,9 @@ message ExecuteSqlRequest {
   // Parameter names and values that bind to placeholders in the SQL string.
   //
   // A parameter placeholder consists of the `@` character followed by the
-  // parameter name (for example, `@firstName`). Parameter names can contain
-  // letters, numbers, and underscores.
+  // parameter name (for example, `@firstName`). Parameter names must conform
+  // to the naming requirements of identifiers as specified at
+  // https://cloud.google.com/spanner/docs/lexical#identifiers.
   //
   // Parameters can appear anywhere that a literal value is expected.  The same
   // parameter name can be used more than once, for example:
@@ -884,12 +894,34 @@ message CommitRequest {
   // mutations are applied atomically, in the order they appear in
   // this list.
   repeated Mutation mutations = 4;
+
+  // If `true`, then statistics related to the transaction will be included in
+  // the [CommitResponse][google.spanner.v1.CommitResponse.commit_stats]. Default value is
+  // `false`.
+  bool return_commit_stats = 5;
 }
 
 // The response for [Commit][google.spanner.v1.Spanner.Commit].
 message CommitResponse {
+  // Additional statistics about a commit.
+  message CommitStats {
+    // The total number of mutations for the transaction. Knowing the
+    // `mutation_count` value can help you maximize the number of mutations
+    // in a transaction and minimize the number of API round trips. You can
+    // also monitor this value to prevent transactions from exceeding the system
+    // [limit](http://cloud.google.com/spanner/quotas#limits_for_creating_reading_updating_and_deleting_data).
+    // If the number of mutations exceeds the limit, the server returns
+    // [INVALID_ARGUMENT](http://cloud.google.com/spanner/docs/reference/rest/v1/Code#ENUM_VALUES.INVALID_ARGUMENT).
+    int64 mutation_count = 1;
+  }
+
   // The Cloud Spanner timestamp at which the transaction committed.
   google.protobuf.Timestamp commit_timestamp = 1;
+
+  // The statistics about this Commit. Not returned by default.
+  // For more information, see
+  // [CommitRequest.return_commit_stats][google.spanner.v1.CommitRequest.return_commit_stats].
+  CommitStats commit_stats = 2;
 }
 
 // The request for [Rollback][google.spanner.v1.Spanner.Rollback].
