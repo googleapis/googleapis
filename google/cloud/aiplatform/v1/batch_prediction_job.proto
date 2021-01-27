@@ -1,0 +1,249 @@
+// Copyright 2020 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.aiplatform.v1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/aiplatform/v1/completion_stats.proto";
+import "google/cloud/aiplatform/v1/encryption_spec.proto";
+import "google/cloud/aiplatform/v1/io.proto";
+import "google/cloud/aiplatform/v1/job_state.proto";
+import "google/cloud/aiplatform/v1/machine_resources.proto";
+import "google/cloud/aiplatform/v1/manual_batch_tuning_parameters.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+import "google/api/annotations.proto";
+
+option go_package = "google.golang.org/genproto/googleapis/cloud/aiplatform/v1;aiplatform";
+option java_multiple_files = true;
+option java_outer_classname = "BatchPredictionJobProto";
+option java_package = "com.google.cloud.aiplatform.v1";
+
+// A job that uses a [Model][google.cloud.aiplatform.v1.BatchPredictionJob.model] to produce predictions
+// on multiple [input instances][google.cloud.aiplatform.v1.BatchPredictionJob.input_config]. If
+// predictions for significant portion of the instances fail, the job may finish
+// without attempting predictions for all remaining instances.
+message BatchPredictionJob {
+  option (google.api.resource) = {
+    type: "aiplatform.googleapis.com/BatchPredictionJob"
+    pattern: "projects/{project}/locations/{location}/batchPredictionJobs/{batch_prediction_job}"
+  };
+
+  // Configures the input to [BatchPredictionJob][google.cloud.aiplatform.v1.BatchPredictionJob].
+  // See [Model.supported_input_storage_formats][google.cloud.aiplatform.v1.Model.supported_input_storage_formats] for Model's supported input
+  // formats, and how instances should be expressed via any of them.
+  message InputConfig {
+    // Required. The source of the input.
+    oneof source {
+      // The Cloud Storage location for the input instances.
+      GcsSource gcs_source = 2;
+
+      // The BigQuery location of the input table.
+      // The schema of the table should be in the format described by the given
+      // context OpenAPI Schema, if one is provided. The table may contain
+      // additional columns that are not described by the schema, and they will
+      // be ignored.
+      BigQuerySource bigquery_source = 3;
+    }
+
+    // Required. The format in which instances are given, must be one of the
+    // [Model's][google.cloud.aiplatform.v1.BatchPredictionJob.model]
+    // [supported_input_storage_formats][google.cloud.aiplatform.v1.Model.supported_input_storage_formats].
+    string instances_format = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Configures the output of [BatchPredictionJob][google.cloud.aiplatform.v1.BatchPredictionJob].
+  // See [Model.supported_output_storage_formats][google.cloud.aiplatform.v1.Model.supported_output_storage_formats] for supported output
+  // formats, and how predictions are expressed via any of them.
+  message OutputConfig {
+    // Required. The destination of the output.
+    oneof destination {
+      // The Cloud Storage location of the directory where the output is
+      // to be written to. In the given directory a new directory is created.
+      // Its name is `prediction-<model-display-name>-<job-create-time>`,
+      // where timestamp is in YYYY-MM-DDThh:mm:ss.sssZ ISO-8601 format.
+      // Inside of it files `predictions_0001.<extension>`,
+      // `predictions_0002.<extension>`, ..., `predictions_N.<extension>`
+      // are created where `<extension>` depends on chosen
+      // [predictions_format][google.cloud.aiplatform.v1.BatchPredictionJob.OutputConfig.predictions_format], and N may equal 0001 and depends on the total
+      // number of successfully predicted instances.
+      // If the Model has both [instance][google.cloud.aiplatform.v1.PredictSchemata.instance_schema_uri]
+      // and [prediction][google.cloud.aiplatform.v1.PredictSchemata.parameters_schema_uri] schemata
+      // defined then each such file contains predictions as per the
+      // [predictions_format][google.cloud.aiplatform.v1.BatchPredictionJob.OutputConfig.predictions_format].
+      // If prediction for any instance failed (partially or completely), then
+      // an additional `errors_0001.<extension>`, `errors_0002.<extension>`,...,
+      // `errors_N.<extension>` files are created (N depends on total number
+      // of failed predictions). These files contain the failed instances,
+      // as per their schema, followed by an additional `error` field which as
+      // value has
+      // [`google.rpc.Status`](Status)
+      // containing only `code` and `message` fields.
+      GcsDestination gcs_destination = 2;
+
+      // The BigQuery project location where the output is to be written to.
+      // In the given project a new dataset is created with name
+      // `prediction_<model-display-name>_<job-create-time>`
+      // where <model-display-name> is made
+      // BigQuery-dataset-name compatible (for example, most special characters
+      // become underscores), and timestamp is in
+      // YYYY_MM_DDThh_mm_ss_sssZ "based on ISO-8601" format. In the dataset
+      // two tables will be created, `predictions`, and `errors`.
+      // If the Model has both [instance][google.cloud.aiplatform.v1.PredictSchemata.instance_schema_uri]
+      // and [prediction][google.cloud.aiplatform.v1.PredictSchemata.parameters_schema_uri] schemata
+      // defined then the tables have columns as follows: The `predictions`
+      // table contains instances for which the prediction succeeded, it
+      // has columns as per a concatenation of the Model's instance and
+      // prediction schemata. The `errors` table contains rows for which the
+      // prediction has failed, it has instance columns, as per the
+      // instance schema, followed by a single "errors" column, which as values
+      // has [`google.rpc.Status`](Status)
+      // represented as a STRUCT, and containing only `code` and `message`.
+      BigQueryDestination bigquery_destination = 3;
+    }
+
+    // Required. The format in which AI Platform gives the predictions, must be one of the
+    // [Model's][google.cloud.aiplatform.v1.BatchPredictionJob.model]
+    //
+    // [supported_output_storage_formats][google.cloud.aiplatform.v1.Model.supported_output_storage_formats].
+    string predictions_format = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Further describes this job's output.
+  // Supplements [output_config][google.cloud.aiplatform.v1.BatchPredictionJob.output_config].
+  message OutputInfo {
+    // The output location into which prediction output is written.
+    oneof output_location {
+      // Output only. The full path of the Cloud Storage directory created, into which
+      // the prediction output is written.
+      string gcs_output_directory = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+      // Output only. The path of the BigQuery dataset created, in
+      // `bq://projectId.bqDatasetId`
+      // format, into which the prediction output is written.
+      string bigquery_output_dataset = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+    }
+  }
+
+  // Output only. Resource name of the BatchPredictionJob.
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Required. The user-defined name of this BatchPredictionJob.
+  string display_name = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The name of the Model that produces the predictions via this job,
+  // must share the same ancestor Location.
+  // Starting this job has no impact on any existing deployments of the Model
+  // and their resources.
+  string model = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/Model"
+    }
+  ];
+
+  // Required. Input configuration of the instances on which predictions are performed.
+  // The schema of any single instance may be specified via
+  // the [Model's][google.cloud.aiplatform.v1.BatchPredictionJob.model]
+  // [PredictSchemata's][google.cloud.aiplatform.v1.Model.predict_schemata]
+  // [instance_schema_uri][google.cloud.aiplatform.v1.PredictSchemata.instance_schema_uri].
+  InputConfig input_config = 4 [(google.api.field_behavior) = REQUIRED];
+
+  // The parameters that govern the predictions. The schema of the parameters
+  // may be specified via the [Model's][google.cloud.aiplatform.v1.BatchPredictionJob.model]
+  // [PredictSchemata's][google.cloud.aiplatform.v1.Model.predict_schemata]
+  // [parameters_schema_uri][google.cloud.aiplatform.v1.PredictSchemata.parameters_schema_uri].
+  google.protobuf.Value model_parameters = 5;
+
+  // Required. The Configuration specifying where output predictions should
+  // be written.
+  // The schema of any single prediction may be specified as a concatenation
+  // of [Model's][google.cloud.aiplatform.v1.BatchPredictionJob.model]
+  // [PredictSchemata's][google.cloud.aiplatform.v1.Model.predict_schemata]
+  // [instance_schema_uri][google.cloud.aiplatform.v1.PredictSchemata.instance_schema_uri]
+  // and
+  // [prediction_schema_uri][google.cloud.aiplatform.v1.PredictSchemata.prediction_schema_uri].
+  OutputConfig output_config = 6 [(google.api.field_behavior) = REQUIRED];
+
+  // The config of resources used by the Model during the batch prediction. If
+  // the Model [supports][google.cloud.aiplatform.v1.Model.supported_deployment_resources_types]
+  // DEDICATED_RESOURCES this config may be provided (and the job will use these
+  // resources), if the Model doesn't support AUTOMATIC_RESOURCES, this config
+  // must be provided.
+  BatchDedicatedResources dedicated_resources = 7;
+
+  // Immutable. Parameters configuring the batch behavior. Currently only applicable when
+  // [dedicated_resources][google.cloud.aiplatform.v1.BatchPredictionJob.dedicated_resources] are used (in other cases AI Platform does
+  // the tuning itself).
+  ManualBatchTuningParameters manual_batch_tuning_parameters = 8 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Output only. Information further describing the output of this job.
+  OutputInfo output_info = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The detailed state of the job.
+  JobState state = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Only populated when the job's state is JOB_STATE_FAILED or
+  // JOB_STATE_CANCELLED.
+  google.rpc.Status error = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Partial failures encountered.
+  // For example, single files that can't be read.
+  // This field never exceeds 20 entries.
+  // Status details fields contain standard GCP error details.
+  repeated google.rpc.Status partial_failures = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Information about resources that had been consumed by this job.
+  // Provided in real time at best effort basis, as well as a final value
+  // once the job completes.
+  //
+  // Note: This field currently may be not populated for batch predictions that
+  // use AutoML Models.
+  ResourcesConsumed resources_consumed = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Statistics on completed and failed prediction instances.
+  CompletionStats completion_stats = 14 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Time when the BatchPredictionJob was created.
+  google.protobuf.Timestamp create_time = 15 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Time when the BatchPredictionJob for the first time entered the
+  // `JOB_STATE_RUNNING` state.
+  google.protobuf.Timestamp start_time = 16 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Time when the BatchPredictionJob entered any of the following states:
+  // `JOB_STATE_SUCCEEDED`, `JOB_STATE_FAILED`, `JOB_STATE_CANCELLED`.
+  google.protobuf.Timestamp end_time = 17 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Time when the BatchPredictionJob was most recently updated.
+  google.protobuf.Timestamp update_time = 18 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The labels with user-defined metadata to organize BatchPredictionJobs.
+  //
+  // Label keys and values can be no longer than 64 characters
+  // (Unicode codepoints), can only contain lowercase letters, numeric
+  // characters, underscores and dashes. International characters are allowed.
+  //
+  // See https://goo.gl/xmQnxf for more information and examples of labels.
+  map<string, string> labels = 19;
+
+  // Customer-managed encryption key options for a BatchPredictionJob. If this
+  // is set, then all resources created by the BatchPredictionJob will be
+  // encrypted with the provided encryption key.
+  EncryptionSpec encryption_spec = 24;
+}

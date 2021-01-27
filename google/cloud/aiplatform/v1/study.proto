@@ -1,0 +1,355 @@
+// Copyright 2020 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.aiplatform.v1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "google/api/annotations.proto";
+
+option go_package = "google.golang.org/genproto/googleapis/cloud/aiplatform/v1;aiplatform";
+option java_multiple_files = true;
+option java_outer_classname = "StudyProto";
+option java_package = "com.google.cloud.aiplatform.v1";
+
+// A message representing a Trial. A Trial contains a unique set of Parameters
+// that has been or will be evaluated, along with the objective metrics got by
+// running the Trial.
+message Trial {
+  option (google.api.resource) = {
+    type: "aiplatform.googleapis.com/Trial"
+    pattern: "projects/{project}/locations/{location}/studies/{study}/trials/{trial}"
+  };
+
+  // A message representing a parameter to be tuned.
+  message Parameter {
+    // Output only. The ID of the parameter. The parameter should be defined in
+    // [StudySpec's Parameters][google.cloud.aiplatform.v1.StudySpec.parameters].
+    string parameter_id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The value of the parameter.
+    // `number_value` will be set if a parameter defined in StudySpec is
+    // in type 'INTEGER', 'DOUBLE' or 'DISCRETE'.
+    // `string_value` will be set if a parameter defined in StudySpec is
+    // in type 'CATEGORICAL'.
+    google.protobuf.Value value = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Describes a Trial state.
+  enum State {
+    // The Trial state is unspecified.
+    STATE_UNSPECIFIED = 0;
+
+    // Indicates that a specific Trial has been requested, but it has not yet
+    // been suggested by the service.
+    REQUESTED = 1;
+
+    // Indicates that the Trial has been suggested.
+    ACTIVE = 2;
+
+    // Indicates that the Trial should stop according to the service.
+    STOPPING = 3;
+
+    // Indicates that the Trial is completed successfully.
+    SUCCEEDED = 4;
+
+    // Indicates that the Trial should not be attempted again.
+    // The service will set a Trial to INFEASIBLE when it's done but missing
+    // the final_measurement.
+    INFEASIBLE = 5;
+  }
+
+  // Output only. The identifier of the Trial assigned by the service.
+  string id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The detailed state of the Trial.
+  State state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The parameters of the Trial.
+  repeated Parameter parameters = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The final measurement containing the objective value.
+  Measurement final_measurement = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Time when the Trial was started.
+  google.protobuf.Timestamp start_time = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Time when the Trial's status changed to `SUCCEEDED` or `INFEASIBLE`.
+  google.protobuf.Timestamp end_time = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The CustomJob name linked to the Trial.
+  // It's set for a HyperparameterTuningJob's Trial.
+  string custom_job = 11 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/CustomJob"
+    }
+  ];
+}
+
+// Represents specification of a Study.
+message StudySpec {
+  // Represents a metric to optimize.
+  message MetricSpec {
+    // The available types of optimization goals.
+    enum GoalType {
+      // Goal Type will default to maximize.
+      GOAL_TYPE_UNSPECIFIED = 0;
+
+      // Maximize the goal metric.
+      MAXIMIZE = 1;
+
+      // Minimize the goal metric.
+      MINIMIZE = 2;
+    }
+
+    // Required. The ID of the metric. Must not contain whitespaces and must be unique
+    // amongst all MetricSpecs.
+    string metric_id = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The optimization goal of the metric.
+    GoalType goal = 2 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Represents a single parameter to optimize.
+  message ParameterSpec {
+    // Value specification for a parameter in `DOUBLE` type.
+    message DoubleValueSpec {
+      // Required. Inclusive minimum value of the parameter.
+      double min_value = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // Required. Inclusive maximum value of the parameter.
+      double max_value = 2 [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // Value specification for a parameter in `INTEGER` type.
+    message IntegerValueSpec {
+      // Required. Inclusive minimum value of the parameter.
+      int64 min_value = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // Required. Inclusive maximum value of the parameter.
+      int64 max_value = 2 [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // Value specification for a parameter in `CATEGORICAL` type.
+    message CategoricalValueSpec {
+      // Required. The list of possible categories.
+      repeated string values = 1 [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // Value specification for a parameter in `DISCRETE` type.
+    message DiscreteValueSpec {
+      // Required. A list of possible values.
+      // The list should be in increasing order and at least 1e-10 apart.
+      // For instance, this parameter might have possible settings of 1.5, 2.5,
+      // and 4.0. This list should not contain more than 1,000 values.
+      repeated double values = 1 [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // Represents a parameter spec with condition from its parent parameter.
+    message ConditionalParameterSpec {
+      // Represents the spec to match discrete values from parent parameter.
+      message DiscreteValueCondition {
+        // Required. Matches values of the parent parameter of 'DISCRETE' type.
+        // All values must exist in `discrete_value_spec` of parent parameter.
+        //
+        // The Epsilon of the value matching is 1e-10.
+        repeated double values = 1 [(google.api.field_behavior) = REQUIRED];
+      }
+
+      // Represents the spec to match integer values from parent parameter.
+      message IntValueCondition {
+        // Required. Matches values of the parent parameter of 'INTEGER' type.
+        // All values must lie in `integer_value_spec` of parent parameter.
+        repeated int64 values = 1 [(google.api.field_behavior) = REQUIRED];
+      }
+
+      // Represents the spec to match categorical values from parent parameter.
+      message CategoricalValueCondition {
+        // Required. Matches values of the parent parameter of 'CATEGORICAL' type.
+        // All values must exist in `categorical_value_spec` of parent
+        // parameter.
+        repeated string values = 1 [(google.api.field_behavior) = REQUIRED];
+      }
+
+      // A set of parameter values from the parent ParameterSpec's feasible
+      // space.
+      oneof parent_value_condition {
+        // The spec for matching values from a parent parameter of
+        // `DISCRETE` type.
+        DiscreteValueCondition parent_discrete_values = 2;
+
+        // The spec for matching values from a parent parameter of `INTEGER`
+        // type.
+        IntValueCondition parent_int_values = 3;
+
+        // The spec for matching values from a parent parameter of
+        // `CATEGORICAL` type.
+        CategoricalValueCondition parent_categorical_values = 4;
+      }
+
+      // Required. The spec for a conditional parameter.
+      ParameterSpec parameter_spec = 1 [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // The type of scaling that should be applied to this parameter.
+    enum ScaleType {
+      // By default, no scaling is applied.
+      SCALE_TYPE_UNSPECIFIED = 0;
+
+      // Scales the feasible space to (0, 1) linearly.
+      UNIT_LINEAR_SCALE = 1;
+
+      // Scales the feasible space logarithmically to (0, 1). The entire
+      // feasible space must be strictly positive.
+      UNIT_LOG_SCALE = 2;
+
+      // Scales the feasible space "reverse" logarithmically to (0, 1). The
+      // result is that values close to the top of the feasible space are spread
+      // out more than points near the bottom. The entire feasible space must be
+      // strictly positive.
+      UNIT_REVERSE_LOG_SCALE = 3;
+    }
+
+    oneof parameter_value_spec {
+      // The value spec for a 'DOUBLE' parameter.
+      DoubleValueSpec double_value_spec = 2;
+
+      // The value spec for an 'INTEGER' parameter.
+      IntegerValueSpec integer_value_spec = 3;
+
+      // The value spec for a 'CATEGORICAL' parameter.
+      CategoricalValueSpec categorical_value_spec = 4;
+
+      // The value spec for a 'DISCRETE' parameter.
+      DiscreteValueSpec discrete_value_spec = 5;
+    }
+
+    // Required. The ID of the parameter. Must not contain whitespaces and must be unique
+    // amongst all ParameterSpecs.
+    string parameter_id = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // How the parameter should be scaled.
+    // Leave unset for `CATEGORICAL` parameters.
+    ScaleType scale_type = 6;
+
+    // A conditional parameter node is active if the parameter's value matches
+    // the conditional node's parent_value_condition.
+    //
+    // If two items in conditional_parameter_specs have the same name, they
+    // must have disjoint parent_value_condition.
+    repeated ConditionalParameterSpec conditional_parameter_specs = 10;
+  }
+
+  // The available search algorithms for the Study.
+  enum Algorithm {
+    // The default algorithm used by AI Platform Optimization service.
+    ALGORITHM_UNSPECIFIED = 0;
+
+    // Simple grid search within the feasible space. To use grid search,
+    // all parameters must be `INTEGER`, `CATEGORICAL`, or `DISCRETE`.
+    GRID_SEARCH = 2;
+
+    // Simple random search within the feasible space.
+    RANDOM_SEARCH = 3;
+  }
+
+  // Describes the noise level of the repeated observations.
+  //
+  // "Noisy" means that the repeated observations with the same Trial parameters
+  // may lead to different metric evaluations.
+  enum ObservationNoise {
+    // The default noise level chosen by the AI Platform service.
+    OBSERVATION_NOISE_UNSPECIFIED = 0;
+
+    // AI Platform Vizier assumes that the objective function is (nearly)
+    // perfectly reproducible, and will never repeat the same Trial
+    // parameters.
+    LOW = 1;
+
+    // AI Platform Vizier will estimate the amount of noise in metric
+    // evaluations, it may repeat the same Trial parameters more than once.
+    HIGH = 2;
+  }
+
+  // This indicates which measurement to use if/when the service automatically
+  // selects the final measurement from previously reported intermediate
+  // measurements. Choose this based on two considerations:
+  //  A) Do you expect your measurements to monotonically improve?
+  //     If so, choose LAST_MEASUREMENT. On the other hand, if you're in a
+  //     situation where your system can "over-train" and you expect the
+  //     performance to get better for a while but then start declining,
+  //     choose BEST_MEASUREMENT.
+  //  B) Are your measurements significantly noisy and/or irreproducible?
+  //     If so, BEST_MEASUREMENT will tend to be over-optimistic, and it
+  //     may be better to choose LAST_MEASUREMENT.
+  //  If both or neither of (A) and (B) apply, it doesn't matter which
+  //  selection type is chosen.
+  enum MeasurementSelectionType {
+    // Will be treated as LAST_MEASUREMENT.
+    MEASUREMENT_SELECTION_TYPE_UNSPECIFIED = 0;
+
+    // Use the last measurement reported.
+    LAST_MEASUREMENT = 1;
+
+    // Use the best measurement reported.
+    BEST_MEASUREMENT = 2;
+  }
+
+  // Required. Metric specs for the Study.
+  repeated MetricSpec metrics = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The set of parameters to tune.
+  repeated ParameterSpec parameters = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // The search algorithm specified for the Study.
+  Algorithm algorithm = 3;
+
+  // The observation noise level of the study.
+  // Currently only supported by the Vizier service. Not supported by
+  // HyperparamterTuningJob or TrainingPipeline.
+  ObservationNoise observation_noise = 6;
+
+  // Describe which measurement selection type will be used
+  MeasurementSelectionType measurement_selection_type = 7;
+}
+
+// A message representing a Measurement of a Trial. A Measurement contains
+// the Metrics got by executing a Trial using suggested hyperparameter
+// values.
+message Measurement {
+  // A message representing a metric in the measurement.
+  message Metric {
+    // Output only. The ID of the Metric. The Metric should be defined in
+    // [StudySpec's Metrics][google.cloud.aiplatform.v1.StudySpec.metrics].
+    string metric_id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The value for this metric.
+    double value = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Output only. The number of steps the machine learning model has been trained for.
+  // Must be non-negative.
+  int64 step_count = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. A list of metrics got by evaluating the objective functions using suggested
+  // Parameter values.
+  repeated Metric metrics = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
