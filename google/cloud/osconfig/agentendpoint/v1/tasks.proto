@@ -17,12 +17,19 @@ syntax = "proto3";
 package google.cloud.osconfig.agentendpoint.v1;
 
 import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/osconfig/agentendpoint/v1/config_common.proto";
+import "google/cloud/osconfig/agentendpoint/v1/os_policy.proto";
 import "google/cloud/osconfig/agentendpoint/v1/patch_jobs.proto";
 
 option go_package = "google.golang.org/genproto/googleapis/cloud/osconfig/agentendpoint/v1;agentendpoint";
 option java_multiple_files = true;
 option java_outer_classname = "Tasks";
 option java_package = "com.google.cloud.osconfig.agentendpoint.v1";
+option (google.api.resource_definition) = {
+  type: "osconfig.googleapis.com/OSPolicyAssignment"
+  pattern: "projects/{project}/locations/{location}/osPolicyAssignments/{os_policy_assignment}"
+};
 
 // Specifies the current agent behavior.
 enum TaskDirective {
@@ -48,6 +55,9 @@ enum TaskType {
 
   // The exec step task.
   EXEC_STEP_TASK = 2;
+
+  // The apply config task
+  APPLY_CONFIG_TASK = 3;
 }
 
 // A unit of work to be performed by the agent.
@@ -60,7 +70,8 @@ message Task {
   // Task details must include the appropriate message based on this enum as
   // specified below:
   // APPLY_PATCHES = ApplyPatchesTask
-  // EXEC_STEP = ExecStepTask;
+  // EXEC_STEP = ExecStepTask
+  // APPLY_CONFIG_TASK = ApplyConfigTask
   TaskType task_type = 2;
 
   // Current directive to the agent.
@@ -73,6 +84,9 @@ message Task {
 
     // Details about the exec step task to perform.
     ExecStepTask exec_step_task = 5;
+
+    // Details about the apply config step task to perform.
+    ApplyConfigTask apply_config_task = 7;
   }
 
   // Labels describing the task.  Used for logging by the agent.
@@ -105,7 +119,7 @@ message ApplyPatchesTaskProgress {
     // The agent is currently applying patches.
     APPLYING_PATCHES = 2;
 
-    // The agent is currently rebooting the VM instance.
+    // The agent is currently rebooting the instance.
     REBOOTING = 3;
   }
 
@@ -178,4 +192,97 @@ message ExecStepTaskOutput {
   // Required. The exit code received from the script which ran as part of the
   // exec step.
   int32 exit_code = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Message which instructs OS Config agent to apply the desired state
+// configuration.
+message ApplyConfigTask {
+  // Message representing an OS policy.
+  message OSPolicy {
+    // User provided policy id.
+    // Used for reporting and logging by the agent.
+    string id = 1;
+
+    // The policy mode
+    .google.cloud.osconfig.agentendpoint.v1.OSPolicy.Mode mode = 2;
+
+    // Reference to the `OSPolicyAssignment` API resource that this `OSPolicy`
+    // belongs to.
+    // Format:
+    // projects/{project_number}/locations/{location}/osPolicyAssignments/{os_policy_assignment_id@revision_id}
+    // Used for reporting and logging by the agent.
+    string os_policy_assignment = 3 [(google.api.resource_reference) = {
+      type: "osconfig.googleapis.com/OSPolicyAssignment"
+    }];
+
+    // List of resources associated with the policy to be set to their
+    // desired state.
+    repeated .google.cloud.osconfig.agentendpoint.v1.OSPolicy.Resource
+        resources = 4;
+  }
+
+  // List of os policies to be applied for the instance.
+  repeated OSPolicy os_policies = 1;
+}
+
+// Information reported from the agent regarding the progress of the task of
+// applying desired state configuration.
+message ApplyConfigTaskProgress {
+  // The intermediate states of apply config task.
+  enum State {
+    // Invalid state
+    STATE_UNSPECIFIED = 0;
+
+    // The agent has started the task.
+    STARTED = 1;
+
+    // The agent is in the process of applying the configuration.
+    APPLYING_CONFIG = 2;
+  }
+
+  // The current state of this task.
+  State state = 1;
+}
+
+// Information reported from the agent regarding the output of the task of
+// applying desired state configuration.
+message ApplyConfigTaskOutput {
+  // Result of applying desired state config for an OS policy.
+  message OSPolicyResult {
+    // The OS policy id
+    string os_policy_id = 1;
+
+    // Reference to the `OSPolicyAssignment` API resource that this `OSPolicy`
+    // belongs to.
+    // Format:
+    // projects/{project_number}/locations/{location}/osPolicyAssignments/{os_policy_assignment_id@revision_id}
+    // Used for reporting and logging by the agent.
+    string os_policy_assignment = 2 [(google.api.resource_reference) = {
+      type: "osconfig.googleapis.com/OSPolicyAssignment"
+    }];
+
+    // Results of applying desired state config for the OS policy resources.
+    repeated OSPolicyResourceCompliance os_policy_resource_compliances = 3;
+  }
+
+  // The final state of this task.
+  enum State {
+    // Unspecified is invalid.
+    STATE_UNSPECIFIED = 0;
+
+    // The apply config task completed successfully.
+    SUCCEEDED = 1;
+
+    // The apply config task failed.
+    FAILED = 2;
+
+    // The apply config task was cancelled.
+    CANCELLED = 3;
+  }
+
+  // Required. The final state of this task.
+  State state = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Results of applying desired state config for the OS policies.
+  repeated OSPolicyResult os_policy_results = 2;
 }
