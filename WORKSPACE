@@ -137,7 +137,7 @@ apple_support_dependencies()
 # Java
 ##############################################################################
 # Java microgenerator.
-_gapic_generator_java_version = "0.0.18"
+_gapic_generator_java_version = "0.0.19"
 
 http_archive(
     name = "gapic_generator_java",
