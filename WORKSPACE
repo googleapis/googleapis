@@ -92,11 +92,36 @@ http_archive(
     ],
 )
 
+# bazel-gazelle (support Golang under bazel)
+http_archive(
+    name = "bazel_gazelle",
+    sha256 = "b85f48fa105c4403326e9525ad2b2cc437babaa6e15a3fc0b1dbab0ab064bc7c",
+    urls = [
+        "https://storage.googleapis.com/bazel-mirror/github.com/bazelbuild/bazel-gazelle/releases/download/v0.22.2/bazel-gazelle-v0.22.2.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.22.2/bazel-gazelle-v0.22.2.tar.gz",
+    ],
+)
+
 load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
+load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
+
+# Override the go-genproto dependency to enable use of GapicMetadata types.
+#
+# TODO(noahdietz): remove with next rules_go release.
+# https://github.com/googleapis/gapic-generator-go/issues/529
+go_repository(
+    name = "org_golang_google_genproto",
+    build_file_proto_mode = "disable_global",
+    importpath = "google.golang.org/genproto",
+    sum = "h1:N98SvVh7Hdle2lgUVFuIkf0B3u29CUakMUQa7Hwz8Wc=",
+    version = "v0.0.0-20210207032614-bba0dbe2a9ea",
+)
 
 go_rules_dependencies()
 
 go_register_toolchains()
+
+gazelle_dependencies()
 
 ##############################################################################
 # C++
@@ -253,20 +278,6 @@ gapic_generator_register_toolchains()
 ##############################################################################
 # Go
 ##############################################################################
-
-# bazel-gazelle (support Golang under bazel)
-http_archive(
-    name = "bazel_gazelle",
-    sha256 = "b85f48fa105c4403326e9525ad2b2cc437babaa6e15a3fc0b1dbab0ab064bc7c",
-    urls = [
-        "https://storage.googleapis.com/bazel-mirror/github.com/bazelbuild/bazel-gazelle/releases/download/v0.22.2/bazel-gazelle-v0.22.2.tar.gz",
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.22.2/bazel-gazelle-v0.22.2.tar.gz",
-    ],
-)
-
-load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
-
-gazelle_dependencies()
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
