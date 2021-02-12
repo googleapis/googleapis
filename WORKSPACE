@@ -281,8 +281,8 @@ gapic_generator_register_toolchains()
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
-    strip_prefix = "gapic-generator-go-0.17.1",
-    urls = ["https://github.com/googleapis/gapic-generator-go/archive/v0.17.1.tar.gz"],
+    strip_prefix = "gapic-generator-go-0.18.1",
+    urls = ["https://github.com/googleapis/gapic-generator-go/archive/v0.18.1.tar.gz"],
 )
 
 load("@com_googleapis_gapic_generator_go//:repositories.bzl", "com_googleapis_gapic_generator_go_repositories")
