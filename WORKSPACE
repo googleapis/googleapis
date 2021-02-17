@@ -181,7 +181,7 @@ load("@gapic_generator_java//:repositories.bzl", "gapic_generator_java_repositor
 
 gapic_generator_java_repositories()
 
-_gax_java_version = "1.59.0"
+_gax_java_version = "1.60.1"
 
 http_archive(
     name = "com_google_api_gax_java",
