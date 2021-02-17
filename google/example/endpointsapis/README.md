@@ -66,7 +66,7 @@ as an API service. The configuration includes the API title, the network
 addresses, the authentication requirements, and many other aspects.
 
 If you create an API service using Google Cloud's Service Infrastructure,
-you need to create a servie configuration using the
+you need to create a service configuration using the
 [`google.api.Service`](../../api/service.proto) schema. The service
 configuration is the yaml representation of `google.api.Service`,
 see `./endpointsapis.yaml`.
