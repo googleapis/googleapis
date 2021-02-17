@@ -123,6 +123,14 @@ go_register_toolchains()
 
 gazelle_dependencies()
 
+http_archive(
+    name = "rules_gapic",
+    strip_prefix = "rules_gapic-0.3.0",
+    urls = ["https://github.com/googleapis/rules_gapic/archive/v0.3.0.tar.gz"],
+)
+load("@rules_gapic//:repositories.bzl", "rules_gapic_repositories")
+rules_gapic_repositories()
+
 ##############################################################################
 # C++
 ##############################################################################
