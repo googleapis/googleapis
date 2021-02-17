@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2021 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/documentai/v1beta3/document.proto";
+import "google/cloud/documentai/v1beta3/document_io.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
@@ -99,6 +100,15 @@ service DocumentProcessorService {
 
 // Request message for the process document method.
 message ProcessRequest {
+  // The document payload.
+  oneof source {
+    // An inline document proto.
+    Document inline_document = 4;
+
+    // A raw document content (bytes).
+    RawDocument raw_document = 5;
+  }
+
   // Required. The processor resource name.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
@@ -108,11 +118,47 @@ message ProcessRequest {
   ];
 
   // The document payload, the [content] and [mime_type] fields must be set.
-  Document document = 2;
+  Document document = 2 [deprecated = true];
 
   // Whether Human Review feature should be skipped for this request. Default to
   // false.
   bool skip_human_review = 3;
+}
+
+// The status of human review on a processed document.
+message HumanReviewStatus {
+  // The final state of human review on a processed document.
+  enum State {
+    // Human review state is unspecified. Most likely due to an internal error.
+    STATE_UNSPECIFIED = 0;
+
+    // Human review is skipped for the document. This can happen because human
+    // review is not enabled on the processor or the processing request has
+    // been set to skip this document.
+    SKIPPED = 1;
+
+    // Human review validation is triggered and passed, so no review is needed.
+    VALIDATION_PASSED = 2;
+
+    // Human review validation is triggered and the document is under review.
+    IN_PROGRESS = 3;
+
+    // Some error happened during triggering human review, see the
+    // [state_message] for details.
+    ERROR = 4;
+  }
+
+  // The state of human review on the processing request.
+  State state = 1;
+
+  // A message providing more details about the human review state.
+  string state_message = 2;
+
+  // The name of the operation triggered by the processed document. This field
+  // is populated only when the [state] is [HUMAN_REVIEW_IN_PROGRESS]. It has
+  // the same response type and metadata as the long running operation returned
+  // by [ReviewDocument] method.
+  string human_review_operation = 3;
 }
 
 // Response message for the process document method.
@@ -125,13 +171,18 @@ message ProcessResponse {
   // review process is not triggered, this field will be empty. It has the same
   // response type and metadata as the long running operation returned by
   // ReviewDocument method.
-  string human_review_operation = 2;
+  string human_review_operation = 2 [deprecated = true];
+
+  // The status of human review on the processed document.
+  HumanReviewStatus human_review_status = 3;
 }
 
 // Request message for batch process document method.
 message BatchProcessRequest {
   // The message for input config in batch process.
   message BatchInputConfig {
+    option deprecated = true;
+
     // The Cloud Storage location as the source of the document.
     string gcs_source = 1;
 
@@ -143,6 +194,8 @@ message BatchProcessRequest {
 
   // The message for output config in batch process.
   message BatchOutputConfig {
+    option deprecated = true;
+
     // The output Cloud Storage directory to put the processed documents.
     string gcs_destination = 1;
   }
@@ -156,10 +209,20 @@ message BatchProcessRequest {
   ];
 
   // The input config for each single document in the batch process.
-  repeated BatchInputConfig input_configs = 2;
+  repeated BatchInputConfig input_configs = 2 [deprecated = true];
 
   // The overall output config for batch process.
-  BatchOutputConfig output_config = 3;
+  BatchOutputConfig output_config = 3 [deprecated = true];
+
+  // The input documents for batch process.
+  BatchDocumentsInputConfig input_documents = 5;
+
+  // The overall output config for batch process.
+  DocumentOutputConfig document_output_config = 6;
+
+  // Whether Human Review feature should be skipped for this request. Default to
+  // false.
+  bool skip_human_review = 4;
 }
 
 // Response message for batch process document method.
@@ -188,7 +251,10 @@ message BatchProcessMetadata {
     // human review process is not triggered, this field will be empty. It has
     // the same response type and metadata as the long running operation
     // returned by ReviewDocument method.
-    string human_review_operation = 4;
+    string human_review_operation = 4 [deprecated = true];
+
+    // The status of human review on the processed document.
+    HumanReviewStatus human_review_status = 5;
   }
 
   // Possible states of the batch processing operation.
@@ -234,6 +300,12 @@ message BatchProcessMetadata {
 
 // Request message for review document method.
 message ReviewDocumentRequest {
+  // The document payload.
+  oneof source {
+    // An inline document proto.
+    Document inline_document = 4;
+  }
+
   // Required. The resource name of the HumanReviewConfig that the document will be
   // reviewed with.
   string human_review_config = 1 [
@@ -244,7 +316,7 @@ message ReviewDocumentRequest {
   ];
 
   // The document that needs human review.
-  Document document = 2;
+  Document document = 2 [deprecated = true];
 }
 
 // Response message for review document method.
@@ -281,6 +353,45 @@ message ReviewDocumentOperationMetadata {
 
   // A message providing more details about the current state of processing.
   // For example, the error message if the operation is failed.
+  string state_message = 2;
+
+  // The creation time of the operation.
+  google.protobuf.Timestamp create_time = 3;
+
+  // The last update time of the operation.
+  google.protobuf.Timestamp update_time = 4;
+
+  // The basic metadata of the long running operation.
+  CommonOperationMetadata common_metadata = 5;
+}
+
+// The common metadata for long running operations.
+message CommonOperationMetadata {
+  // State of the longrunning operation.
+  enum State {
+    // Unspecified state.
+    STATE_UNSPECIFIED = 0;
+
+    // Operation is still running.
+    RUNNING = 1;
+
+    // Operation is being cancelled.
+    CANCELLING = 2;
+
+    // Operation succeeded.
+    SUCCEEDED = 3;
+
+    // Operation failed.
+    FAILED = 4;
+
+    // Operation is cancelled.
+    CANCELLED = 5;
+  }
+
+  // The state of the operation.
+  State state = 1;
+
+  // A message providing more details about the current state of processing.
   string state_message = 2;
 
   // The creation time of the operation.
