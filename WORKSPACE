@@ -123,12 +123,16 @@ go_register_toolchains()
 
 gazelle_dependencies()
 
+_rules_gapic_version = "0.4.0"
+
 http_archive(
     name = "rules_gapic",
-    strip_prefix = "rules_gapic-428c05b06e0fe487f377929776285c81aa12e8c2",
-    urls = ["https://github.com/googleapis/rules_gapic/archive/428c05b06e0fe487f377929776285c81aa12e8c2.zip"],
+    strip_prefix = "rules_gapic-%s" % _rules_gapic_version,
+    urls = ["https://github.com/googleapis/rules_gapic/archive/v%s.tar.gz" % _rules_gapic_version],
 )
+
 load("@rules_gapic//:repositories.bzl", "rules_gapic_repositories")
+
 rules_gapic_repositories()
 
 ##############################################################################
