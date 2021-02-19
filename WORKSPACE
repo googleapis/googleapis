@@ -125,8 +125,8 @@ gazelle_dependencies()
 
 http_archive(
     name = "rules_gapic",
-    strip_prefix = "rules_gapic-0.3.0",
-    urls = ["https://github.com/googleapis/rules_gapic/archive/v0.3.0.tar.gz"],
+    strip_prefix = "rules_gapic-428c05b06e0fe487f377929776285c81aa12e8c2",
+    urls = ["https://github.com/googleapis/rules_gapic/archive/428c05b06e0fe487f377929776285c81aa12e8c2.zip"],
 )
 load("@rules_gapic//:repositories.bzl", "rules_gapic_repositories")
 rules_gapic_repositories()
@@ -376,9 +376,8 @@ gapic_generator_csharp_repositories()
 
 http_archive(
     name = "gapic_generator_ruby",
-    sha256 = "48e4054927cc163f20e6ecc7e2239e021610fbcc74042f024c638ce4896995fe",
-    strip_prefix = "gapic-generator-ruby-gapic-generator-v0.6.10",
-    urls = ["https://github.com/googleapis/gapic-generator-ruby/archive/gapic-generator/v0.6.10.zip"],
+    strip_prefix = "gapic-generator-ruby-56da7d96565f670ceaaa64d6489431f13e60574e",
+    urls = ["https://github.com/googleapis/gapic-generator-ruby/archive/56da7d96565f670ceaaa64d6489431f13e60574e.zip"],
 )
 
 load("@gapic_generator_ruby//rules_ruby_gapic:repositories.bzl", "gapic_generator_ruby_repositories")
