@@ -113,8 +113,8 @@ go_repository(
     name = "org_golang_google_genproto",
     build_file_proto_mode = "disable_global",
     importpath = "google.golang.org/genproto",
-    sum = "h1:N98SvVh7Hdle2lgUVFuIkf0B3u29CUakMUQa7Hwz8Wc=",
-    version = "v0.0.0-20210207032614-bba0dbe2a9ea",
+    sum = "h1:SHQi2osmct8Y+ngNVppVlyB/WdW+XA9gHs8wPEE2xFY=",
+    version = "v0.0.0-20210222212404-3e1e516060db",
 )
 
 go_rules_dependencies()
@@ -293,8 +293,8 @@ gapic_generator_register_toolchains()
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
-    strip_prefix = "gapic-generator-go-0.18.2",
-    urls = ["https://github.com/googleapis/gapic-generator-go/archive/v0.18.2.tar.gz"],
+    strip_prefix = "gapic-generator-go-0.18.4",
+    urls = ["https://github.com/googleapis/gapic-generator-go/archive/v0.18.4.tar.gz"],
 )
 
 load("@com_googleapis_gapic_generator_go//:repositories.bzl", "com_googleapis_gapic_generator_go_repositories")
