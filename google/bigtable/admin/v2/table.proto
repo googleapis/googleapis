@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2021 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
 
 option csharp_namespace = "Google.Cloud.Bigtable.Admin.V2";
 option go_package = "google.golang.org/genproto/googleapis/bigtable/admin/v2;admin";
@@ -28,6 +29,10 @@ option java_outer_classname = "TableProto";
 option java_package = "com.google.bigtable.admin.v2";
 option php_namespace = "Google\\Cloud\\Bigtable\\Admin\\V2";
 option ruby_package = "Google::Cloud::Bigtable::Admin::V2";
+option (google.api.resource_definition) = {
+  type: "cloudkms.googleapis.com/CryptoKeyVersion"
+  pattern: "projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}/cryptoKeyVersions/{crypto_key_version}"
+};
 
 // Indicates the type of the restore source.
 enum RestoreSourceType {
@@ -92,6 +97,14 @@ message Table {
 
     // Output only. The state of replication for the table in this cluster.
     ReplicationState replication_state = 1;
+
+    // Output only. The encryption information for the table in this cluster.
+    // If the encryption key protecting this resource is customer managed, then
+    // its version can be rotated in Cloud Key Management Service (Cloud KMS).
+    // The primary version of the key and its status will be reflected here when
+    // changes propagate from Cloud KMS.
+    repeated EncryptionInfo encryption_info = 2
+        [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
   // Possible timestamp granularities to use when keeping multiple versions
@@ -120,12 +133,15 @@ message Table {
     // state.
     REPLICATION_VIEW = 3;
 
+    // Only populates 'name' and fields related to the table's encryption state.
+    ENCRYPTION_VIEW = 5;
+
     // Populates all fields.
     FULL = 4;
   }
 
-  // Output only. The unique name of the table. Values are of the form
-  // `projects/<project>/instances/<instance>/tables/[_a-zA-Z0-9][-_.a-zA-Z0-9]*`.
+  // The unique name of the table. Values are of the form
+  // `projects/{project}/instances/{instance}/tables/[_a-zA-Z0-9][-_.a-zA-Z0-9]*`.
   // Views: `NAME_ONLY`, `SCHEMA_VIEW`, `REPLICATION_VIEW`, `FULL`
   string name = 1;
 
@@ -133,7 +149,7 @@ message Table {
   // If it could not be determined whether or not the table has data in a
   // particular cluster (for example, if its zone is unavailable), then
   // there will be an entry for the cluster with UNKNOWN `replication_status`.
-  // Views: `REPLICATION_VIEW`, `FULL`
+  // Views: `REPLICATION_VIEW`, `ENCRYPTION_VIEW`, `FULL`
   map<string, ClusterState> cluster_states = 2;
 
   // (`CreationOnly`)
@@ -196,6 +212,51 @@ message GcRule {
   }
 }
 
+// Encryption information for a given resource.
+// If this resource is protected with customer managed encryption, the in-use
+// Cloud Key Management Service (Cloud KMS) key version is specified along with
+// its status.
+message EncryptionInfo {
+  // Possible encryption types for a resource.
+  enum EncryptionType {
+    // Encryption type was not specified, though data at rest remains encrypted.
+    ENCRYPTION_TYPE_UNSPECIFIED = 0;
+
+    // The data backing this resource is encrypted at rest with a key that is
+    // fully managed by Google. No key version or status will be populated.
+    // This is the default state.
+    GOOGLE_DEFAULT_ENCRYPTION = 1;
+
+    // The data backing this resource is encrypted at rest with a key that is
+    // managed by the customer.
+    // The in-use version of the key and its status are populated for
+    // CMEK-protected tables.
+    // CMEK-protected backups are pinned to the key version that was in use at
+    // the time the backup was taken. This key version is populated but its
+    // status is not tracked and is reported as `UNKNOWN`.
+    CUSTOMER_MANAGED_ENCRYPTION = 2;
+  }
+
+  // Output only. The type of encryption used to protect this resource.
+  EncryptionType encryption_type = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The status of encrypt/decrypt calls on underlying data for
+  // this resource. Regardless of status, the existing data is always encrypted
+  // at rest.
+  google.rpc.Status encryption_status = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The version of the Cloud KMS key specified in the parent
+  // cluster that is in use for the data underlying this table.
+  string kms_key_version = 2 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "cloudkms.googleapis.com/CryptoKeyVersion"
+    }
+  ];
+}
+
 // A snapshot of a table at a particular time. A snapshot can be used as a
 // checkpoint for data restoration or a data source for a new table.
 //
@@ -225,7 +286,7 @@ message Snapshot {
 
   // Output only. The unique name of the snapshot.
   // Values are of the form
-  // `projects/<project>/instances/<instance>/clusters/<cluster>/snapshots/<snapshot>`.
+  // `projects/{project}/instances/{instance}/clusters/{cluster}/snapshots/{snapshot}`.
   string name = 1;
 
   // Output only. The source table at the time the snapshot was taken.
@@ -318,6 +379,10 @@ message Backup {
 
   // Output only. The current state of the backup.
   State state = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The encryption information for the backup.
+  EncryptionInfo encryption_info = 9
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Information about a backup.
