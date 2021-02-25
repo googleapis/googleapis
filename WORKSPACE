@@ -352,6 +352,18 @@ php(
 
 php_gapic_repositories()
 
+# PHP micro-generator (beta)
+
+http_archive(
+    name = "gapic_generator_php",
+    strip_prefix = "gapic-generator-php-1.0.0-beta01",
+    urls = ["https://github.com/googleapis/gapic-generator-php/archive/v1.0.0-beta01.zip"],
+)
+
+load("@gapic_generator_php//:repositories.bzl", "gapic_generator_php_repositories")
+
+gapic_generator_php_repositories()
+
 ##############################################################################
 # C#
 ##############################################################################
