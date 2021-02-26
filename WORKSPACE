@@ -356,8 +356,8 @@ php_gapic_repositories()
 
 http_archive(
     name = "gapic_generator_php",
-    strip_prefix = "gapic-generator-php-1.0.0-beta01",
-    urls = ["https://github.com/googleapis/gapic-generator-php/archive/v1.0.0-beta01.zip"],
+    strip_prefix = "gapic-generator-php-1.0.0-beta02",
+    urls = ["https://github.com/googleapis/gapic-generator-php/archive/v1.0.0-beta02.zip"],
 )
 
 load("@gapic_generator_php//:repositories.bzl", "gapic_generator_php_repositories")
