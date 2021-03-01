@@ -1,0 +1,318 @@
+// Copyright 2021 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.documentai.v1;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/documentai/v1/document.proto";
+import "google/cloud/documentai/v1/document_io.proto";
+import "google/longrunning/operations.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+
+option csharp_namespace = "Google.Cloud.DocumentAI.V1";
+option go_package = "google.golang.org/genproto/googleapis/cloud/documentai/v1;documentai";
+option java_multiple_files = true;
+option java_outer_classname = "DocumentAiProcessorService";
+option java_package = "com.google.cloud.documentai.v1";
+option php_namespace = "Google\\Cloud\\DocumentAI\\V1";
+option ruby_package = "Google::Cloud::DocumentAI::V1";
+option (google.api.resource_definition) = {
+  type: "documentai.googleapis.com/Location"
+  pattern: "projects/{project}/locations/{location}"
+};
+option (google.api.resource_definition) = {
+  type: "documentai.googleapis.com/Processor"
+  pattern: "projects/{project}/locations/{location}/processors/{processor}"
+};
+option (google.api.resource_definition) = {
+  type: "documentai.googleapis.com/HumanReviewConfig"
+  pattern: "projects/{project}/locations/{location}/processors/{processor}/humanReviewConfig"
+};
+
+// Service to call Cloud DocumentAI to process documents according to the
+// processor's definition. Processors are built using state-of-the-art Google
+// AI such as natural language, computer vision, and translation to extract
+// structured information from unstructured or semi-structured documents.
+service DocumentProcessorService {
+  option (google.api.default_host) = "us-documentai.googleapis.com";
+  option (google.api.oauth_scopes) = "https://www.googleapis.com/auth/cloud-platform";
+
+  // Processes a single document.
+  rpc ProcessDocument(ProcessRequest) returns (ProcessResponse) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/processors/*}:process"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // LRO endpoint to batch process many documents. The output is written
+  // to Cloud Storage as JSON in the [Document] format.
+  rpc BatchProcessDocuments(BatchProcessRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/processors/*}:batchProcess"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+    option (google.longrunning.operation_info) = {
+      response_type: "BatchProcessResponse"
+      metadata_type: "BatchProcessMetadata"
+    };
+  }
+
+  // Send a document for Human Review. The input document should be processed by
+  // the specified processor.
+  rpc ReviewDocument(ReviewDocumentRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{human_review_config=projects/*/locations/*/processors/*/humanReviewConfig}:reviewDocument"
+      body: "*"
+    };
+    option (google.api.method_signature) = "human_review_config";
+    option (google.longrunning.operation_info) = {
+      response_type: "ReviewDocumentResponse"
+      metadata_type: "ReviewDocumentOperationMetadata"
+    };
+  }
+}
+
+// Request message for the process document method.
+message ProcessRequest {
+  // The document payload.
+  oneof source {
+    // An inline document proto.
+    Document inline_document = 4;
+
+    // A raw document content (bytes).
+    RawDocument raw_document = 5;
+  }
+
+  // Required. The processor resource name.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "documentai.googleapis.com/Processor"
+    }
+  ];
+
+  // Whether Human Review feature should be skipped for this request. Default to
+  // false.
+  bool skip_human_review = 3;
+}
+
+// The status of human review on a processed document.
+message HumanReviewStatus {
+  // The final state of human review on a processed document.
+  enum State {
+    // Human review state is unspecified. Most likely due to an internal error.
+    STATE_UNSPECIFIED = 0;
+
+    // Human review is skipped for the document. This can happen because human
+    // review is not enabled on the processor or the processing request has
+    // been set to skip this document.
+    SKIPPED = 1;
+
+    // Human review validation is triggered and passed, so no review is needed.
+    VALIDATION_PASSED = 2;
+
+    // Human review validation is triggered and the document is under review.
+    IN_PROGRESS = 3;
+
+    // Some error happened during triggering human review, see the
+    // [state_message] for details.
+    ERROR = 4;
+  }
+
+  // The state of human review on the processing request.
+  State state = 1;
+
+  // A message providing more details about the human review state.
+  string state_message = 2;
+
+  // The name of the operation triggered by the processed document. This field
+  // is populated only when the [state] is [HUMAN_REVIEW_IN_PROGRESS]. It has
+  // the same response type and metadata as the long running operation returned
+  // by [ReviewDocument] method.
+  string human_review_operation = 3;
+}
+
+// Response message for the process document method.
+message ProcessResponse {
+  // The document payload, will populate fields based on the processor's
+  // behavior.
+  Document document = 1;
+
+  // The status of human review on the processed document.
+  HumanReviewStatus human_review_status = 3;
+}
+
+// Request message for batch process document method.
+message BatchProcessRequest {
+  // Required. The processor resource name.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "documentai.googleapis.com/Processor"
+    }
+  ];
+
+  // The input documents for batch process.
+  BatchDocumentsInputConfig input_documents = 5;
+
+  // The overall output config for batch process.
+  DocumentOutputConfig document_output_config = 6;
+
+  // Whether Human Review feature should be skipped for this request. Default to
+  // false.
+  bool skip_human_review = 4;
+}
+
+// Response message for batch process document method.
+message BatchProcessResponse {
+
+}
+
+// The long running operation metadata for batch process method.
+message BatchProcessMetadata {
+  // The status of a each individual document in the batch process.
+  message IndividualProcessStatus {
+    // The source of the document, same as the [input_gcs_source] field in the
+    // request when the batch process started. The batch process is started by
+    // take snapshot of that document, since a user can move or change that
+    // document during the process.
+    string input_gcs_source = 1;
+
+    // The status of the processing of the document.
+    google.rpc.Status status = 2;
+
+    // The output_gcs_destination (in the request as 'output_gcs_destination')
+    // of the processed document if it was successful, otherwise empty.
+    string output_gcs_destination = 3;
+
+    // The status of human review on the processed document.
+    HumanReviewStatus human_review_status = 5;
+  }
+
+  // Possible states of the batch processing operation.
+  enum State {
+    // The default value. This value is used if the state is omitted.
+    STATE_UNSPECIFIED = 0;
+
+    // Request operation is waiting for scheduling.
+    WAITING = 1;
+
+    // Request is being processed.
+    RUNNING = 2;
+
+    // The batch processing completed successfully.
+    SUCCEEDED = 3;
+
+    // The batch processing was being cancelled.
+    CANCELLING = 4;
+
+    // The batch processing was cancelled.
+    CANCELLED = 5;
+
+    // The batch processing has failed.
+    FAILED = 6;
+  }
+
+  // The state of the current batch processing.
+  State state = 1;
+
+  // A message providing more details about the current state of processing.
+  // For example, the error message if the operation is failed.
+  string state_message = 2;
+
+  // The creation time of the operation.
+  google.protobuf.Timestamp create_time = 3;
+
+  // The last update time of the operation.
+  google.protobuf.Timestamp update_time = 4;
+
+  // The list of response details of each document.
+  repeated IndividualProcessStatus individual_process_statuses = 5;
+}
+
+// Request message for review document method.
+message ReviewDocumentRequest {
+  // The document payload.
+  oneof source {
+    // An inline document proto.
+    Document inline_document = 4;
+  }
+
+  // Required. The resource name of the HumanReviewConfig that the document will be
+  // reviewed with.
+  string human_review_config = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "documentai.googleapis.com/HumanReviewConfig"
+    }
+  ];
+}
+
+// Response message for review document method.
+message ReviewDocumentResponse {
+  // The Cloud Storage uri for the human reviewed document.
+  string gcs_destination = 1;
+}
+
+// The long running operation metadata for review document method.
+message ReviewDocumentOperationMetadata {
+  // The basic metadata of the long running operation.
+  CommonOperationMetadata common_metadata = 5;
+}
+
+// The common metadata for long running operations.
+message CommonOperationMetadata {
+  // State of the longrunning operation.
+  enum State {
+    // Unspecified state.
+    STATE_UNSPECIFIED = 0;
+
+    // Operation is still running.
+    RUNNING = 1;
+
+    // Operation is being cancelled.
+    CANCELLING = 2;
+
+    // Operation succeeded.
+    SUCCEEDED = 3;
+
+    // Operation failed.
+    FAILED = 4;
+
+    // Operation is cancelled.
+    CANCELLED = 5;
+  }
+
+  // The state of the operation.
+  State state = 1;
+
+  // A message providing more details about the current state of processing.
+  string state_message = 2;
+
+  // The creation time of the operation.
+  google.protobuf.Timestamp create_time = 3;
+
+  // The last update time of the operation.
+  google.protobuf.Timestamp update_time = 4;
+}
