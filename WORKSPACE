@@ -83,6 +83,11 @@ http_archive(
 # rules_go (support Golang under bazel)
 # This is not in the Go section because we override the same, older dependency brought in by gRPC.
 # TODO(ndietz): move this back to the Go section if gRPC is updated per https://github.com/grpc/grpc/issues/22172
+#
+# rules_go cannot be updated beyond v0.24.x because in v0.25.x the linker warnings regarding multiple copies of the same package
+# became errors. Until rules_go is migrated to use the go_proto_library targets defined in here instead of in go-genproto, we cannot
+# update this beyong v0.24.x.
+# TODO(ndietz): https://github.com/bazelbuild/rules_go/issues/1986
 http_archive(
     name = "io_bazel_rules_go",
     sha256 = "dbf5a9ef855684f84cac2e7ae7886c5a001d4f66ae23f6904da0faaaef0d61fc",
@@ -113,8 +118,8 @@ go_repository(
     name = "org_golang_google_genproto",
     build_file_proto_mode = "disable_global",
     importpath = "google.golang.org/genproto",
-    sum = "h1:SHQi2osmct8Y+ngNVppVlyB/WdW+XA9gHs8wPEE2xFY=",
-    version = "v0.0.0-20210222212404-3e1e516060db",
+    sum = "h1:hcskBH5qZCOa7WpTUFUFvoebnSFZBYpjykLtjIp9DVk=",
+    version = "v0.0.0-20210303154014-9728d6b83eeb",
 )
 
 go_rules_dependencies()
