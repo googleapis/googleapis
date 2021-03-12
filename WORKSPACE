@@ -383,8 +383,8 @@ http_archive(
 
 http_archive(
     name = "gapic_generator_csharp",
-    strip_prefix = "gapic-generator-csharp-1.3.1",
-    urls = ["https://github.com/googleapis/gapic-generator-csharp/archive/v1.3.1.zip"],
+    strip_prefix = "gapic-generator-csharp-4304b1ae8684d28c92458155cd2d39e2eedc4ac7",
+    urls = ["https://github.com/googleapis/gapic-generator-csharp/archive/4304b1ae8684d28c92458155cd2d39e2eedc4ac7.zip"],
 )
 
 load("@gapic_generator_csharp//:repositories.bzl", "gapic_generator_csharp_repositories")
