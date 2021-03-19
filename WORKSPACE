@@ -358,13 +358,13 @@ php(
 php_gapic_repositories()
 
 # PHP micro-generator (beta)
+_gapic_generator_php_version = "0.0.5"
 
 http_archive(
     name = "gapic_generator_php",
-    strip_prefix = "gapic-generator-php-1.0.0-beta04",
-    urls = ["https://github.com/googleapis/gapic-generator-php/archive/v1.0.0-beta04.zip"],
+    strip_prefix = "gapic-generator-php-%s" % _gapic_generator_php_version,
+    urls = ["https://github.com/googleapis/gapic-generator-php/archive/v%s.zip" % _gapic_generator_php_version],
 )
-
 load("@gapic_generator_php//:repositories.bzl", "gapic_generator_php_repositories")
 
 gapic_generator_php_repositories()
