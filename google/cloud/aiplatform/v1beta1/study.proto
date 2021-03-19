@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2021 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,6 +28,50 @@ option go_package = "google.golang.org/genproto/googleapis/cloud/aiplatform/v1be
 option java_multiple_files = true;
 option java_outer_classname = "StudyProto";
 option java_package = "com.google.cloud.aiplatform.v1beta1";
+
+// A message representing a Study.
+message Study {
+  option (google.api.resource) = {
+    type: "aiplatform.googleapis.com/Study"
+    pattern: "projects/{project}/locations/{location}/studies/{study}"
+  };
+
+  // Describes the Study state.
+  enum State {
+    // The study state is unspecified.
+    STATE_UNSPECIFIED = 0;
+
+    // The study is active.
+    ACTIVE = 1;
+
+    // The study is stopped due to an internal error.
+    INACTIVE = 2;
+
+    // The study is done when the service exhausts the parameter search space
+    // or max_trial_count is reached.
+    COMPLETED = 3;
+  }
+
+  // Output only. The name of a study. The study's globally unique identifier.
+  // Format: `projects/{project}/locations/{location}/studies/{study}`
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Required. Describes the Study, default value is empty string.
+  string display_name = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Configuration of the Study.
+  StudySpec study_spec = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Output only. The detailed state of a Study.
+  State state = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Time at which the study was created.
+  google.protobuf.Timestamp create_time = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. A human readable reason why the Study is inactive.
+  // This should be empty if a study is ACTIVE or COMPLETED.
+  string inactive_reason = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
 
 // A message representing a Trial. A Trial contains a unique set of Parameters
 // that has been or will be evaluated, along with the objective metrics got by
@@ -75,6 +119,9 @@ message Trial {
     // the final_measurement.
     INFEASIBLE = 5;
   }
+
+  // Output only. Resource name of the Trial assigned by the service.
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The identifier of the Trial assigned by the service.
   string id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -258,6 +305,68 @@ message StudySpec {
     repeated ConditionalParameterSpec conditional_parameter_specs = 10;
   }
 
+  // The decay curve automated stopping rule builds a Gaussian Process
+  // Regressor to predict the final objective value of a Trial based on the
+  // already completed Trials and the intermediate measurements of the current
+  // Trial. Early stopping is requested for the current Trial if there is very
+  // low probability to exceed the optimal value found so far.
+  message DecayCurveAutomatedStoppingSpec {
+    // True if [Measurement.elapsed_duration][google.cloud.aiplatform.v1beta1.Measurement.elapsed_duration] is used as the x-axis of each
+    // Trials Decay Curve. Otherwise, [Measurement.step_count][google.cloud.aiplatform.v1beta1.Measurement.step_count] will be used
+    // as the x-axis.
+    bool use_elapsed_duration = 1;
+  }
+
+  // The median automated stopping rule stops a pending Trial if the Trial's
+  // best objective_value is strictly below the median 'performance' of all
+  // completed Trials reported up to the Trial's last measurement.
+  // Currently, 'performance' refers to the running average of the objective
+  // values reported by the Trial in each measurement.
+  message MedianAutomatedStoppingSpec {
+    // True if median automated stopping rule applies on
+    // [Measurement.elapsed_duration][google.cloud.aiplatform.v1beta1.Measurement.elapsed_duration]. It means that elapsed_duration
+    // field of latest measurement of current Trial is used to compute median
+    // objective value for each completed Trials.
+    bool use_elapsed_duration = 1;
+  }
+
+  // Configuration for ConvexStopPolicy.
+  message ConvexStopConfig {
+    // Steps used in predicting the final objective for early stopped trials. In
+    // general, it's set to be the same as the defined steps in training /
+    // tuning. When use_steps is false, this field is set to the maximum elapsed
+    // seconds.
+    int64 max_num_steps = 1;
+
+    // Minimum number of steps for a trial to complete. Trials which do not have
+    // a measurement with num_steps > min_num_steps won't be considered for
+    // early stopping. It's ok to set it to 0, and a trial can be early stopped
+    // at any stage. By default, min_num_steps is set to be one-tenth of the
+    // max_num_steps.
+    // When use_steps is false, this field is set to the minimum elapsed
+    // seconds.
+    int64 min_num_steps = 2;
+
+    // The number of Trial measurements used in autoregressive model for
+    // value prediction. A trial won't be considered early stopping if has fewer
+    // measurement points.
+    int64 autoregressive_order = 3;
+
+    // The hyper-parameter name used in the tuning job that stands for learning
+    // rate. Leave it blank if learning rate is not in a parameter in tuning.
+    // The learning_rate is used to estimate the objective value of the ongoing
+    // trial.
+    string learning_rate_parameter_name = 4;
+
+    // This bool determines whether or not the rule is applied based on
+    // elapsed_secs or steps. If use_seconds==false, the early stopping decision
+    // is made according to the predicted objective values according to the
+    // target steps. If use_seconds==true, elapsed_secs is used instead of
+    // steps. Also, in this case, the parameters max_num_steps and min_num_steps
+    // are overloaded to contain max_elapsed_seconds and min_elapsed_seconds.
+    bool use_seconds = 5;
+  }
+
   // The available search algorithms for the Study.
   enum Algorithm {
     // The default algorithm used by AI Platform Optimization service.
@@ -311,6 +420,17 @@ message StudySpec {
 
     // Use the best measurement reported.
     BEST_MEASUREMENT = 2;
+  }
+
+  oneof automated_stopping_spec {
+    // The automated early stopping spec using decay curve rule.
+    DecayCurveAutomatedStoppingSpec decay_curve_stopping_spec = 4;
+
+    // The automated early stopping spec using median rule.
+    MedianAutomatedStoppingSpec median_automated_stopping_spec = 5;
+
+    // The automated early stopping using convex stopping rule.
+    ConvexStopConfig convex_stop_config = 8;
   }
 
   // Required. Metric specs for the Study.
