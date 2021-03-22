@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2021 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -51,6 +51,17 @@ option (google.api.resource_definition) = {
   pattern: "folders/{folder}/monitoredResourceDescriptors/{monitored_resource_descriptor}"
   pattern: "*"
   history: ORIGINALLY_SINGLE_PATTERN
+};
+option (google.api.resource_definition) = {
+  type: "monitoring.googleapis.com/Workspace"
+  pattern: "projects/{project}"
+  pattern: "workspaces/{workspace}"
+};
+option (google.api.resource_definition) = {
+  type: "monitoring.googleapis.com/TimeSeries"
+  pattern: "projects/{project}/timeSeries/{time_series}"
+  pattern: "organizations/{organization}/timeSeries/{time_series}"
+  pattern: "folders/{folder}/timeSeries/{time_series}"
 };
 
 // Manages metric descriptors, monitored resource descriptors, and
@@ -120,6 +131,12 @@ service MetricService {
   rpc ListTimeSeries(ListTimeSeriesRequest) returns (ListTimeSeriesResponse) {
     option (google.api.http) = {
       get: "/v3/{name=projects/*}/timeSeries"
+      additional_bindings {
+        get: "/v3/{name=organizations/*}/timeSeries"
+      }
+      additional_bindings {
+        get: "/v3/{name=folders/*}/timeSeries"
+      }
     };
     option (google.api.method_signature) = "name,filter,interval,view";
   }
@@ -299,13 +316,16 @@ message ListTimeSeriesRequest {
     HEADERS = 1;
   }
 
-  // Required. The project on which to execute the request. The format is:
+  // Required. The project, organization or folder on which to execute the request. The
+  // format is:
   //
   //     projects/[PROJECT_ID_OR_NUMBER]
+  //     organizations/[ORGANIZATION_ID]
+  //     folders/[FOLDER_ID]
   string name = 10 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
-      type: "cloudresourcemanager.googleapis.com/Project"
+      child_type: "monitoring.googleapis.com/TimeSeries"
     }
   ];
 
@@ -329,6 +349,10 @@ message ListTimeSeriesRequest {
   // By default (if no `aggregation` is explicitly specified), the raw time
   // series data is returned.
   Aggregation aggregation = 5;
+
+  // Apply a second aggregation after `aggregation` is applied. May only be
+  // specified if `aggregation` is specified.
+  Aggregation secondary_aggregation = 11;
 
   // Unsupported: must be left blank. The points in each time series are
   // currently returned in reverse time order (most recent to oldest).
@@ -363,6 +387,14 @@ message ListTimeSeriesResponse {
   // Query execution errors that may have caused the time series data returned
   // to be incomplete.
   repeated google.rpc.Status execution_errors = 3;
+
+  // The unit in which all `time_series` point values are reported. `unit`
+  // follows the UCUM format for units as seen in
+  // https://unitsofmeasure.org/ucum.html.
+  // If different `time_series` have different units (for example, because they
+  // come from different metric types, or a unit is absent), then `unit` will be
+  // "{not_a_unit}".
+  string unit = 5;
 }
 
 // The `CreateTimeSeries` request.
@@ -424,8 +456,9 @@ message QueryTimeSeriesRequest {
   //     projects/[PROJECT_ID_OR_NUMBER]
   string name = 1;
 
-  // Required. The query in the monitoring query language format. The default
-  // time zone is in UTC.
+  // Required. The query in the [Monitoring Query
+  // Language](https://cloud.google.com/monitoring/mql/reference) format.
+  // The default time zone is in UTC.
   string query = 7;
 
   // A positive number that is the maximum number of time_series_data to return.
