@@ -397,8 +397,8 @@ gapic_generator_csharp_repositories()
 
 http_archive(
     name = "gapic_generator_ruby",
-    strip_prefix = "gapic-generator-ruby-56da7d96565f670ceaaa64d6489431f13e60574e",
-    urls = ["https://github.com/googleapis/gapic-generator-ruby/archive/56da7d96565f670ceaaa64d6489431f13e60574e.zip"],
+    strip_prefix = "gapic-generator-ruby-cc272f0905e45950873e04d3cd8df77a63f215ca",
+    urls = ["https://github.com/googleapis/gapic-generator-ruby/archive/cc272f0905e45950873e04d3cd8df77a63f215ca.zip"],
 )
 
 load("@gapic_generator_ruby//rules_ruby_gapic:repositories.bzl", "gapic_generator_ruby_repositories")
