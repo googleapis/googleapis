@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2021 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -50,6 +50,7 @@ message CreateWriteStreamRequest {
 //
 // The Write API can be used to write data to BigQuery.
 service BigQueryWrite {
+  option deprecated = true;
   option (google.api.default_host) = "bigquerystorage.googleapis.com";
   option (google.api.oauth_scopes) =
       "https://www.googleapis.com/auth/bigquery,"
@@ -57,6 +58,11 @@ service BigQueryWrite {
       "https://www.googleapis.com/auth/cloud-platform";
 
   // Creates a write stream to the given table.
+  // Additionally, every table has a special COMMITTED stream named '_default'
+  // to which data can be written. This stream doesn't need to be created using
+  // CreateWriteStream. It is a stream that can be used simultaneously by any
+  // number of clients. Data written to this stream is considered committed as
+  // soon as an acknowledgement is received.
   rpc CreateWriteStream(CreateWriteStreamRequest) returns (WriteStream) {
     option (google.api.http) = {
       post: "/v1alpha2/{parent=projects/*/datasets/*/tables/*}"
@@ -102,7 +108,7 @@ service BigQueryWrite {
   }
 
   // Finalize a write stream so that no new data can be appended to the
-  // stream.
+  // stream. Finalize is not supported on the '_default' stream.
   rpc FinalizeWriteStream(FinalizeWriteStreamRequest) returns (FinalizeWriteStreamResponse) {
     option (google.api.http) = {
       post: "/v1alpha2/{name=projects/*/datasets/*/tables/*/streams/*}"
@@ -128,6 +134,7 @@ service BigQueryWrite {
   // required in order for the rows to become available for reading. A
   // Flush operation flushes up to any previously flushed offset in a BUFFERED
   // stream, to the offset specified in the request.
+  // Flush is not supported on the _default stream, since it is not BUFFERED.
   rpc FlushRows(FlushRowsRequest) returns (FlushRowsResponse) {
     option (google.api.http) = {
       post: "/v1alpha2/{write_stream=projects/*/datasets/*/tables/*/streams/*}"
@@ -150,6 +157,8 @@ message AppendRowsRequest {
   // Required. The stream that is the target of the append operation. This value must be
   // specified for the initial request. If subsequent requests specify the
   // stream name, it must equal to the value provided in the first request.
+  // To write to the _default stream, populate this field with a string in the
+  // format `projects/{project}/datasets/{dataset}/tables/{table}/_default`.
   string write_stream = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -159,7 +168,8 @@ message AppendRowsRequest {
 
   // Optional. If present, the write is only performed if the next append offset is same
   // as the provided value. If not present, the write is performed at the
-  // current end of stream.
+  // current end of stream. Specifying a value for this field is not allowed
+  // when calling AppendRows for the '_default' stream.
   google.protobuf.Int64Value offset = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Input rows. The `writer_schema` field must be specified at the initial
@@ -183,7 +193,18 @@ message AppendRowsResponse {
     int64 offset = 1;
 
     // Error in case of append failure. If set, it means rows are not accepted
-    // into the system. Users can retry within the same connection.
+    // into the system. Users can retry or continue with other requests within
+    // the same connection.
+    // ALREADY_EXISTS: happens when offset is specified, it means the row is
+    //   already appended, it is safe to ignore this error.
+    // OUT_OF_RANGE: happens when offset is specified, it means the specified
+    //   offset is beyond the end of the stream.
+    // INVALID_ARGUMENT: error caused by malformed request or data.
+    // RESOURCE_EXHAUSTED: request rejected due to throttling. Only happens when
+    //   append without offset.
+    // ABORTED: request processing is aborted because of prior failures, request
+    //   can be retried if previous failure is fixed.
+    // INTERNAL: server side errors that can be retried.
     google.rpc.Status error = 2;
   }
 
