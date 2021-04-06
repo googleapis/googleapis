@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2021 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 
 syntax = "proto3";
 
@@ -41,20 +40,12 @@ option ruby_package = "Google::Cloud::Firestore::V1beta1";
 
 // The Cloud Firestore service.
 //
-// This service exposes several types of comparable timestamps:
-//
-// *    `create_time` - The time at which a document was created. Changes only
-//      when a document is deleted, then re-created. Increases in a strict
-//       monotonic fashion.
-// *    `update_time` - The time at which a document was last updated. Changes
-//      every time a document is modified. Does not change when a write results
-//      in no modifications. Increases in a strict monotonic fashion.
-// *    `read_time` - The time at which a particular state was observed. Used
-//      to denote a consistent snapshot of the database or the time at which a
-//      Document was observed to not exist.
-// *    `commit_time` - The time at which the writes in a transaction were
-//      committed. Any read with an equal or greater `read_time` is guaranteed
-//      to see the effects of the transaction.
+// Cloud Firestore is a fast, fully managed, serverless, cloud-native NoSQL
+// document database that simplifies storing, syncing, and querying data for
+// your mobile, web, and IoT apps at global scale. Its client libraries provide
+// live synchronization and offline support, while its security features and
+// integrations with Firebase and Google Cloud Platform (GCP) accelerate
+// building truly serverless apps.
 service Firestore {
   option (google.api.default_host) = "firestore.googleapis.com";
   option (google.api.oauth_scopes) =
@@ -72,14 +63,6 @@ service Firestore {
   rpc ListDocuments(ListDocumentsRequest) returns (ListDocumentsResponse) {
     option (google.api.http) = {
       get: "/v1beta1/{parent=projects/*/databases/*/documents/*/**}/{collection_id}"
-    };
-  }
-
-  // Creates a new document.
-  rpc CreateDocument(CreateDocumentRequest) returns (Document) {
-    option (google.api.http) = {
-      post: "/v1beta1/{parent=projects/*/databases/*/documents/**}/{collection_id}"
-      body: "document"
     };
   }
 
@@ -150,6 +133,20 @@ service Firestore {
     };
   }
 
+  // Partitions a query by returning partition cursors that can be used to run
+  // the query in parallel. The returned partition cursors are split points that
+  // can be used by RunQuery as starting/end points for the query results.
+  rpc PartitionQuery(PartitionQueryRequest) returns (PartitionQueryResponse) {
+    option (google.api.http) = {
+      post: "/v1beta1/{parent=projects/*/databases/*/documents}:partitionQuery"
+      body: "*"
+      additional_bindings {
+        post: "/v1beta1/{parent=projects/*/databases/*/documents/*/**}:partitionQuery"
+        body: "*"
+      }
+    };
+  }
+
   // Streams batches of document updates and deletes, in order.
   rpc Write(stream WriteRequest) returns (stream WriteResponse) {
     option (google.api.http) = {
@@ -178,6 +175,30 @@ service Firestore {
     };
     option (google.api.method_signature) = "parent";
   }
+
+  // Applies a batch of write operations.
+  //
+  // The BatchWrite method does not apply the write operations atomically
+  // and can apply them out of order. Method does not allow more than one write
+  // per document. Each write succeeds or fails independently. See the
+  // [BatchWriteResponse][google.firestore.v1beta1.BatchWriteResponse] for the success status of each write.
+  //
+  // If you require an atomically applied set of writes, use
+  // [Commit][google.firestore.v1beta1.Firestore.Commit] instead.
+  rpc BatchWrite(BatchWriteRequest) returns (BatchWriteResponse) {
+    option (google.api.http) = {
+      post: "/v1beta1/{database=projects/*/databases/*}/documents:batchWrite"
+      body: "*"
+    };
+  }
+
+  // Creates a new document.
+  rpc CreateDocument(CreateDocumentRequest) returns (Document) {
+    option (google.api.http) = {
+      post: "/v1beta1/{parent=projects/*/databases/*/documents/**}/{collection_id}"
+      body: "document"
+    };
+  }
 }
 
 // The request for [Firestore.GetDocument][google.firestore.v1beta1.Firestore.GetDocument].
@@ -199,7 +220,7 @@ message GetDocumentRequest {
     bytes transaction = 3;
 
     // Reads the version of the document at the given time.
-    // This may not be older than 60 seconds.
+    // This may not be older than 270 seconds.
     google.protobuf.Timestamp read_time = 5;
   }
 }
@@ -240,7 +261,7 @@ message ListDocumentsRequest {
     bytes transaction = 8;
 
     // Reads documents as they were at the given time.
-    // This may not be older than 60 seconds.
+    // This may not be older than 270 seconds.
     google.protobuf.Timestamp read_time = 10;
   }
 
@@ -356,7 +377,7 @@ message BatchGetDocumentsRequest {
     TransactionOptions new_transaction = 5;
 
     // Reads documents as they were at the given time.
-    // This may not be older than 60 seconds.
+    // This may not be older than 270 seconds.
     google.protobuf.Timestamp read_time = 7;
   }
 }
@@ -426,7 +447,8 @@ message CommitResponse {
   // request.
   repeated WriteResult write_results = 1;
 
-  // The time at which the commit occurred.
+  // The time at which the commit occurred. Any read with an equal or greater
+  // `read_time` is guaranteed to see the effects of the commit.
   google.protobuf.Timestamp commit_time = 2;
 }
 
@@ -469,7 +491,7 @@ message RunQueryRequest {
     TransactionOptions new_transaction = 6;
 
     // Reads documents as they were at the given time.
-    // This may not be older than 60 seconds.
+    // This may not be older than 270 seconds.
     google.protobuf.Timestamp read_time = 7;
   }
 }
@@ -498,6 +520,85 @@ message RunQueryResponse {
   // The number of results that have been skipped due to an offset between
   // the last response and the current response.
   int32 skipped_results = 4;
+}
+
+// The request for [Firestore.PartitionQuery][google.firestore.v1beta1.Firestore.PartitionQuery].
+message PartitionQueryRequest {
+  // Required. The parent resource name. In the format:
+  // `projects/{project_id}/databases/{database_id}/documents`.
+  // Document resource names are not supported; only database resource names
+  // can be specified.
+  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The query to partition.
+  oneof query_type {
+    // A structured query.
+    // Query must specify collection with all descendants and be ordered by name
+    // ascending. Other filters, order bys, limits, offsets, and start/end
+    // cursors are not supported.
+    StructuredQuery structured_query = 2;
+  }
+
+  // The desired maximum number of partition points.
+  // The partitions may be returned across multiple pages of results.
+  // The number must be positive. The actual number of partitions
+  // returned may be fewer.
+  //
+  // For example, this may be set to one fewer than the number of parallel
+  // queries to be run, or in running a data pipeline job, one fewer than the
+  // number of workers or compute instances available.
+  int64 partition_count = 3;
+
+  // The `next_page_token` value returned from a previous call to
+  // PartitionQuery that may be used to get an additional set of results.
+  // There are no ordering guarantees between sets of results. Thus, using
+  // multiple sets of results will require merging the different result sets.
+  //
+  // For example, two subsequent calls using a page_token may return:
+  //
+  //  * cursor B, cursor M, cursor Q
+  //  * cursor A, cursor U, cursor W
+  //
+  // To obtain a complete result set ordered with respect to the results of the
+  // query supplied to PartitionQuery, the results sets should be merged:
+  // cursor A, cursor B, cursor M, cursor Q, cursor U, cursor W
+  string page_token = 4;
+
+  // The maximum number of partitions to return in this call, subject to
+  // `partition_count`.
+  //
+  // For example, if `partition_count` = 10 and `page_size` = 8, the first call
+  // to PartitionQuery will return up to 8 partitions and a `next_page_token`
+  // if more results exist. A second call to PartitionQuery will return up to
+  // 2 partitions, to complete the total of 10 specified in `partition_count`.
+  int32 page_size = 5;
+}
+
+// The response for [Firestore.PartitionQuery][google.firestore.v1beta1.Firestore.PartitionQuery].
+message PartitionQueryResponse {
+  // Partition results.
+  // Each partition is a split point that can be used by RunQuery as a starting
+  // or end point for the query results. The RunQuery requests must be made with
+  // the same query supplied to this PartitionQuery request. The partition
+  // cursors will be ordered according to same ordering as the results of the
+  // query supplied to PartitionQuery.
+  //
+  // For example, if a PartitionQuery request returns partition cursors A and B,
+  // running the following three queries will return the entire result set of
+  // the original query:
+  //
+  //  * query, end_at A
+  //  * query, start_at A, end_at B
+  //  * query, start_at B
+  //
+  // An empty result may indicate that the query has too few results to be
+  // partitioned.
+  repeated Cursor partitions = 1;
+
+  // A page token that may be used to request an additional set of results, up
+  // to the number specified by `partition_count` in the PartitionQuery request.
+  // If blank, there are no more results.
+  string next_page_token = 2;
 }
 
 // The request for [Firestore.Write][google.firestore.v1beta1.Firestore.Write].
@@ -567,7 +668,8 @@ message WriteResponse {
   // request.
   repeated WriteResult write_results = 3;
 
-  // The time at which the commit occurred.
+  // The time at which the commit occurred. Any read with an equal or greater
+  // `read_time` is guaranteed to see the effects of the write.
   google.protobuf.Timestamp commit_time = 4;
 }
 
@@ -763,4 +865,36 @@ message ListCollectionIdsResponse {
 
   // A page token that may be used to continue the list.
   string next_page_token = 2;
+}
+
+// The request for [Firestore.BatchWrite][google.firestore.v1beta1.Firestore.BatchWrite].
+message BatchWriteRequest {
+  // Required. The database name. In the format:
+  // `projects/{project_id}/databases/{database_id}`.
+  string database = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The writes to apply.
+  //
+  // Method does not apply writes atomically and does not guarantee ordering.
+  // Each write succeeds or fails independently. You cannot write to the same
+  // document more than once per request.
+  repeated Write writes = 2;
+
+  // Labels associated with this batch write.
+  map<string, string> labels = 3;
+}
+
+// The response from [Firestore.BatchWrite][google.firestore.v1beta1.Firestore.BatchWrite].
+message BatchWriteResponse {
+  // The result of applying the writes.
+  //
+  // This i-th write result corresponds to the i-th write in the
+  // request.
+  repeated WriteResult write_results = 1;
+
+  // The status of applying the writes.
+  //
+  // This i-th write status corresponds to the i-th write in the
+  // request.
+  repeated google.rpc.Status status = 2;
 }
