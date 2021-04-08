@@ -19,6 +19,7 @@ package google.cloud.dataproc.v1;
 import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
 import "google/cloud/dataproc/v1/shared.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/duration.proto";
@@ -29,6 +30,14 @@ option go_package = "google.golang.org/genproto/googleapis/cloud/dataproc/v1;dat
 option java_multiple_files = true;
 option java_outer_classname = "ClustersProto";
 option java_package = "com.google.cloud.dataproc.v1";
+option (google.api.resource_definition) = {
+  type: "container.googleapis.com/Cluster"
+  pattern: "projects/{project}/locations/{location}/clusters/{cluster}"
+};
+option (google.api.resource_definition) = {
+  type: "metastore.googleapis.com/Service"
+  pattern: "projects/{project}/locations/{location}/services/{service}"
+};
 
 // The ClusterControllerService provides methods to manage clusters
 // of Compute Engine instances.
@@ -60,6 +69,30 @@ service ClusterController {
       body: "cluster"
     };
     option (google.api.method_signature) = "project_id,region,cluster_name,cluster,update_mask";
+    option (google.longrunning.operation_info) = {
+      response_type: "Cluster"
+      metadata_type: "google.cloud.dataproc.v1.ClusterOperationMetadata"
+    };
+  }
+
+  // Stops a cluster in a project.
+  rpc StopCluster(StopClusterRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/projects/{project_id}/regions/{region}/clusters/{cluster_name}:stop"
+      body: "*"
+    };
+    option (google.longrunning.operation_info) = {
+      response_type: "Cluster"
+      metadata_type: "google.cloud.dataproc.v1.ClusterOperationMetadata"
+    };
+  }
+
+  // Starts a cluster in a project.
+  rpc StartCluster(StartClusterRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/projects/{project_id}/regions/{region}/clusters/{cluster_name}:start"
+      body: "*"
+    };
     option (google.longrunning.operation_info) = {
       response_type: "Cluster"
       metadata_type: "google.cloud.dataproc.v1.ClusterOperationMetadata"
@@ -168,6 +201,8 @@ message ClusterConfig {
   // and manage this project-level, per-location bucket (see
   // [Dataproc staging
   // bucket](https://cloud.google.com/dataproc/docs/concepts/configuring-clusters/staging-bucket)).
+  // **This field requires a Cloud Storage bucket name, not a URI to a Cloud
+  // Storage bucket.**
   string config_bucket = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. A Cloud Storage bucket used to store ephemeral cluster and jobs data,
@@ -179,6 +214,8 @@ message ClusterConfig {
   // and manage this project-level, per-location bucket. The default bucket has
   // a TTL of 90 days, but you can use any TTL (or none) if you specify a
   // bucket.
+  // **This field requires a Cloud Storage bucket name, not a URI to a Cloud
+  // Storage bucket.**
   string temp_bucket = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The shared Compute Engine config settings for
@@ -230,6 +267,36 @@ message ClusterConfig {
 
   // Optional. Port/endpoint configuration for this cluster
   EndpointConfig endpoint_config = 19 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Metastore configuration.
+  MetastoreConfig metastore_config = 20 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. BETA. The Kubernetes Engine config for Dataproc clusters deployed to
+  // Kubernetes. Setting this is considered mutually exclusive with Compute
+  // Engine-based options such as `gce_cluster_config`, `master_config`,
+  // `worker_config`, `secondary_worker_config`, and `autoscaling_config`.
+  GkeClusterConfig gke_cluster_config = 21 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The GKE config for this cluster.
+message GkeClusterConfig {
+  // A full, namespace-isolated deployment target for an existing GKE cluster.
+  message NamespacedGkeDeploymentTarget {
+    // Optional. The target GKE cluster to deploy to.
+    // Format: 'projects/{project}/locations/{location}/clusters/{cluster_id}'
+    string target_gke_cluster = 1 [
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.resource_reference) = {
+        type: "container.googleapis.com/Cluster"
+      }
+    ];
+
+    // Optional. A namespace within the GKE cluster to deploy into.
+    string cluster_namespace = 2 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Optional. A target for the deployment.
+  NamespacedGkeDeploymentTarget namespaced_gke_deployment_target = 1 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Endpoint config for this cluster
@@ -267,6 +334,30 @@ message EncryptionConfig {
 // Common config settings for resources of Compute Engine cluster
 // instances, applicable to all instances in the cluster.
 message GceClusterConfig {
+  // `PrivateIpv6GoogleAccess` controls whether and how Dataproc cluster nodes
+  // can communicate with Google Services through gRPC over IPv6.
+  // These values are directly mapped to corresponding values in the
+  // [Compute Engine Instance
+  // fields](https://cloud.google.com/compute/docs/reference/rest/v1/instances).
+  enum PrivateIpv6GoogleAccess {
+    // If unspecified, Compute Engine default behavior will apply, which
+    // is the same as [INHERIT_FROM_SUBNETWORK][google.cloud.dataproc.v1.GceClusterConfig.PrivateIpv6GoogleAccess.INHERIT_FROM_SUBNETWORK].
+    PRIVATE_IPV6_GOOGLE_ACCESS_UNSPECIFIED = 0;
+
+    // Private access to and from Google Services configuration
+    // inherited from the subnetwork configuration. This is the
+    // default Compute Engine behavior.
+    INHERIT_FROM_SUBNETWORK = 1;
+
+    // Enables outbound private IPv6 access to Google Services from the Dataproc
+    // cluster.
+    OUTBOUND = 2;
+
+    // Enables bidirectional private IPv6 access between Google Services and the
+    // Dataproc cluster.
+    BIDIRECTIONAL = 3;
+  }
+
   // Optional. The zone where the Compute Engine cluster will be located.
   // On a create request, it is required in the "global" region. If omitted
   // in a non-global Dataproc region, the service will pick a zone in the
@@ -312,6 +403,9 @@ message GceClusterConfig {
   // configured to be accessible without external IP addresses.
   bool internal_ip_only = 7 [(google.api.field_behavior) = OPTIONAL];
 
+  // Optional. The type of IPv6 access for a cluster.
+  PrivateIpv6GoogleAccess private_ipv6_google_access = 12 [(google.api.field_behavior) = OPTIONAL];
+
   // Optional. The [Dataproc service
   // account](https://cloud.google.com/dataproc/docs/concepts/configuring-clusters/service-accounts#service_accounts_in_dataproc)
   // (also see [VM Data Plane
@@ -352,6 +446,41 @@ message GceClusterConfig {
 
   // Optional. Reservation Affinity for consuming Zonal reservation.
   ReservationAffinity reservation_affinity = 11 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Node Group Affinity for sole-tenant clusters.
+  NodeGroupAffinity node_group_affinity = 13 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Shielded Instance Config for clusters using [Compute Engine Shielded
+  // VMs](https://cloud.google.com/security/shielded-cloud/shielded-vm).
+  ShieldedInstanceConfig shielded_instance_config = 14 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Node Group Affinity for clusters using sole-tenant node groups.
+message NodeGroupAffinity {
+  // Required. The URI of a
+  // sole-tenant [node group
+  // resource](https://cloud.google.com/compute/docs/reference/rest/v1/nodeGroups)
+  // that the cluster will be created on.
+  //
+  // A full URL, partial URI, or node group name are valid. Examples:
+  //
+  // * `https://www.googleapis.com/compute/v1/projects/[project_id]/zones/us-central1-a/nodeGroups/node-group-1`
+  // * `projects/[project_id]/zones/us-central1-a/nodeGroups/node-group-1`
+  // * `node-group-1`
+  string node_group_uri = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Shielded Instance Config for clusters using [Compute Engine Shielded
+// VMs](https://cloud.google.com/security/shielded-cloud/shielded-vm).
+message ShieldedInstanceConfig {
+  // Optional. Defines whether instances have Secure Boot enabled.
+  bool enable_secure_boot = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Defines whether instances have the vTPM enabled.
+  bool enable_vtpm = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Defines whether instances have integrity monitoring enabled.
+  bool enable_integrity_monitoring = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // The config settings for Compute Engine resources in
@@ -379,7 +508,11 @@ message InstanceGroupConfig {
   }
 
   // Optional. The number of VM instances in the instance group.
-  // For master instance groups, must be set to 1.
+  // For [HA
+  // cluster](/dataproc/docs/concepts/configuring-clusters/high-availability)
+  // [master_config](#FIELDS.master_config) groups, **must be set to 3**.
+  // For standard cluster [master_config](#FIELDS.master_config) groups,
+  // **must be set to 1**.
   int32 num_instances = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. The list of instance names. Dataproc derives the names
@@ -491,8 +624,10 @@ message AcceleratorConfig {
 // Specifies the config of disk options for a group of VM instances.
 message DiskConfig {
   // Optional. Type of the boot disk (default is "pd-standard").
-  // Valid values: "pd-ssd" (Persistent Disk Solid State Drive) or
-  // "pd-standard" (Persistent Disk Hard Disk Drive).
+  // Valid values: "pd-balanced" (Persistent Disk Balanced Solid State Drive),
+  // "pd-ssd" (Persistent Disk Solid State Drive),
+  // or "pd-standard" (Persistent Disk Hard Disk Drive).
+  // See [Disk types](https://cloud.google.com/compute/docs/disks#disk-types).
   string boot_disk_type = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Size in GB of the boot disk (default is 500GB).
@@ -544,6 +679,15 @@ message ClusterStatus {
 
     // The cluster is being updated. It continues to accept and process jobs.
     UPDATING = 5;
+
+    // The cluster is being stopped. It cannot be used.
+    STOPPING = 6;
+
+    // The cluster is currently stopped. It is not ready for use.
+    STOPPED = 7;
+
+    // The cluster is being started. It is not ready for use.
+    STARTING = 8;
   }
 
   // The cluster substate.
@@ -583,10 +727,14 @@ message ClusterStatus {
   Substate substate = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
-// Security related configuration, including Kerberos.
+// Security related configuration, including encryption, Kerberos, etc.
 message SecurityConfig {
-  // Kerberos related configuration.
-  KerberosConfig kerberos_config = 1;
+  // Optional. Kerberos related configuration.
+  KerberosConfig kerberos_config = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Identity related configuration, including service account based
+  // secure multi-tenancy user mappings.
+  IdentityConfig identity_config = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Specifies Kerberos related configuration.
@@ -595,13 +743,13 @@ message KerberosConfig {
   // this field to true to enable Kerberos on a cluster.
   bool enable_kerberos = 1 [(google.api.field_behavior) = OPTIONAL];
 
-  // Required. The Cloud Storage URI of a KMS encrypted file containing the root
+  // Optional. The Cloud Storage URI of a KMS encrypted file containing the root
   // principal password.
-  string root_principal_password_uri = 2 [(google.api.field_behavior) = REQUIRED];
+  string root_principal_password_uri = 2 [(google.api.field_behavior) = OPTIONAL];
 
-  // Required. The uri of the KMS key used to encrypt various sensitive
+  // Optional. The uri of the KMS key used to encrypt various sensitive
   // files.
-  string kms_key_uri = 3 [(google.api.field_behavior) = REQUIRED];
+  string kms_key_uri = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The Cloud Storage URI of the keystore file used for SSL
   // encryption. If not provided, Dataproc will provide a self-signed
@@ -659,6 +807,13 @@ message KerberosConfig {
   string realm = 15 [(google.api.field_behavior) = OPTIONAL];
 }
 
+// Identity related configuration, including service account based
+// secure multi-tenancy user mappings.
+message IdentityConfig {
+  // Required. Map of user to service account.
+  map<string, string> user_service_account_mapping = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
 // Specifies the selection and config of software inside the cluster.
 message SoftwareConfig {
   // Optional. The version of software inside the cluster. It must be one of the
@@ -698,9 +853,9 @@ message SoftwareConfig {
 message LifecycleConfig {
   // Optional. The duration to keep the cluster alive while idling (when no jobs
   // are running). Passing this threshold will cause the cluster to be
-  // deleted. Minimum value is 10 minutes; maximum value is 14 days (see JSON
+  // deleted. Minimum value is 5 minutes; maximum value is 14 days (see JSON
   // representation of
-  // [Duration](https://developers.google.com/protocol-buffers/docs/proto3#json).
+  // [Duration](https://developers.google.com/protocol-buffers/docs/proto3#json)).
   google.protobuf.Duration idle_delete_ttl = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Either the exact time the cluster should be deleted at or
@@ -722,6 +877,21 @@ message LifecycleConfig {
   // of
   // [Timestamp](https://developers.google.com/protocol-buffers/docs/proto3#json)).
   google.protobuf.Timestamp idle_start_time = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Specifies a Metastore configuration.
+message MetastoreConfig {
+  // Required. Resource name of an existing Dataproc Metastore service.
+  //
+  // Example:
+  //
+  // * `projects/[project_id]/locations/[dataproc_region]/services/[service-name]`
+  string dataproc_metastore_service = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "metastore.googleapis.com/Service"
+    }
+  ];
 }
 
 // Contains cluster daemon metrics, such as HDFS and YARN stats.
@@ -748,9 +918,9 @@ message CreateClusterRequest {
   // Required. The cluster to create.
   Cluster cluster = 2 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. A unique id used to identify the request. If the server
-  // receives two [CreateClusterRequest][google.cloud.dataproc.v1.CreateClusterRequest] requests  with the same
-  // id, then the second request will be ignored and the
+  // Optional. A unique id used to identify the request. If the server receives two
+  // [CreateClusterRequest](https://cloud.google.com/dataproc/docs/reference/rpc/google.cloud.dataproc.v1#google.cloud.dataproc.v1.CreateClusterRequest)s
+  // with the same id, then the second request will be ignored and the
   // first [google.longrunning.Operation][google.longrunning.Operation] created and stored in the backend
   // is returned.
   //
@@ -842,8 +1012,9 @@ message UpdateClusterRequest {
   google.protobuf.FieldMask update_mask = 4 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. A unique id used to identify the request. If the server
-  // receives two [UpdateClusterRequest][google.cloud.dataproc.v1.UpdateClusterRequest] requests  with the same
-  // id, then the second request will be ignored and the
+  // receives two
+  // [UpdateClusterRequest](https://cloud.google.com/dataproc/docs/reference/rpc/google.cloud.dataproc.v1#google.cloud.dataproc.v1.UpdateClusterRequest)s
+  // with the same id, then the second request will be ignored and the
   // first [google.longrunning.Operation][google.longrunning.Operation] created and stored in the
   // backend is returned.
   //
@@ -853,6 +1024,68 @@ message UpdateClusterRequest {
   // The id must contain only letters (a-z, A-Z), numbers (0-9),
   // underscores (_), and hyphens (-). The maximum length is 40 characters.
   string request_id = 7 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A request to stop a cluster.
+message StopClusterRequest {
+  // Required. The ID of the Google Cloud Platform project the
+  // cluster belongs to.
+  string project_id = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The Dataproc region in which to handle the request.
+  string region = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The cluster name.
+  string cluster_name = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Specifying the `cluster_uuid` means the RPC will fail
+  // (with error NOT_FOUND) if a cluster with the specified UUID does not exist.
+  string cluster_uuid = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A unique id used to identify the request. If the server
+  // receives two
+  // [StopClusterRequest](https://cloud.google.com/dataproc/docs/reference/rpc/google.cloud.dataproc.v1#google.cloud.dataproc.v1.StopClusterRequest)s
+  // with the same id, then the second request will be ignored and the
+  // first [google.longrunning.Operation][google.longrunning.Operation] created and stored in the
+  // backend is returned.
+  //
+  // Recommendation: Set this value to a
+  // [UUID](https://en.wikipedia.org/wiki/Universally_unique_identifier).
+  //
+  // The id must contain only letters (a-z, A-Z), numbers (0-9),
+  // underscores (_), and hyphens (-). The maximum length is 40 characters.
+  string request_id = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A request to start a cluster.
+message StartClusterRequest {
+  // Required. The ID of the Google Cloud Platform project the
+  // cluster belongs to.
+  string project_id = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The Dataproc region in which to handle the request.
+  string region = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The cluster name.
+  string cluster_name = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Specifying the `cluster_uuid` means the RPC will fail
+  // (with error NOT_FOUND) if a cluster with the specified UUID does not exist.
+  string cluster_uuid = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A unique id used to identify the request. If the server
+  // receives two
+  // [StartClusterRequest](https://cloud.google.com/dataproc/docs/reference/rpc/google.cloud.dataproc.v1#google.cloud.dataproc.v1.StartClusterRequest)s
+  // with the same id, then the second request will be ignored and the
+  // first [google.longrunning.Operation][google.longrunning.Operation] created and stored in the
+  // backend is returned.
+  //
+  // Recommendation: Set this value to a
+  // [UUID](https://en.wikipedia.org/wiki/Universally_unique_identifier).
+  //
+  // The id must contain only letters (a-z, A-Z), numbers (0-9),
+  // underscores (_), and hyphens (-). The maximum length is 40 characters.
+  string request_id = 5 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // A request to delete a cluster.
@@ -872,8 +1105,9 @@ message DeleteClusterRequest {
   string cluster_uuid = 4 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. A unique id used to identify the request. If the server
-  // receives two [DeleteClusterRequest][google.cloud.dataproc.v1.DeleteClusterRequest] requests  with the same
-  // id, then the second request will be ignored and the
+  // receives two
+  // [DeleteClusterRequest](https://cloud.google.com/dataproc/docs/reference/rpc/google.cloud.dataproc.v1#google.cloud.dataproc.v1.DeleteClusterRequest)s
+  // with the same id, then the second request will be ignored and the
   // first [google.longrunning.Operation][google.longrunning.Operation] created and stored in the
   // backend is returned.
   //
