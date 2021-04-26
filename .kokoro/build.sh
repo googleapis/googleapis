@@ -5,9 +5,6 @@ set -e
 cd ${KOKORO_ARTIFACTS_DIR}/github/googleapis
 cp .kokoro/.bazelrc $HOME/.bazelrc
 
-# shellcheck source=/dev/null
-source .kokoro/setup.sh
-
 #
 # Run build and tests
 #
