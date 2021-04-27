@@ -359,7 +359,7 @@ php(
 php_gapic_repositories()
 
 # PHP micro-generator (beta)
-_gapic_generator_php_version = "0.1.0"
+_gapic_generator_php_version = "0.1.1"
 
 http_archive(
     name = "gapic_generator_php",
@@ -406,4 +406,3 @@ http_archive(
 load("@gapic_generator_ruby//rules_ruby_gapic:repositories.bzl", "gapic_generator_ruby_repositories")
 
 gapic_generator_ruby_repositories()
-
