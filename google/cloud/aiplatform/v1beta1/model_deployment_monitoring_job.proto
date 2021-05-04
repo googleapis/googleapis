@@ -1,0 +1,268 @@
+// Copyright 2021 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.aiplatform.v1beta1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/aiplatform/v1beta1/feature_monitoring_stats.proto";
+import "google/cloud/aiplatform/v1beta1/io.proto";
+import "google/cloud/aiplatform/v1beta1/job_state.proto";
+import "google/cloud/aiplatform/v1beta1/model_monitoring.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/api/annotations.proto";
+
+option go_package = "google.golang.org/genproto/googleapis/cloud/aiplatform/v1beta1;aiplatform";
+option java_multiple_files = true;
+option java_outer_classname = "ModelDeploymentMonitoringJobProto";
+option java_package = "com.google.cloud.aiplatform.v1beta1";
+
+// The Model Monitoring Objective types.
+enum ModelDeploymentMonitoringObjectiveType {
+  // Default value, should not be set.
+  MODEL_DEPLOYMENT_MONITORING_OBJECTIVE_TYPE_UNSPECIFIED = 0;
+
+  // Raw feature values' stats to detect skew between Training-Prediction
+  // datasets.
+  RAW_FEATURE_SKEW = 1;
+
+  // Raw feature values' stats to detect drift between Serving-Prediction
+  // datasets.
+  RAW_FEATURE_DRIFT = 2;
+
+  // Feature attribution scores to detect skew between Training-Prediction
+  // datasets.
+  FEATURE_ATTRIBUTION_SKEW = 3;
+
+  // Feature attribution scores to detect skew between Prediction datasets
+  // collected within different time windows.
+  FEATURE_ATTRIBUTION_DRIFT = 4;
+}
+
+// Represents a job that runs periodically to monitor the deployed models in an
+// endpoint. It will analyze the logged training & prediction data to detect any
+// abnormal behaviors.
+message ModelDeploymentMonitoringJob {
+  option (google.api.resource) = {
+    type: "aiplatform.googleapis.com/ModelDeploymentMonitoringJob"
+    pattern: "projects/{project}/locations/{location}/modelDeploymentMonitoringJobs/{model_deployment_monitoring_job}"
+  };
+
+  // The state to Specify the monitoring pipeline.
+  enum MonitoringScheduleState {
+    // Unspecified state.
+    MONITORING_SCHEDULE_STATE_UNSPECIFIED = 0;
+
+    // The pipeline is picked up and wait to run.
+    PENDING = 1;
+
+    // The pipeline is offline and will be scheduled for next run.
+    OFFLINE = 2;
+
+    // The pipeline is running.
+    RUNNING = 3;
+  }
+
+  // Output only. Resource name of a ModelDeploymentMonitoringJob.
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Required. The user-defined name of the ModelDeploymentMonitoringJob.
+  // The name can be up to 128 characters long and can be consist of any UTF-8
+  // characters.
+  // Display name of a ModelDeploymentMonitoringJob.
+  string display_name = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Endpoint resource name.
+  // Format: `projects/{project}/locations/{location}/endpoints/{endpoint}`
+  string endpoint = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/Endpoint"
+    }
+  ];
+
+  // Output only. The detailed state of the monitoring job.
+  // When the job is still creating, the state will be 'PENDING'.
+  // Once the job is successfully created, the state will be 'RUNNING'.
+  // Pause the job, the state will be 'PAUSED'.
+  // Resume the job, the state will return to 'RUNNING'.
+  JobState state = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Schedule state when the monitoring job is in Running state.
+  MonitoringScheduleState schedule_state = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Required. The config for monitoring objectives. This is a per DeployedModel config.
+  // Each DeployedModel needs to be configed separately.
+  repeated ModelDeploymentMonitoringObjectiveConfig model_deployment_monitoring_objective_configs = 6 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Schedule config for running the monitoring job.
+  ModelDeploymentMonitoringScheduleConfig model_deployment_monitoring_schedule_config = 7 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Sample Strategy for logging.
+  SamplingStrategy logging_sampling_strategy = 8 [(google.api.field_behavior) = REQUIRED];
+
+  // Alert config for model monitoring.
+  ModelMonitoringAlertConfig model_monitoring_alert_config = 15;
+
+  // YAML schema file uri describing the format of a single instance,
+  // which are given to format this Endpoint's prediction (and explanation).
+  // If not set, we will generate predict schema from collected predict
+  // requests.
+  string predict_instance_schema_uri = 9;
+
+  // Sample Predict instance, same format as [PredictRequest.instances][google.cloud.aiplatform.v1beta1.PredictRequest.instances],
+  // this can be set as a replacement of
+  // [ModelDeploymentMonitoringJob.predict_instance_schema_uri][google.cloud.aiplatform.v1beta1.ModelDeploymentMonitoringJob.predict_instance_schema_uri]. If not set,
+  // we will generate predict schema from collected predict requests.
+  google.protobuf.Value sample_predict_instance = 19;
+
+  // YAML schema file uri describing the format of a single instance that you
+  // want Tensorflow Data Validation (TFDV) to analyze.
+  //
+  // If this field is empty, all the feature data types are inferred from
+  // [predict_instance_schema_uri][google.cloud.aiplatform.v1beta1.ModelDeploymentMonitoringJob.predict_instance_schema_uri],
+  // meaning that TFDV will use the data in the exact format(data type) as
+  // prediction request/response.
+  // If there are any data type differences between predict instance and TFDV
+  // instance, this field can be used to override the schema.
+  // For models trained with AI Platform, this field must be set as all the
+  // fields in predict instance formatted as string.
+  string analysis_instance_schema_uri = 16;
+
+  // Output only. The created bigquery tables for the job under customer project. Customer
+  // could do their own query & analysis. There could be 4 log tables in
+  // maximum:
+  // 1. Training data logging predict request/response
+  // 2. Serving data logging predict request/response
+  repeated ModelDeploymentMonitoringBigQueryTable bigquery_tables = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The TTL of BigQuery tables in user projects which stores logs.
+  // A day is the basic unit of the TTL and we take the ceil of TTL/86400(a
+  // day). e.g. { second: 3600} indicates ttl = 1 day.
+  google.protobuf.Duration log_ttl = 17;
+
+  // The labels with user-defined metadata to organize your
+  // ModelDeploymentMonitoringJob.
+  //
+  // Label keys and values can be no longer than 64 characters
+  // (Unicode codepoints), can only contain lowercase letters, numeric
+  // characters, underscores and dashes. International characters are allowed.
+  //
+  // See https://goo.gl/xmQnxf for more information and examples of labels.
+  map<string, string> labels = 11;
+
+  // Output only. Timestamp when this ModelDeploymentMonitoringJob was created.
+  google.protobuf.Timestamp create_time = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Timestamp when this ModelDeploymentMonitoringJob was updated most recently.
+  google.protobuf.Timestamp update_time = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Timestamp when this monitoring pipeline will be scheduled to run for the
+  // next round.
+  google.protobuf.Timestamp next_schedule_time = 14 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Stats anomalies base folder path.
+  GcsDestination stats_anomalies_base_directory = 20;
+}
+
+// ModelDeploymentMonitoringBigQueryTable specifies the BigQuery table name
+// as well as some information of the logs stored in this table.
+message ModelDeploymentMonitoringBigQueryTable {
+  // Indicates where does the log come from.
+  enum LogSource {
+    // Unspecified source.
+    LOG_SOURCE_UNSPECIFIED = 0;
+
+    // Logs coming from Training dataset.
+    TRAINING = 1;
+
+    // Logs coming from Serving traffic.
+    SERVING = 2;
+  }
+
+  // Indicates what type of traffic does the log belong to.
+  enum LogType {
+    // Unspecified type.
+    LOG_TYPE_UNSPECIFIED = 0;
+
+    // Predict logs.
+    PREDICT = 1;
+
+    // Explain logs.
+    EXPLAIN = 2;
+  }
+
+  // The source of log.
+  LogSource log_source = 1;
+
+  // The type of log.
+  LogType log_type = 2;
+
+  // The created BigQuery table to store logs. Customer could do their own query
+  // & analysis. Format:
+  // `bq://<project_id>.model_deployment_monitoring_<endpoint_id>.<tolower(log_source)>_<tolower(log_type)>`
+  string bigquery_table_path = 3;
+}
+
+// ModelDeploymentMonitoringObjectiveConfig contains the pair of
+// deployed_model_id to ModelMonitoringObjectiveConfig.
+message ModelDeploymentMonitoringObjectiveConfig {
+  // The DeployedModel ID of the objective config.
+  string deployed_model_id = 1;
+
+  // The objective config of for the modelmonitoring job of this deployed model.
+  ModelMonitoringObjectiveConfig objective_config = 2;
+}
+
+// The config for scheduling monitoring job.
+message ModelDeploymentMonitoringScheduleConfig {
+  // Required. The model monitoring job running interval. It will be rounded up to next
+  // full hour.
+  google.protobuf.Duration monitor_interval = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Statistics and anomalies generated by Model Monitoring.
+message ModelMonitoringStatsAnomalies {
+  // Historical Stats (and Anomalies) for a specific Feature.
+  message FeatureHistoricStatsAnomalies {
+    // Display Name of the Feature.
+    string feature_display_name = 1;
+
+    // Threshold for anomaly detection.
+    ThresholdConfig threshold = 3;
+
+    // Stats calculated for the Training Dataset.
+    FeatureStatsAnomaly training_stats = 4;
+
+    // A list of historical stats generated by different time window's
+    // Prediction Dataset.
+    repeated FeatureStatsAnomaly prediction_stats = 5;
+  }
+
+  // Model Monitoring Objective those stats and anomalies belonging to.
+  ModelDeploymentMonitoringObjectiveType objective = 1;
+
+  // Deployed Model ID.
+  string deployed_model_id = 2;
+
+  // Number of anomalies within all stats.
+  int32 anomaly_count = 3;
+
+  // A list of historical Stats and Anomalies generated for all Features.
+  repeated FeatureHistoricStatsAnomalies feature_stats = 4;
+}
