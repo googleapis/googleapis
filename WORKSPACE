@@ -76,8 +76,8 @@ rules_proto_toolchains()
 # section
 http_archive(
     name = "com_google_api_codegen",
-    strip_prefix = "gapic-generator-2.10.4",
-    urls = ["https://github.com/googleapis/gapic-generator/archive/v2.10.4.zip"],
+    strip_prefix = "gapic-generator-2.11.0",
+    urls = ["https://github.com/googleapis/gapic-generator/archive/v2.11.0.zip"],
 )
 
 # rules_go (support Golang under bazel)
@@ -177,27 +177,7 @@ apple_support_dependencies()
 ##############################################################################
 # Java
 ##############################################################################
-# Java microgenerator.
-_gapic_generator_java_version = "1.0.3"
-
-http_archive(
-    name = "gapic_generator_java",
-    strip_prefix = "gapic-generator-java-%s" % _gapic_generator_java_version,
-    urls = ["https://github.com/googleapis/gapic-generator-java/archive/v%s.zip" % _gapic_generator_java_version],
-)
-
-load("@gapic_generator_java//:repository_rules.bzl", "gapic_generator_java_properties")
-
-gapic_generator_java_properties(
-    name = "gapic_generator_java_properties",
-    file = "@gapic_generator_java//:dependencies.properties",
-)
-
-load("@gapic_generator_java//:repositories.bzl", "gapic_generator_java_repositories")
-
-gapic_generator_java_repositories()
-
-_gax_java_version = "1.62.0"
+_gax_java_version = "1.63.3"
 
 http_archive(
     name = "com_google_api_gax_java",
@@ -219,6 +199,27 @@ com_google_api_gax_java_repositories()
 load("@io_grpc_grpc_java//:repositories.bzl", "grpc_java_repositories")
 
 grpc_java_repositories()
+
+# Java microgenerator.
+# Must go AFTER java-gax, since both java gax and gapic-generator are written in java and may conflict.
+_gapic_generator_java_version = "1.0.3"
+
+http_archive(
+    name = "gapic_generator_java",
+    strip_prefix = "gapic-generator-java-%s" % _gapic_generator_java_version,
+    urls = ["https://github.com/googleapis/gapic-generator-java/archive/v%s.zip" % _gapic_generator_java_version],
+)
+
+load("@gapic_generator_java//:repository_rules.bzl", "gapic_generator_java_properties")
+
+gapic_generator_java_properties(
+    name = "gapic_generator_java_properties",
+    file = "@gapic_generator_java//:dependencies.properties",
+)
+
+load("@gapic_generator_java//:repositories.bzl", "gapic_generator_java_repositories")
+
+gapic_generator_java_repositories()
 
 # gapic-generator transitive
 # (goes AFTER java-gax, since both java gax and gapic-generator are written in java and may conflict)
