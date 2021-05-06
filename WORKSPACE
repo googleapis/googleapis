@@ -360,7 +360,7 @@ php(
 php_gapic_repositories()
 
 # PHP micro-generator (beta)
-_gapic_generator_php_version = "0.1.1"
+_gapic_generator_php_version = "0.1.2"
 
 http_archive(
     name = "gapic_generator_php",
@@ -378,17 +378,19 @@ gapic_generator_php_repositories()
 
 # Required to access the C#-specific common resources config.
 _gax_dotnet_version = "Google.Api.Gax-3.3.0"
+
 _gax_dotnet_sha256 = "c4d31345a226987e8551cb81afa685c9322d3f806077d9f02011676cf00c15d9"
 
 http_archive(
     name = "gax_dotnet",
-    sha256 = _gax_dotnet_sha256,
     build_file_content = "exports_files([\"Google.Api.Gax/ResourceNames/CommonResourcesConfig.json\"])",
+    sha256 = _gax_dotnet_sha256,
     strip_prefix = "gax-dotnet-%s" % _gax_dotnet_version,
     urls = ["https://github.com/googleapis/gax-dotnet/archive/refs/tags/%s.tar.gz" % _gax_dotnet_version],
 )
 
 _gapic_generator_csharp_version = "1.3.5"
+
 _gapic_generator_csharp_sha256 = "8793456b2dff4a723e6f15740838f80cbb5865a80292e134df28c02a6ce72910"
 
 http_archive(
