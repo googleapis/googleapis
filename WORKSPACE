@@ -378,7 +378,6 @@ gapic_generator_php_repositories()
 
 # Required to access the C#-specific common resources config.
 _gax_dotnet_version = "Google.Api.Gax-3.3.0"
-
 _gax_dotnet_sha256 = "c4d31345a226987e8551cb81afa685c9322d3f806077d9f02011676cf00c15d9"
 
 http_archive(
@@ -389,9 +388,8 @@ http_archive(
     urls = ["https://github.com/googleapis/gax-dotnet/archive/refs/tags/%s.tar.gz" % _gax_dotnet_version],
 )
 
-_gapic_generator_csharp_version = "1.3.5"
-
-_gapic_generator_csharp_sha256 = "8793456b2dff4a723e6f15740838f80cbb5865a80292e134df28c02a6ce72910"
+_gapic_generator_csharp_version = "1.3.6"
+_gapic_generator_csharp_sha256 = "6340309dc6b86bfd0dc2c9fca41cf991c7163eda2f48a7062fe4da5bd62c99d6"
 
 http_archive(
     name = "gapic_generator_csharp",
@@ -408,10 +406,14 @@ gapic_generator_csharp_repositories()
 # Ruby
 ##############################################################################
 
+_gapic_generator_ruby_version = "0.7.4"
+_gapic_generator_ruby_sha256 = "15cb86cbe1ef4bb793a49e4423763a05c7a1fe3cd4d1dd6f4a036898d2f4437c"
+
 http_archive(
     name = "gapic_generator_ruby",
-    strip_prefix = "gapic-generator-ruby-cc272f0905e45950873e04d3cd8df77a63f215ca",
-    urls = ["https://github.com/googleapis/gapic-generator-ruby/archive/cc272f0905e45950873e04d3cd8df77a63f215ca.zip"],
+    sha256 = _gapic_generator_ruby_sha256,
+    strip_prefix = "gapic-generator-ruby-gapic-generator-v%s" % _gapic_generator_ruby_version,
+    urls = ["https://github.com/googleapis/gapic-generator-ruby/archive/refs/tags/gapic-generator/v%s.tar.gz" % _gapic_generator_ruby_version],
 )
 
 load("@gapic_generator_ruby//rules_ruby_gapic:repositories.bzl", "gapic_generator_ruby_repositories")
