@@ -406,14 +406,14 @@ gapic_generator_csharp_repositories()
 # Ruby
 ##############################################################################
 
-_gapic_generator_ruby_version = "0.7.4"
-_gapic_generator_ruby_sha256 = "15cb86cbe1ef4bb793a49e4423763a05c7a1fe3cd4d1dd6f4a036898d2f4437c"
+_gapic_generator_ruby_version = "fb30585216db7ccdbe1480ec2e4e589354d7460c"
+_gapic_generator_ruby_sha256 = "7bbd45ad6a8b5ab5d252cc54db7bee5444c121e7689052c72df6d18a5c36d6a1"
 
 http_archive(
     name = "gapic_generator_ruby",
     sha256 = _gapic_generator_ruby_sha256,
-    strip_prefix = "gapic-generator-ruby-gapic-generator-v%s" % _gapic_generator_ruby_version,
-    urls = ["https://github.com/googleapis/gapic-generator-ruby/archive/refs/tags/gapic-generator/v%s.tar.gz" % _gapic_generator_ruby_version],
+    strip_prefix = "gapic-generator-ruby-%s" % _gapic_generator_ruby_version,
+    urls = ["https://github.com/googleapis/gapic-generator-ruby/archive/%s.tar.gz" % _gapic_generator_ruby_version],
 )
 
 load("@gapic_generator_ruby//rules_ruby_gapic:repositories.bzl", "gapic_generator_ruby_repositories")
