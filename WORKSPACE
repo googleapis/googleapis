@@ -202,7 +202,7 @@ grpc_java_repositories()
 
 # Java microgenerator.
 # Must go AFTER java-gax, since both java gax and gapic-generator are written in java and may conflict.
-_gapic_generator_java_version = "1.0.3"
+_gapic_generator_java_version = "1.0.5"
 
 http_archive(
     name = "gapic_generator_java",
@@ -378,6 +378,7 @@ gapic_generator_php_repositories()
 
 # Required to access the C#-specific common resources config.
 _gax_dotnet_version = "Google.Api.Gax-3.3.0"
+
 _gax_dotnet_sha256 = "c4d31345a226987e8551cb81afa685c9322d3f806077d9f02011676cf00c15d9"
 
 http_archive(
@@ -389,6 +390,7 @@ http_archive(
 )
 
 _gapic_generator_csharp_version = "1.3.6"
+
 _gapic_generator_csharp_sha256 = "6340309dc6b86bfd0dc2c9fca41cf991c7163eda2f48a7062fe4da5bd62c99d6"
 
 http_archive(
@@ -405,7 +407,6 @@ gapic_generator_csharp_repositories()
 ##############################################################################
 # Ruby
 ##############################################################################
-
 _gapic_generator_ruby_version = "fb30585216db7ccdbe1480ec2e4e589354d7460c"
 _gapic_generator_ruby_sha256 = "7bbd45ad6a8b5ab5d252cc54db7bee5444c121e7689052c72df6d18a5c36d6a1"
 
