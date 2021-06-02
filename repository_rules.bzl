@@ -318,7 +318,7 @@ def switched_rules_by_language(
     )
     rules["ruby_gapic_assembly_pkg"] = _switch(
         ruby and grpc and gapic,
-        "@com_google_api_codegen//rules_gapic/ruby:ruby_gapic_pkg.bzl",
+        "@gapic_generator_ruby//rules_ruby_gapic:ruby_gapic_pkg.bzl",
     )
 
     #
