@@ -209,39 +209,20 @@ def switched_rules_by_language(
     #
     rules["php_proto_library"] = _switch(
         php,
-        "@com_google_api_codegen//rules_gapic/php:php_gapic.bzl",
-    )
-    rules["php_grpc_library"] = _switch(
-        php and grpc,
-        "@com_google_api_codegen//rules_gapic/php:php_gapic.bzl",
-    )
-    rules["php_gapic_library"] = _switch(
-        php and grpc and gapic,
-        "@com_google_api_codegen//rules_gapic/php:php_gapic.bzl",
-    )
-    rules["php_gapic_assembly_pkg"] = _switch(
-        php and grpc and gapic,
-        "@com_google_api_codegen//rules_gapic/php:php_gapic_pkg.bzl",
-    )
-
-    # PHP micro-generator beta rules
-    # Rename these micro rules and replace above monolith rules once micro-generator is GA
-    rules["php_proto_library2"] = _switch(
-        php,
         "@gapic_generator_php//rules_php_gapic:php_gapic.bzl",
         "php_proto_library",
     )
-    rules["php_grpc_library2"] = _switch(
+    rules["php_grpc_library"] = _switch(
         php and grpc,
         "@gapic_generator_php//rules_php_gapic:php_gapic.bzl",
         "php_grpc_library",
     )
-    rules["php_gapic_library2"] = _switch(
+    rules["php_gapic_library"] = _switch(
         php and grpc and gapic,
         "@gapic_generator_php//rules_php_gapic:php_gapic.bzl",
         "php_gapic_library",
     )
-    rules["php_gapic_assembly_pkg2"] = _switch(
+    rules["php_gapic_assembly_pkg"] = _switch(
         php and grpc and gapic,
         "@gapic_generator_php//rules_php_gapic:php_gapic_pkg.bzl",
         "php_gapic_assembly_pkg",
