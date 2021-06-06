@@ -89,11 +89,11 @@ Run the following commands to generate proto descriptor and push the
 descriptor and service configuration to the Service Management API.
 
 ```shell
-# Generate proto descriptors from the proto files.
+# Generate proto descriptor from the proto files.
 protoc --include_source_info --include_imports --descriptor_set_out=service.descriptor v1/workspace.proto
 
-# Push the proto descriptors and yaml files to the Service Management API.
-gcloud endpoints services deploy service.descriptors endpointsapis.yaml
+# Push the proto descriptor and yaml files to the Service Management API.
+gcloud endpoints services deploy service.descriptor endpointsapis.yaml
 ```
 
 For more information, see
