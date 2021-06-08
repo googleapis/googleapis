@@ -296,7 +296,7 @@ gapic_generator_register_toolchains()
 # Go
 ##############################################################################
 
-_gapic_generator_go_version = "0.20.2"
+_gapic_generator_go_version = "0.20.3"
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
