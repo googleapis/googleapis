@@ -116,11 +116,11 @@ def switched_rules_by_language(
     #
     rules["proto_library_with_info"] = _switch(
         gapic,
-        "@com_google_api_codegen//rules_gapic:gapic.bzl",
+        "@rules_gapic//:gapic.bzl",
     )
     rules["moved_proto_library"] = _switch(
         gapic,
-        "@com_google_api_codegen//rules_gapic:gapic.bzl",
+        "@rules_gapic//:gapic.bzl",
     )
 
     #
