@@ -246,7 +246,7 @@ gapic_generator_register_toolchains()
 # Go
 ##############################################################################
 
-_gapic_generator_go_version = "0.20.5"
+_gapic_generator_go_version = "0.21.1"
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
@@ -257,10 +257,6 @@ http_archive(
 load("@com_googleapis_gapic_generator_go//:repositories.bzl", "com_googleapis_gapic_generator_go_repositories")
 
 com_googleapis_gapic_generator_go_repositories()
-
-load("@com_googleapis_gapic_generator_go//rules_go_gapic:go_gapic_repositories.bzl", "go_gapic_repositories")
-
-go_gapic_repositories()
 
 ##############################################################################
 # TypeScript
