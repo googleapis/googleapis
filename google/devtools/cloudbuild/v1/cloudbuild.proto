@@ -183,6 +183,10 @@ service CloudBuild {
     option (google.api.http) = {
       post: "/v1/projects/{project_id}/triggers"
       body: "trigger"
+      additional_bindings {
+        post: "/v1/{parent=projects/*/locations/*}/triggers"
+        body: "trigger"
+      }
     };
     option (google.api.method_signature) = "project_id,trigger";
   }
@@ -193,6 +197,9 @@ service CloudBuild {
   rpc GetBuildTrigger(GetBuildTriggerRequest) returns (BuildTrigger) {
     option (google.api.http) = {
       get: "/v1/projects/{project_id}/triggers/{trigger_id}"
+      additional_bindings {
+        get: "/v1/{name=projects/*/locations/*/triggers/*}"
+      }
     };
     option (google.api.method_signature) = "project_id,trigger_id";
   }
@@ -204,6 +211,9 @@ service CloudBuild {
       returns (ListBuildTriggersResponse) {
     option (google.api.http) = {
       get: "/v1/projects/{project_id}/triggers"
+      additional_bindings {
+        get: "/v1/{parent=projects/*/locations/*}/triggers"
+      }
     };
     option (google.api.method_signature) = "project_id";
   }
@@ -215,6 +225,9 @@ service CloudBuild {
       returns (google.protobuf.Empty) {
     option (google.api.http) = {
       delete: "/v1/projects/{project_id}/triggers/{trigger_id}"
+      additional_bindings {
+        delete: "/v1/{name=projects/*/locations/*/triggers/*}"
+      }
     };
     option (google.api.method_signature) = "project_id,trigger_id";
   }
@@ -226,6 +239,10 @@ service CloudBuild {
     option (google.api.http) = {
       patch: "/v1/projects/{project_id}/triggers/{trigger_id}"
       body: "trigger"
+      additional_bindings {
+        patch: "/v1/{trigger.resource_name=projects/*/locations/*/triggers/*}"
+        body: "trigger"
+      }
     };
     option (google.api.method_signature) = "project_id,trigger_id,trigger";
   }
@@ -236,6 +253,10 @@ service CloudBuild {
     option (google.api.http) = {
       post: "/v1/projects/{project_id}/triggers/{trigger_id}:run"
       body: "source"
+      additional_bindings {
+        post: "/v1/{name=projects/*/locations/*/triggers/*}:run"
+        body: "*"
+      }
     };
     option (google.api.method_signature) = "project_id,trigger_id,source";
     option (google.longrunning.operation_info) = {
@@ -251,6 +272,10 @@ service CloudBuild {
     option (google.api.http) = {
       post: "/v1/projects/{project_id}/triggers/{trigger}:webhook"
       body: "body"
+      additional_bindings {
+        post: "/v1/{name=projects/*/locations/*/triggers/*}:webhook"
+        body: "body"
+      }
     };
   }
 
@@ -299,6 +324,12 @@ message RetryBuildRequest {
 
 // Specifies a build trigger to run and the source to use.
 message RunBuildTriggerRequest {
+  // The name of the `Trigger` to run.
+  // Format: `projects/{project}/locations/{location}/triggers/{trigger}`
+  string name = 4 [(google.api.resource_reference) = {
+    type: "cloudbuild.googleapis.com/BuildTrigger"
+  }];
+
   // Required. ID of the project.
   string project_id = 1 [(google.api.field_behavior) = REQUIRED];
 
@@ -371,7 +402,8 @@ message RepoSource {
 }
 
 // Location of the source manifest in Google Cloud Storage.
-// This feature is in Preview.
+// This feature is in Preview; see description
+// [here](https://github.com/GoogleCloudPlatform/cloud-builders/tree/master/gcs-fetcher).
 message StorageSourceManifest {
   // Google Cloud Storage bucket containing the source manifest (see [Bucket
   // Name
@@ -400,7 +432,8 @@ message Source {
     RepoSource repo_source = 3;
 
     // If provided, get the source from this manifest in Google Cloud Storage.
-    // This feature is in Preview.
+    // This feature is in Preview; see description
+    // [here](https://github.com/GoogleCloudPlatform/cloud-builders/tree/master/gcs-fetcher).
     StorageSourceManifest storage_source_manifest = 8;
   }
 }
@@ -593,6 +626,30 @@ message Build {
     pattern: "projects/{project}/locations/{location}/builds/{build}"
   };
 
+  // A non-fatal problem encountered during the execution of the build.
+  message Warning {
+    // The relative importance of this warning.
+    enum Priority {
+      // Should not be used.
+      PRIORITY_UNSPECIFIED = 0;
+
+      // e.g. deprecation warnings and alternative feature highlights.
+      INFO = 1;
+
+      // e.g. automated detection of possible issues with the build.
+      WARNING = 2;
+
+      // e.g. alerts that a feature used in the build is pending removal
+      ALERT = 3;
+    }
+
+    // Explanation of the warning generated.
+    string text = 1;
+
+    // The priority for this warning.
+    Priority priority = 2;
+  }
+
   // Possible status of a build or build step.
   enum Status {
     // Status of the build is unknown.
@@ -744,13 +801,16 @@ message Build {
   // Must be of the format `projects/{PROJECT_ID}/serviceAccounts/{ACCOUNT}`.
   // ACCOUNT can be email address or uniqueId of the service account.
   //
-  // This field is in beta.
   string service_account = 42 [(google.api.resource_reference) = {
     type: "iam.googleapis.com/ServiceAccount"
   }];
 
   // Secrets and secret environment variables.
   Secrets available_secrets = 47;
+
+  // Output only. Non-fatal problems encountered during the execution of the
+  // build.
+  repeated Warning warnings = 49 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Artifacts produced by a build that should be uploaded upon
@@ -1021,8 +1081,16 @@ message CancelBuildRequest {
 message BuildTrigger {
   option (google.api.resource) = {
     type: "cloudbuild.googleapis.com/BuildTrigger"
+    plural: "triggers"
+    singular: "trigger"
     pattern: "projects/{project}/triggers/{trigger}"
+    pattern: "projects/{project}/locations/{location}/triggers/{trigger}"
   };
+
+  // The `Trigger` name with format:
+  // `projects/{project}/locations/{location}/triggers/{trigger}`, where
+  // {trigger} is a unique identifier generated by the service.
+  string resource_name = 34;
 
   // Output only. Unique identifier of the trigger.
   string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -1056,12 +1124,27 @@ message BuildTrigger {
   // Mutually exclusive with `trigger_template`.
   GitHubEventsConfig github = 13;
 
-  // Optional. PubsubConfig describes the configuration of a trigger that
+  // PubsubConfig describes the configuration of a trigger that
   // creates a build whenever a Pub/Sub message is published.
-  PubsubConfig pubsub_config = 29 [(google.api.field_behavior) = OPTIONAL];
+  PubsubConfig pubsub_config = 29;
+
+  // WebhookConfig describes the configuration of a trigger that
+  // creates a build whenever a webhook is sent to a trigger's webhook URL.
+  WebhookConfig webhook_config = 31;
 
   // Template describing the Build request to make when the trigger is matched.
   oneof build_template {
+    // Autodetect build configuration.  The following precedence is used (case
+    // insensitive):
+    //
+    // 1. cloudbuild.yaml
+    // 2. cloudbuild.yml
+    // 3. cloudbuild.json
+    // 4. Dockerfile
+    //
+    // Currently only available for GitHub App Triggers.
+    bool autodetect = 18;
+
     // Contents of the build template.
     Build build = 4;
 
@@ -1181,6 +1264,38 @@ message PubsubConfig {
   State state = 4;
 }
 
+// WebhookConfig describes the configuration of a trigger that
+// creates a build whenever a webhook is sent to a trigger's webhook URL.
+message WebhookConfig {
+  // Enumerates potential issues with the Secret Manager secret provided by the
+  // user.
+  enum State {
+    // The webhook auth configuration not been checked.
+    STATE_UNSPECIFIED = 0;
+
+    // The auth configuration is properly setup.
+    OK = 1;
+
+    // The secret provided in auth_method has been deleted.
+    SECRET_DELETED = 2;
+  }
+
+  // Auth method specifies how the webhook authenticates with GCP.
+  oneof auth_method {
+    // Required. Resource name for the secret required as a URL parameter.
+    string secret = 3 [
+      (google.api.field_behavior) = REQUIRED,
+      (google.api.resource_reference) = {
+        type: "secretmanager.googleapis.com/SecretVersion"
+      }
+    ];
+  }
+
+  // Potential issues with the underlying Pub/Sub subscription configuration.
+  // Only populated on get requests.
+  State state = 4;
+}
+
 // PullRequestFilter contains filter properties for matching GitHub Pull
 // Requests.
 message PullRequestFilter {
@@ -1241,6 +1356,12 @@ message PushFilter {
 
 // Request to create a new `BuildTrigger`.
 message CreateBuildTriggerRequest {
+  // The parent resource where this trigger will be created.
+  // Format: `projects/{project}/locations/{location}`
+  string parent = 3 [(google.api.resource_reference) = {
+    child_type: "cloudbuild.googleapis.com/BuildTrigger"
+  }];
+
   // Required. ID of the project for which to configure automatic builds.
   string project_id = 1 [(google.api.field_behavior) = REQUIRED];
 
@@ -1250,6 +1371,12 @@ message CreateBuildTriggerRequest {
 
 // Returns the `BuildTrigger` with the specified ID.
 message GetBuildTriggerRequest {
+  // The name of the `Trigger` to retrieve.
+  // Format: `projects/{project}/locations/{location}/triggers/{trigger}`
+  string name = 3 [(google.api.resource_reference) = {
+    type: "cloudbuild.googleapis.com/BuildTrigger"
+  }];
+
   // Required. ID of the project that owns the trigger.
   string project_id = 1 [(google.api.field_behavior) = REQUIRED];
 
@@ -1259,6 +1386,12 @@ message GetBuildTriggerRequest {
 
 // Request to list existing `BuildTriggers`.
 message ListBuildTriggersRequest {
+  // The parent of the collection of `Triggers`.
+  // Format: `projects/{project}/locations/{location}`
+  string parent = 4 [(google.api.resource_reference) = {
+    child_type: "cloudbuild.googleapis.com/BuildTrigger"
+  }];
+
   // Required. ID of the project for which to list BuildTriggers.
   string project_id = 1 [(google.api.field_behavior) = REQUIRED];
 
@@ -1280,6 +1413,12 @@ message ListBuildTriggersResponse {
 
 // Request to delete a `BuildTrigger`.
 message DeleteBuildTriggerRequest {
+  // The name of the `Trigger` to delete.
+  // Format: `projects/{project}/locations/{location}/triggers/{trigger}`
+  string name = 3 [(google.api.resource_reference) = {
+    type: "cloudbuild.googleapis.com/BuildTrigger"
+  }];
+
   // Required. ID of the project that owns the trigger.
   string project_id = 1 [(google.api.field_behavior) = REQUIRED];
 
@@ -1415,7 +1554,7 @@ message BuildOptions {
   // Option to specify a `WorkerPool` for the build.
   // Format: projects/{project}/locations/{location}/workerPools/{workerPool}
   //
-  // This field is experimental.
+  // This field is in beta and is available only to restricted users.
   string worker_pool = 7;
 
   // Option to specify the logging mode, which determines if and where build
@@ -1451,6 +1590,10 @@ message BuildOptions {
 // ReceiveTriggerWebhookRequest [Experimental] is the request object accepted by
 // the ReceiveTriggerWebhook method.
 message ReceiveTriggerWebhookRequest {
+  // The name of the `ReceiveTriggerWebhook` to retrieve.
+  // Format: `projects/{project}/locations/{location}/triggers/{trigger}`
+  string name = 5;
+
   // HTTP request body.
   google.api.HttpBody body = 1;
 
