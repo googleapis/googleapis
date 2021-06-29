@@ -224,7 +224,7 @@ load("@rules_python//python:pip.bzl", "pip_repositories")
 
 pip_repositories()
 
-_gapic_generator_python_version = "0.50.2"
+_gapic_generator_python_version = "0.50.3"
 
 http_archive(
     name = "gapic_generator_python",
