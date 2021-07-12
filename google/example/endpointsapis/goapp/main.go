@@ -95,11 +95,9 @@ func report(w http.ResponseWriter, r *http.Request, name string, responseCode in
 					Time: received.UTC().Format(time.RFC3339),
 				},
 				Response: &servicecontrol.Response{
-					Time: time.Now().UTC().Format(time.RFC3339),
-					Code: responseCode,
-					Headers: map[string]string{
-						"x-backend-latency": "0.007",
-					},
+					Time:           time.Now().UTC().Format(time.RFC3339),
+					Code:           responseCode,
+					BackendLatency: time.Duration(70) * time.Millisecond,
 				},
 				Destination: &servicecontrol.Peer{
 					RegionCode: "us-central1",
