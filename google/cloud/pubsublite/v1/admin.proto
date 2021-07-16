@@ -21,6 +21,7 @@ import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/pubsublite/v1/common.proto";
+import "google/longrunning/operations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
@@ -137,6 +138,38 @@ service AdminService {
       delete: "/v1/admin/{name=projects/*/locations/*/subscriptions/*}"
     };
     option (google.api.method_signature) = "name";
+  }
+
+  // Performs an out-of-band seek for a subscription to a specified target,
+  // which may be timestamps or named positions within the message backlog.
+  // Seek translates these targets to cursors for each partition and
+  // orchestrates subscribers to start consuming messages from these seek
+  // cursors.
+  //
+  // If an operation is returned, the seek has been registered and subscribers
+  // will eventually receive messages from the seek cursors (i.e. eventual
+  // consistency), as long as they are using a minimum supported client library
+  // version and not a system that tracks cursors independently of Pub/Sub Lite
+  // (e.g. Apache Beam, Dataflow, Spark). The seek operation will fail for
+  // unsupported clients.
+  //
+  // If clients would like to know when subscribers react to the seek (or not),
+  // they can poll the operation. The seek operation will succeed and complete
+  // once subscribers are ready to receive messages from the seek cursors for
+  // all partitions of the topic. This means that the seek operation will not
+  // complete until all subscribers come online.
+  //
+  // If the previous seek operation has not yet completed, it will be aborted
+  // and the new invocation of seek will supersede it.
+  rpc SeekSubscription(SeekSubscriptionRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/admin/{name=projects/*/locations/*/subscriptions/*}:seek"
+      body: "*"
+    };
+    option (google.longrunning.operation_info) = {
+      response_type: "SeekSubscriptionResponse"
+      metadata_type: "OperationMetadata"
+    };
   }
 
   // Creates a new reservation.
@@ -419,6 +452,64 @@ message DeleteSubscriptionRequest {
       type: "pubsublite.googleapis.com/Subscription"
     }
   ];
+}
+
+// Request for SeekSubscription.
+message SeekSubscriptionRequest {
+  // A named position with respect to the message backlog.
+  enum NamedTarget {
+    // Unspecified named target. Do not use.
+    NAMED_TARGET_UNSPECIFIED = 0;
+
+    // Seek to the oldest retained message.
+    TAIL = 1;
+
+    // Seek past all recently published messages, skipping the entire message
+    // backlog.
+    HEAD = 2;
+  }
+
+  // Required. The name of the subscription to seek.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "pubsublite.googleapis.com/Subscription"
+    }
+  ];
+
+  // The target to seek to. Must be set.
+  oneof target {
+    // Seek to a named position with respect to the message backlog.
+    NamedTarget named_target = 2;
+
+    // Seek to the first message whose publish or event time is greater than or
+    // equal to the specified query time. If no such message can be located,
+    // will seek to the end of the message backlog.
+    TimeTarget time_target = 3;
+  }
+}
+
+// Response for SeekSubscription long running operation.
+message SeekSubscriptionResponse {
+
+}
+
+// Metadata for long running operations.
+message OperationMetadata {
+  // The time the operation was created.
+  google.protobuf.Timestamp create_time = 1;
+
+  // The time the operation finished running. Not set if the operation has not
+  // completed.
+  google.protobuf.Timestamp end_time = 2;
+
+  // Resource path for the target of the operation. For example, targets of
+  // seeks are subscription resources, structured like:
+  // projects/{project_number}/locations/{location}/subscriptions/{subscription_id}
+  string target = 3;
+
+  // Name of the verb executed by the operation.
+  string verb = 4;
 }
 
 // Request for CreateReservation.

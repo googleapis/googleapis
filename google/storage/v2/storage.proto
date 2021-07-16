@@ -1,0 +1,1134 @@
+// Copyright 2021 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.storage.v2;
+
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/iam/v1/iam_policy.proto";
+import "google/iam/v1/policy.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "google.golang.org/genproto/googleapis/storage/v2;storage";
+option java_multiple_files = true;
+option java_outer_classname = "StorageProto";
+option java_package = "com.google.storage.v2";
+option (google.api.resource_definition) = {
+  type: "cloudkms.googleapis.com/CryptoKey"
+  pattern: "projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}"
+};
+
+// Manages Google Cloud Storage resources.
+service Storage {
+  option (google.api.default_host) = "storage.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform,"
+      "https://www.googleapis.com/auth/cloud-platform.read-only,"
+      "https://www.googleapis.com/auth/devstorage.full_control,"
+      "https://www.googleapis.com/auth/devstorage.read_only,"
+      "https://www.googleapis.com/auth/devstorage.read_write";
+
+  // Reads an object's data.
+  rpc ReadObject(ReadObjectRequest) returns (stream ReadObjectResponse) {
+    option (google.api.method_signature) = "bucket,object";
+    option (google.api.method_signature) = "bucket,object,generation";
+  }
+
+  // Stores a new object and metadata.
+  //
+  // An object can be written either in a single message stream or in a
+  // resumable sequence of message streams. To write using a single stream,
+  // the client should include in the first message of the stream an
+  // `WriteObjectSpec` describing the destination bucket, object, and any
+  // preconditions. Additionally, the final message must set 'finish_write' to
+  // true, or else it is an error.
+  //
+  // For a resumable write, the client should instead call
+  // `StartResumableWrite()` and provide that method an `WriteObjectSpec.`
+  // They should then attach the returned `upload_id` to the first message of
+  // each following call to `Create`. If there is an error or the connection is
+  // broken during the resumable `Create()`, the client should check the status
+  // of the `Create()` by calling `QueryWriteStatus()` and continue writing from
+  // the returned `committed_size`. This may be less than the amount of data the
+  // client previously sent.
+  //
+  // The service will not view the object as complete until the client has
+  // sent a `WriteObjectRequest` with `finish_write` set to `true`. Sending any
+  // requests on a stream after sending a request with `finish_write` set to
+  // `true` will cause an error. The client **should** check the response it
+  // receives to determine how much data the service was able to commit and
+  // whether the service views the object as complete.
+  rpc WriteObject(stream WriteObjectRequest) returns (WriteObjectResponse) {
+  }
+
+  // Starts a resumable write. How long the write operation remains valid, and
+  // what happens when the write operation becomes invalid, are
+  // service-dependent.
+  rpc StartResumableWrite(StartResumableWriteRequest) returns (StartResumableWriteResponse) {
+  }
+
+  // Determines the `committed_size` for an object that is being written, which
+  // can then be used as the `write_offset` for the next `Write()` call.
+  //
+  // If the object does not exist (i.e., the object has been deleted, or the
+  // first `Write()` has not yet reached the service), this method returns the
+  // error `NOT_FOUND`.
+  //
+  // The client **may** call `QueryWriteStatus()` at any time to determine how
+  // much data has been processed for this object. This is useful if the
+  // client is buffering data and needs to know which data can be safely
+  // evicted. For any sequence of `QueryWriteStatus()` calls for a given
+  // object name, the sequence of returned `committed_size` values will be
+  // non-decreasing.
+  rpc QueryWriteStatus(QueryWriteStatusRequest) returns (QueryWriteStatusResponse) {
+    option (google.api.method_signature) = "upload_id";
+  }
+}
+
+// Request message for ReadObject.
+message ReadObjectRequest {
+  // The name of the bucket containing the object to read.
+  string bucket = 1;
+
+  // The name of the object to read.
+  string object = 2;
+
+  // If present, selects a specific revision of this object (as opposed
+  // to the latest version, the default).
+  int64 generation = 3;
+
+  // The offset for the first byte to return in the read, relative to the start
+  // of the object.
+  //
+  // A negative `read_offset` value will be interpreted as the number of bytes
+  // back from the end of the object to be returned. For example, if an object's
+  // length is 15 bytes, a ReadObjectRequest with `read_offset` = -5 and
+  // `read_limit` = 3 would return bytes 10 through 12 of the object. Requesting
+  // a negative offset whose magnitude is larger than the size of the object
+  // will result in an error.
+  int64 read_offset = 4;
+
+  // The maximum number of `data` bytes the server is allowed to return in the
+  // sum of all `Object` messages. A `read_limit` of zero indicates that there
+  // is no limit, and a negative `read_limit` will cause an error.
+  //
+  // If the stream returns fewer bytes than allowed by the `read_limit` and no
+  // error occurred, the stream includes all data from the `read_offset` to the
+  // end of the resource.
+  int64 read_limit = 5;
+
+  // Makes the operation conditional on whether the object's current generation
+  // matches the given value. Setting to 0 makes the operation succeed only if
+  // there are no live versions of the object.
+  optional int64 if_generation_match = 6;
+
+  // Makes the operation conditional on whether the object's current generation
+  // does not match the given value. If no live object exists, the precondition
+  // fails. Setting to 0 makes the operation succeed only if there is a live
+  // version of the object.
+  optional int64 if_generation_not_match = 7;
+
+  // Makes the operation conditional on whether the object's current
+  // metageneration matches the given value.
+  optional int64 if_metageneration_match = 8;
+
+  // Makes the operation conditional on whether the object's current
+  // metageneration does not match the given value.
+  optional int64 if_metageneration_not_match = 9;
+
+  // A set of parameters common to Storage API requests concerning an object.
+  CommonObjectRequestParams common_object_request_params = 10;
+
+  // A set of parameters common to all Storage API requests.
+  CommonRequestParams common_request_params = 11;
+
+  // Mask specifying which fields to read.
+  // The checksummed_data field and its children will always be present.
+  // If no mask is specified, will default to all fields except metadata.owner
+  // and metadata.acl.
+  // * may be used to mean "all fields".
+  optional google.protobuf.FieldMask read_mask = 12;
+}
+
+// Response message for GetObject.
+message ReadObjectResponse {
+  // A portion of the data for the object. The service **may** leave `data`
+  // empty for any given `ReadResponse`. This enables the service to inform the
+  // client that the request is still live while it is running an operation to
+  // generate more data.
+  ChecksummedData checksummed_data = 1;
+
+  // The checksums of the complete object. The client should compute one of
+  // these checksums over the downloaded object and compare it against the value
+  // provided here.
+  ObjectChecksums object_checksums = 2;
+
+  // If read_offset and or read_limit was specified on the
+  // ReadObjectRequest, ContentRange will be populated on the first
+  // ReadObjectResponse message of the read stream.
+  ContentRange content_range = 3;
+
+  // Metadata of the object whose media is being returned.
+  // Only populated in the first response in the stream.
+  Object metadata = 4;
+}
+
+// Describes an attempt to insert an object, possibly over multiple requests.
+message WriteObjectSpec {
+  // Destination object, including its name and its metadata.
+  Object resource = 1;
+
+  // Apply a predefined set of access controls to this object.
+  PredefinedObjectAcl predefined_acl = 2;
+
+  // Makes the operation conditional on whether the object's current
+  // generation matches the given value. Setting to 0 makes the operation
+  // succeed only if there are no live versions of the object.
+  optional int64 if_generation_match = 3;
+
+  // Makes the operation conditional on whether the object's current
+  // generation does not match the given value. If no live object exists, the
+  // precondition fails. Setting to 0 makes the operation succeed only if
+  // there is a live version of the object.
+  optional int64 if_generation_not_match = 4;
+
+  // Makes the operation conditional on whether the object's current
+  // metageneration matches the given value.
+  optional int64 if_metageneration_match = 5;
+
+  // Makes the operation conditional on whether the object's current
+  // metageneration does not match the given value.
+  optional int64 if_metageneration_not_match = 6;
+}
+
+// Request message for WriteObject.
+message WriteObjectRequest {
+  // The first message of each stream should set one of the following.
+  oneof first_message {
+    // For resumable uploads. This should be the `upload_id` returned from a
+    // call to `StartResumableWriteResponse`.
+    string upload_id = 1;
+
+    // For non-resumable uploads. Describes the overall upload, including the
+    // destination bucket and object name, preconditions, etc.
+    WriteObjectSpec write_object_spec = 2;
+  }
+
+  // Required. The offset from the beginning of the object at which the data should be
+  // written.
+  //
+  // In the first `WriteObjectRequest` of a `WriteObject()` action, it
+  // indicates the initial offset for the `Write()` call. The value **must** be
+  // equal to the `committed_size` that a call to `QueryWriteStatus()` would
+  // return (0 if this is the first write to the object).
+  //
+  // On subsequent calls, this value **must** be no larger than the sum of the
+  // first `write_offset` and the sizes of all `data` chunks sent previously on
+  // this stream.
+  //
+  // An incorrect value will cause an error.
+  int64 write_offset = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // A portion of the data for the object.
+  oneof data {
+    // The data to insert. If a crc32c checksum is provided that doesn't match
+    // the checksum computed by the service, the request will fail.
+    ChecksummedData checksummed_data = 4;
+  }
+
+  // Checksums for the complete object. If the checksums computed by the service
+  // don't match the specifified checksums the call will fail. May only be
+  // provided in the first or last request (either with first_message, or
+  // finish_write set).
+  ObjectChecksums object_checksums = 6;
+
+  // If `true`, this indicates that the write is complete. Sending any
+  // `WriteObjectRequest`s subsequent to one in which `finish_write` is `true`
+  // will cause an error.
+  // For a non-resumable write (where the upload_id was not set in the first
+  // message), it is an error not to set this field in the final message of the
+  // stream.
+  bool finish_write = 7;
+
+  // A set of parameters common to Storage API requests concerning an object.
+  CommonObjectRequestParams common_object_request_params = 8;
+
+  // A set of parameters common to all Storage API requests.
+  CommonRequestParams common_request_params = 9;
+}
+
+// Response message for WriteObject.
+message WriteObjectResponse {
+  // The response will set one of the following.
+  oneof write_status {
+    // The total number of bytes that have been processed for the given object
+    // from all `WriteObject` calls. Only set if the upload has not finalized.
+    int64 committed_size = 1;
+
+    // A resource containing the metadata for the uploaded object. Only set if
+    // the upload has finalized.
+    Object resource = 2;
+  }
+}
+
+// Request object for `QueryWriteStatus`.
+message QueryWriteStatusRequest {
+  // Required. The name of the resume token for the object whose write status is being
+  // requested.
+  string upload_id = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // A set of parameters common to Storage API requests concerning an object.
+  CommonObjectRequestParams common_object_request_params = 2;
+
+  // A set of parameters common to all Storage API requests.
+  CommonRequestParams common_request_params = 3;
+}
+
+// Response object for `QueryWriteStatus`.
+message QueryWriteStatusResponse {
+  // The response will set one of the following.
+  oneof write_status {
+    // The total number of bytes that have been processed for the given object
+    // from all `WriteObject` calls. This is the correct value for the
+    // 'write_offset' field to use when resuming the `WriteObject` operation.
+    // Only set if the upload has not finalized.
+    int64 committed_size = 1;
+
+    // A resource containing the metadata for the uploaded object. Only set if
+    // the upload has finalized.
+    Object resource = 2;
+  }
+}
+
+// Request message StartResumableWrite.
+message StartResumableWriteRequest {
+  // The destination bucket, object, and metadata, as well as any preconditions.
+  WriteObjectSpec write_object_spec = 1;
+
+  // A set of parameters common to Storage API requests concerning an object.
+  CommonObjectRequestParams common_object_request_params = 3;
+
+  // A set of parameters common to all Storage API requests.
+  CommonRequestParams common_request_params = 4;
+}
+
+// Response object for `StartResumableWrite`.
+message StartResumableWriteResponse {
+  // The upload_id of the newly started resumable write operation. This
+  // value should be copied into the `WriteObjectRequest.upload_id` field.
+  string upload_id = 1;
+}
+
+// Parameters that can be passed to any object request.
+message CommonObjectRequestParams {
+  // Encryption algorithm used with Customer-Supplied Encryption Keys feature.
+  string encryption_algorithm = 1;
+
+  // Encryption key used with Customer-Supplied Encryption Keys feature.
+  string encryption_key = 2;
+
+  // SHA256 hash of encryption key used with Customer-Supplied Encryption Keys
+  // feature.
+  string encryption_key_sha256 = 3;
+}
+
+// Parameters that can be passed to any request.
+message CommonRequestParams {
+  // Required. Required when using buckets with Requestor Pays feature enabled.
+  // Example: `projects/123456`.
+  string user_project = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudresourcemanager.googleapis.com/Project"
+    }
+  ];
+}
+
+// Shared constants.
+message ServiceConstants {
+  // A collection of constant values meaningful to the Storage API.
+  enum Values {
+    option allow_alias = true;
+
+    // Unused. Proto3 requires first enum to be 0.
+    VALUES_UNSPECIFIED = 0;
+
+    // The maximum size chunk that can will be returned in a single
+    // ReadRequest.
+    // 2 MiB.
+    MAX_READ_CHUNK_BYTES = 2097152;
+
+    // The maximum size chunk that can be sent in a single WriteObjectRequest.
+    // 2 MiB.
+    MAX_WRITE_CHUNK_BYTES = 2097152;
+
+    // The maximum size of an object in MB - whether written in a single stream
+    // or composed from multiple other objects.
+    // 5 TiB.
+    MAX_OBJECT_SIZE_MB = 5242880;
+
+    // The maximum length field name that can be sent in a single
+    // custom metadata field.
+    // 1 KiB.
+    MAX_CUSTOM_METADATA_FIELD_NAME_BYTES = 1024;
+
+    // The maximum length field value that can be sent in a single
+    // custom_metadata field.
+    // 4 KiB.
+    MAX_CUSTOM_METADATA_FIELD_VALUE_BYTES = 4096;
+
+    // The maximum total bytes that can be populated into all field names and
+    // values of the custom_metadata for one object.
+    // 8 KiB.
+    MAX_CUSTOM_METADATA_TOTAL_SIZE_BYTES = 8192;
+
+    // The maximum total bytes that can be populated into all bucket metadata
+    // fields.
+    // 20 KiB.
+    MAX_BUCKET_METADATA_TOTAL_SIZE_BYTES = 20480;
+
+    // The maximum number of NotificationConfigs that can be registered
+    // for a given bucket.
+    MAX_NOTIFICATION_CONFIGS_PER_BUCKET = 100;
+
+    // The maximum number of LifecycleRules that can be registered for a given
+    // bucket.
+    MAX_LIFECYCLE_RULES_PER_BUCKET = 100;
+
+    // The maximum number of custom attributes per NotificationConfigs.
+    MAX_NOTIFICATION_CUSTOM_ATTRIBUTES = 5;
+
+    // The maximum length of a custom attribute key included in
+    // NotificationConfig.
+    MAX_NOTIFICATION_CUSTOM_ATTRIBUTE_KEY_LENGTH = 256;
+
+    // The maximum length of a custom attribute value included in a
+    // NotificationConfig.
+    MAX_NOTIFICATION_CUSTOM_ATTRIBUTE_VALUE_LENGTH = 1024;
+
+    // The maximum number of key/value entries per bucket label.
+    MAX_LABELS_ENTRIES_COUNT = 64;
+
+    // The maximum character length of the key or value in a bucket
+    // label map.
+    MAX_LABELS_KEY_VALUE_LENGTH = 63;
+
+    // The maximum byte size of the key or value in a bucket label
+    // map.
+    MAX_LABELS_KEY_VALUE_BYTES = 128;
+
+    // The maximum number of object IDs that can be included in a
+    // DeleteObjectsRequest.
+    MAX_OBJECT_IDS_PER_DELETE_OBJECTS_REQUEST = 1000;
+
+    // The maximum number of days for which a token returned by the
+    // GetListObjectsSplitPoints RPC is valid.
+    SPLIT_TOKEN_MAX_VALID_DAYS = 14;
+  }
+
+
+}
+
+// A bucket.
+message Bucket {
+  option (google.api.resource) = {
+    type: "storage.googleapis.com/Bucket"
+    pattern: "projects/{project}/buckets/{bucket}"
+  };
+
+  // Billing properties of a bucket.
+  message Billing {
+    // When set to true, Requester Pays is enabled for this bucket.
+    bool requester_pays = 1;
+  }
+
+  // Cross-Origin Response sharing (CORS) properties for a bucket.
+  // For more on Cloud Storage and CORS, see
+  // https://cloud.google.com/storage/docs/cross-origin.
+  // For more on CORS in general, see https://tools.ietf.org/html/rfc6454.
+  message Cors {
+    // The list of Origins eligible to receive CORS response headers. See
+    // [https://tools.ietf.org/html/rfc6454][RFC 6454] for more on origins.
+    // Note: "*" is permitted in the list of origins, and means "any Origin".
+    repeated string origin = 1;
+
+    // The list of HTTP methods on which to include CORS response headers,
+    // (`GET`, `OPTIONS`, `POST`, etc) Note: "*" is permitted in the list of
+    // methods, and means "any method".
+    repeated string method = 2;
+
+    // The list of HTTP headers other than the
+    // [https://www.w3.org/TR/cors/#simple-response-header][simple response
+    // headers] to give permission for the user-agent to share across domains.
+    repeated string response_header = 3;
+
+    // The value, in seconds, to return in the
+    // [https://www.w3.org/TR/cors/#access-control-max-age-response-header][Access-Control-Max-Age
+    // header] used in preflight responses.
+    int32 max_age_seconds = 4;
+  }
+
+  // Encryption properties of a bucket.
+  message Encryption {
+    // A Cloud KMS key that will be used to encrypt objects inserted into this
+    // bucket, if no encryption method is specified.
+    string default_kms_key = 1 [(google.api.resource_reference) = {
+                                  type: "cloudkms.googleapis.com/CryptoKey"
+                                }];
+  }
+
+  // Bucket restriction options.
+  message IamConfig {
+    // Settings for Uniform Bucket level access.
+    // See https://cloud.google.com/storage/docs/uniform-bucket-level-access.
+    message UniformBucketLevelAccess {
+      // If set, access checks only use bucket-level IAM policies or above.
+      bool enabled = 1;
+
+      // The deadline time for changing
+      // `iamConfig.uniformBucketLevelAccess.enabled` from
+      // true to false in [RFC 3339](https://tools.ietf.org/html/rfc3339).
+      // Mutable until the specified deadline is reached, but not afterward.
+      google.protobuf.Timestamp lock_time = 2;
+    }
+
+    // Public Access Prevention config values.
+    enum PublicAccessPrevention {
+      // Does not prevent access from being granted to public members 'allUsers'
+      // or 'allAuthenticatedUsers'. This setting may be enforced by Org Policy
+      // at the project/folder/organization level.
+      PUBLIC_ACCESS_PREVENTION_UNSPECIFIED = 0;
+
+      // Prevents access from being granted to public members 'allUsers' and
+      // 'allAuthenticatedUsers'. Prevents attempts to grant new access to
+      // public members.
+      ENFORCED = 1;
+    }
+
+    // Bucket restriction options currently enforced on the bucket.
+    UniformBucketLevelAccess uniform_bucket_level_access = 1;
+
+    // Whether IAM will enforce public access prevention.
+    PublicAccessPrevention public_access_prevention = 2;
+  }
+
+  // Lifecycle properties of a bucket.
+  // For more information, see https://cloud.google.com/storage/docs/lifecycle.
+  message Lifecycle {
+    // A lifecycle Rule, combining an action to take on an object and a
+    // condition which will trigger that action.
+    message Rule {
+      // An action to take on an object.
+      message Action {
+        // Type of the action. Currently, only `Delete` and
+        // `SetStorageClass` are supported.
+        string type = 1;
+
+        // Target storage class. Required iff the type of the action is
+        // SetStorageClass.
+        string storage_class = 2;
+      }
+
+      // A condition of an object which triggers some action.
+      message Condition {
+        // Age of an object (in days). This condition is satisfied when an
+        // object reaches the specified age.
+        int32 age_days = 1;
+
+        // A date in [RFC 3339][1] format with only the date part (for
+        // instance, "2013-01-15"). This condition is satisfied when an
+        // object is created before midnight of the specified date in UTC.
+        // [1]: https://tools.ietf.org/html/rfc3339
+        google.protobuf.Timestamp created_before_time = 2;
+
+        // Relevant only for versioned objects. If the value is
+        // `true`, this condition matches live objects; if the value
+        // is `false`, it matches archived objects.
+        optional bool is_live = 3;
+
+        // Relevant only for versioned objects. If the value is N, this
+        // condition is satisfied when there are at least N versions (including
+        // the live version) newer than this version of the object.
+        int32 num_newer_versions = 4;
+
+        // Objects having any of the storage classes specified by this condition
+        // will be matched. Values include `MULTI_REGIONAL`, `REGIONAL`,
+        // `NEARLINE`, `COLDLINE`, `STANDARD`, and
+        // `DURABLE_REDUCED_AVAILABILITY`.
+        repeated string matches_storage_class = 5;
+
+        // A regular expression that satisfies the RE2 syntax. This condition is
+        // satisfied when the name of the object matches the RE2 pattern.  Note:
+        // This feature is currently in the "Early Access" launch stage and is
+        // only available to an allowlisted set of users; that means that this
+        // feature may be changed in backward-incompatible ways and that it is
+        // not guaranteed to be released.
+        string matches_pattern = 6;
+
+        // Number of days that has elapsed since the custom timestamp set on an
+        // object.
+        int32 days_since_custom_time = 7;
+
+        // An object matches this condition if the custom timestamp set on the
+        // object is before this timestamp.
+        google.protobuf.Timestamp custom_time_before_time = 8;
+
+        // This condition is relevant only for versioned objects. An object
+        // version satisfies this condition only if these many days have been
+        // passed since it became noncurrent. The value of the field must be a
+        // nonnegative integer. If it's zero, the object version will become
+        // eligible for Lifecycle action as soon as it becomes noncurrent.
+        int32 days_since_noncurrent_time = 9;
+
+        // This condition is relevant only for versioned objects. An object
+        // version satisfies this condition only if it became noncurrent before
+        // the specified timestamp.
+        google.protobuf.Timestamp noncurrent_time_before_time = 10;
+      }
+
+      // The action to take.
+      Action action = 1;
+
+      // The condition(s) under which the action will be taken.
+      Condition condition = 2;
+    }
+
+    // A lifecycle management rule, which is made of an action to take and the
+    // condition(s) under which the action will be taken.
+    repeated Rule rule = 1;
+  }
+
+  // Logging-related properties of a bucket.
+  message Logging {
+    // The destination bucket where the current bucket's logs should be placed.
+    string log_bucket = 1;
+
+    // A prefix for log object names.
+    string log_object_prefix = 2;
+  }
+
+  // Retention policy properties of a bucket.
+  message RetentionPolicy {
+    // Server-determined value that indicates the time from which policy was
+    // enforced and effective. This value is in
+    // [https://tools.ietf.org/html/rfc3339][RFC 3339] format.
+    google.protobuf.Timestamp effective_time = 1;
+
+    // Once locked, an object retention policy cannot be modified.
+    bool is_locked = 2;
+
+    // The duration in seconds that objects need to be retained. Retention
+    // duration must be greater than zero and less than 100 years. Note that
+    // enforcement of retention periods less than a day is not guaranteed. Such
+    // periods should only be used for testing purposes.
+    int64 retention_period = 3;
+  }
+
+  // Properties of a bucket related to versioning.
+  // For more on Cloud Storage versioning, see
+  // https://cloud.google.com/storage/docs/object-versioning.
+  message Versioning {
+    // While set to true, versioning is fully enabled for this bucket.
+    bool enabled = 1;
+  }
+
+  // Properties of a bucket related to accessing the contents as a static
+  // website. For more on hosting a static website via Cloud Storage, see
+  // https://cloud.google.com/storage/docs/hosting-static-website.
+  message Website {
+    // If the requested object path is missing, the service will ensure the path
+    // has a trailing '/', append this suffix, and attempt to retrieve the
+    // resulting object. This allows the creation of `index.html`
+    // objects to represent directory pages.
+    string main_page_suffix = 1;
+
+    // If the requested object path is missing, and any
+    // `mainPageSuffix` object is missing, if applicable, the service
+    // will return the named object from this bucket as the content for a
+    // [https://tools.ietf.org/html/rfc7231#section-6.5.4][404 Not Found]
+    // result.
+    string not_found_page = 2;
+  }
+
+  // Immutable. The name of the bucket.
+  // Global buckets will be of the format `projects/{project}/buckets/{bucket}`.
+  // Other sorts of buckets in the future are not guaranteed to follow this
+  // pattern.
+  // For globally unique bucket names, a `_` may be substituted for the project
+  // ID.
+  string name = 1 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Output only. The user-chosen part of the bucket name. The `{bucket}` portion of the
+  // `name` field. For globally unique buckets, this is equal to the "bucket
+  // name" of other Cloud Storage APIs. Example: "pub".
+  string bucket_id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Immutable. The project which owns this bucket.
+  // Format: projects/{project_number}
+  // Example: `projects/123456`.
+  string project = 3 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.resource_reference) = {
+      type: "cloudresourcemanager.googleapis.com/Project"
+    }
+  ];
+
+  // Output only. The metadata generation of this bucket.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
+  int64 metageneration = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Immutable. The location of the bucket. Object data for objects in the bucket resides
+  // in physical storage within this region.  Defaults to `US`. See the
+  // [https://developers.google.com/storage/docs/concepts-techniques#specifyinglocations"][developer's
+  // guide] for the authoritative list. Attempting to update this field after
+  // the bucket is created will result in an error.
+  string location = 5 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Output only. The location type of the bucket (region, dual-region, multi-region, etc).
+  string location_type = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The bucket's default storage class, used whenever no storageClass is
+  // specified for a newly-created object. This defines how objects in the
+  // bucket are stored and determines the SLA and the cost of storage.
+  // If this value is not specified when the bucket is created, it will default
+  // to `STANDARD`. For more information, see
+  // https://developers.google.com/storage/docs/storage-classes.
+  string storage_class = 7;
+
+  // Access controls on the bucket.
+  // If iamConfig.uniformBucketLevelAccess is enabled on this bucket,
+  // requests to set, read, or modify acl is an error.
+  repeated BucketAccessControl acl = 8;
+
+  // Default access controls to apply to new objects when no ACL is provided.
+  // If iamConfig.uniformBucketLevelAccess is enabled on this bucket,
+  // requests to set, read, or modify acl is an error.
+  repeated ObjectAccessControl default_object_acl = 9;
+
+  // The bucket's lifecycle config. See
+  // [https://developers.google.com/storage/docs/lifecycle]Lifecycle Management]
+  // for more information.
+  Lifecycle lifecycle = 10;
+
+  // Output only. The creation time of the bucket in
+  // [https://tools.ietf.org/html/rfc3339][RFC 3339] format.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
+  google.protobuf.Timestamp create_time = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The bucket's [https://www.w3.org/TR/cors/][Cross-Origin Resource Sharing]
+  // (CORS) config.
+  repeated Cors cors = 12;
+
+  // Output only. The modification time of the bucket.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
+  google.protobuf.Timestamp update_time = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The default value for event-based hold on newly created objects in this
+  // bucket.  Event-based hold is a way to retain objects indefinitely until an
+  // event occurs, signified by the
+  // hold's release. After being released, such objects will be subject to
+  // bucket-level retention (if any).  One sample use case of this flag is for
+  // banks to hold loan documents for at least 3 years after loan is paid in
+  // full. Here, bucket-level retention is 3 years and the event is loan being
+  // paid in full. In this example, these objects will be held intact for any
+  // number of years until the event has occurred (event-based hold on the
+  // object is released) and then 3 more years after that. That means retention
+  // duration of the objects begins from the moment event-based hold
+  // transitioned from true to false.  Objects under event-based hold cannot be
+  // deleted, overwritten or archived until the hold is removed.
+  bool default_event_based_hold = 14;
+
+  // User-provided labels, in key/value pairs.
+  map<string, string> labels = 15;
+
+  // The bucket's website config, controlling how the service behaves
+  // when accessing bucket contents as a web site. See the
+  // [https://cloud.google.com/storage/docs/static-website][Static Website
+  // Examples] for more information.
+  Website website = 16;
+
+  // The bucket's versioning config.
+  Versioning versioning = 17;
+
+  // The bucket's logging config, which defines the destination bucket
+  // and name prefix (if any) for the current bucket's logs.
+  Logging logging = 18;
+
+  // Output only. The owner of the bucket. This is always the project team's owner group.
+  Owner owner = 19 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Encryption config for a bucket.
+  Encryption encryption = 20;
+
+  // The bucket's billing config.
+  Billing billing = 21;
+
+  // The bucket's retention policy. The retention policy enforces a minimum
+  // retention time for all objects contained in the bucket, based on their
+  // creation time. Any attempt to overwrite or delete objects younger than the
+  // retention period will result in a PERMISSION_DENIED error.  An unlocked
+  // retention policy can be modified or removed from the bucket via a
+  // storage.buckets.update operation. A locked retention policy cannot be
+  // removed or shortened in duration for the lifetime of the bucket.
+  // Attempting to remove or decrease period of a locked retention policy will
+  // result in a PERMISSION_DENIED error.
+  RetentionPolicy retention_policy = 22;
+
+  // The bucket's IAM config.
+  IamConfig iam_config = 23;
+
+  // Immutable. The zone or zones from which the bucket is intended to use zonal quota.
+  // Requests for data from outside the specified affinities are still allowed
+  // but won't be able to use zonal quota. The values are case-insensitive.
+  // Attempting to update this field after bucket is created will result in an
+  // error.
+  repeated string zone_affinity = 24 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Reserved for future use.
+  bool satisfies_pzs = 25;
+}
+
+// An access-control entry.
+message BucketAccessControl {
+  // The access permission for the entity.
+  string role = 1;
+
+  // The ID of the access-control entry.
+  string id = 2;
+
+  // The entity holding the permission, in one of the following forms:
+  // * `user-{userid}`
+  // * `user-{email}`
+  // * `group-{groupid}`
+  // * `group-{email}`
+  // * `domain-{domain}`
+  // * `project-{team-projectid}`
+  // * `allUsers`
+  // * `allAuthenticatedUsers`
+  // Examples:
+  // * The user `liz@example.com` would be `user-liz@example.com`.
+  // * The group `example@googlegroups.com` would be
+  // `group-example@googlegroups.com`
+  // * All members of the Google Apps for Business domain `example.com` would be
+  // `domain-example.com`
+  string entity = 3;
+
+  // The ID for the entity, if any.
+  string entity_id = 4;
+
+  // The email address associated with the entity, if any.
+  string email = 5;
+
+  // The domain associated with the entity, if any.
+  string domain = 6;
+
+  // The project team associated with the entity, if any.
+  ProjectTeam project_team = 7;
+}
+
+// Message used to convey content being read or written, along with an optional
+// checksum.
+message ChecksummedData {
+  // The data.
+  bytes content = 1;
+
+  // If set, the CRC32C digest of the content field.
+  optional fixed32 crc32c = 2;
+}
+
+// Message used for storing full (not subrange) object checksums.
+message ObjectChecksums {
+  // CRC32C digest of the object data. Computed by the Cloud Storage service for
+  // all written objects.
+  // If set in an WriteObjectRequest, service will validate that the stored
+  // object matches this checksum.
+  optional fixed32 crc32c = 1;
+
+  // 128 bit MD5 hash of the object data.
+  // For more information about using the MD5 hash, see
+  // [https://cloud.google.com/storage/docs/hashes-etags#json-api][Hashes and
+  // ETags: Best Practices].
+  // Not all objects will provide an MD5 hash. For example, composite objects
+  // provide only crc32c hashes.
+  // This value is equivalent to running `cat object.txt | openssl md5 -binary`
+  bytes md5_hash = 2;
+}
+
+// An object.
+message Object {
+  // Describes the customer-specified mechanism used to store the data at rest.
+  message CustomerEncryption {
+    // The encryption algorithm.
+    string encryption_algorithm = 1;
+
+    // SHA256 hash value of the encryption key.
+    string key_sha256 = 2;
+  }
+
+  // Immutable. The name of this object. Nearly any sequence of unicode characters is
+  // valid. See
+  // [Guidelines](https://cloud.google.com/storage/docs/naming-objects).
+  // Example: `test.txt`
+  // The `name` field by itself does not uniquely identify a Cloud Storage
+  // object. A Cloud Storage object is uniquely identified by the tuple of
+  // (bucket, object, generation).
+  string name = 1 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Immutable. The name of the bucket containing this object.
+  // Example: `projects/_/buckets/foo`.
+  string bucket = 2 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.resource_reference) = {
+      type: "storage.googleapis.com/Bucket"
+    }
+  ];
+
+  // Immutable. The content generation of this object. Used for object versioning.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
+  int64 generation = 3 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Output only. The version of the metadata for this generation of this object. Used for
+  // preconditions and for detecting changes in metadata. A metageneration
+  // number is only meaningful in the context of a particular generation of a
+  // particular object.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
+  int64 metageneration = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Storage class of the object.
+  string storage_class = 5;
+
+  // Output only. Content-Length of the object data in bytes, matching
+  // [https://tools.ietf.org/html/rfc7230#section-3.3.2][RFC 7230 §3.3.2].
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
+  int64 size = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Content-Encoding of the object data, matching
+  // [https://tools.ietf.org/html/rfc7231#section-3.1.2.2][RFC 7231 §3.1.2.2]
+  string content_encoding = 7;
+
+  // Content-Disposition of the object data, matching
+  // [https://tools.ietf.org/html/rfc6266][RFC 6266].
+  string content_disposition = 8;
+
+  // Cache-Control directive for the object data, matching
+  // [https://tools.ietf.org/html/rfc7234#section-5.2"][RFC 7234 §5.2].
+  // If omitted, and the object is accessible to all anonymous users, the
+  // default will be `public, max-age=3600`.
+  string cache_control = 9;
+
+  // Access controls on the object.
+  // If iamConfig.uniformBucketLevelAccess is enabled on the parent
+  // bucket, requests to set, read, or modify acl is an error.
+  repeated ObjectAccessControl acl = 10;
+
+  // Content-Language of the object data, matching
+  // [https://tools.ietf.org/html/rfc7231#section-3.1.3.2][RFC 7231 §3.1.3.2].
+  string content_language = 11;
+
+  // Output only. The deletion time of the object. Will be returned if and only if this
+  // version of the object has been deleted.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
+  google.protobuf.Timestamp delete_time = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Content-Type of the object data, matching
+  // [https://tools.ietf.org/html/rfc7231#section-3.1.1.5][RFC 7231 §3.1.1.5].
+  // If an object is stored without a Content-Type, it is served as
+  // `application/octet-stream`.
+  string content_type = 13;
+
+  // Output only. The creation time of the object.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
+  google.protobuf.Timestamp create_time = 14 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Number of underlying components that make up this object. Components are
+  // accumulated by compose operations.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
+  int32 component_count = 15 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Hashes for the data part of this object.
+  ObjectChecksums checksums = 16 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The modification time of the object metadata.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
+  google.protobuf.Timestamp update_time = 17 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Cloud KMS Key used to encrypt this object, if the object is encrypted by
+  // such a key.
+  string kms_key = 18 [(google.api.resource_reference) = {
+                         type: "cloudkms.googleapis.com/CryptoKey"
+                       }];
+
+  // Output only. The time at which the object's storage class was last changed. When the
+  // object is initially created, it will be set to time_created.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
+  google.protobuf.Timestamp update_storage_class_time = 19 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Whether an object is under temporary hold. While this flag is set to true,
+  // the object is protected against deletion and overwrites.  A common use case
+  // of this flag is regulatory investigations where objects need to be retained
+  // while the investigation is ongoing. Note that unlike event-based hold,
+  // temporary hold does not impact retention expiration time of an object.
+  bool temporary_hold = 20;
+
+  // A server-determined value that specifies the earliest time that the
+  // object's retention period expires. This value is in
+  // [https://tools.ietf.org/html/rfc3339][RFC 3339] format.
+  // Note 1: This field is not provided for objects with an active event-based
+  // hold, since retention expiration is unknown until the hold is removed.
+  // Note 2: This value can be provided even when temporary hold is set (so that
+  // the user can reason about policy without having to first unset the
+  // temporary hold).
+  google.protobuf.Timestamp retention_expire_time = 21;
+
+  // User-provided metadata, in key/value pairs.
+  map<string, string> metadata = 22;
+
+  // Whether an object is under event-based hold.
+  // An event-based hold is a way to force the retention of an object until
+  // after some event occurs. Once the hold is released by explicitly setting
+  // this field to false, the object will become subject to any bucket-level
+  // retention policy, except that the retention duration will be calculated
+  // from the time the event based hold was lifted, rather than the time the
+  // object was created.
+  //
+  // In a WriteObject request, not setting this field implies that the value
+  // should be taken from the parent bucket's "default_event_based_hold" field.
+  // In a response, this field will always be set to true or false.
+  optional bool event_based_hold = 23;
+
+  // Output only. The owner of the object. This will always be the uploader of the object.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
+  Owner owner = 24 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Metadata of customer-supplied encryption key, if the object is encrypted by
+  // such a key.
+  CustomerEncryption customer_encryption = 25;
+
+  // A user-specified timestamp set on an object.
+  google.protobuf.Timestamp custom_time = 26;
+}
+
+// An access-control entry.
+message ObjectAccessControl {
+  // The access permission for the entity.
+  string role = 1;
+
+  // The ID of the access-control entry.
+  string id = 2;
+
+  // The entity holding the permission, in one of the following forms:
+  // * `user-{userid}`
+  // * `user-{email}`
+  // * `group-{groupid}`
+  // * `group-{email}`
+  // * `domain-{domain}`
+  // * `project-{team-projectid}`
+  // * `allUsers`
+  // * `allAuthenticatedUsers`
+  // Examples:
+  // * The user `liz@example.com` would be `user-liz@example.com`.
+  // * The group `example@googlegroups.com` would be
+  // `group-example@googlegroups.com`.
+  // * All members of the Google Apps for Business domain `example.com` would be
+  // `domain-example.com`.
+  string entity = 3;
+
+  // The ID for the entity, if any.
+  string entity_id = 4;
+
+  // The email address associated with the entity, if any.
+  string email = 5;
+
+  // The domain associated with the entity, if any.
+  string domain = 6;
+
+  // The project team associated with the entity, if any.
+  ProjectTeam project_team = 7;
+}
+
+// Represents the Viewers, Editors, or Owners of a given project.
+message ProjectTeam {
+  // The project number.
+  string project_number = 1;
+
+  // The team.
+  string team = 2;
+}
+
+// The owner of a specific resource.
+message Owner {
+  // The entity, in the form `user-`*userId*.
+  string entity = 1;
+
+  // The ID for the entity.
+  string entity_id = 2;
+}
+
+// Specifies a requested range of bytes to download.
+message ContentRange {
+  // The starting offset of the object data.
+  int64 start = 1;
+
+  // The ending offset of the object data.
+  int64 end = 2;
+
+  // The complete length of the object data.
+  int64 complete_length = 3;
+}
+
+// Predefined or "canned" aliases for sets of specific object ACL entries.
+enum PredefinedObjectAcl {
+  // No predefined ACL.
+  PREDEFINED_OBJECT_ACL_UNSPECIFIED = 0;
+
+  // Object owner gets `OWNER` access, and
+  // `allAuthenticatedUsers` get `READER` access.
+  OBJECT_ACL_AUTHENTICATED_READ = 1;
+
+  // Object owner gets `OWNER` access, and project team owners get
+  // `OWNER` access.
+  OBJECT_ACL_BUCKET_OWNER_FULL_CONTROL = 2;
+
+  // Object owner gets `OWNER` access, and project team owners get
+  // `READER` access.
+  OBJECT_ACL_BUCKET_OWNER_READ = 3;
+
+  // Object owner gets `OWNER` access.
+  OBJECT_ACL_PRIVATE = 4;
+
+  // Object owner gets `OWNER` access, and project team members get
+  // access according to their roles.
+  OBJECT_ACL_PROJECT_PRIVATE = 5;
+
+  // Object owner gets `OWNER` access, and `allUsers`
+  // get `READER` access.
+  OBJECT_ACL_PUBLIC_READ = 6;
+}
