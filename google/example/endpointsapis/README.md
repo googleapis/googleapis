@@ -73,7 +73,6 @@ see `./endpointsapis.yaml`.
 
 ```yaml
 type: google.api.Service  # The schema to use; always "google.api.Service".
-config_version: 3         # The config version; always 3.
 name: endpointsapis.appspot.com
 title: Endpoints APIs
 producer_project_id: endpointsapis
@@ -154,8 +153,6 @@ You should see the admission control results in the HTTP response
 and the telemetry reporting results in Google Cloud Console. The producer
 metrics are shown on the Endpoints page. The consumer metrics are shown on
 the APIs & Services page.
-
-NOTE: The telemetry reporting feature is not yet available as of July 2020.
 
 ## Summary
 
