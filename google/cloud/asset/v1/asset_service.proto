@@ -27,6 +27,7 @@ import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
 import "google/type/expr.proto";
 
 option csharp_namespace = "Google.Cloud.Asset.V1";
@@ -165,7 +166,7 @@ service AssetService {
   // [google.longrunning.Operation][google.longrunning.Operation], which allows you to track the operation
   // status. We recommend intervals of at least 2 seconds with exponential
   // backoff retry to poll the operation result. The metadata contains the
-  // request to help callers to map responses to requests.
+  // metadata for the long-running operation.
   rpc AnalyzeIamPolicyLongrunning(AnalyzeIamPolicyLongrunningRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
       post: "/v1/{analysis_query.scope=*/*}:analyzeIamPolicyLongrunning"
@@ -173,9 +174,28 @@ service AssetService {
     };
     option (google.longrunning.operation_info) = {
       response_type: "google.cloud.asset.v1.AnalyzeIamPolicyLongrunningResponse"
-      metadata_type: "google.cloud.asset.v1.AnalyzeIamPolicyLongrunningRequest"
+      metadata_type: "google.cloud.asset.v1.AnalyzeIamPolicyLongrunningMetadata"
     };
   }
+
+  // Analyze moving a resource to a specified destination without kicking off
+  // the actual move. The analysis is best effort depending on the user's
+  // permissions of viewing different hierarchical policies and configurations.
+  // The policies and configuration are subject to change before the actual
+  // resource migration takes place.
+  rpc AnalyzeMove(AnalyzeMoveRequest) returns (AnalyzeMoveResponse) {
+    option (google.api.http) = {
+      get: "/v1/{resource=*/*}:analyzeMove"
+    };
+  }
+}
+
+// Represents the metadata of the longrunning operation for the
+// AnalyzeIamPolicyLongrunning rpc.
+message AnalyzeIamPolicyLongrunningMetadata {
+  // The time the operation was created.
+  google.protobuf.Timestamp create_time = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Export asset request.
@@ -659,7 +679,7 @@ message Feed {
   // optional.
   //
   // See our [user
-  // guide](https://cloud.google.com/asset-inventory/docs/monitoring-asset-changes#feed_with_condition)
+  // guide](https://cloud.google.com/asset-inventory/docs/monitoring-asset-changes-with-condition)
   // for detailed instructions.
   google.type.Expr condition = 6;
 }
@@ -703,8 +723,8 @@ message SearchAllResourcesRequest {
   //   encryption key whose name contains the word "key".
   // * `state:ACTIVE` to find Cloud resources whose state contains "ACTIVE" as a
   //   word.
-  // * `NOT state:ACTIVE` to find {{gcp_name}} resources whose state
-  //   doesn't contain "ACTIVE" as a word.
+  // * `NOT state:ACTIVE` to find Cloud resources whose state doesn't contain
+  //   "ACTIVE" as a word.
   // * `createTime<1609459200` to find Cloud resources that were created before
   //   "2021-01-01 00:00:00 UTC". 1609459200 is the epoch timestamp of
   //   "2021-01-01 00:00:00 UTC" in seconds.
@@ -754,6 +774,7 @@ message SearchAllResourcesRequest {
   // to indicate descending order. Redundant space characters are ignored.
   // Example: "location DESC, name".
   // Only singular primitive fields in the response are sortable:
+  //
   //   * name
   //   * assetType
   //   * project
@@ -766,10 +787,41 @@ message SearchAllResourcesRequest {
   //   * state
   //   * parentFullResourceName
   //   * parentAssetType
+  //
   // All the other fields such as repeated fields (e.g., `networkTags`), map
   // fields (e.g., `labels`) and struct fields (e.g., `additionalAttributes`)
   // are not supported.
   string order_by = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A comma-separated list of fields specifying which fields to be returned in
+  // ResourceSearchResult. Only '*' or combination of top level fields can be
+  // specified. Field names of both snake_case and camelCase are supported.
+  // Examples: `"*"`, `"name,location"`, `"name,versionedResources"`.
+  //
+  // The read_mask paths must be valid field paths listed but not limited to
+  // (both snake_case and camelCase are supported):
+  //
+  //   * name
+  //   * assetType
+  //   * project
+  //   * displayName
+  //   * description
+  //   * location
+  //   * labels
+  //   * networkTags
+  //   * kmsKey
+  //   * createTime
+  //   * updateTime
+  //   * state
+  //   * additionalAttributes
+  //   * versionedResources
+  //
+  // If read_mask is not specified, all fields except versionedResources will
+  // be returned.
+  // If only '*' is specified, all fields including versionedResources will be
+  // returned.
+  // Any invalid field path will trigger INVALID_ARGUMENT error.
+  google.protobuf.FieldMask read_mask = 8 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Search all resources response.
@@ -1203,7 +1255,84 @@ message AnalyzeIamPolicyLongrunningRequest {
 }
 
 // A response message for [AssetService.AnalyzeIamPolicyLongrunning][google.cloud.asset.v1.AssetService.AnalyzeIamPolicyLongrunning].
-message AnalyzeIamPolicyLongrunningResponse {}
+message AnalyzeIamPolicyLongrunningResponse {
+
+}
+
+// The request message for performing resource move analysis.
+message AnalyzeMoveRequest {
+  // View enum for supporting partial analysis responses.
+  enum AnalysisView {
+    // The default/unset value.
+    // The API will default to the FULL view.
+    ANALYSIS_VIEW_UNSPECIFIED = 0;
+
+    // Full analysis including all level of impacts of the specified resource
+    // move.
+    FULL = 1;
+
+    // Basic analysis only including blockers which will prevent the specified
+    // resource move at runtime.
+    BASIC = 2;
+  }
+
+  // Required. Name of the resource to perform the analysis against.
+  // Only GCP Project are supported as of today. Hence, this can only be Project
+  // ID (such as "projects/my-project-id") or a Project Number (such as
+  // "projects/12345").
+  string resource = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Name of the GCP Folder or Organization to reparent the target
+  // resource. The analysis will be performed against hypothetically moving the
+  // resource to this specified desitination parent. This can only be a Folder
+  // number (such as "folders/123") or an Organization number (such as
+  // "organizations/123").
+  string destination_parent = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Analysis view indicating what information should be included in the
+  // analysis response. If unspecified, the default view is FULL.
+  AnalysisView view = 3;
+}
+
+// The response message for resource move analysis.
+message AnalyzeMoveResponse {
+  // The list of analyses returned from performing the intended resource move
+  // analysis. The analysis is grouped by different Cloud services.
+  repeated MoveAnalysis move_analysis = 1;
+}
+
+// A message to group the analysis information.
+message MoveAnalysis {
+  // The user friendly display name of the analysis. E.g. IAM, Organization
+  // Policy etc.
+  string display_name = 1;
+
+  oneof result {
+    // Analysis result of moving the target resource.
+    MoveAnalysisResult analysis = 2;
+
+    // Description of error encountered when performing the analysis.
+    google.rpc.Status error = 3;
+  }
+}
+
+// An analysis result including blockers and warnings.
+message MoveAnalysisResult {
+  // Blocking information that would prevent the target resource from moving
+  // to the specified destination at runtime.
+  repeated MoveImpact blockers = 1;
+
+  // Warning information indicating that moving the target resource to the
+  // specified destination might be unsafe. This can include important policy
+  // information and configuration changes, but will not block moves at runtime.
+  repeated MoveImpact warnings = 2;
+}
+
+// A message to group impacts of moving the target resource.
+message MoveImpact {
+  // User friendly impact detail in a free form message.
+  string detail = 1;
+}
 
 // Asset content type.
 enum ContentType {
