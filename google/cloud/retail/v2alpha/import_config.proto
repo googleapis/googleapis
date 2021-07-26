@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2021 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,11 +18,13 @@ package google.cloud.retail.v2alpha;
 
 import "google/api/annotations.proto";
 import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
 import "google/cloud/retail/v2alpha/product.proto";
 import "google/cloud/retail/v2alpha/user_event.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
+import "google/type/date.proto";
 
 option csharp_namespace = "Google.Cloud.Retail.V2Alpha";
 option go_package = "google.golang.org/genproto/googleapis/cloud/retail/v2alpha;retail";
@@ -38,10 +40,11 @@ option ruby_package = "Google::Cloud::Retail::V2alpha";
 message GcsSource {
   // Required. Google Cloud Storage URIs to input files. URI can be up to
   // 2000 characters long. URIs can match the full object path (for example,
-  // gs://bucket/directory/object.json) or a pattern matching one or more
-  // files, such as gs://bucket/directory/*.json. A request can
+  // `gs://bucket/directory/object.json`) or a pattern matching one or more
+  // files, such as `gs://bucket/directory/*.json`. A request can
   // contain at most 100 files, and each file can be up to 2 GB. See
-  // [Importing product information](/recommendations-ai/docs/upload-catalog)
+  // [Importing product
+  // information](https://cloud.google.com/retail/recommendations-ai/docs/upload-catalog)
   // for the expected file format and setup instructions.
   repeated string input_uris = 1 [(google.api.field_behavior) = REQUIRED];
 
@@ -53,22 +56,33 @@ message GcsSource {
   // [Product][google.cloud.retail.v2alpha.Product] per line. Each product must
   //   have a valid [Product.id][google.cloud.retail.v2alpha.Product.id].
   // * `product_merchant_center`: See [Importing catalog data from Merchant
-  //   Center](/retail/recommendations-ai/docs/upload-catalog#mc).
+  //   Center](https://cloud.google.com/retail/recommendations-ai/docs/upload-catalog#mc).
   //
   // Supported values for user events imports:
   //
   // * `user_event` (default): One JSON
   // [UserEvent][google.cloud.retail.v2alpha.UserEvent] per line.
   // * `user_event_ga360`: Using
-  //   https://support.google.com/analytics/answer/3437719?hl=en.
+  //   https://support.google.com/analytics/answer/3437719.
   string data_schema = 2;
 }
 
 // BigQuery source import data from.
 message BigQuerySource {
-  // The project id (can be project # or id) that the BigQuery source is in with
+  // BigQuery table partition info. Leave this empty if the BigQuery table
+  // is not partitioned.
+  oneof partition {
+    // BigQuery time partitioned table's _PARTITIONDATE in YYYY-MM-DD format.
+    //
+    // Only supported when
+    // [ImportProductsRequest.reconciliation_mode][google.cloud.retail.v2alpha.ImportProductsRequest.reconciliation_mode]
+    // is set to `FULL`.
+    google.type.Date partition_date = 6;
+  }
+
+  // The project ID (can be project # or ID) that the BigQuery source is in with
   // a length limit of 128 characters. If not specified, inherits the project
-  // id from the parent request.
+  // ID from the parent request.
   string project_id = 5;
 
   // Required. The BigQuery data set to copy the data from with a length limit
@@ -92,14 +106,14 @@ message BigQuerySource {
   // [Product][google.cloud.retail.v2alpha.Product] per line. Each product must
   //   have a valid [Product.id][google.cloud.retail.v2alpha.Product.id].
   // * `product_merchant_center`: See [Importing catalog data from Merchant
-  //   Center](/retail/recommendations-ai/docs/upload-catalog#mc).
+  //   Center](https://cloud.google.com/retail/recommendations-ai/docs/upload-catalog#mc).
   //
   // Supported values for user events imports:
   //
   // * `user_event` (default): One JSON
   // [UserEvent][google.cloud.retail.v2alpha.UserEvent] per line.
   // * `user_event_ga360`: Using
-  //   https://support.google.com/analytics/answer/3437719?hl=en.
+  //   https://support.google.com/analytics/answer/3437719.
   string data_schema = 4;
 }
 
@@ -107,7 +121,7 @@ message BigQuerySource {
 message ProductInlineSource {
   // Required. A list of products to update/create. Each product must have a
   // valid [Product.id][google.cloud.retail.v2alpha.Product.id]. Recommended max
-  // of 10k items.
+  // of 100 items.
   repeated Product products = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
@@ -131,12 +145,51 @@ message ImportErrorsConfig {
 
 // Request message for Import methods.
 message ImportProductsRequest {
+  // Indicates how imported products are reconciled with the existing products
+  // created or imported before.
+  enum ReconciliationMode {
+    // Defaults to INCREMENTAL.
+    RECONCILIATION_MODE_UNSPECIFIED = 0;
+
+    // Inserts new products or updates existing products.
+    INCREMENTAL = 1;
+
+    // Calculates diff and replaces the entire product dataset. Existing
+    // products may be deleted if they are not present in the source location.
+    //
+    // Can only be while using
+    // [BigQuerySource][google.cloud.retail.v2alpha.BigQuerySource].
+    //
+    // Add the IAM permission “BigQuery Data Viewer” for
+    // cloud-retail-customer-data-access@system.gserviceaccount.com before
+    // using this feature otherwise an error is thrown.
+    //
+    // This feature is only available for users who have Retail Search enabled.
+    // Contact Retail Support (retail-search-support@google.com) if you are
+    // interested in using Retail Search.
+    FULL = 2;
+  }
+
   // Required.
-  // "projects/1234/locations/global/catalogs/default_catalog/branches/default_branch"
+  // `projects/1234/locations/global/catalogs/default_catalog/branches/default_branch`
   //
   // If no updateMask is specified, requires products.create permission.
   // If updateMask is specified, requires products.update permission.
-  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "retail.googleapis.com/Branch" }
+  ];
+
+  // Unique identifier provided by client, within the ancestor
+  // dataset scope. Ensures idempotency and used for request deduplication.
+  // Server-generated if unspecified. Up to 128 characters long and must match
+  // the pattern: "[a-zA-Z0-9_]+". This is returned as [Operation.name][] in
+  // [ImportMetadata][google.cloud.retail.v2alpha.ImportMetadata].
+  //
+  // Only supported when
+  // [ImportProductsRequest.reconciliation_mode][google.cloud.retail.v2alpha.ImportProductsRequest.reconciliation_mode]
+  // is set to `FULL`.
+  string request_id = 6;
 
   // Required. The desired input location of the data.
   ProductInputConfig input_config = 2 [(google.api.field_behavior) = REQUIRED];
@@ -147,12 +200,31 @@ message ImportProductsRequest {
   // Indicates which fields in the provided imported 'products' to update. If
   // not set, will by default update all fields.
   google.protobuf.FieldMask update_mask = 4;
+
+  // The mode of reconciliation between existing products and the products to be
+  // imported. Defaults to
+  // [ReconciliationMode.INCREMENTAL][google.cloud.retail.v2alpha.ImportProductsRequest.ReconciliationMode.INCREMENTAL].
+  ReconciliationMode reconciliation_mode = 5;
+
+  // Pub/Sub topic for receiving notification. If this field is set,
+  // when the import is finished, a notification will be sent to
+  // specified Pub/Sub topic. The message data will be JSON string of a
+  // [Operation][google.longrunning.Operation].
+  // Format of the Pub/Sub topic is `projects/{project}/topics/{topic}`.
+  //
+  // Only supported when
+  // [ImportProductsRequest.reconciliation_mode][google.cloud.retail.v2alpha.ImportProductsRequest.reconciliation_mode]
+  // is set to `FULL`.
+  string notification_pubsub_topic = 7;
 }
 
 // Request message for the ImportUserEvents request.
 message ImportUserEventsRequest {
-  // Required. "projects/1234/locations/global/catalogs/default_catalog"
-  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+  // Required. `projects/1234/locations/global/catalogs/default_catalog`
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "retail.googleapis.com/Catalog" }
+  ];
 
   // Required. The desired input location of the data.
   UserEventInputConfig input_config = 2
@@ -161,6 +233,28 @@ message ImportUserEventsRequest {
   // The desired location of errors incurred during the Import. Cannot be set
   // for inline user event imports.
   ImportErrorsConfig errors_config = 3;
+}
+
+// Request message for ImportCompletionData methods.
+message ImportCompletionDataRequest {
+  // Required. The catalog which the suggestions dataset belongs to.
+  //
+  // Format: `projects/1234/locations/global/catalogs/default_catalog`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "retail.googleapis.com/Catalog" }
+  ];
+
+  // Required. The desired input location of the data.
+  CompletionDataInputConfig input_config = 2
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Pub/Sub topic for receiving notification. If this field is set,
+  // when the import is finished, a notification will be sent to
+  // specified Pub/Sub topic. The message data will be JSON string of a
+  // [Operation][google.longrunning.Operation].
+  // Format of the Pub/Sub topic is `projects/{project}/topics/{topic}`.
+  string notification_pubsub_topic = 3;
 }
 
 // The input config source for products.
@@ -195,6 +289,28 @@ message UserEventInputConfig {
   }
 }
 
+// The input config source for completion data.
+message CompletionDataInputConfig {
+  // The source of the input.
+  //
+  // Supported
+  // [BigQuerySource.data_schema][google.cloud.retail.v2alpha.BigQuerySource.data_schema]
+  // values for suggestions imports:
+  //
+  // * `suggestions` (default): One JSON completion suggestion per line.
+  // * `denylist`:  One JSON deny suggestion per line.
+  // * `allowlist`:  One JSON allow suggestion per line.
+  oneof source {
+    // Required. BigQuery input source.
+    //
+    // Add the IAM permission “BigQuery Data Viewer” for
+    // cloud-retail-customer-data-access@system.gserviceaccount.com before
+    // using this feature otherwise an error is thrown.
+    BigQuerySource big_query_source = 1
+        [(google.api.field_behavior) = REQUIRED];
+  }
+}
+
 // Metadata related to the progress of the Import operation. This will be
 // returned by the google.longrunning.Operation.metadata field.
 message ImportMetadata {
@@ -210,6 +326,17 @@ message ImportMetadata {
 
   // Count of entries that encountered errors while processing.
   int64 failure_count = 4;
+
+  // Id of the request / operation. This is parroting back the requestId
+  // that was passed in the request.
+  string request_id = 5;
+
+  // Pub/Sub topic for receiving notification. If this field is set,
+  // when the import is finished, a notification will be sent to
+  // specified Pub/Sub topic. The message data will be JSON string of a
+  // [Operation][google.longrunning.Operation].
+  // Format of the Pub/Sub topic is `projects/{project}/topics/{topic}`.
+  string notification_pubsub_topic = 6;
 }
 
 // Response of the
@@ -248,4 +375,13 @@ message UserEventImportSummary {
   // Count of user events imported, but with catalog information not found
   // in the imported catalog.
   int64 unjoined_events_count = 2;
+}
+
+// Response of the
+// [ImportCompletionDataRequest][google.cloud.retail.v2alpha.ImportCompletionDataRequest].
+// If the long running operation is done, this message is returned by the
+// google.longrunning.Operations.response field if the operation is successful.
+message ImportCompletionDataResponse {
+  // A sample of errors encountered while processing the request.
+  repeated google.rpc.Status error_samples = 1;
 }
