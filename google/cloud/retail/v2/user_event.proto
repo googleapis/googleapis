@@ -40,8 +40,11 @@ message UserEvent {
   // * `add-to-cart`: Products being added to cart.
   // * `category-page-view`: Special pages such as sale or promotion pages
   //   viewed.
+  // * `completion`: Completion query result showed/clicked.
   // * `detail-page-view`: Products detail page viewed.
   // * `home-page-view`: Homepage viewed.
+  // * `promotion-offered`: Promotion is offered to a user.
+  // * `promotion-not-offered`: Promotion is not offered to a user.
   // * `purchase-complete`: User finishing a purchase.
   // * `search`: Product search.
   // * `shopping-cart-page-view`: User viewing a shopping cart.
@@ -55,7 +58,22 @@ message UserEvent {
   //
   // The field must be a UTF-8 encoded string with a length limit of 128
   // characters. Otherwise, an INVALID_ARGUMENT error is returned.
+  //
+  // The field should not contain PII or user-data. We recommend to use Google
+  // Analystics [Client
+  // ID](https://developers.google.com/analytics/devguides/collection/analyticsjs/field-reference#clientId)
+  // for this field.
   string visitor_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // A unique identifier for tracking a visitor session with a length limit of
+  // 128 bytes. A session is an aggregation of an end user behavior in a time
+  // span.
+  //
+  // A general guideline to populate the sesion_id:
+  // 1. If user has no activity for 30 min, a new session_id should be assigned.
+  // 2. The session_id should be unique across users, suggest use uuid or add
+  // visitor_id as prefix.
+  string session_id = 21;
 
   // Only required for
   // [UserEventService.ImportUserEvents][google.cloud.retail.v2.UserEventService.ImportUserEvents]
@@ -77,6 +95,10 @@ message UserEvent {
   // [PredictResponse.attribution_token][google.cloud.retail.v2.PredictResponse.attribution_token]
   // for user events that are the result of
   // [PredictionService.Predict][google.cloud.retail.v2.PredictionService.Predict].
+  // The value must be a valid
+  // [SearchResponse.attribution_token][google.cloud.retail.v2.SearchResponse.attribution_token]
+  // for user events that are the result of
+  // [SearchService.Search][google.cloud.retail.v2.SearchService.Search].
   //
   // This token enables us to accurately attribute page view or purchase back to
   // the event and the particular predict response containing this
@@ -106,6 +128,13 @@ message UserEvent {
   // desired. The end user may have not finished broswing the whole page yet.
   repeated ProductDetail product_details = 6;
 
+  // The main completion details related to the event.
+  //
+  // In a `completion` event, this field represents the completions returned to
+  // the end user and the clicked completion by the end user. In a `search`
+  // event, it represents the search event happens after clicking completion.
+  CompletionDetail completion_detail = 22;
+
   // Extra user event features to include in the recommendation model.
   //
   // The key must be a UTF-8 encoded string with a length limit of 5,000
@@ -132,12 +161,52 @@ message UserEvent {
 
   // The user's search query.
   //
+  // See [SearchRequest.query][google.cloud.retail.v2.SearchRequest.query] for
+  // definition.
+  //
   // The value must be a UTF-8 encoded string with a length limit of 5,000
   // characters. Otherwise, an INVALID_ARGUMENT error is returned.
   //
-  // Required for `search` events. Other event types should not set this field.
+  // At least one of
+  // [search_query][google.cloud.retail.v2.UserEvent.search_query] or
+  // [page_categories][google.cloud.retail.v2.UserEvent.page_categories] is
+  // required for `search` events. Other event types should not set this field.
   // Otherwise, an INVALID_ARGUMENT error is returned.
   string search_query = 10;
+
+  // The filter syntax consists of an expression language for constructing a
+  // predicate from one or more fields of the products being filtered.
+  //
+  // See [SearchRequest.filter][google.cloud.retail.v2.SearchRequest.filter] for
+  // definition and syntax.
+  //
+  // The value must be a UTF-8 encoded string with a length limit of 1,000
+  // characters. Otherwise, an INVALID_ARGUMENT error is returned.
+  string filter = 16;
+
+  // The order in which products are returned.
+  //
+  // See [SearchRequest.order_by][google.cloud.retail.v2.SearchRequest.order_by]
+  // for definition and syntax.
+  //
+  // The value must be a UTF-8 encoded string with a length limit of 1,000
+  // characters. Otherwise, an INVALID_ARGUMENT error is returned.
+  //
+  // This can only be set for `search` events. Other event types should not set
+  // this field. Otherwise, an INVALID_ARGUMENT error is returned.
+  string order_by = 17;
+
+  // An integer that specifies the current offset for pagination (the 0-indexed
+  // starting location, amongst the products deemed by the API as relevant).
+  //
+  // See [SearchRequest.offset][google.cloud.retail.v2.SearchRequest.offset] for
+  // definition.
+  //
+  // If this field is negative, an INVALID_ARGUMENT is returned.
+  //
+  // This can only be set for `search` events. Other event types should not set
+  // this field. Otherwise, an INVALID_ARGUMENT error is returned.
+  int32 offset = 18;
 
   // The categories associated with a category page.
   //
@@ -149,8 +218,11 @@ message UserEvent {
   // instance, a special sale page may have the category hierarchy:
   // "pageCategories" : ["Sales > 2017 Black Friday Deals"].
   //
-  // Required for `category-page-view` events. Other event types should not set
-  // this field. Otherwise, an INVALID_ARGUMENT error is returned.
+  // Required for `category-page-view` events. At least one of
+  // [search_query][google.cloud.retail.v2.UserEvent.search_query] or
+  // [page_categories][google.cloud.retail.v2.UserEvent.page_categories] is
+  // required for `search` events. Other event types should not set this field.
+  // Otherwise, an INVALID_ARGUMENT error is returned.
   repeated string page_categories = 11;
 
   // User information.
@@ -197,6 +269,23 @@ message ProductDetail {
   // cart for `purchase-complete` event. Required for `add-to-cart` and
   // `purchase-complete` event types.
   google.protobuf.Int32Value quantity = 2;
+}
+
+// Detailed completion information including completion attribution token and
+// clicked completion info.
+message CompletionDetail {
+  // Completion attribution token in
+  // [CompleteQueryResponse.attribution_token][google.cloud.retail.v2.CompleteQueryResponse.attribution_token].
+  string completion_attribution_token = 1;
+
+  // End user selected
+  // [CompleteQueryResponse.CompletionResult.suggestion][google.cloud.retail.v2.CompleteQueryResponse.CompletionResult.suggestion].
+  string selected_suggestion = 2;
+
+  // End user selected
+  // [CompleteQueryResponse.CompletionResult.suggestion][google.cloud.retail.v2.CompleteQueryResponse.CompletionResult.suggestion]
+  // position, starting from 0.
+  int32 selected_position = 3;
 }
 
 // A transaction represents the entire purchase transaction.
