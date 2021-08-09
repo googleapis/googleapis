@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2021 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 
 syntax = "proto3";
 
@@ -24,6 +23,7 @@ import "google/longrunning/operations.proto";
 import "google/protobuf/any.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
 import "google/rpc/status.proto";
 
 option cc_enable_arenas = true;
@@ -136,6 +136,16 @@ message StreamingRecognitionConfig {
   // `END_OF_SINGLE_UTTERANCE` event and cease recognition. It will return no
   // more than one `StreamingRecognitionResult` with the `is_final` flag set to
   // `true`.
+  //
+  // The `single_utterance` field can only be used with specified models,
+  // otherwise an error is thrown. The `model` field in [`RecognitionConfig`][]
+  // must be set to:
+  //
+  // * `command_and_search`
+  // * `phone_call` AND additional field `useEnhanced`=`true`
+  // * The `model` field is left undefined. In this case the API auto-selects
+  //   a model based on any other parameters that you set in
+  //   `RecognitionConfig`.
   bool single_utterance = 2;
 
   // If `true`, interim results (tentative hypotheses) may be
@@ -158,7 +168,7 @@ message RecognitionConfig {
   // a lossless encoding (`FLAC` or `LINEAR16`). The accuracy of the speech
   // recognition can be reduced if lossy codecs are used to capture or transmit
   // audio, particularly if background noise is present. Lossy codecs include
-  // `MULAW`, `AMR`, `AMR_WB`, `OGG_OPUS`, `SPEEX_WITH_HEADER_BYTE`, and `MP3`.
+  // `MULAW`, `AMR`, `AMR_WB`, `OGG_OPUS`, `SPEEX_WITH_HEADER_BYTE`, `MP3`.
   //
   // The `FLAC` and `WAV` audio file formats include a header that describes the
   // included audio content. You can request recognition for `WAV` files that
@@ -274,7 +284,7 @@ message RecognitionConfig {
   // A means to provide context to assist the speech recognition. For more
   // information, see
   // [speech
-  // adaptation](https://cloud.google.com/speech-to-text/docs/context-strength).
+  // adaptation](https://cloud.google.com/speech-to-text/docs/adaptation).
   repeated SpeechContext speech_contexts = 6;
 
   // If `true`, the top result includes a list of words and
@@ -287,9 +297,6 @@ message RecognitionConfig {
   // This feature is only available in select languages. Setting this for
   // requests in other languages has no effect at all.
   // The default 'false' value does not add punctuation to result hypotheses.
-  // Note: This is currently offered as an experimental service, complimentary
-  // to all users. In the future this may be exclusively available as a
-  // premium feature.
   bool enable_automatic_punctuation = 11;
 
   // Config to enable speaker diarization and set additional
@@ -325,7 +332,7 @@ message RecognitionConfig {
   //   </tr>
   //   <tr>
   //     <td><code>video</code></td>
-  //     <td>Best for audio that originated from from video or includes multiple
+  //     <td>Best for audio that originated from video or includes multiple
   //         speakers. Ideally the audio is recorded at a 16khz or greater
   //         sampling rate. This is a premium model that costs more than the
   //         standard rate.</td>
@@ -367,9 +374,11 @@ message SpeakerDiarizationConfig {
   // number of speakers. If not set, the default value is 6.
   int32 max_speaker_count = 3;
 
-  // Unused.
-  int32 speaker_tag = 5
-      [(google.api.field_behavior) = OUTPUT_ONLY, deprecated = true];
+  // Output only. Unused.
+  int32 speaker_tag = 5 [
+    deprecated = true,
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
 }
 
 // Description of audio data to be recognized.
@@ -548,6 +557,9 @@ message RecognizeResponse {
   // Sequential list of transcription results corresponding to
   // sequential portions of audio.
   repeated SpeechRecognitionResult results = 2;
+
+  // When available, billed audio seconds for the corresponding request.
+  google.protobuf.Duration total_billed_time = 3;
 }
 
 // The only message returned to the client by the `LongRunningRecognize` method.
@@ -559,6 +571,9 @@ message LongRunningRecognizeResponse {
   // Sequential list of transcription results corresponding to
   // sequential portions of audio.
   repeated SpeechRecognitionResult results = 2;
+
+  // When available, billed audio seconds for the corresponding request.
+  google.protobuf.Duration total_billed_time = 3;
 }
 
 // Describes the progress of a long-running `LongRunningRecognize` call. It is
@@ -574,6 +589,10 @@ message LongRunningRecognizeMetadata {
 
   // Time of the most recent processing update.
   google.protobuf.Timestamp last_update_time = 3;
+
+  // Output only. The URI of the audio file being transcribed. Empty if the audio was sent
+  // as byte content.
+  string uri = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // `StreamingRecognizeResponse` is the only message returned to the client by
@@ -582,8 +601,8 @@ message LongRunningRecognizeMetadata {
 // audio, and `single_utterance` is set to false, then no messages are streamed
 // back to the client.
 //
-// Here's an example of a series of ten `StreamingRecognizeResponse`s that might
-// be returned while processing audio:
+// Here's an example of a series of `StreamingRecognizeResponse`s that might be
+// returned while processing audio:
 //
 // 1. results { alternatives { transcript: "tube" } stability: 0.01 }
 //
@@ -653,6 +672,10 @@ message StreamingRecognizeResponse {
 
   // Indicates the type of speech event.
   SpeechEventType speech_event_type = 4;
+
+  // When available, billed audio seconds for the stream.
+  // Set only if this is the last response in the stream.
+  google.protobuf.Duration total_billed_time = 5;
 }
 
 // A streaming speech recognition result corresponding to a portion of the audio
@@ -749,11 +772,10 @@ message WordInfo {
   // The word corresponding to this set of information.
   string word = 3;
 
-  // A distinct integer value is assigned for every speaker within
+  // Output only. A distinct integer value is assigned for every speaker within
   // the audio. This field specifies which one of those speakers was detected to
   // have spoken this word. Value ranges from '1' to diarization_speaker_count.
   // speaker_tag is set if enable_speaker_diarization = 'true' and only in the
   // top alternative.
-  int32 speaker_tag = 5
-    [(google.api.field_behavior) = OUTPUT_ONLY];
+  int32 speaker_tag = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
