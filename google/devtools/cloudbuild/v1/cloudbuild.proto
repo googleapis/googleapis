@@ -176,6 +176,28 @@ service CloudBuild {
     };
   }
 
+  // Approves or rejects a pending build.
+  //
+  // If approved, the returned LRO will be analogous to the LRO returned from
+  // a CreateBuild call.
+  //
+  // If rejected, the returned LRO will be immediately done.
+  rpc ApproveBuild(ApproveBuildRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/builds/*}:approve"
+      body: "*"
+      additional_bindings {
+        post: "/v1/{name=projects/*/locations/*/builds/*}:approve"
+        body: "*"
+      }
+    };
+    option (google.api.method_signature) = "name,approval_result";
+    option (google.longrunning.operation_info) = {
+      response_type: "Build"
+      metadata_type: "BuildOperationMetadata"
+    };
+  }
+
   // Creates a new `BuildTrigger`.
   //
   // This API is experimental.
@@ -720,6 +742,10 @@ message Build {
     // Status of the build is unknown.
     STATUS_UNKNOWN = 0;
 
+    // Build has been created and is pending execution and queuing. It has not
+    // been queued.
+    PENDING = 10;
+
     // Build or step is queued; work has not yet begun.
     QUEUED = 1;
 
@@ -862,6 +888,10 @@ message Build {
   // If the build does not specify source or images,
   // these keys will not be included.
   map<string, TimeSpan> timing = 33 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Describes this build's approval configuration, status,
+  // and result.
+  BuildApproval approval = 44 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // IAM service account whose credentials will be used at build runtime.
   // Must be of the format `projects/{PROJECT_ID}/serviceAccounts/{ACCOUNT}`.
@@ -1143,6 +1173,92 @@ message CancelBuildRequest {
 
   // Required. ID of the build.
   string id = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request to approve or reject a pending build.
+message ApproveBuildRequest {
+  // Required. Name of the target build.
+  // For example: "projects/{$project_id}/builds/{$build_id}"
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Approval decision and metadata.
+  ApprovalResult approval_result = 2;
+}
+
+// BuildApproval describes a build's approval configuration, state, and
+// result.
+message BuildApproval {
+  // Specifies the current state of a build's approval.
+  enum State {
+    // Default enum type. This should not be used.
+    STATE_UNSPECIFIED = 0;
+
+    // Build approval is pending.
+    PENDING = 1;
+
+    // Build approval has been approved.
+    APPROVED = 2;
+
+    // Build approval has been rejected.
+    REJECTED = 3;
+
+    // Build was cancelled while it was still pending approval.
+    CANCELLED = 5;
+  }
+
+  // Output only. The state of this build's approval.
+  State state = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Configuration for manual approval of this build.
+  ApprovalConfig config = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Result of manual approval for this Build.
+  ApprovalResult result = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// ApprovalConfig describes configuration for manual approval of a build.
+message ApprovalConfig {
+  // Whether or not approval is needed. If this is set on a build, it will
+  // become pending when created, and will need to be explicitly approved
+  // to start.
+  bool approval_required = 1;
+}
+
+// ApprovalResult describes the decision and associated metadata of a manual
+// approval of a build.
+message ApprovalResult {
+  // Specifies whether or not this manual approval result is to approve
+  // or reject a build.
+  enum Decision {
+    // Default enum type. This should not be used.
+    DECISION_UNSPECIFIED = 0;
+
+    // Build is approved.
+    APPROVED = 1;
+
+    // Build is rejected.
+    REJECTED = 2;
+  }
+
+  // Output only. Email of the user that called the ApproveBuild API to
+  // approve or reject a build at the time that the API was called.
+  string approver_account = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time when the approval decision was made.
+  google.protobuf.Timestamp approval_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Required. The decision of this manual approval.
+  Decision decision = 4 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. An optional comment for this manual approval result.
+  string comment = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. An optional URL tied to this manual approval result. This field
+  // is essentially the same as comment, except that it will be rendered by the
+  // UI differently. An example use case is a link to an external job that
+  // approved this Build.
+  string url = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Configuration for an automated build in response to source repository
