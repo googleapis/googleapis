@@ -194,7 +194,7 @@ grpc_java_repositories()
 
 # Java microgenerator.
 # Must go AFTER java-gax, since both java gax and gapic-generator are written in java and may conflict.
-_gapic_generator_java_version = "2.0.1"
+_gapic_generator_java_version = "2.1.0"
 
 http_archive(
     name = "gapic_generator_java",
