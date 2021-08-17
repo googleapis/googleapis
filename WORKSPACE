@@ -92,10 +92,10 @@ http_archive(
 # bazel-gazelle (support Golang under bazel)
 http_archive(
     name = "bazel_gazelle",
-    sha256 = "b85f48fa105c4403326e9525ad2b2cc437babaa6e15a3fc0b1dbab0ab064bc7c",
+    sha256 = "62ca106be173579c0a167deb23358fdfe71ffa1e4cfdddf5582af26520f1c66f",
     urls = [
-        "https://storage.googleapis.com/bazel-mirror/github.com/bazelbuild/bazel-gazelle/releases/download/v0.22.2/bazel-gazelle-v0.22.2.tar.gz",
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.22.2/bazel-gazelle-v0.22.2.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.23.0/bazel-gazelle-v0.23.0.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.23.0/bazel-gazelle-v0.23.0.tar.gz",
     ],
 )
 
@@ -110,8 +110,8 @@ go_repository(
     name = "org_golang_google_genproto",
     build_file_proto_mode = "disable_global",
     importpath = "google.golang.org/genproto",
-    sum = "h1:hcskBH5qZCOa7WpTUFUFvoebnSFZBYpjykLtjIp9DVk=",
-    version = "v0.0.0-20210303154014-9728d6b83eeb",
+    sum = "h1:4xoALQmXxqVdDdLimpPyPeDdsJzo+nFTJw9euAMpqgM=",
+    version = "v0.0.0-20210729151513-df9385d47c1b",
 )
 
 go_rules_dependencies()
@@ -246,7 +246,7 @@ gapic_generator_register_toolchains()
 # Go
 ##############################################################################
 
-_gapic_generator_go_version = "0.21.2"
+_gapic_generator_go_version = "0.22.0"
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
