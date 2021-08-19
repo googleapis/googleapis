@@ -120,7 +120,7 @@ go_register_toolchains()
 
 gazelle_dependencies()
 
-_rules_gapic_version = "0.5.5"
+_rules_gapic_version = "0.6.0"
 
 http_archive(
     name = "rules_gapic",
