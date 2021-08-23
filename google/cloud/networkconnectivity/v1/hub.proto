@@ -151,35 +151,6 @@ service HubService {
     };
   }
 
-  // Deactivates the specified spoke. Deactivating keeps the spoke information
-  // for future re-activation, but disconnects the Google Cloud network from
-  // non-Google-Cloud network.
-  rpc DeactivateSpoke(DeactivateSpokeRequest) returns (google.longrunning.Operation) {
-    option (google.api.http) = {
-      post: "/v1/{name=projects/*/locations/*/spokes/*}:deactivate"
-      body: "*"
-    };
-    option (google.api.method_signature) = "name";
-    option (google.longrunning.operation_info) = {
-      response_type: "Spoke"
-      metadata_type: "OperationMetadata"
-    };
-  }
-
-  // Activates the specified spoke. Activating reconnects the Google Cloud
-  // network with the non-Google-Cloud network.
-  rpc ActivateSpoke(ActivateSpokeRequest) returns (google.longrunning.Operation) {
-    option (google.api.http) = {
-      post: "/v1/{name=projects/*/locations/*/spokes/*}:activate"
-      body: "*"
-    };
-    option (google.api.method_signature) = "name";
-    option (google.longrunning.operation_info) = {
-      response_type: "Spoke"
-      metadata_type: "OperationMetadata"
-    };
-  }
-
   // Deletes the specified spoke.
   rpc DeleteSpoke(DeleteSpokeRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
@@ -228,6 +199,14 @@ message Hub {
 
   // Output only. The current lifecycle state of this hub.
   State state = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The VPC network associated with this hub's spokes. All of the VPN tunnels,
+  // VLAN attachments, and router appliance instances referenced by this hub's
+  // spokes must belong to this VPC network.
+  //
+  // This field is read-only. Network Connectivity Center automatically
+  // populates it based on the set of spokes attached to the hub.
+  repeated RoutingVPC routing_vpcs = 10;
 }
 
 // The State enum represents the lifecycle stage of a Network Connectivity
@@ -244,6 +223,15 @@ enum State {
 
   // The resource's Delete operation is in progress
   DELETING = 3;
+}
+
+// RoutingsVPC contains information about a VPC network that is associated with
+// a hub's spokes.
+message RoutingVPC {
+  // The URI of a VPC network.
+  string uri = 1 [(google.api.resource_reference) = {
+                    type: "compute.googleapis.com/Network"
+                  }];
 }
 
 // A spoke represents a connection between your Google Cloud network resources
@@ -578,60 +566,6 @@ message DeleteSpokeRequest {
   string request_id = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// The request for [HubService.DeactivateSpoke][google.cloud.networkconnectivity.v1.HubService.DeactivateSpoke].
-message DeactivateSpokeRequest {
-  // Required. The name of the spoke to deactivate.
-  string name = 1 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = {
-      type: "networkconnectivity.googleapis.com/Spoke"
-    }
-  ];
-
-  // Optional. A unique request ID (optional). If you specify this ID, you can use it
-  // in cases when you need to retry your request. When you need to retry, this
-  // ID lets the server know that it can ignore the request if it has already
-  // been completed. The server guarantees that for at least 60 minutes after
-  // the first request.
-  //
-  // For example, consider a situation where you make an initial request and
-  // the request times out. If you make the request again with the same request
-  // ID, the server can check to see whether the original operation
-  // was received. If it was, the server ignores the second request. This
-  // behavior prevents clients from mistakenly creating duplicate commitments.
-  //
-  // The request ID must be a valid UUID, with the exception that zero UUID is
-  // not supported (00000000-0000-0000-0000-000000000000).
-  string request_id = 2 [(google.api.field_behavior) = OPTIONAL];
-}
-
-// The request for [HubService.ActivateSpoke][google.cloud.networkconnectivity.v1.HubService.ActivateSpoke].
-message ActivateSpokeRequest {
-  // Required. The name of the spoke to activate.
-  string name = 1 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = {
-      type: "networkconnectivity.googleapis.com/Spoke"
-    }
-  ];
-
-  // Optional. A unique request ID (optional). If you specify this ID, you can use it
-  // in cases when you need to retry your request. When you need to retry, this
-  // ID lets the server know that it can ignore the request if it has already
-  // been completed. The server guarantees that for at least 60 minutes after
-  // the first request.
-  //
-  // For example, consider a situation where you make an initial request and
-  // the request times out. If you make the request again with the same request
-  // ID, the server can check to see whether the original operation
-  // was received. If it was, the server ignores the second request. This
-  // behavior prevents clients from mistakenly creating duplicate commitments.
-  //
-  // The request ID must be a valid UUID, with the exception that zero UUID is
-  // not supported (00000000-0000-0000-0000-000000000000).
-  string request_id = 2 [(google.api.field_behavior) = OPTIONAL];
-}
-
 // A collection of Cloud VPN tunnel resources. These resources should be
 // redundant HA VPN tunnels that all advertise the same prefixes to Google
 // Cloud. Alternatively, in a passive/active configuration, all tunnels
@@ -643,12 +577,8 @@ message LinkedVpnTunnels {
                             }];
 
   // A value that controls whether site-to-site data transfer is enabled for
-  // these resources. If true, routes are propagated between the spoke
-  // associated with these resources and other spokes in the hub that have data
-  // transfer enabled. If false, the spoke associated with these resources
-  // provides connectivity only between the external site and Google Cloud. In
-  // regions where data transfer is unsupported, you cannot set this field
-  // to true.
+  // these resources. This field is set to false by default, but you must set it
+  // to true. Note that data transfer is available only in supported locations.
   bool site_to_site_data_transfer = 2;
 }
 
@@ -663,12 +593,8 @@ message LinkedInterconnectAttachments {
                             }];
 
   // A value that controls whether site-to-site data transfer is enabled for
-  // these resources. If true, routes are propagated between the spoke
-  // associated with these resources and other spokes in the hub that have data
-  // transfer enabled. If false, the spoke associated with these resources
-  // provides connectivity only between the external site and Google Cloud. In
-  // regions where data transfer is unsupported, you cannot set this field
-  // to true.
+  // these resources. This field is set to false by default, but you must set it
+  // to true. Note that data transfer is available only in supported locations.
   bool site_to_site_data_transfer = 2;
 }
 
@@ -680,12 +606,8 @@ message LinkedRouterApplianceInstances {
   repeated RouterApplianceInstance instances = 1;
 
   // A value that controls whether site-to-site data transfer is enabled for
-  // these resources. If true, routes are propagated between the spoke
-  // associated with these resources and other spokes in the hub that have data
-  // transfer enabled. If false, the spoke associated with these resources
-  // provides connectivity only between the external site and Google Cloud. In
-  // regions where data transfer is unsupported, you cannot set this field
-  // to true.
+  // these resources. This field is set to false by default, but you must set it
+  // to true. Note that data transfer is available only in supported locations.
   bool site_to_site_data_transfer = 2;
 }
 
