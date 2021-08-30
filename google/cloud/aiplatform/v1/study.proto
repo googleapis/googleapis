@@ -31,6 +31,50 @@ option java_package = "com.google.cloud.aiplatform.v1";
 option php_namespace = "Google\\Cloud\\AIPlatform\\V1";
 option ruby_package = "Google::Cloud::AIPlatform::V1";
 
+// A message representing a Study.
+message Study {
+  option (google.api.resource) = {
+    type: "aiplatform.googleapis.com/Study"
+    pattern: "projects/{project}/locations/{location}/studies/{study}"
+  };
+
+  // Describes the Study state.
+  enum State {
+    // The study state is unspecified.
+    STATE_UNSPECIFIED = 0;
+
+    // The study is active.
+    ACTIVE = 1;
+
+    // The study is stopped due to an internal error.
+    INACTIVE = 2;
+
+    // The study is done when the service exhausts the parameter search space
+    // or max_trial_count is reached.
+    COMPLETED = 3;
+  }
+
+  // Output only. The name of a study. The study's globally unique identifier.
+  // Format: `projects/{project}/locations/{location}/studies/{study}`
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Required. Describes the Study, default value is empty string.
+  string display_name = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Configuration of the Study.
+  StudySpec study_spec = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Output only. The detailed state of a Study.
+  State state = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Time at which the study was created.
+  google.protobuf.Timestamp create_time = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. A human readable reason why the Study is inactive.
+  // This should be empty if a study is ACTIVE or COMPLETED.
+  string inactive_reason = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
 // A message representing a Trial. A Trial contains a unique set of Parameters
 // that has been or will be evaluated, along with the objective metrics got by
 // running the Trial.
@@ -126,6 +170,21 @@ message Trial {
       type: "aiplatform.googleapis.com/CustomJob"
     }
   ];
+
+  // Output only. URIs for accessing [interactive
+  // shells](https://cloud.google.com/vertex-ai/docs/training/monitor-debug-interactive-shell)
+  // (one URI for each training node). Only available if this trial is part of
+  // a [HyperparameterTuningJob][google.cloud.aiplatform.v1.HyperparameterTuningJob] and the job's
+  // [trial_job_spec.enable_web_access][google.cloud.aiplatform.v1.CustomJobSpec.enable_web_access] field
+  // is `true`.
+  //
+  // The keys are names of each node used for the trial; for example,
+  // `workerpool0-0` for the primary node, `workerpool1-0` for the first node in
+  // the second worker pool, and `workerpool1-1` for the second node in the
+  // second worker pool.
+  //
+  // The values are the URIs for each node's interactive shell.
+  map<string, string> web_access_uris = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Represents specification of a Study.
@@ -315,6 +374,31 @@ message StudySpec {
     repeated ConditionalParameterSpec conditional_parameter_specs = 10;
   }
 
+  // The decay curve automated stopping rule builds a Gaussian Process
+  // Regressor to predict the final objective value of a Trial based on the
+  // already completed Trials and the intermediate measurements of the current
+  // Trial. Early stopping is requested for the current Trial if there is very
+  // low probability to exceed the optimal value found so far.
+  message DecayCurveAutomatedStoppingSpec {
+    // True if [Measurement.elapsed_duration][google.cloud.aiplatform.v1.Measurement.elapsed_duration] is used as the x-axis of each
+    // Trials Decay Curve. Otherwise, [Measurement.step_count][google.cloud.aiplatform.v1.Measurement.step_count] will be used
+    // as the x-axis.
+    bool use_elapsed_duration = 1;
+  }
+
+  // The median automated stopping rule stops a pending Trial if the Trial's
+  // best objective_value is strictly below the median 'performance' of all
+  // completed Trials reported up to the Trial's last measurement.
+  // Currently, 'performance' refers to the running average of the objective
+  // values reported by the Trial in each measurement.
+  message MedianAutomatedStoppingSpec {
+    // True if median automated stopping rule applies on
+    // [Measurement.elapsed_duration][google.cloud.aiplatform.v1.Measurement.elapsed_duration]. It means that elapsed_duration
+    // field of latest measurement of current Trial is used to compute median
+    // objective value for each completed Trials.
+    bool use_elapsed_duration = 1;
+  }
+
   // The available search algorithms for the Study.
   enum Algorithm {
     // The default algorithm used by Vertex AI for [hyperparameter
@@ -370,6 +454,14 @@ message StudySpec {
 
     // Use the best measurement reported.
     BEST_MEASUREMENT = 2;
+  }
+
+  oneof automated_stopping_spec {
+    // The automated early stopping spec using decay curve rule.
+    DecayCurveAutomatedStoppingSpec decay_curve_stopping_spec = 4;
+
+    // The automated early stopping spec using median rule.
+    MedianAutomatedStoppingSpec median_automated_stopping_spec = 5;
   }
 
   // Required. Metric specs for the Study.
