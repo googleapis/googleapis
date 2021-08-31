@@ -32,8 +32,14 @@ option java_package = "com.google.cloud.gkehub.v1beta1";
 option php_namespace = "Google\\Cloud\\GkeHub\\V1beta1";
 option ruby_package = "Google::Cloud::GkeHub::V1beta1";
 
-// GKE Hub CRUD API for the Membership resource.
-// The Membership service is currently only available in the global location.
+// The GKE Hub MembershipService handles the registration of many Kubernetes
+// clusters to Google Cloud, represented with the [Membership][google.cloud.gkehub.v1beta1.Membership] resource.
+//
+// GKE Hub is currently only available in the global region.
+//
+// **Membership management may be non-trivial:** it is recommended to use one
+// of the Google-provided client libraries or tools where possible when working
+// with Membership resources.
 service GkeHubMembershipService {
   option (google.api.default_host) = "gkehub.googleapis.com";
   option (google.api.oauth_scopes) = "https://www.googleapis.com/auth/cloud-platform";
@@ -54,7 +60,11 @@ service GkeHubMembershipService {
     option (google.api.method_signature) = "name";
   }
 
-  // Adds a new Membership.
+  // Creates a new Membership.
+  //
+  // **This is currently only supported for GKE clusters on Google Cloud**.
+  // To register other clusters, follow the instructions at
+  // https://cloud.google.com/anthos/multicluster-management/connect/registering-a-cluster.
   rpc CreateMembership(CreateMembershipRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
       post: "/v1beta1/{parent=projects/*/locations/*}/memberships"
@@ -68,6 +78,10 @@ service GkeHubMembershipService {
   }
 
   // Removes a Membership.
+  //
+  // **This is currently only supported for GKE clusters on Google Cloud**.
+  // To unregister other clusters, follow the instructions at
+  // https://cloud.google.com/anthos/multicluster-management/connect/unregistering-a-cluster.
   rpc DeleteMembership(DeleteMembershipRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
       delete: "/v1beta1/{name=projects/*/locations/*/memberships/*}"
@@ -93,6 +107,9 @@ service GkeHubMembershipService {
   }
 
   // Generates the manifest for deployment of the GKE connect agent.
+  //
+  // **This method is used internally by Google-provided libraries.**
+  // Most clients should not need to call this method directly.
   rpc GenerateConnectManifest(GenerateConnectManifestRequest) returns (GenerateConnectManifestResponse) {
     option (google.api.http) = {
       get: "/v1beta1/{name=projects/*/locations/*/memberships/*}:generateConnectManifest"
@@ -168,9 +185,9 @@ message Membership {
   // Optional. GCP labels for this membership.
   map<string, string> labels = 2 [(google.api.field_behavior) = OPTIONAL];
 
-  // Required. Description of this membership, limited to 63 characters.
+  // Optional. Description of this membership, limited to 63 characters.
   // Must match the regex: `[a-zA-Z0-9][a-zA-Z0-9_\-\.\ ]*`
-  string description = 3 [(google.api.field_behavior) = REQUIRED];
+  string description = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Type of resource represented by this Membership
   oneof type {
@@ -223,8 +240,17 @@ message Membership {
 // MembershipEndpoint contains information needed to contact a Kubernetes API,
 // endpoint and any additional Kubernetes metadata.
 message MembershipEndpoint {
-  // Optional. GKE-specific information. Only present if this Membership is a GKE cluster.
-  GkeCluster gke_cluster = 4 [(google.api.field_behavior) = OPTIONAL];
+  // Cluster information of the registered cluster.
+  oneof type {
+    // Optional. Specific information for a GKE-on-GCP cluster.
+    GkeCluster gke_cluster = 4 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Specific information for a GKE On-Prem cluster.
+    OnPremCluster on_prem_cluster = 7 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Specific information for a GKE Multi-Cloud cluster.
+    MultiCloudCluster multi_cloud_cluster = 8 [(google.api.field_behavior) = OPTIONAL];
+  }
 
   // Output only. Useful Kubernetes-specific metadata.
   KubernetesMetadata kubernetes_metadata = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -308,10 +334,46 @@ message ResourceManifest {
 message GkeCluster {
   // Immutable. Self-link of the GCP resource for the GKE cluster. For example:
   //
-  // > container.googleapis.com/projects/my-project/locations/us-west1-a/clusters/my-cluster
+  //     //container.googleapis.com/projects/my-project/locations/us-west1-a/clusters/my-cluster
   //
   // Zonal clusters are also supported.
   string resource_link = 1 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Output only. If cluster_missing is set then it denotes that the GKE cluster no longer
+  // exists in the GKE Control Plane.
+  bool cluster_missing = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// OnPremCluster contains information specific to GKE On-Prem clusters.
+message OnPremCluster {
+  // Immutable. Self-link of the GCP resource for the GKE On-Prem cluster. For example:
+  //
+  //  //gkeonprem.googleapis.com/projects/my-project/locations/us-west1-a/vmwareClusters/my-cluster
+  //  //gkeonprem.googleapis.com/projects/my-project/locations/us-west1-a/bareMetalClusters/my-cluster
+  string resource_link = 1 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Output only. If cluster_missing is set then it denotes that
+  // API(gkeonprem.googleapis.com) resource for this GKE On-Prem cluster no
+  // longer exists.
+  bool cluster_missing = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Immutable. Whether the cluster is an admin cluster.
+  bool admin_cluster = 3 [(google.api.field_behavior) = IMMUTABLE];
+}
+
+// MultiCloudCluster contains information specific to GKE Multi-Cloud clusters.
+message MultiCloudCluster {
+  // Immutable. Self-link of the GCP resource for the GKE Multi-Cloud cluster. For
+  // example:
+  //
+  //  //gkemulticloud.googleapis.com/projects/my-project/locations/us-west1-a/awsClusters/my-cluster
+  //  //gkemulticloud.googleapis.com/projects/my-project/locations/us-west1-a/azureClusters/my-cluster
+  string resource_link = 1 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Output only. If cluster_missing is set then it denotes that
+  // API(gkemulticloud.googleapis.com) resource for this GKE Multi-Cloud cluster
+  // no longer exists.
+  bool cluster_missing = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // KubernetesMetadata provides informational metadata for Memberships
@@ -494,6 +556,21 @@ message CreateMembershipRequest {
 
   // Required. The membership to create.
   Membership resource = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. A request ID to identify requests. Specify a unique request ID
+  // so that if you must retry your request, the server will know to ignore
+  // the request if it has already been completed. The server will guarantee
+  // that for at least 60 minutes after the first request.
+  //
+  // For example, consider a situation where you make an initial request and
+  // the request times out. If you make the request again with the same request
+  // ID, the server can check if original operation with the same request ID
+  // was received, and if so, will ignore the second request. This prevents
+  // clients from accidentally creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request message for `GkeHubMembershipService.DeleteMembership` method.
@@ -501,6 +578,21 @@ message DeleteMembershipRequest {
   // Required. The Membership resource name in the format
   // `projects/*/locations/*/memberships/*`.
   string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. A request ID to identify requests. Specify a unique request ID
+  // so that if you must retry your request, the server will know to ignore
+  // the request if it has already been completed. The server will guarantee
+  // that for at least 60 minutes after the first request.
+  //
+  // For example, consider a situation where you make an initial request and
+  // the request times out. If you make the request again with the same request
+  // ID, the server can check if original operation with the same request ID
+  // was received, and if so, will ignore the second request. This prevents
+  // clients from accidentally creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request message for `GkeHubMembershipService.UpdateMembership` method.
@@ -519,7 +611,24 @@ message UpdateMembershipRequest {
   // If you are updating a map field, set the value of a key to null or empty
   // string to delete the key from the map. It's not possible to update a key's
   // value to the empty string.
+  // If you specify the update_mask to be a special path "*", fully replaces all
+  // user-modifiable fields to match `resource`.
   Membership resource = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. A request ID to identify requests. Specify a unique request ID
+  // so that if you must retry your request, the server will know to ignore
+  // the request if it has already been completed. The server will guarantee
+  // that for at least 60 minutes after the first request.
+  //
+  // For example, consider a situation where you make an initial request and
+  // the request times out. If you make the request again with the same request
+  // ID, the server can check if original operation with the same request ID
+  // was received, and if so, will ignore the second request. This prevents
+  // clients from accidentally creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request message for `GkeHubMembershipService.GenerateConnectManifest`

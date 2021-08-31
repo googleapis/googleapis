@@ -36,8 +36,8 @@ option (google.api.resource_definition) = {
 };
 
 // Configures and manages metastore services.
-// Metastore services are fully managed, highly available, auto-scaled,
-// auto-healing, OSS-native deployments of technical metadata management
+// Metastore services are fully managed, highly available, autoscaled,
+// autohealing, OSS-native deployments of technical metadata management
 // software. Each metastore service exposes a network endpoint through which
 // metadata queries are served. Metadata queries can originate from a variety
 // of sources, including Apache Hive, Apache Presto, and Apache Spark.
@@ -161,6 +161,60 @@ service DataprocMetastore {
     };
     option (google.longrunning.operation_info) = {
       response_type: "MetadataExport"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
+  // Restores a service from a backup.
+  rpc RestoreService(RestoreServiceRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{service=projects/*/locations/*/services/*}:restore"
+      body: "*"
+    };
+    option (google.api.method_signature) = "service,backup";
+    option (google.longrunning.operation_info) = {
+      response_type: "Restore"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
+  // Lists backups in a service.
+  rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*/locations/*/services/*}/backups"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Gets details of a single backup.
+  rpc GetBackup(GetBackupRequest) returns (Backup) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/locations/*/services/*/backups/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Creates a new backup in a given project and location.
+  rpc CreateBackup(CreateBackupRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/locations/*/services/*}/backups"
+      body: "backup"
+    };
+    option (google.api.method_signature) = "parent,backup,backup_id";
+    option (google.longrunning.operation_info) = {
+      response_type: "Backup"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
+  // Deletes a single backup.
+  rpc DeleteBackup(DeleteBackupRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      delete: "/v1/{name=projects/*/locations/*/services/*/backups/*}"
+    };
+    option (google.api.method_signature) = "name";
+    option (google.longrunning.operation_info) = {
+      response_type: "google.protobuf.Empty"
       metadata_type: "OperationMetadata"
     };
   }
@@ -363,6 +417,9 @@ message Secret {
 message MetadataManagementActivity {
   // Output only. The latest metadata exports of the metastore service.
   repeated MetadataExport metadata_exports = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The latest restores of the metastore service.
+  repeated Restore restores = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A metastore resource that imports metadata.
@@ -428,11 +485,14 @@ message MetadataImport {
   // The description of the metadata import.
   string description = 2;
 
-  // Output only. The time when the metadata import was created.
+  // Output only. The time when the metadata import was started.
   google.protobuf.Timestamp create_time = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The time when the metadata import was last updated.
   google.protobuf.Timestamp update_time = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time when the metadata import finished.
+  google.protobuf.Timestamp end_time = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The current state of the metadata import.
   State state = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -476,6 +536,118 @@ message MetadataExport {
 
   // Output only. The type of the database dump.
   DatabaseDumpSpec.Type database_dump_type = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The details of a backup resource.
+message Backup {
+  option (google.api.resource) = {
+    type: "metastore.googleapis.com/Backup"
+    pattern: "projects/{project}/locations/{location}/services/{service}/backups/{backup}"
+  };
+
+  // The current state of the backup.
+  enum State {
+    // The state of the backup is unknown.
+    STATE_UNSPECIFIED = 0;
+
+    // The backup is being created.
+    CREATING = 1;
+
+    // The backup is being deleted.
+    DELETING = 2;
+
+    // The backup is active and ready to use.
+    ACTIVE = 3;
+
+    // The backup failed.
+    FAILED = 4;
+
+    // The backup is being restored.
+    RESTORING = 5;
+  }
+
+  // Immutable. The relative resource name of the backup, in the following form:
+  //
+  // `projects/{project_number}/locations/{location_id}/services/{service_id}/backups/{backup_id}`
+  string name = 1 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Output only. The time when the backup was started.
+  google.protobuf.Timestamp create_time = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time when the backup finished creating.
+  google.protobuf.Timestamp end_time = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The current state of the backup.
+  State state = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The revision of the service at the time of backup.
+  Service service_revision = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The description of the backup.
+  string description = 6;
+
+  // Output only. Services that are restoring from the backup.
+  repeated string restoring_services = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The details of a metadata restore operation.
+message Restore {
+  // The current state of the restore.
+  enum State {
+    // The state of the metadata restore is unknown.
+    STATE_UNSPECIFIED = 0;
+
+    // The metadata restore is running.
+    RUNNING = 1;
+
+    // The metadata restore completed successfully.
+    SUCCEEDED = 2;
+
+    // The metadata restore failed.
+    FAILED = 3;
+
+    // The metadata restore is cancelled.
+    CANCELLED = 4;
+  }
+
+  // The type of restore. If unspecified, defaults to `METADATA_ONLY`.
+  enum RestoreType {
+    // The restore type is unknown.
+    RESTORE_TYPE_UNSPECIFIED = 0;
+
+    // The service's metadata and configuration are restored.
+    FULL = 1;
+
+    // Only the service's metadata is restored.
+    METADATA_ONLY = 2;
+  }
+
+  // Output only. The time when the restore started.
+  google.protobuf.Timestamp start_time = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time when the restore ended.
+  google.protobuf.Timestamp end_time = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The current state of the restore.
+  State state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The relative resource name of the metastore service backup to restore
+  // from, in the following form:
+  //
+  // `projects/{project_id}/locations/{location_id}/services/{service_id}/backups/{backup_id}`.
+  string backup = 4 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "metastore.googleapis.com/Backup"
+    }
+  ];
+
+  // Output only. The type of restore.
+  RestoreType type = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The restore details containing the revision of the service to be restored
+  // to, in format of JSON.
+  string details = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Request message for [DataprocMetastore.ListServices][google.cloud.metastore.v1.DataprocMetastore.ListServices].
@@ -776,6 +948,138 @@ message UpdateMetadataImportRequest {
   string request_id = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
+// Request message for [DataprocMetastore.ListBackups][google.cloud.metastore.v1.DataprocMetastore.ListBackups].
+message ListBackupsRequest {
+  // Required. The relative resource name of the service whose backups to
+  // list, in the following form:
+  //
+  // `projects/{project_number}/locations/{location_id}/services/{service_id}/backups`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "metastore.googleapis.com/Service"
+    }
+  ];
+
+  // Optional. The maximum number of backups to return. The response may contain less
+  // than the maximum number. If unspecified, no more than 500 backups are
+  // returned. The maximum value is 1000; values above 1000 are changed to 1000.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A page token, received from a previous [DataprocMetastore.ListBackups][google.cloud.metastore.v1.DataprocMetastore.ListBackups]
+  // call. Provide this token to retrieve the subsequent page.
+  //
+  // To retrieve the first page, supply an empty page token.
+  //
+  // When paginating, other parameters provided to
+  // [DataprocMetastore.ListBackups][google.cloud.metastore.v1.DataprocMetastore.ListBackups] must match the call that provided the
+  // page token.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The filter to apply to list results.
+  string filter = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Specify the ordering of results as described in [Sorting
+  // Order](https://cloud.google.com/apis/design/design_patterns#sorting_order).
+  // If not specified, the results will be sorted in the default order.
+  string order_by = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message for [DataprocMetastore.ListBackups][google.cloud.metastore.v1.DataprocMetastore.ListBackups].
+message ListBackupsResponse {
+  // The backups of the specified service.
+  repeated Backup backups = 1;
+
+  // A token that can be sent as `page_token` to retrieve the next page. If this
+  // field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
+
+  // Locations that could not be reached.
+  repeated string unreachable = 3;
+}
+
+// Request message for [DataprocMetastore.GetBackup][google.cloud.metastore.v1.DataprocMetastore.GetBackup].
+message GetBackupRequest {
+  // Required. The relative resource name of the backup to retrieve, in the
+  // following form:
+  //
+  // `projects/{project_number}/locations/{location_id}/services/{service_id}/backups/{backup_id}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "metastore.googleapis.com/Backup"
+    }
+  ];
+}
+
+// Request message for [DataprocMetastore.CreateBackup][google.cloud.metastore.v1.DataprocMetastore.CreateBackup].
+message CreateBackupRequest {
+  // Required. The relative resource name of the service in which to create a backup
+  // of the following form:
+  //
+  // `projects/{project_number}/locations/{location_id}/services/{service_id}`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "metastore.googleapis.com/Service"
+    }
+  ];
+
+  // Required. The ID of the backup, which is used as the final component of the
+  // backup's name.
+  //
+  // This value must be between 1 and 64 characters long, begin with a letter,
+  // end with a letter or number, and consist of alpha-numeric ASCII characters
+  // or hyphens.
+  string backup_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The backup to create. The `name` field is ignored. The ID of the created
+  // backup must be provided in the request's `backup_id` field.
+  Backup backup = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. A request ID. Specify a unique request ID to allow the server to ignore the
+  // request if it has completed. The server will ignore subsequent requests
+  // that provide a duplicate request ID for at least 60 minutes after the first
+  // request.
+  //
+  // For example, if an initial request times out, followed by another request
+  // with the same request ID, the server ignores the second request to prevent
+  // the creation of duplicate commitments.
+  //
+  // The request ID must be a valid
+  // [UUID](https://en.wikipedia.org/wiki/Universally_unique_identifier#Format)
+  // A zero UUID (00000000-0000-0000-0000-000000000000) is not supported.
+  string request_id = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request message for [DataprocMetastore.DeleteBackup][google.cloud.metastore.v1.DataprocMetastore.DeleteBackup].
+message DeleteBackupRequest {
+  // Required. The relative resource name of the backup to delete, in the
+  // following form:
+  //
+  // `projects/{project_number}/locations/{location_id}/services/{service_id}/backups/{backup_id}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "metastore.googleapis.com/Backup"
+    }
+  ];
+
+  // Optional. A request ID. Specify a unique request ID to allow the server to ignore the
+  // request if it has completed. The server will ignore subsequent requests
+  // that provide a duplicate request ID for at least 60 minutes after the first
+  // request.
+  //
+  // For example, if an initial request times out, followed by another request
+  // with the same request ID, the server ignores the second request to prevent
+  // the creation of duplicate commitments.
+  //
+  // The request ID must be a valid
+  // [UUID](https://en.wikipedia.org/wiki/Universally_unique_identifier#Format)
+  // A zero UUID (00000000-0000-0000-0000-000000000000) is not supported.
+  string request_id = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
 // Request message for [DataprocMetastore.ExportMetadata][google.cloud.metastore.v1.DataprocMetastore.ExportMetadata].
 message ExportMetadataRequest {
   // Required. Destination that metadata is exported to.
@@ -813,6 +1117,48 @@ message ExportMetadataRequest {
 
   // Optional. The type of the database dump. If unspecified, defaults to `MYSQL`.
   DatabaseDumpSpec.Type database_dump_type = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request message for [DataprocMetastore.Restore][].
+message RestoreServiceRequest {
+  // Required. The relative resource name of the metastore service to run restore, in the
+  // following form:
+  //
+  // `projects/{project_id}/locations/{location_id}/services/{service_id}`.
+  string service = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "metastore.googleapis.com/Service"
+    }
+  ];
+
+  // Required. The relative resource name of the metastore service backup to restore
+  // from, in the following form:
+  //
+  // `projects/{project_id}/locations/{location_id}/services/{service_id}/backups/{backup_id}`.
+  string backup = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "metastore.googleapis.com/Backup"
+    }
+  ];
+
+  // Optional. The type of restore. If unspecified, defaults to `METADATA_ONLY`.
+  Restore.RestoreType restore_type = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A request ID. Specify a unique request ID to allow the server to ignore the
+  // request if it has completed. The server will ignore subsequent requests
+  // that provide a duplicate request ID for at least 60 minutes after the first
+  // request.
+  //
+  // For example, if an initial request times out, followed by another request
+  // with the same request ID, the server ignores the second request to prevent
+  // the creation of duplicate commitments.
+  //
+  // The request ID must be a valid
+  // [UUID](https://en.wikipedia.org/wiki/Universally_unique_identifier#Format).
+  // A zero UUID (00000000-0000-0000-0000-000000000000) is not supported.
+  string request_id = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Represents the metadata of a long-running operation.
@@ -869,6 +1215,9 @@ message DatabaseDumpSpec {
 
     // Database dump is a MySQL dump file.
     MYSQL = 1;
+
+    // Database dump contains Avro files.
+    AVRO = 2;
   }
 
 

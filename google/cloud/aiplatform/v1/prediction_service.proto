@@ -21,6 +21,7 @@ import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/httpbody.proto";
 import "google/api/resource.proto";
+import "google/cloud/aiplatform/v1/explanation.proto";
 import "google/protobuf/struct.proto";
 
 option csharp_namespace = "Google.Cloud.AIPlatform.V1";
@@ -43,6 +44,33 @@ service PredictionService {
       body: "*"
     };
     option (google.api.method_signature) = "endpoint,instances,parameters";
+  }
+
+  // Perform an online prediction with arbitrary http payload.
+  rpc RawPredict(RawPredictRequest) returns (google.api.HttpBody) {
+    option (google.api.http) = {
+      post: "/v1/{endpoint=projects/*/locations/*/endpoints/*}:rawPredict"
+      body: "*"
+    };
+    option (google.api.method_signature) = "endpoint,http_body";
+  }
+
+  // Perform an online explanation.
+  //
+  // If [deployed_model_id][google.cloud.aiplatform.v1.ExplainRequest.deployed_model_id] is specified,
+  // the corresponding DeployModel must have
+  // [explanation_spec][google.cloud.aiplatform.v1.DeployedModel.explanation_spec]
+  // populated. If [deployed_model_id][google.cloud.aiplatform.v1.ExplainRequest.deployed_model_id]
+  // is not specified, all DeployedModels must have
+  // [explanation_spec][google.cloud.aiplatform.v1.DeployedModel.explanation_spec]
+  // populated. Only deployed AutoML tabular Models have
+  // explanation_spec.
+  rpc Explain(ExplainRequest) returns (ExplainResponse) {
+    option (google.api.http) = {
+      post: "/v1/{endpoint=projects/*/locations/*/endpoints/*}:explain"
+      body: "*"
+    };
+    option (google.api.method_signature) = "endpoint,instances,parameters,deployed_model_id";
   }
 }
 
@@ -87,4 +115,92 @@ message PredictResponse {
 
   // ID of the Endpoint's DeployedModel that served this prediction.
   string deployed_model_id = 2;
+}
+
+// Request message for [PredictionService.RawPredict][google.cloud.aiplatform.v1.PredictionService.RawPredict].
+message RawPredictRequest {
+  // Required. The name of the Endpoint requested to serve the prediction.
+  // Format:
+  // `projects/{project}/locations/{location}/endpoints/{endpoint}`
+  string endpoint = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/Endpoint"
+    }
+  ];
+
+  // The prediction input. Supports HTTP headers and arbitrary data payload.
+  //
+  // A [DeployedModel][google.cloud.aiplatform.v1.DeployedModel] may have an upper limit on the number of instances it
+  // supports per request. When this limit it is exceeded for an AutoML model,
+  // the [RawPredict][google.cloud.aiplatform.v1.PredictionService.RawPredict] method returns an error.
+  // When this limit is exceeded for a custom-trained model, the behavior varies
+  // depending on the model.
+  //
+  // You can specify the schema for each instance in the
+  // [predict_schemata.instance_schema_uri][google.cloud.aiplatform.v1.PredictSchemata.instance_schema_uri]
+  // field when you create a [Model][google.cloud.aiplatform.v1.Model]. This schema applies when you deploy the
+  // `Model` as a `DeployedModel` to an [Endpoint][google.cloud.aiplatform.v1.Endpoint] and use the `RawPredict`
+  // method.
+  google.api.HttpBody http_body = 2;
+}
+
+// Request message for [PredictionService.Explain][google.cloud.aiplatform.v1.PredictionService.Explain].
+message ExplainRequest {
+  // Required. The name of the Endpoint requested to serve the explanation.
+  // Format:
+  // `projects/{project}/locations/{location}/endpoints/{endpoint}`
+  string endpoint = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/Endpoint"
+    }
+  ];
+
+  // Required. The instances that are the input to the explanation call.
+  // A DeployedModel may have an upper limit on the number of instances it
+  // supports per request, and when it is exceeded the explanation call errors
+  // in case of AutoML Models, or, in case of customer created Models, the
+  // behaviour is as documented by that Model.
+  // The schema of any single instance may be specified via Endpoint's
+  // DeployedModels' [Model's][google.cloud.aiplatform.v1.DeployedModel.model]
+  // [PredictSchemata's][google.cloud.aiplatform.v1.Model.predict_schemata]
+  // [instance_schema_uri][google.cloud.aiplatform.v1.PredictSchemata.instance_schema_uri].
+  repeated google.protobuf.Value instances = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // The parameters that govern the prediction. The schema of the parameters may
+  // be specified via Endpoint's DeployedModels' [Model's ][google.cloud.aiplatform.v1.DeployedModel.model]
+  // [PredictSchemata's][google.cloud.aiplatform.v1.Model.predict_schemata]
+  // [parameters_schema_uri][google.cloud.aiplatform.v1.PredictSchemata.parameters_schema_uri].
+  google.protobuf.Value parameters = 4;
+
+  // If specified, overrides the
+  // [explanation_spec][google.cloud.aiplatform.v1.DeployedModel.explanation_spec] of the DeployedModel.
+  // Can be used for explaining prediction results with different
+  // configurations, such as:
+  //  - Explaining top-5 predictions results as opposed to top-1;
+  //  - Increasing path count or step count of the attribution methods to reduce
+  //    approximate errors;
+  //  - Using different baselines for explaining the prediction results.
+  ExplanationSpecOverride explanation_spec_override = 5;
+
+  // If specified, this ExplainRequest will be served by the chosen
+  // DeployedModel, overriding [Endpoint.traffic_split][google.cloud.aiplatform.v1.Endpoint.traffic_split].
+  string deployed_model_id = 3;
+}
+
+// Response message for [PredictionService.Explain][google.cloud.aiplatform.v1.PredictionService.Explain].
+message ExplainResponse {
+  // The explanations of the Model's [PredictResponse.predictions][google.cloud.aiplatform.v1.PredictResponse.predictions].
+  //
+  // It has the same number of elements as [instances][google.cloud.aiplatform.v1.ExplainRequest.instances]
+  // to be explained.
+  repeated Explanation explanations = 1;
+
+  // ID of the Endpoint's DeployedModel that served this explanation.
+  string deployed_model_id = 2;
+
+  // The predictions that are the output of the predictions call.
+  // Same as [PredictResponse.predictions][google.cloud.aiplatform.v1.PredictResponse.predictions].
+  repeated google.protobuf.Value predictions = 3;
 }

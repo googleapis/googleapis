@@ -92,10 +92,10 @@ http_archive(
 # bazel-gazelle (support Golang under bazel)
 http_archive(
     name = "bazel_gazelle",
-    sha256 = "b85f48fa105c4403326e9525ad2b2cc437babaa6e15a3fc0b1dbab0ab064bc7c",
+    sha256 = "62ca106be173579c0a167deb23358fdfe71ffa1e4cfdddf5582af26520f1c66f",
     urls = [
-        "https://storage.googleapis.com/bazel-mirror/github.com/bazelbuild/bazel-gazelle/releases/download/v0.22.2/bazel-gazelle-v0.22.2.tar.gz",
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.22.2/bazel-gazelle-v0.22.2.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.23.0/bazel-gazelle-v0.23.0.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.23.0/bazel-gazelle-v0.23.0.tar.gz",
     ],
 )
 
@@ -110,8 +110,8 @@ go_repository(
     name = "org_golang_google_genproto",
     build_file_proto_mode = "disable_global",
     importpath = "google.golang.org/genproto",
-    sum = "h1:hcskBH5qZCOa7WpTUFUFvoebnSFZBYpjykLtjIp9DVk=",
-    version = "v0.0.0-20210303154014-9728d6b83eeb",
+    sum = "h1:4xoALQmXxqVdDdLimpPyPeDdsJzo+nFTJw9euAMpqgM=",
+    version = "v0.0.0-20210729151513-df9385d47c1b",
 )
 
 go_rules_dependencies()
@@ -120,7 +120,7 @@ go_register_toolchains()
 
 gazelle_dependencies()
 
-_rules_gapic_version = "0.5.5"
+_rules_gapic_version = "0.6.2"
 
 http_archive(
     name = "rules_gapic",
@@ -169,7 +169,7 @@ apple_support_dependencies()
 ##############################################################################
 # Java
 ##############################################################################
-_gax_java_version = "1.65.1"
+_gax_java_version = "2.3.0"
 
 http_archive(
     name = "com_google_api_gax_java",
@@ -194,7 +194,7 @@ grpc_java_repositories()
 
 # Java microgenerator.
 # Must go AFTER java-gax, since both java gax and gapic-generator are written in java and may conflict.
-_gapic_generator_java_version = "2.0.1"
+_gapic_generator_java_version = "2.1.0"
 
 http_archive(
     name = "gapic_generator_java",
@@ -246,7 +246,7 @@ gapic_generator_register_toolchains()
 # Go
 ##############################################################################
 
-_gapic_generator_go_version = "0.21.2"
+_gapic_generator_go_version = "0.23.0"
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
@@ -262,9 +262,9 @@ com_googleapis_gapic_generator_go_repositories()
 # TypeScript
 ##############################################################################
 
-_gapic_generator_typescript_version = "2.1.1"
+_gapic_generator_typescript_version = "2.4.1"
 
-_gapic_generator_typescript_sha256 = "c4117fedcd726c14af8c6a70c810b25a6bdf2523b43a867bafdf6478c0ac745a"
+_gapic_generator_typescript_sha256 = "0789f38d6bc5ebe8215c8ea93ab08d7e451dc4aaaeeee904122f653c8e77cac2"
 
 ### TypeScript generator
 http_archive(
@@ -354,9 +354,9 @@ gapic_generator_csharp_repositories()
 # Ruby
 ##############################################################################
 
-_gapic_generator_ruby_version = "v0.10.0"
+_gapic_generator_ruby_version = "v0.10.1"
 
-_gapic_generator_ruby_sha256 = "95b42641789f1edc7412040a6ba298c002eb0dad3d66e0826b5b400ead822f40"
+_gapic_generator_ruby_sha256 = "12834f15e81e4259aab6a014533fdb6bd96c3887f8d907da73ca00484751d2f5"
 
 http_archive(
     name = "gapic_generator_ruby",
