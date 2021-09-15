@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2021 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ service RecaptchaEnterpriseService {
   }
 
   // Annotates a previously created Assessment to provide additional information
-  // on whether the event turned out to be authentic or fradulent.
+  // on whether the event turned out to be authentic or fraudulent.
   rpc AnnotateAssessment(AnnotateAssessmentRequest) returns (AnnotateAssessmentResponse) {
     option (google.api.http) = {
       post: "/v1/{name=projects/*/assessments/*}:annotate"
@@ -93,6 +93,28 @@ service RecaptchaEnterpriseService {
       delete: "/v1/{name=projects/*/keys/*}"
     };
   }
+
+  // Migrates an existing key from reCAPTCHA to reCAPTCHA Enterprise.
+  // Once a key is migrated, it can be used from either product. SiteVerify
+  // requests are billed as CreateAssessment calls. You must be
+  // authenticated as one of the current owners of the reCAPTCHA Site Key, and
+  // your user must have the reCAPTCHA Enterprise Admin IAM role in the
+  // destination project.
+  rpc MigrateKey(MigrateKeyRequest) returns (Key) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/keys/*}:migrate"
+      body: "*"
+    };
+  }
+
+  // Get some aggregated metrics for a Key. This data can be used to build
+  // dashboards.
+  rpc GetMetrics(GetMetricsRequest) returns (Metrics) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/keys/*/metrics}"
+    };
+    option (google.api.method_signature) = "name";
+  }
 }
 
 // The create assessment request message.
@@ -112,7 +134,7 @@ message CreateAssessmentRequest {
 
 // The request message to annotate an Assessment.
 message AnnotateAssessmentRequest {
-  // Enum that reprensents the types of annotations.
+  // Enum that represents the types of annotations.
   enum Annotation {
     // Default unspecified type.
     ANNOTATION_UNSPECIFIED = 0;
@@ -124,12 +146,47 @@ message AnnotateAssessmentRequest {
     FRAUDULENT = 2;
 
     // Provides information that the event was related to a login event in which
-    // the user typed the correct password.
-    PASSWORD_CORRECT = 3;
+    // the user typed the correct password. Deprecated, prefer indicating
+    // CORRECT_PASSWORD through the reasons field instead.
+    PASSWORD_CORRECT = 3 [deprecated = true];
 
     // Provides information that the event was related to a login event in which
-    // the user typed the incorrect password.
-    PASSWORD_INCORRECT = 4;
+    // the user typed the incorrect password. Deprecated, prefer indicating
+    // INCORRECT_PASSWORD through the reasons field instead.
+    PASSWORD_INCORRECT = 4 [deprecated = true];
+  }
+
+  // Enum that represents potential reasons for annotating an assessment.
+  enum Reason {
+    // Default unspecified reason.
+    REASON_UNSPECIFIED = 0;
+
+    // Indicates a chargeback for fraud was issued for the transaction
+    // associated with the assessment.
+    CHARGEBACK = 1;
+
+    // Indicates the transaction associated with the assessment is suspected of
+    // being fraudulent based on the payment method, billing details, shipping
+    // address or other transaction information.
+    PAYMENT_HEURISTICS = 2;
+
+    // Indicates that the user was served a 2FA challenge. An old assessment
+    // with `ENUM_VALUES.INITIATED_TWO_FACTOR` reason that has not been
+    // overwritten with `PASSED_TWO_FACTOR` is treated as an abandoned 2FA flow.
+    // This is equivalent to `FAILED_TWO_FACTOR`.
+    INITIATED_TWO_FACTOR = 7;
+
+    // Indicates that the user passed a 2FA challenge.
+    PASSED_TWO_FACTOR = 3;
+
+    // Indicates that the user failed a 2FA challenge.
+    FAILED_TWO_FACTOR = 4;
+
+    // Indicates the user provided the correct password.
+    CORRECT_PASSWORD = 5;
+
+    // Indicates the user provided an incorrect password.
+    INCORRECT_PASSWORD = 6;
   }
 
   // Required. The resource name of the Assessment, in the format
@@ -141,8 +198,13 @@ message AnnotateAssessmentRequest {
     }
   ];
 
-  // Required. The annotation that will be assigned to the Event.
-  Annotation annotation = 2 [(google.api.field_behavior) = REQUIRED];
+  // Optional. The annotation that will be assigned to the Event. This field can be left
+  // empty to provide reasons that apply to an event without concluding whether
+  // the event is legitimate or fraudulent.
+  Annotation annotation = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional reasons for the annotation that will be assigned to the Event.
+  repeated Reason reasons = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Empty response for AnnotateAssessment.
@@ -195,7 +257,6 @@ message Event {
 
 // Risk analysis result for an event.
 message RiskAnalysis {
-  // LINT.IfChange(classification_reason)
   // Reasons contributing to the risk analysis verdict.
   enum ClassificationReason {
     // Default unspecified type.
@@ -229,7 +290,6 @@ message RiskAnalysis {
 }
 
 message TokenProperties {
-  // LINT.IfChange
   // Enum that represents the types of invalid token reasons.
   enum InvalidReason {
     // Default unspecified type.
@@ -249,6 +309,10 @@ message TokenProperties {
 
     // The user verification token was not present.
     MISSING = 5;
+
+    // A retriable error (such as network failure) occurred on the browser.
+    // Could easily be simulated by an attacker.
+    BROWSER_ERROR = 6;
   }
 
   // Whether the provided user response token is valid. When valid = false, the
@@ -333,7 +397,7 @@ message UpdateKeyRequest {
   // Required. The key to update.
   Key key = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. The mask to control which field of the key get updated. If the mask is not
+  // Optional. The mask to control which fields of the key get updated. If the mask is not
   // present, all fields will be updated.
   google.protobuf.FieldMask update_mask = 2 [(google.api.field_behavior) = OPTIONAL];
 }
@@ -348,6 +412,54 @@ message DeleteKeyRequest {
       type: "recaptchaenterprise.googleapis.com/Key"
     }
   ];
+}
+
+// The migrate key request message.
+message MigrateKeyRequest {
+  // Required. The name of the key to be migrated, in the format
+  // "projects/{project}/keys/{key}".
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "recaptchaenterprise.googleapis.com/Key"
+    }
+  ];
+}
+
+// The get metrics request message.
+message GetMetricsRequest {
+  // Required. The name of the requested metrics, in the format
+  // "projects/{project}/keys/{key}/metrics".
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "recaptchaenterprise.googleapis.com/Metrics"
+    }
+  ];
+}
+
+// Metrics for a single Key.
+message Metrics {
+  option (google.api.resource) = {
+    type: "recaptchaenterprise.googleapis.com/Metrics"
+    pattern: "projects/{project}/keys/{key}/metrics"
+  };
+
+  // Output only. The name of the metrics, in the format
+  // "projects/{project}/keys/{key}/metrics".
+  string name = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Inclusive start time aligned to a day (UTC).
+  google.protobuf.Timestamp start_time = 1;
+
+  // Metrics will be continuous and in order by dates, and in the granularity
+  // of day. All Key types should have score-based data.
+  repeated ScoreMetrics score_metrics = 2;
+
+  // Metrics will be continuous and in order by dates, and in the granularity
+  // of day. Only challenge-based keys (CHECKBOX, INVISIBLE), will have
+  // challenge-based data.
+  repeated ChallengeMetrics challenge_metrics = 3;
 }
 
 // A key used to identify and configure applications (web and/or mobile) that
@@ -378,12 +490,43 @@ message Key {
     IOSKeySettings ios_settings = 5;
   }
 
-  // Optional. See <a href="https://cloud.google.com/recaptcha-enterprise/docs/labels">
+  // See <a href="https://cloud.google.com/recaptcha-enterprise/docs/labels">
   // Creating and managing labels</a>.
-  map<string, string> labels = 6 [(google.api.field_behavior) = OPTIONAL];
+  map<string, string> labels = 6;
 
   // The timestamp corresponding to the creation of this Key.
   google.protobuf.Timestamp create_time = 7;
+
+  // Options for user acceptance testing.
+  TestingOptions testing_options = 9;
+}
+
+// Options for user acceptance testing.
+message TestingOptions {
+  // Enum that represents the challenge option for challenge-based (CHECKBOX,
+  // INVISIBLE) testing keys.
+  enum TestingChallenge {
+    // Perform the normal risk analysis and return either nocaptcha or a
+    // challenge depending on risk and trust factors.
+    TESTING_CHALLENGE_UNSPECIFIED = 0;
+
+    // Challenge requests for this key will always return a nocaptcha, which
+    // does not require a solution.
+    NOCAPTCHA = 1;
+
+    // Challenge requests for this key will always return an unsolvable
+    // challenge.
+    UNSOLVABLE_CHALLENGE = 2;
+  }
+
+  // All assessments for this Key will return this score. Must be between 0
+  // (likely not legitimate) and 1 (likely legitimate) inclusive.
+  float testing_score = 1;
+
+  // For challenge-based keys only (CHECKBOX, INVISIBLE), all challenge requests
+  // for this site will return nocaptcha if NOCAPTCHA, or an unsolvable
+  // challenge if CHALLENGE.
+  TestingChallenge testing_challenge = 2;
 }
 
 // Settings specific to keys that can be used by websites.
@@ -434,6 +577,7 @@ message WebKeySettings {
   repeated string allowed_domains = 1;
 
   // Required. Whether this key can be used on AMP (Accelerated Mobile Pages) websites.
+  // This can only be set for the SCORE integration type.
   bool allow_amp_traffic = 2 [(google.api.field_behavior) = REQUIRED];
 
   // Required. Describes how this key is integrated with the website.
@@ -447,6 +591,9 @@ message WebKeySettings {
 
 // Settings specific to keys that can be used by Android apps.
 message AndroidKeySettings {
+  // If set to true, it means allowed_package_names will not be enforced.
+  bool allow_all_package_names = 2;
+
   // Android package names of apps allowed to use the key.
   // Example: 'com.companyname.appname'
   repeated string allowed_package_names = 1;
@@ -454,7 +601,48 @@ message AndroidKeySettings {
 
 // Settings specific to keys that can be used by iOS apps.
 message IOSKeySettings {
+  // If set to true, it means allowed_bundle_ids will not be enforced.
+  bool allow_all_bundle_ids = 2;
+
   // iOS bundle ids of apps allowed to use the key.
   // Example: 'com.companyname.productname.appname'
   repeated string allowed_bundle_ids = 1;
+}
+
+// Score distribution.
+message ScoreDistribution {
+  // Map key is score value multiplied by 100. The scores are discrete values
+  // between [0, 1]. The maximum number of buckets is on order of a few dozen,
+  // but typically much lower (ie. 10).
+  map<int32, int64> score_buckets = 1;
+}
+
+// Metrics related to scoring.
+message ScoreMetrics {
+  // Aggregated score metrics for all traffic.
+  ScoreDistribution overall_metrics = 1;
+
+  // Action-based metrics. The map key is the action name which specified by the
+  // site owners at time of the "execute" client-side call.
+  // Populated only for SCORE keys.
+  map<string, ScoreDistribution> action_metrics = 2;
+}
+
+// Metrics related to challenges.
+message ChallengeMetrics {
+  // Count of reCAPTCHA checkboxes or badges rendered. This is mostly equivalent
+  // to a count of pageloads for pages that include reCAPTCHA.
+  int64 pageload_count = 1;
+
+  // Count of nocaptchas (successful verification without a challenge) issued.
+  int64 nocaptcha_count = 2;
+
+  // Count of submitted challenge solutions that were incorrect or otherwise
+  // deemed suspicious such that a subsequent challenge was triggered.
+  int64 failed_count = 3;
+
+  // Count of nocaptchas (successful verification without a challenge) plus
+  // submitted challenge solutions that were correct and resulted in
+  // verification.
+  int64 passed_count = 4;
 }
