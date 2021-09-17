@@ -22,7 +22,12 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/bigquery/storage/v1/arrow.proto";
 import "google/cloud/bigquery/storage/v1/avro.proto";
+import "google/cloud/bigquery/storage/v1/protobuf.proto";
 import "google/cloud/bigquery/storage/v1/stream.proto";
+import "google/cloud/bigquery/storage/v1/table.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "google/rpc/status.proto";
 
 option csharp_namespace = "Google.Cloud.BigQuery.Storage.V1";
 option go_package = "google.golang.org/genproto/googleapis/cloud/bigquery/storage/v1;storage";
@@ -105,6 +110,121 @@ service BigQueryRead {
   }
 }
 
+// BigQuery Write API.
+//
+// The Write API can be used to write data to BigQuery.
+//
+// For supplementary information about the Write API, see:
+// https://cloud.google.com/bigquery/docs/write-api
+service BigQueryWrite {
+  option (google.api.default_host) = "bigquerystorage.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/bigquery,"
+      "https://www.googleapis.com/auth/bigquery.insertdata,"
+      "https://www.googleapis.com/auth/cloud-platform";
+
+  // Creates a write stream to the given table.
+  // Additionally, every table has a special stream named '_default'
+  // to which data can be written. This stream doesn't need to be created using
+  // CreateWriteStream. It is a stream that can be used simultaneously by any
+  // number of clients. Data written to this stream is considered committed as
+  // soon as an acknowledgement is received.
+  rpc CreateWriteStream(CreateWriteStreamRequest) returns (WriteStream) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/datasets/*/tables/*}"
+      body: "write_stream"
+    };
+    option (google.api.method_signature) = "parent,write_stream";
+  }
+
+  // Appends data to the given stream.
+  //
+  // If `offset` is specified, the `offset` is checked against the end of
+  // stream. The server returns `OUT_OF_RANGE` in `AppendRowsResponse` if an
+  // attempt is made to append to an offset beyond the current end of the stream
+  // or `ALREADY_EXISTS` if user provides an `offset` that has already been
+  // written to. User can retry with adjusted offset within the same RPC
+  // connection. If `offset` is not specified, append happens at the end of the
+  // stream.
+  //
+  // The response contains an optional offset at which the append
+  // happened.  No offset information will be returned for appends to a
+  // default stream.
+  //
+  // Responses are received in the same order in which requests are sent.
+  // There will be one response for each successful inserted request.  Responses
+  // may optionally embed error information if the originating AppendRequest was
+  // not successfully processed.
+  //
+  // The specifics of when successfully appended data is made visible to the
+  // table are governed by the type of stream:
+  //
+  // * For COMMITTED streams (which includes the default stream), data is
+  // visible immediately upon successful append.
+  //
+  // * For BUFFERED streams, data is made visible via a subsequent `FlushRows`
+  // rpc which advances a cursor to a newer offset in the stream.
+  //
+  // * For PENDING streams, data is not made visible until the stream itself is
+  // finalized (via the `FinalizeWriteStream` rpc), and the stream is explicitly
+  // committed via the `BatchCommitWriteStreams` rpc.
+  rpc AppendRows(stream AppendRowsRequest) returns (stream AppendRowsResponse) {
+    option (google.api.http) = {
+      post: "/v1/{write_stream=projects/*/datasets/*/tables/*/streams/*}"
+      body: "*"
+    };
+    option (google.api.method_signature) = "write_stream";
+  }
+
+  // Gets information about a write stream.
+  rpc GetWriteStream(GetWriteStreamRequest) returns (WriteStream) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/datasets/*/tables/*/streams/*}"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Finalize a write stream so that no new data can be appended to the
+  // stream. Finalize is not supported on the '_default' stream.
+  rpc FinalizeWriteStream(FinalizeWriteStreamRequest) returns (FinalizeWriteStreamResponse) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/datasets/*/tables/*/streams/*}"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Atomically commits a group of `PENDING` streams that belong to the same
+  // `parent` table.
+  //
+  // Streams must be finalized before commit and cannot be committed multiple
+  // times. Once a stream is committed, data in the stream becomes available
+  // for read operations.
+  rpc BatchCommitWriteStreams(BatchCommitWriteStreamsRequest) returns (BatchCommitWriteStreamsResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*/datasets/*/tables/*}"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Flushes rows to a BUFFERED stream.
+  //
+  // If users are appending rows to BUFFERED stream, flush operation is
+  // required in order for the rows to become available for reading. A
+  // Flush operation flushes up to any previously flushed offset in a BUFFERED
+  // stream, to the offset specified in the request.
+  //
+  // Flush is not supported on the _default stream, since it is not BUFFERED.
+  rpc FlushRows(FlushRowsRequest) returns (FlushRowsResponse) {
+    option (google.api.http) = {
+      post: "/v1/{write_stream=projects/*/datasets/*/tables/*/streams/*}"
+      body: "*"
+    };
+    option (google.api.method_signature) = "write_stream";
+  }
+}
+
 // Request message for `CreateReadSession`.
 message CreateReadSessionRequest {
   // Required. The request project that owns the session, in the form of
@@ -153,7 +273,7 @@ message ThrottleState {
   int32 throttle_percent = 1;
 }
 
-// Estimated stream statistics for a given Stream.
+// Estimated stream statistics for a given read Stream.
 message StreamStats {
   message Progress {
     // The fraction of rows assigned to the stream that have been processed by
@@ -245,4 +365,243 @@ message SplitReadStreamResponse {
   // Remainder stream, which contains the tail of |original_stream|. An empty
   // value indicates that the original stream can no longer be split.
   ReadStream remainder_stream = 2;
+}
+
+// Request message for `CreateWriteStream`.
+message CreateWriteStreamRequest {
+  // Required. Reference to the table to which the stream belongs, in the format
+  // of `projects/{project}/datasets/{dataset}/tables/{table}`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "bigquery.googleapis.com/Table"
+    }
+  ];
+
+  // Required. Stream to be created.
+  WriteStream write_stream = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request message for `AppendRows`.
+//
+// Due to the nature of AppendRows being a bidirectional streaming RPC, certain
+// parts of the AppendRowsRequest need only be specified for the first request
+// sent each time the gRPC network connection is opened/reopened.
+message AppendRowsRequest {
+  // ProtoData contains the data rows and schema when constructing append
+  // requests.
+  message ProtoData {
+    // Proto schema used to serialize the data.  This value only needs to be
+    // provided as part of the first request on a gRPC network connection,
+    // and will be ignored for subsequent requests on the connection.
+    ProtoSchema writer_schema = 1;
+
+    // Serialized row data in protobuf message format.
+    // Currently, the backend expects the serialized rows to adhere to
+    // proto2 semantics when appending rows, particularly with respect to
+    // how default values are encoded.
+    ProtoRows rows = 2;
+  }
+
+  // Required. The write_stream identifies the target of the append operation, and only
+  // needs to be specified as part of the first request on the gRPC connection.
+  // If provided for subsequent requests, it must match the value of the first
+  // request.
+  //
+  // For explicitly created write streams, the format is:
+  // `projects/{project}/datasets/{dataset}/tables/{table}/streams/{id}`
+  //
+  // For the special default stream, the format is:
+  // `projects/{project}/datasets/{dataset}/tables/{table}/_default`.
+  string write_stream = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "bigquerystorage.googleapis.com/WriteStream"
+    }
+  ];
+
+  // If present, the write is only performed if the next append offset is same
+  // as the provided value. If not present, the write is performed at the
+  // current end of stream. Specifying a value for this field is not allowed
+  // when calling AppendRows for the '_default' stream.
+  google.protobuf.Int64Value offset = 2;
+
+  // Input rows. The `writer_schema` field must be specified at the initial
+  // request and currently, it will be ignored if specified in following
+  // requests. Following requests must have data in the same format as the
+  // initial request.
+  oneof rows {
+    // Rows in proto format.
+    ProtoData proto_rows = 4;
+  }
+
+  // Id set by client to annotate its identity. Only initial request setting is
+  // respected.
+  string trace_id = 6;
+}
+
+// Response message for `AppendRows`.
+message AppendRowsResponse {
+  // AppendResult is returned for successful append requests.
+  message AppendResult {
+    // The row offset at which the last append occurred. The offset will not be
+    // set if appending using default streams.
+    google.protobuf.Int64Value offset = 1;
+  }
+
+  oneof response {
+    // Result if the append is successful.
+    AppendResult append_result = 1;
+
+    // Error returned when problems were encountered.  If present,
+    // it indicates rows were not accepted into the system.
+    // Users can retry or continue with other append requests within the
+    // same connection.
+    //
+    // Additional information about error signalling:
+    //
+    // ALREADY_EXISTS: Happens when an append specified an offset, and the
+    // backend already has received data at this offset.  Typically encountered
+    // in retry scenarios, and can be ignored.
+    //
+    // OUT_OF_RANGE: Returned when the specified offset in the stream is beyond
+    // the current end of the stream.
+    //
+    // INVALID_ARGUMENT: Indicates a malformed request or data.
+    //
+    // ABORTED: Request processing is aborted because of prior failures.  The
+    // request can be retried if previous failure is addressed.
+    //
+    // INTERNAL: Indicates server side error(s) that can be retried.
+    google.rpc.Status error = 2;
+  }
+
+  // If backend detects a schema update, pass it to user so that user can
+  // use it to input new type of message. It will be empty when no schema
+  // updates have occurred.
+  TableSchema updated_schema = 3;
+}
+
+// Request message for `GetWriteStreamRequest`.
+message GetWriteStreamRequest {
+  // Required. Name of the stream to get, in the form of
+  // `projects/{project}/datasets/{dataset}/tables/{table}/streams/{stream}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "bigquerystorage.googleapis.com/WriteStream"
+    }
+  ];
+}
+
+// Request message for `BatchCommitWriteStreams`.
+message BatchCommitWriteStreamsRequest {
+  // Required. Parent table that all the streams should belong to, in the form of
+  // `projects/{project}/datasets/{dataset}/tables/{table}`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED
+  ];
+
+  // Required. The group of streams that will be committed atomically.
+  repeated string write_streams = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response message for `BatchCommitWriteStreams`.
+message BatchCommitWriteStreamsResponse {
+  // The time at which streams were committed in microseconds granularity.
+  // This field will only exist when there are no stream errors.
+  // **Note** if this field is not set, it means the commit was not successful.
+  google.protobuf.Timestamp commit_time = 1;
+
+  // Stream level error if commit failed. Only streams with error will be in
+  // the list.
+  // If empty, there is no error and all streams are committed successfully.
+  // If non empty, certain streams have errors and ZERO stream is committed due
+  // to atomicity guarantee.
+  repeated StorageError stream_errors = 2;
+}
+
+// Request message for invoking `FinalizeWriteStream`.
+message FinalizeWriteStreamRequest {
+  // Required. Name of the stream to finalize, in the form of
+  // `projects/{project}/datasets/{dataset}/tables/{table}/streams/{stream}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "bigquerystorage.googleapis.com/WriteStream"
+    }
+  ];
+}
+
+// Response message for `FinalizeWriteStream`.
+message FinalizeWriteStreamResponse {
+  // Number of rows in the finalized stream.
+  int64 row_count = 1;
+}
+
+// Request message for `FlushRows`.
+message FlushRowsRequest {
+  // Required. The stream that is the target of the flush operation.
+  string write_stream = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "bigquerystorage.googleapis.com/WriteStream"
+    }
+  ];
+
+  // Ending offset of the flush operation. Rows before this offset(including
+  // this offset) will be flushed.
+  google.protobuf.Int64Value offset = 2;
+}
+
+// Respond message for `FlushRows`.
+message FlushRowsResponse {
+  // The rows before this offset (including this offset) are flushed.
+  int64 offset = 1;
+}
+
+// Structured custom BigQuery Storage error message. The error can be attached
+// as error details in the returned rpc Status. In particular, the use of error
+// codes allows more structured error handling, and reduces the need to evaluate
+// unstructured error text strings.
+message StorageError {
+  // Error code for `StorageError`.
+  enum StorageErrorCode {
+    // Default error.
+    STORAGE_ERROR_CODE_UNSPECIFIED = 0;
+
+    // Table is not found in the system.
+    TABLE_NOT_FOUND = 1;
+
+    // Stream is already committed.
+    STREAM_ALREADY_COMMITTED = 2;
+
+    // Stream is not found.
+    STREAM_NOT_FOUND = 3;
+
+    // Invalid Stream type.
+    // For example, you try to commit a stream that is not pending.
+    INVALID_STREAM_TYPE = 4;
+
+    // Invalid Stream state.
+    // For example, you try to commit a stream that is not finalized or is
+    // garbaged.
+    INVALID_STREAM_STATE = 5;
+
+    // Stream is finalized.
+    STREAM_FINALIZED = 6;
+
+    // There is a schema mismatch and it is caused by user schema has extra
+    // field than bigquery schema.
+    SCHEMA_MISMATCH_EXTRA_FIELDS = 7;
+  }
+
+  // BigQuery Storage specific error code.
+  StorageErrorCode code = 1;
+
+  // Name of the failed entity.
+  string entity = 2;
+
+  // Message that describes the error.
+  string error_message = 3;
 }
