@@ -120,10 +120,12 @@ go_register_toolchains()
 
 gazelle_dependencies()
 
-_rules_gapic_version = "0.6.3"
+_rules_gapic_version = "0.7.0"
+_rules_gapic_sha256 = "3536ddd6d03b80733fd4dbde98d9f5be784dc0a38aba14ad2f7ac2e0209a15f8"
 
 http_archive(
     name = "rules_gapic",
+    sha256 = _rules_gapic_sha256,
     strip_prefix = "rules_gapic-%s" % _rules_gapic_version,
     urls = ["https://github.com/googleapis/rules_gapic/archive/v%s.tar.gz" % _rules_gapic_version],
 )
@@ -144,10 +146,14 @@ rules_gapic_repositories()
 # for most of the other languages as well, so they can be considered as the core cross-language
 # dependencies.
 
+_grpc_version = "1.39.1"
+_grpc_sha256 = "4608e92cf528b625888cc874a5d21c78923322dc8c66d2c4c146134efbac69bc"
+
 http_archive(
     name = "com_github_grpc_grpc",
-    strip_prefix = "grpc-1.36.4",
-    urls = ["https://github.com/grpc/grpc/archive/v1.36.4.zip"],
+    sha256 = _grpc_sha256,
+    strip_prefix = "grpc-%s" % _grpc_version ,
+    urls = ["https://github.com/grpc/grpc/archive/v%s.zip" % _grpc_version],
 )
 
 load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
@@ -324,7 +330,6 @@ gapic_generator_php_repositories()
 
 # Required to access the C#-specific common resources config.
 _gax_dotnet_version = "Google.Api.Gax-3.3.0"
-
 _gax_dotnet_sha256 = "c4d31345a226987e8551cb81afa685c9322d3f806077d9f02011676cf00c15d9"
 
 http_archive(
@@ -335,9 +340,8 @@ http_archive(
     urls = ["https://github.com/googleapis/gax-dotnet/archive/refs/tags/%s.tar.gz" % _gax_dotnet_version],
 )
 
-_gapic_generator_csharp_version = "1.3.8"
-
-_gapic_generator_csharp_sha256 = "a1ddbdfe296f8668aeba7e484c69ed0ae274bffd2b1f4c8a2ccb33aad12db707"
+_gapic_generator_csharp_version = "1.3.10"
+_gapic_generator_csharp_sha256 = "a2c62bfc66f48a6524358c45fac0471bf86a9b405d238e20845aff8bf5fddd25"
 
 http_archive(
     name = "gapic_generator_csharp",

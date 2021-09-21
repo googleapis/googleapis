@@ -271,11 +271,11 @@ def switched_rules_by_language(
     #
     rules["csharp_proto_library"] = _switch(
         csharp,
-        "@gapic_generator_csharp//rules_csharp_gapic:csharp_gapic.bzl",
+        "@rules_gapic//csharp:csharp_gapic.bzl",
     )
     rules["csharp_grpc_library"] = _switch(
         csharp and grpc,
-        "@gapic_generator_csharp//rules_csharp_gapic:csharp_gapic.bzl",
+        "@rules_gapic//csharp:csharp_gapic.bzl",
     )
     rules["csharp_gapic_library"] = _switch(
         csharp and grpc and gapic,
