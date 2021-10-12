@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2021 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -63,6 +63,8 @@ service ClusterController {
   // Updates a cluster in a project. The returned
   // [Operation.metadata][google.longrunning.Operation.metadata] will be
   // [ClusterOperationMetadata](https://cloud.google.com/dataproc/docs/reference/rpc/google.cloud.dataproc.v1#clusteroperationmetadata).
+  // The cluster must be in a [`RUNNING`][google.cloud.dataproc.v1.ClusterStatus.State] state or an error
+  // is returned.
   rpc UpdateCluster(UpdateClusterRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
       patch: "/v1/projects/{project_id}/regions/{region}/clusters/{cluster_name}"
@@ -151,7 +153,7 @@ service ClusterController {
 }
 
 // Describes the identifying information, config, and status of
-// a cluster of Compute Engine instances.
+// a Dataproc cluster
 message Cluster {
   // Required. The Google Cloud Platform project ID that the cluster belongs to.
   string project_id = 1 [(google.api.field_behavior) = REQUIRED];
@@ -199,10 +201,10 @@ message ClusterConfig {
   // ASIA, or EU) for your cluster's staging bucket according to the
   // Compute Engine zone where your cluster is deployed, and then create
   // and manage this project-level, per-location bucket (see
-  // [Dataproc staging
-  // bucket](https://cloud.google.com/dataproc/docs/concepts/configuring-clusters/staging-bucket)).
-  // **This field requires a Cloud Storage bucket name, not a URI to a Cloud
-  // Storage bucket.**
+  // [Dataproc staging and temp
+  // buckets](https://cloud.google.com/dataproc/docs/concepts/configuring-clusters/staging-bucket)).
+  // **This field requires a Cloud Storage bucket name, not a `gs://...` URI to
+  // a Cloud Storage bucket.**
   string config_bucket = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. A Cloud Storage bucket used to store ephemeral cluster and jobs data,
@@ -213,9 +215,11 @@ message ClusterConfig {
   // Compute Engine zone where your cluster is deployed, and then create
   // and manage this project-level, per-location bucket. The default bucket has
   // a TTL of 90 days, but you can use any TTL (or none) if you specify a
-  // bucket.
-  // **This field requires a Cloud Storage bucket name, not a URI to a Cloud
-  // Storage bucket.**
+  // bucket (see
+  // [Dataproc staging and temp
+  // buckets](https://cloud.google.com/dataproc/docs/concepts/configuring-clusters/staging-bucket)).
+  // **This field requires a Cloud Storage bucket name, not a `gs://...` URI to
+  // a Cloud Storage bucket.**
   string temp_bucket = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The shared Compute Engine config settings for
@@ -223,18 +227,18 @@ message ClusterConfig {
   GceClusterConfig gce_cluster_config = 8 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The Compute Engine config settings for
-  // the master instance in a cluster.
+  // the cluster's master instance.
   InstanceGroupConfig master_config = 9 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The Compute Engine config settings for
-  // worker instances in a cluster.
+  // the cluster's worker instances.
   InstanceGroupConfig worker_config = 10 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The Compute Engine config settings for
-  // additional worker instances in a cluster.
+  // a cluster's secondary worker instances
   InstanceGroupConfig secondary_worker_config = 12 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The config settings for software inside the cluster.
+  // Optional. The config settings for cluster software.
   SoftwareConfig software_config = 13 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Commands to execute on each node after config is
@@ -453,6 +457,10 @@ message GceClusterConfig {
   // Optional. Shielded Instance Config for clusters using [Compute Engine Shielded
   // VMs](https://cloud.google.com/security/shielded-cloud/shielded-vm).
   ShieldedInstanceConfig shielded_instance_config = 14 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Confidential Instance Config for clusters using [Confidential
+  // VMs](https://cloud.google.com/compute/confidential-vm/docs).
+  ConfidentialInstanceConfig confidential_instance_config = 15 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Node Group Affinity for clusters using sole-tenant node groups.
@@ -481,6 +489,13 @@ message ShieldedInstanceConfig {
 
   // Optional. Defines whether instances have integrity monitoring enabled.
   bool enable_integrity_monitoring = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Confidential Instance Config for clusters using [Confidential
+// VMs](https://cloud.google.com/compute/confidential-vm/docs)
+message ConfidentialInstanceConfig {
+  // Optional. Defines whether the instance should have confidential compute enabled.
+  bool enable_confidential_compute = 1 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // The config settings for Compute Engine resources in
@@ -673,6 +688,10 @@ message ClusterStatus {
 
     // The cluster encountered an error. It is not ready for use.
     ERROR = 3;
+
+    // The cluster has encountered an error while being updated. Jobs can
+    // be submitted to the cluster, but the cluster cannot be updated.
+    ERROR_DUE_TO_UPDATE = 9;
 
     // The cluster is being deleted. It cannot be used.
     DELETING = 4;
@@ -918,7 +937,7 @@ message CreateClusterRequest {
   // Required. The cluster to create.
   Cluster cluster = 2 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. A unique id used to identify the request. If the server receives two
+  // Optional. A unique ID used to identify the request. If the server receives two
   // [CreateClusterRequest](https://cloud.google.com/dataproc/docs/reference/rpc/google.cloud.dataproc.v1#google.cloud.dataproc.v1.CreateClusterRequest)s
   // with the same id, then the second request will be ignored and the
   // first [google.longrunning.Operation][google.longrunning.Operation] created and stored in the backend
@@ -927,9 +946,12 @@ message CreateClusterRequest {
   // It is recommended to always set this value to a
   // [UUID](https://en.wikipedia.org/wiki/Universally_unique_identifier).
   //
-  // The id must contain only letters (a-z, A-Z), numbers (0-9),
+  // The ID must contain only letters (a-z, A-Z), numbers (0-9),
   // underscores (_), and hyphens (-). The maximum length is 40 characters.
   string request_id = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Failure action when primary worker creation fails.
+  FailureAction action_on_failed_primary_workers = 5 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // A request to update a cluster.
@@ -1011,7 +1033,7 @@ message UpdateClusterRequest {
   //  </table>
   google.protobuf.FieldMask update_mask = 4 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. A unique id used to identify the request. If the server
+  // Optional. A unique ID used to identify the request. If the server
   // receives two
   // [UpdateClusterRequest](https://cloud.google.com/dataproc/docs/reference/rpc/google.cloud.dataproc.v1#google.cloud.dataproc.v1.UpdateClusterRequest)s
   // with the same id, then the second request will be ignored and the
@@ -1021,7 +1043,7 @@ message UpdateClusterRequest {
   // It is recommended to always set this value to a
   // [UUID](https://en.wikipedia.org/wiki/Universally_unique_identifier).
   //
-  // The id must contain only letters (a-z, A-Z), numbers (0-9),
+  // The ID must contain only letters (a-z, A-Z), numbers (0-9),
   // underscores (_), and hyphens (-). The maximum length is 40 characters.
   string request_id = 7 [(google.api.field_behavior) = OPTIONAL];
 }
@@ -1042,7 +1064,7 @@ message StopClusterRequest {
   // (with error NOT_FOUND) if a cluster with the specified UUID does not exist.
   string cluster_uuid = 4 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. A unique id used to identify the request. If the server
+  // Optional. A unique ID used to identify the request. If the server
   // receives two
   // [StopClusterRequest](https://cloud.google.com/dataproc/docs/reference/rpc/google.cloud.dataproc.v1#google.cloud.dataproc.v1.StopClusterRequest)s
   // with the same id, then the second request will be ignored and the
@@ -1052,7 +1074,7 @@ message StopClusterRequest {
   // Recommendation: Set this value to a
   // [UUID](https://en.wikipedia.org/wiki/Universally_unique_identifier).
   //
-  // The id must contain only letters (a-z, A-Z), numbers (0-9),
+  // The ID must contain only letters (a-z, A-Z), numbers (0-9),
   // underscores (_), and hyphens (-). The maximum length is 40 characters.
   string request_id = 5 [(google.api.field_behavior) = OPTIONAL];
 }
@@ -1073,7 +1095,7 @@ message StartClusterRequest {
   // (with error NOT_FOUND) if a cluster with the specified UUID does not exist.
   string cluster_uuid = 4 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. A unique id used to identify the request. If the server
+  // Optional. A unique ID used to identify the request. If the server
   // receives two
   // [StartClusterRequest](https://cloud.google.com/dataproc/docs/reference/rpc/google.cloud.dataproc.v1#google.cloud.dataproc.v1.StartClusterRequest)s
   // with the same id, then the second request will be ignored and the
@@ -1083,7 +1105,7 @@ message StartClusterRequest {
   // Recommendation: Set this value to a
   // [UUID](https://en.wikipedia.org/wiki/Universally_unique_identifier).
   //
-  // The id must contain only letters (a-z, A-Z), numbers (0-9),
+  // The ID must contain only letters (a-z, A-Z), numbers (0-9),
   // underscores (_), and hyphens (-). The maximum length is 40 characters.
   string request_id = 5 [(google.api.field_behavior) = OPTIONAL];
 }
@@ -1104,7 +1126,7 @@ message DeleteClusterRequest {
   // (with error NOT_FOUND) if cluster with specified UUID does not exist.
   string cluster_uuid = 4 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. A unique id used to identify the request. If the server
+  // Optional. A unique ID used to identify the request. If the server
   // receives two
   // [DeleteClusterRequest](https://cloud.google.com/dataproc/docs/reference/rpc/google.cloud.dataproc.v1#google.cloud.dataproc.v1.DeleteClusterRequest)s
   // with the same id, then the second request will be ignored and the
@@ -1114,7 +1136,7 @@ message DeleteClusterRequest {
   // It is recommended to always set this value to a
   // [UUID](https://en.wikipedia.org/wiki/Universally_unique_identifier).
   //
-  // The id must contain only letters (a-z, A-Z), numbers (0-9),
+  // The ID must contain only letters (a-z, A-Z), numbers (0-9),
   // underscores (_), and hyphens (-). The maximum length is 40 characters.
   string request_id = 5 [(google.api.field_behavior) = OPTIONAL];
 }
