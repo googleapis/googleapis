@@ -77,9 +77,9 @@ def switched_rules_by_language(
     For example, to use this rule and enable Java and Go rules, add the following in the external
     repository which imports com_google_googleapis repository and its corresponding dependencies:
 
-        load("@com_google_googleapis//:repository_rules.bzl", "enabled_rules")
+        load("@com_google_googleapis//:repository_rules.bzl", "switched_rules_by_language")
 
-        enabled_rules(
+        switched_rules_by_language(
             name = "com_google_googleapis_imports",
             grpc = True,
             gapic = True,
