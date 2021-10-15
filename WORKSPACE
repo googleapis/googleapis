@@ -121,6 +121,7 @@ go_register_toolchains()
 gazelle_dependencies()
 
 _rules_gapic_version = "0.9.0"
+
 _rules_gapic_sha256 = "3cf13c5f3aa8f22feadd21dcc9e9df6048033c7bcdbd2b9a360223f975b4353f"
 
 http_archive(
@@ -147,12 +148,13 @@ rules_gapic_repositories()
 # dependencies.
 
 _grpc_version = "1.39.1"
+
 _grpc_sha256 = "4608e92cf528b625888cc874a5d21c78923322dc8c66d2c4c146134efbac69bc"
 
 http_archive(
     name = "com_github_grpc_grpc",
     sha256 = _grpc_sha256,
-    strip_prefix = "grpc-%s" % _grpc_version ,
+    strip_prefix = "grpc-%s" % _grpc_version,
     urls = ["https://github.com/grpc/grpc/archive/v%s.zip" % _grpc_version],
 )
 
@@ -330,6 +332,7 @@ gapic_generator_php_repositories()
 
 # Required to access the C#-specific common resources config.
 _gax_dotnet_version = "Google.Api.Gax-3.3.0"
+
 _gax_dotnet_sha256 = "c4d31345a226987e8551cb81afa685c9322d3f806077d9f02011676cf00c15d9"
 
 http_archive(
@@ -341,6 +344,7 @@ http_archive(
 )
 
 _gapic_generator_csharp_version = "1.3.12"
+
 _gapic_generator_csharp_sha256 = "c4aee3bd6970bd9e66b85ff05a3ea836b9d5e96ff93b52a82c280d0e2f58ee17"
 
 http_archive(
@@ -372,3 +376,24 @@ http_archive(
 load("@gapic_generator_ruby//rules_ruby_gapic:repositories.bzl", "gapic_generator_ruby_repositories")
 
 gapic_generator_ruby_repositories()
+
+##############################################################################
+# Discovery
+##############################################################################
+
+http_archive(
+    name = "com_google_disco_to_proto3_converter",
+    strip_prefix = "disco-to-proto3-converter-bbcb38b24c32c282eac720a48158e2d82f136e90",
+    urls = ["https://github.com/googleapis/disco-to-proto3-converter/archive/bbcb38b24c32c282eac720a48158e2d82f136e90.zip"],
+)
+
+load("@com_google_disco_to_proto3_converter//:repository_rules.bzl", "com_google_disco_to_proto3_converter_properties")
+
+com_google_disco_to_proto3_converter_properties(
+    name = "com_google_disco_to_proto3_converter_properties",
+    file = "@com_google_disco_to_proto3_converter//:pom.xml",
+)
+
+load("@com_google_disco_to_proto3_converter//:repositories.bzl", "com_google_disco_to_proto3_converter_repositories")
+
+com_google_disco_to_proto3_converter_repositories()
