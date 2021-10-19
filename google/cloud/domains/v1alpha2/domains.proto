@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2021 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -82,6 +82,52 @@ service Domains {
     };
   }
 
+  // Gets parameters needed to transfer a domain name from another registrar to
+  // Cloud Domains. For domains managed by Google Domains, transferring to Cloud
+  // Domains is not supported.
+  //
+  //
+  // Use the returned values to call `TransferDomain`.
+  rpc RetrieveTransferParameters(RetrieveTransferParametersRequest) returns (RetrieveTransferParametersResponse) {
+    option (google.api.http) = {
+      get: "/v1alpha2/{location=projects/*/locations/*}/registrations:retrieveTransferParameters"
+    };
+    option (google.api.method_signature) = "location,domain_name";
+  }
+
+  // Transfers a domain name from another registrar to Cloud Domains.  For
+  // domains managed by Google Domains, transferring to Cloud Domains is not
+  // supported.
+  //
+  //
+  // Before calling this method, go to the domain's current registrar to unlock
+  // the domain for transfer and retrieve the domain's transfer authorization
+  // code. Then call `RetrieveTransferParameters` to confirm that the domain is
+  // unlocked and to get values needed to build a call to this method.
+  //
+  // A successful call creates a `Registration` resource in state
+  // `TRANSFER_PENDING`. It can take several days to complete the transfer
+  // process. The registrant can often speed up this process by approving the
+  // transfer through the current registrar, either by clicking a link in an
+  // email from the registrar or by visiting the registrar's website.
+  //
+  // A few minutes after transfer approval, the resource transitions to state
+  // `ACTIVE`, indicating that the transfer was successful. If the transfer is
+  // rejected or the request expires without being approved, the resource can
+  // end up in state `TRANSFER_FAILED`. If transfer fails, you can safely delete
+  // the resource and retry the transfer.
+  rpc TransferDomain(TransferDomainRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1alpha2/{parent=projects/*/locations/*}/registrations:transfer"
+      body: "*"
+    };
+    option (google.api.method_signature) = "parent,registration,yearly_price,authorization_code";
+    option (google.longrunning.operation_info) = {
+      response_type: "Registration"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
   // Lists the `Registration` resources in a project.
   rpc ListRegistrations(ListRegistrationsRequest) returns (ListRegistrationsResponse) {
     option (google.api.http) = {
@@ -156,20 +202,15 @@ service Domains {
     };
   }
 
-  // Exports a `Registration` that you no longer want to use with
-  // Cloud Domains. You can continue to use the domain in
-  // [Google Domains](https://domains.google/) until it expires.
+  // Exports a `Registration` resource, such that it is no longer managed by
+  // Cloud Domains.
   //
-  // If the export is successful:
-  //
-  // * The resource's `state` becomes `EXPORTED`, meaning that it is no longer
-  // managed by Cloud Domains
-  // * Because individual users can own domains in Google Domains, the calling
-  // user becomes the domain's sole owner. Permissions for the domain are
-  // subsequently managed in Google Domains.
-  // * Without further action, the domain does not renew automatically.
-  // The new owner can set up billing in Google Domains to renew the domain
-  // if needed.
+  // When an active domain is successfully exported, you can continue to use the
+  // domain in [Google Domains](https://domains.google/) until it expires. The
+  // calling user becomes the domain's sole owner in Google Domains, and
+  // permissions for the domain are subsequently managed there. The domain does
+  // not renew automatically unless the new owner sets up billing in Google
+  // Domains.
   rpc ExportRegistration(ExportRegistrationRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
       post: "/v1alpha2/{name=projects/*/locations/*/registrations/*}:export"
@@ -184,10 +225,23 @@ service Domains {
 
   // Deletes a `Registration` resource.
   //
-  // This method only works on resources in one of the following states:
+  // This method works on any `Registration` resource using [Subscription or
+  // Commitment billing](/domains/pricing#billing-models), provided that the
+  // resource was created at least 1 day in the past.
+  //
+  // For `Registration` resources using
+  // [Monthly billing](/domains/pricing#billing-models), this method works if:
   //
   // * `state` is `EXPORTED` with `expire_time` in the past
   // * `state` is `REGISTRATION_FAILED`
+  // * `state` is `TRANSFER_FAILED`
+  //
+  // When an active registration is successfully deleted, you can continue to
+  // use the domain in [Google Domains](https://domains.google/) until it
+  // expires. The calling user becomes the domain's sole owner in Google
+  // Domains, and permissions for the domain are subsequently managed there. The
+  // domain does not renew automatically unless the new owner sets up billing in
+  // Google Domains.
   rpc DeleteRegistration(DeleteRegistrationRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
       delete: "/v1alpha2/{name=projects/*/locations/*/registrations/*}"
@@ -227,6 +281,7 @@ service Domains {
 // The `Registration` resource facilitates managing and configuring domain name
 // registrations.
 //
+// There are several ways to create a new `Registration` resource:
 //
 // To create a new `Registration` resource, find a suitable domain name by
 // calling the `SearchDomains` method with a query to see available domain name
@@ -234,6 +289,11 @@ service Domains {
 // ensure availability and obtain information like pricing, which is needed to
 // build a call to `RegisterDomain`.
 //
+// Another way to create a new `Registration` is to transfer an existing
+// domain from another registrar. First, go to the current registrar to unlock
+// the domain for transfer and retrieve the domain's transfer authorization
+// code. Then call `RetrieveTransferParameters` to confirm that the domain is
+// unlocked and to get values needed to build a call to `TransferDomain`.
 message Registration {
   option (google.api.resource) = {
     type: "domains.googleapis.com/Registration"
@@ -252,6 +312,14 @@ message Registration {
     // to allow registration to be retried.
     REGISTRATION_FAILED = 2;
 
+    // The domain is being transferred from another registrar to Cloud Domains.
+    TRANSFER_PENDING = 3;
+
+    // The attempt to transfer the domain from another registrar to
+    // Cloud Domains failed. You can delete resources in this state and retry
+    // the transfer.
+    TRANSFER_FAILED = 4;
+
     // The domain is registered and operational. The domain renews automatically
     // as long as it remains in this state.
     ACTIVE = 6;
@@ -260,11 +328,11 @@ message Registration {
     // `issues` field.
     SUSPENDED = 7;
 
-    // The domain has been exported from Cloud Domains to
+    // The domain is no longer managed with Cloud Domains. It may have been
+    // transferred to another registrar or exported for management in
     // [Google Domains](https://domains.google/). You can no longer update it
-    // with this API, and information shown about it may be stale. Without further action, domains in this
-    // state expire at their `expire_time`. You can delete the resource
-    // after the `expire_time` has passed.
+    // with this API, and information shown about it may be stale. Domains in
+    // this state are not automatically renewed by Cloud Domains.
     EXPORTED = 8;
   }
 
@@ -281,7 +349,7 @@ message Registration {
     // verify the email address, follow the
     // instructions in the email the `registrant_contact` receives following
     // registration. If you do not complete email verification within
-    // 14 days of registration, the domain is suspended. To resend the
+    // 15 days of registration, the domain is suspended. To resend the
     // verification email, call ConfigureContactSettings and provide the current
     // `registrant_contact.email`.
     UNVERIFIED_EMAIL = 2;
@@ -332,7 +400,7 @@ message Registration {
   // `contact_settings` field that change its `registrant_contact` or `privacy`
   // fields require email confirmation by the `registrant_contact`
   // before taking effect. This field is set only if there are pending updates
-  // to the `contact_settings` that have not yet been confirmed. To confirm the
+  // to the `contact_settings` that have not been confirmed. To confirm the
   // changes, the `registrant_contact` must follow the instructions in the
   // email they receive.
   ContactSettings pending_contact_settings = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -351,8 +419,8 @@ message ManagementSettings {
 
     // The domain is automatically renewed each year .
     //
-    // To disable automatic renewals, export the domain by calling
-    // `ExportRegistration` .
+    // To disable automatic renewals, delete the resource by calling
+    // `DeleteRegistration` or export it by calling `ExportRegistration`.
     AUTOMATIC_RENEWAL = 1;
 
     // The domain must be explicitly renewed each year before its
@@ -418,6 +486,12 @@ message DnsSettings {
       // The algorithm is unspecified.
       ALGORITHM_UNSPECIFIED = 0;
 
+      // RSA/MD5. Cannot be used for new deployments.
+      RSAMD5 = 1;
+
+      // Diffie-Hellman. Cannot be used for new deployments.
+      DH = 2;
+
       // DSA/SHA1. Not recommended for new deployments.
       DSA = 3;
 
@@ -453,6 +527,15 @@ message DnsSettings {
 
       // Ed448.
       ED448 = 16;
+
+      // Reserved for Indirect Keys. Cannot be used for new deployments.
+      INDIRECT = 252;
+
+      // Private algorithm. Cannot be used for new deployments.
+      PRIVATEDNS = 253;
+
+      // Private algorithm OID. Cannot be used for new deployments.
+      PRIVATEOID = 254;
     }
 
     // List of hash functions that may have been used to generate a digest of a
@@ -569,8 +652,8 @@ message ContactSettings {
   // *Caution: Anyone with access to this email address, phone number,
   // and/or postal address can take control of the domain.*
   //
-  // *Warning: For new `Registration`s, the registrant will receive an email
-  // confirmation that they must complete within 14 days to avoid domain
+  // *Warning: For new `Registration`s, the registrant receives an email
+  // confirmation that they must complete within 15 days to avoid domain
   // suspension.*
   Contact registrant_contact = 2 [(google.api.field_behavior) = REQUIRED];
 
@@ -640,7 +723,7 @@ message RegisterDomainRequest {
   repeated DomainNotice domain_notices = 3;
 
   // The list of contact notices that the caller acknowledges. The notices
-  // required here depend on the values specified in
+  // needed here depend on the values specified in
   // `registration.contact_settings`.
   repeated ContactNotice contact_notices = 4;
 
@@ -649,9 +732,67 @@ message RegisterDomainRequest {
   // RetrieveRegisterParameters or SearchDomains calls.
   google.type.Money yearly_price = 5 [(google.api.field_behavior) = REQUIRED];
 
-  // When true, only validation will be performed, without actually registering
+  // When true, only validation is performed, without actually registering
   // the domain. Follows:
   // https://cloud.google.com/apis/design/design_patterns#request_validation
+  bool validate_only = 6;
+}
+
+// Request for the `RetrieveTransferParameters` method.
+message RetrieveTransferParametersRequest {
+  // Required. The domain name. Unicode domain names must be expressed in Punycode format.
+  string domain_name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The location. Must be in the format `projects/*/locations/*`.
+  string location = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
+}
+
+// Response for the `RetrieveTransferParameters` method.
+message RetrieveTransferParametersResponse {
+  // Parameters to use when calling the `TransferDomain` method.
+  TransferParameters transfer_parameters = 1;
+}
+
+// Request for the `TransferDomain` method.
+message TransferDomainRequest {
+  // Required. The parent resource of the `Registration`. Must be in the
+  // format `projects/*/locations/*`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
+
+  // Required. The complete `Registration` resource to be created.
+  //
+  // You can leave `registration.dns_settings` unset to import the
+  // domain's current DNS configuration from its current registrar. Use this
+  // option only if you are sure that the domain's current DNS service
+  // does not cease upon transfer, as is often the case for DNS services
+  // provided for free by the registrar.
+  Registration registration = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // The list of contact notices that you acknowledge. The notices
+  // needed here depend on the values specified in
+  // `registration.contact_settings`.
+  repeated ContactNotice contact_notices = 3;
+
+  // Required. Acknowledgement of the price to transfer or renew the domain for one year.
+  // Call `RetrieveTransferParameters` to obtain the price, which you must
+  // acknowledge.
+  google.type.Money yearly_price = 4 [(google.api.field_behavior) = REQUIRED];
+
+  // The domain's transfer authorization code. You can obtain this from the
+  // domain's current registrar.
+  AuthorizationCode authorization_code = 5;
+
+  // Validate the request without actually transferring the domain.
   bool validate_only = 6;
 }
 
@@ -720,8 +861,8 @@ message UpdateRegistrationRequest {
   Registration registration = 1;
 
   // Required. The field mask describing which fields to update as a comma-separated list.
-  // For example, if only the labels are being updated, the `update_mask` would
-  // be `"labels"`.
+  // For example, if only the labels are being updated, the `update_mask` is
+  // `"labels"`.
   google.protobuf.FieldMask update_mask = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
@@ -741,7 +882,7 @@ message ConfigureManagementSettingsRequest {
 
   // Required. The field mask describing which fields to update as a comma-separated list.
   // For example, if only the transfer lock is being updated, the `update_mask`
-  // would be `"transfer_lock_state"`.
+  // is `"transfer_lock_state"`.
   google.protobuf.FieldMask update_mask = 3 [(google.api.field_behavior) = REQUIRED];
 }
 
@@ -761,13 +902,13 @@ message ConfigureDnsSettingsRequest {
 
   // Required. The field mask describing which fields to update as a comma-separated list.
   // For example, if only the name servers are being updated for an existing
-  // Custom DNS configuration, the `update_mask` would be
+  // Custom DNS configuration, the `update_mask` is
   // `"custom_dns.name_servers"`.
   //
   // When changing the DNS provider from one type to another, pass the new
   // provider's field name as part of the field mask. For example, when changing
   // from a Google Domains DNS configuration to a Custom DNS configuration, the
-  // `update_mask` would be `"custom_dns"`. //
+  // `update_mask` is `"custom_dns"`. //
   google.protobuf.FieldMask update_mask = 3 [(google.api.field_behavior) = REQUIRED];
 
   // Validate the request without actually updating the DNS settings.
@@ -790,11 +931,11 @@ message ConfigureContactSettingsRequest {
 
   // Required. The field mask describing which fields to update as a comma-separated list.
   // For example, if only the registrant contact is being updated, the
-  // `update_mask` would be `"registrant_contact"`.
+  // `update_mask` is `"registrant_contact"`.
   google.protobuf.FieldMask update_mask = 3 [(google.api.field_behavior) = REQUIRED];
 
   // The list of contact notices that the caller acknowledges. The notices
-  // required here depend on the values specified in `contact_settings`.
+  // needed here depend on the values specified in `contact_settings`.
   repeated ContactNotice contact_notices = 4;
 
   // Validate the request without actually updating the contact settings.
@@ -888,6 +1029,29 @@ message RegisterParameters {
 
   // Price to register or renew the domain for one year.
   google.type.Money yearly_price = 5;
+}
+
+// Parameters required to transfer a domain from another registrar.
+message TransferParameters {
+  // The domain name. Unicode domain names are expressed in Punycode format.
+  string domain_name = 1;
+
+  // The registrar that currently manages the domain.
+  string current_registrar = 2;
+
+  // The name servers that currently store the configuration of the domain.
+  repeated string name_servers = 3;
+
+  // Indicates whether the domain is protected by a transfer lock. For a
+  // transfer to succeed, this must show `UNLOCKED`. To unlock a domain,
+  // go to its current registrar.
+  TransferLockState transfer_lock_state = 4;
+
+  // Contact privacy options that the domain supports.
+  repeated ContactPrivacy supported_privacy = 5;
+
+  // Price to transfer or renew the domain for one year.
+  google.type.Money yearly_price = 6;
 }
 
 // Defines an authorization code.
