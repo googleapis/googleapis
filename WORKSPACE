@@ -41,8 +41,8 @@ http_archive(
 # version of the library will be selected as a transitive dependency of gRPC.
 http_archive(
     name = "rules_python",
-    strip_prefix = "rules_python-0.1.0",
-    url = "https://github.com/bazelbuild/rules_python/archive/0.1.0.tar.gz",
+    strip_prefix = "rules_python-0.5.0",
+    url = "https://github.com/bazelbuild/rules_python/archive/0.5.0.tar.gz",
 )
 
 http_archive(
