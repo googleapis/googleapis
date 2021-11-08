@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2021 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -165,7 +165,7 @@ service CloudRedis {
     };
   }
 
-  // Initiates a failover of the master node to current replica node for a
+  // Initiates a failover of the primary node to current replica node for a
   // specific STANDARD tier Cloud Memorystore for Redis instance.
   rpc FailoverInstance(FailoverInstanceRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
@@ -191,6 +191,15 @@ service CloudRedis {
       metadata_type: "google.cloud.redis.v1.OperationMetadata"
     };
   }
+}
+
+// Node specific properties.
+message NodeInfo {
+  // Output only. Node identifying string. e.g. 'node-0', 'node-1'
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Location of the node.
+  string zone = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A Google Cloud Redis instance.
@@ -258,6 +267,21 @@ message Instance {
     PRIVATE_SERVICE_ACCESS = 2;
   }
 
+  // Read replicas mode.
+  enum ReadReplicasMode {
+    // If not set, Memorystore Redis backend will pick the mode based on other fields in
+    // the request.
+    READ_REPLICAS_MODE_UNSPECIFIED = 0;
+
+    // If disabled, read endpoint will not be provided and the instance cannot
+    // scale up or down the number of replicas.
+    READ_REPLICAS_DISABLED = 1;
+
+    // If enabled, read endpoint will be provided and the instance can scale
+    // up and down the number of replicas.
+    READ_REPLICAS_ENABLED = 2;
+  }
+
   // Required. Unique name of the resource in this scope including project and
   // location using the form:
   //     `projects/{project_id}/locations/{location_id}/instances/{instance_id}`
@@ -276,15 +300,17 @@ message Instance {
   map<string, string> labels = 3;
 
   // Optional. The zone where the instance will be provisioned. If not provided,
-  // the service will choose a zone for the instance. For STANDARD_HA tier,
-  // instances will be created across two zones for protection against zonal
-  // failures. If [alternative_location_id][google.cloud.redis.v1.Instance.alternative_location_id] is also provided, it must be
-  // different from [location_id][google.cloud.redis.v1.Instance.location_id].
+  // the service will choose a zone from the specified region for the instance.
+  // For standard tier, additional nodes will be added across multiple zones for
+  // protection against zonal failures. If specified, at least one node will be
+  // provisioned in this zone.
   string location_id = 4 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Only applicable to STANDARD_HA tier which protects the instance
-  // against zonal failures by provisioning it across two zones. If provided, it
-  // must be a different zone from the one provided in [location_id][google.cloud.redis.v1.Instance.location_id].
+  // Optional. If specified, at least one node will be provisioned in this zone
+  // in addition to the zone specified in location_id. Only applicable to
+  // standard tier. If provided, it must be a different zone from the one
+  // provided in [location_id]. Additional nodes beyond the first 2 will be
+  // placed in zones selected by the service.
   string alternative_location_id = 5 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The version of Redis software.
@@ -294,12 +320,17 @@ message Instance {
   //  *   `REDIS_3_2` for Redis 3.2 compatibility
   //  *   `REDIS_4_0` for Redis 4.0 compatibility (default)
   //  *   `REDIS_5_0` for Redis 5.0 compatibility
+  //  *   `REDIS_6_X` for Redis 6.x compatibility
   string redis_version = 7 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The CIDR range of internal addresses that are reserved for this
-  // instance. If not provided, the service will choose an unused /29 block,
-  // for example, 10.0.0.0/29 or 192.168.0.0/29. Ranges must be unique
-  // and non-overlapping with existing subnets in an authorized network.
+  // Optional. For DIRECT_PEERING mode, the CIDR range of internal addresses
+  // that are reserved for this instance. Range must
+  // be unique and non-overlapping with existing subnets in an authorized
+  // network. For PRIVATE_SERVICE_ACCESS mode, the name of one allocated IP
+  // address ranges associated with this private service access connection.
+  // If not provided, the service will choose an unused /29 block, for
+  // example, 10.0.0.0/29 or 192.168.0.0/29.  For READ_REPLICAS_ENABLED
+  // the default block size is /28.
   string reserved_ip_range = 9 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. Hostname or IP address of the exposed Redis endpoint used by
@@ -309,11 +340,9 @@ message Instance {
   // Output only. The port number of the exposed Redis endpoint.
   int32 port = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. The current zone where the Redis endpoint is placed. For Basic
-  // Tier instances, this will always be the same as the [location_id][google.cloud.redis.v1.Instance.location_id]
-  // provided by the user at creation time. For Standard Tier instances,
-  // this can be either [location_id][google.cloud.redis.v1.Instance.location_id] or [alternative_location_id][google.cloud.redis.v1.Instance.alternative_location_id] and can
-  // change after a failover event.
+  // Output only. The current zone where the Redis primary node is located. In
+  // basic tier, this will always be the same as [location_id]. In
+  // standard tier, this can be the zone of any node in the instance.
   string current_location_id = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The time the instance was created.
@@ -370,6 +399,27 @@ message Instance {
   // Optional. The network connect mode of the Redis instance.
   // If not provided, the connect mode defaults to DIRECT_PEERING.
   ConnectMode connect_mode = 22 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The number of replica nodes. Valid range for standard tier
+  // is [1-5] and defaults to 1. Valid value for basic tier is 0 and defaults
+  // to 0.
+  int32 replica_count = 31 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Info per node.
+  repeated NodeInfo nodes = 32 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Hostname or IP address of the exposed readonly Redis
+  // endpoint. Standard tier only. Targets all healthy replica nodes in
+  // instance. Replication is asynchronous and replica nodes will exhibit some
+  // lag behind the primary. Write requests must target 'host'.
+  string read_endpoint = 33 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The port number of the exposed readonly redis
+  // endpoint. Standard tier only. Write requests should target 'port'.
+  int32 read_endpoint_port = 34 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Read replica mode.
+  ReadReplicasMode read_replicas_mode = 35 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request for [ListInstances][google.cloud.redis.v1.CloudRedis.ListInstances].
@@ -405,11 +455,12 @@ message ListInstancesResponse {
   //
   // If the `location_id` in the parent field of the request is "-", all regions
   // available to the project are queried, and the results aggregated.
-  // If in such an aggregated query a location is unavailable, a dummy Redis
-  // entry is included in the response with the `name` field set to a value of
-  // the form `projects/{project_id}/locations/{location_id}/instances/`- and
-  // the `status` field set to ERROR and `status_message` field set to "location
-  // not available for ListInstances".
+  // If in such an aggregated query a location is unavailable, a placeholder
+  // Redis entry is included in the response with the `name` field set to a
+  // value of the form
+  // `projects/{project_id}/locations/{location_id}/instances/`- and the
+  // `status` field set to ERROR and `status_message` field set to "location not
+  // available for ListInstances".
   repeated Instance instances = 1;
 
   // Token to retrieve the next page of results, or empty if there are no more
@@ -469,6 +520,7 @@ message UpdateInstanceRequest {
   //  *   `labels`
   //  *   `memorySizeGb`
   //  *   `redisConfig`
+  //  *   `replica_count`
   google.protobuf.FieldMask update_mask = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. Update description.
@@ -568,7 +620,7 @@ message FailoverInstanceRequest {
 
     // Instance failover will be protected with data loss control. More
     // specifically, the failover will only be performed if the current
-    // replication offset diff between master and replica is under a certain
+    // replication offset diff between primary and replica is under a certain
     // threshold.
     LIMITED_DATA_LOSS = 1;
 

@@ -32,6 +32,14 @@ option java_multiple_files = true;
 option java_outer_classname = "FunctionsProto";
 option java_package = "com.google.cloud.functions.v1";
 option objc_class_prefix = "GCF";
+option (google.api.resource_definition) = {
+  type: "artifactregistry.googleapis.com/Repository"
+  pattern: "projects/{project}/locations/{location}/repositories/{repository}"
+};
+option (google.api.resource_definition) = {
+  type: "cloudkms.googleapis.com/CryptoKey"
+  pattern: "projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}"
+};
 
 // A service that application uses to manipulate triggers and functions.
 service CloudFunctionsService {
@@ -183,6 +191,7 @@ service CloudFunctionsService {
 
 // Describes a Cloud Function that contains user computation executed in
 // response to an event. It encapsulate function and triggers configurations.
+// Next tag: 36
 message CloudFunction {
   option (google.api.resource) = {
     type: "cloudfunctions.googleapis.com/CloudFunction"
@@ -304,6 +313,9 @@ message CloudFunction {
   // Environment variables that shall be available during function execution.
   map<string, string> environment_variables = 17;
 
+  // Build environment variables that shall be available during build time.
+  map<string, string> build_environment_variables = 28;
+
   // The VPC Network that this cloud function can connect to. It can be
   // either the fully-qualified URI, or the short name of the network resource.
   // If the short network name is used, the network must belong to the same
@@ -322,7 +334,21 @@ message CloudFunction {
 
   // The limit on the maximum number of function instances that may coexist at a
   // given time.
+  //
+  // In some cases, such as rapid traffic surges, Cloud Functions may, for a
+  // short period of time, create more instances than the specified max
+  // instances limit. If your function cannot tolerate this temporary behavior,
+  // you may want to factor in a safety margin and set a lower max instances
+  // value than your function can tolerate.
+  //
+  // See the [Max
+  // Instances](https://cloud.google.com/functions/docs/max-instances) Guide for
+  // more details.
   int32 max_instances = 20;
+
+  // A lower bound for the number function instances that may coexist at a
+  // given time.
+  int32 min_instances = 32;
 
   // The VPC Network Connector that this cloud function can connect to. It can
   // be either the fully-qualified URI, or the short name of the network
@@ -344,9 +370,86 @@ message CloudFunction {
   // it.
   IngressSettings ingress_settings = 24;
 
+  // Resource name of a KMS crypto key (managed by the user) used to
+  // encrypt/decrypt function resources.
+  //
+  // It must match the pattern
+  // `projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}`.
+  //
+  // If specified, you must also provide an artifact registry repository using
+  // the `docker_repository` field that was created with the same KMS crypto
+  // key.
+  //
+  // The following service accounts need to be granted Cloud KMS crypto key
+  // encrypter/decrypter roles on the key.
+  //
+  // 1. Google Cloud Functions service account
+  //    (service-{project_number}@gcf-admin-robot.iam.gserviceaccount.com) -
+  //    Required to protect the function's image.
+  // 2. Google Storage service account
+  //    (service-{project_number}@gs-project-accounts.iam.gserviceaccount.com) -
+  //    Required to protect the function's source code.
+  //    If this service account does not exist, deploying a function without a
+  //    KMS key or retrieving the service agent name provisions it. For more
+  //    information, see
+  //    https://cloud.google.com/storage/docs/projects#service-agents and
+  //    https://cloud.google.com/storage/docs/getting-service-agent#gsutil.
+  //
+  // Google Cloud Functions delegates access to service agents to protect
+  // function resources in internal projects that are not accessible by the
+  // end user.
+  string kms_key_name = 25 [(google.api.resource_reference) = {
+                              type: "cloudkms.googleapis.com/CryptoKey"
+                            }];
+
+  // Name of the Cloud Build Custom Worker Pool that should be used to build the
+  // function. The format of this field is
+  // `projects/{project}/locations/{region}/workerPools/{workerPool}` where
+  // `{project}` and `{region}` are the project id and region respectively where
+  // the worker pool is defined and `{workerPool}` is the short name of the
+  // worker pool.
+  //
+  // If the project id is not the same as the function, then the Cloud
+  // Functions Service Agent
+  // (`service-<project_number>@gcf-admin-robot.iam.gserviceaccount.com`) must
+  // be granted the role Cloud Build Custom Workers Builder
+  // (`roles/cloudbuild.customworkers.builder`) in the project.
+  string build_worker_pool = 26;
+
   // Output only. The Cloud Build ID of the latest successful deployment of the
   // function.
   string build_id = 27 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The Cloud Build Name of the function deployment.
+  // `projects/<project-number>/locations/<region>/builds/<build-id>`.
+  string build_name = 33 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Secret environment variables configuration.
+  repeated SecretEnvVar secret_environment_variables = 29;
+
+  // Secret volumes configuration.
+  repeated SecretVolume secret_volumes = 30;
+
+  // Input only. An identifier for Firebase function sources. Disclaimer: This field is only
+  // supported for Firebase function deployments.
+  string source_token = 31 [(google.api.field_behavior) = INPUT_ONLY];
+
+  // User managed repository created in Artifact Registry optionally with a
+  // customer managed encryption key. If specified, deployments will use
+  // Artifact Registry. If unspecified and the deployment is eligible to use
+  // Artifact Registry, GCF will create and use a repository named
+  // 'gcf-artifacts' for every deployed region. This is the repository to which
+  // the function docker image will be pushed after it is built by Cloud Build.
+  //
+  // It must match the pattern
+  // `projects/{project}/locations/{location}/repositories/{repository}`.
+  //
+  // Cross-project repositories are not supported.
+  // Cross-location repositories are not supported.
+  // Repository format must be 'DOCKER'.
+  string docker_repository = 34 [(google.api.resource_reference) = {
+                                   type: "artifactregistry.googleapis.com/Repository"
+                                 }];
 }
 
 // Describes SourceRepository, used to represent parameters related to
@@ -472,6 +575,73 @@ message FailurePolicy {
   }
 }
 
+// Configuration for a secret environment variable. It has the information
+// necessary to fetch the secret value from secret manager and expose it as an
+// environment variable. Secret value is not a part of the configuration. Secret
+// values are only fetched when a new clone starts.
+message SecretEnvVar {
+  // Name of the environment variable.
+  string key = 1;
+
+  // Project identifier (preferrably project number but can also be the project
+  // ID) of the project that contains the secret. If not set, it will be
+  // populated with the function's project assuming that the secret exists in
+  // the same project as of the function.
+  string project_id = 2;
+
+  // Name of the secret in secret manager (not the full resource name).
+  string secret = 3;
+
+  // Version of the secret (version number or the string 'latest'). It is
+  // recommended to use a numeric version for secret environment variables as
+  // any updates to the secret value is not reflected until new clones start.
+  string version = 4;
+}
+
+// Configuration for a secret volume. It has the information necessary to fetch
+// the secret value from secret manager and make it available as files mounted
+// at the requested paths within the application container. Secret value is not
+// a part of the configuration. Every filesystem read operation performs a
+// lookup in secret manager to retrieve the secret value.
+message SecretVolume {
+  // Configuration for a single version.
+  message SecretVersion {
+    // Version of the secret (version number or the string 'latest'). It is
+    // preferrable to use `latest` version with secret volumes as secret value
+    // changes are reflected immediately.
+    string version = 1;
+
+    // Relative path of the file under the mount path where the secret value for
+    // this version will be fetched and made available. For example, setting the
+    // mount_path as '/etc/secrets' and path as `/secret_foo` would mount the
+    // secret value file at `/etc/secrets/secret_foo`.
+    string path = 2;
+  }
+
+  // The path within the container to mount the secret volume. For example,
+  // setting the mount_path as `/etc/secrets` would mount the secret value files
+  // under the `/etc/secrets` directory. This directory will also be completely
+  // shadowed and unavailable to mount any other secrets.
+  //
+  // Recommended mount paths: /etc/secrets
+  // Restricted mount paths: /cloudsql, /dev/log, /pod, /proc, /var/log
+  string mount_path = 1;
+
+  // Project identifier (preferrably project number but can also be the project
+  // ID) of the project that contains the secret. If not set, it will be
+  // populated with the function's project assuming that the secret exists in
+  // the same project as of the function.
+  string project_id = 2;
+
+  // Name of the secret in secret manager (not the full resource name).
+  string secret = 3;
+
+  // List of secret versions to mount for this secret. If empty, the `latest`
+  // version of the secret will be made available in a file named after the
+  // secret under the mount point.
+  repeated SecretVersion versions = 4;
+}
+
 // Request for the `CreateFunction` method.
 message CreateFunctionRequest {
   // Required. The project and location in which the function should be created, specified
@@ -490,23 +660,10 @@ message CreateFunctionRequest {
 // Request for the `UpdateFunction` method.
 message UpdateFunctionRequest {
   // Required. New version of the function.
-  CloudFunction function = 1 [
-    (google.api.field_behavior) = REQUIRED
-  ];
+  CloudFunction function = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required list of fields to be updated in this request.
   google.protobuf.FieldMask update_mask = 2;
-}
-
-// Request for the `GetFunction` method.
-message GetFunctionRequest {
-  // Required. The name of the function which details should be obtained.
-  string name = 1 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = {
-      type: "cloudfunctions.googleapis.com/CloudFunction"
-    }
-  ];
 }
 
 // Describes the current stage of a deployment.
@@ -529,6 +686,17 @@ enum CloudFunctionStatus {
   // Function deployment failed and the function serving state is undefined.
   // The function should be updated or deleted to move it out of this state.
   UNKNOWN = 5;
+}
+
+// Request for the `GetFunction` method.
+message GetFunctionRequest {
+  // Required. The name of the function which details should be obtained.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudfunctions.googleapis.com/CloudFunction"
+    }
+  ];
 }
 
 // Request for the `ListFunctions` method.

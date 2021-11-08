@@ -115,6 +115,31 @@ service RecaptchaEnterpriseService {
     };
     option (google.api.method_signature) = "name";
   }
+
+  // List groups of related accounts.
+  rpc ListRelatedAccountGroups(ListRelatedAccountGroupsRequest) returns (ListRelatedAccountGroupsResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*}/relatedaccountgroups"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Get the memberships in a group of related accounts.
+  rpc ListRelatedAccountGroupMemberships(ListRelatedAccountGroupMembershipsRequest) returns (ListRelatedAccountGroupMembershipsResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*/relatedaccountgroups/*}/memberships"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Search group memberships related to a given account.
+  rpc SearchRelatedAccountGroupMemberships(SearchRelatedAccountGroupMembershipsRequest) returns (SearchRelatedAccountGroupMembershipsResponse) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*}/relatedaccountgroupmemberships:search"
+      body: "*"
+    };
+    option (google.api.method_signature) = "parent,hashed_account_id";
+  }
 }
 
 // The create assessment request message.
@@ -205,6 +230,13 @@ message AnnotateAssessmentRequest {
 
   // Optional. Optional reasons for the annotation that will be assigned to the Event.
   repeated Reason reasons = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional unique stable hashed user identifier to apply to the assessment.
+  // This is an alternative to setting the hashed_account_id in
+  // CreateAssessment, for example when the account identifier is not yet known
+  // in the initial request. It is recommended that the identifier is hashed
+  // using hmac-sha256 with stable secret.
+  bytes hashed_account_id = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Empty response for AnnotateAssessment.
@@ -231,6 +263,10 @@ message Assessment {
 
   // Output only. Properties of the provided event token.
   TokenProperties token_properties = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Assessment returned by Account Defender when a hashed_account_id is
+  // provided.
+  AccountDefenderAssessment account_defender_assessment = 6;
 }
 
 message Event {
@@ -253,6 +289,10 @@ message Event {
   // provided at token generation time on client-side platforms already
   // integrated with recaptcha enterprise.
   string expected_action = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional unique stable hashed user identifier for the request. The
+  // identifier should ideally be hashed using sha256 with stable secret.
+  bytes hashed_account_id = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Risk analysis result for an event.
@@ -333,6 +373,34 @@ message TokenProperties {
 
   // Action name provided at token generation.
   string action = 5;
+}
+
+// Account Defender risk assessment.
+message AccountDefenderAssessment {
+  // Labels returned by Account Defender for this request.
+  enum AccountDefenderLabel {
+    // Default unspecified type.
+    ACCOUNT_DEFENDER_LABEL_UNSPECIFIED = 0;
+
+    // The request matches a known good profile for the user.
+    PROFILE_MATCH = 1;
+
+    // The request is potentially a suspicious login event and should be further
+    // verified either via multi-factor authentication or another system.
+    SUSPICIOUS_LOGIN_ACTIVITY = 2;
+
+    // The request matched a profile that previously had suspicious account
+    // creation behavior. This could mean this is a fake account.
+    SUSPICIOUS_ACCOUNT_CREATION = 3;
+
+    // The account in the request has a high number of related accounts. It does
+    // not necessarily imply that the account is bad but could require
+    // investigating.
+    RELATED_ACCOUNTS_NUMBER_HIGH = 4;
+  }
+
+  // Labels for this request.
+  repeated AccountDefenderLabel labels = 1;
 }
 
 // The create key request message.
@@ -510,11 +578,11 @@ message TestingOptions {
     // challenge depending on risk and trust factors.
     TESTING_CHALLENGE_UNSPECIFIED = 0;
 
-    // Challenge requests for this key will always return a nocaptcha, which
+    // Challenge requests for this key always return a nocaptcha, which
     // does not require a solution.
     NOCAPTCHA = 1;
 
-    // Challenge requests for this key will always return an unsolvable
+    // Challenge requests for this key always return an unsolvable
     // challenge.
     UNSOLVABLE_CHALLENGE = 2;
   }
@@ -576,9 +644,9 @@ message WebKeySettings {
   // Examples: 'example.com' or 'subdomain.example.com'
   repeated string allowed_domains = 1;
 
-  // Required. Whether this key can be used on AMP (Accelerated Mobile Pages) websites.
-  // This can only be set for the SCORE integration type.
-  bool allow_amp_traffic = 2 [(google.api.field_behavior) = REQUIRED];
+  // If set to true, the key can be used on AMP (Accelerated Mobile Pages)
+  // websites. This is supported only for the SCORE integration type.
+  bool allow_amp_traffic = 2;
 
   // Required. Describes how this key is integrated with the website.
   IntegrationType integration_type = 4 [(google.api.field_behavior) = REQUIRED];
@@ -591,7 +659,7 @@ message WebKeySettings {
 
 // Settings specific to keys that can be used by Android apps.
 message AndroidKeySettings {
-  // If set to true, it means allowed_package_names will not be enforced.
+  // If set to true, allowed_package_names are not enforced.
   bool allow_all_package_names = 2;
 
   // Android package names of apps allowed to use the key.
@@ -601,7 +669,7 @@ message AndroidKeySettings {
 
 // Settings specific to keys that can be used by iOS apps.
 message IOSKeySettings {
-  // If set to true, it means allowed_bundle_ids will not be enforced.
+  // If set to true, allowed_bundle_ids are not enforced.
   bool allow_all_bundle_ids = 2;
 
   // iOS bundle ids of apps allowed to use the key.
@@ -645,4 +713,157 @@ message ChallengeMetrics {
   // submitted challenge solutions that were correct and resulted in
   // verification.
   int64 passed_count = 4;
+}
+
+// The request message to list memberships in a related account group.
+message ListRelatedAccountGroupMembershipsRequest {
+  // Required. The resource name for the related account group in the format
+  // `projects/{project}/relatedaccountgroups/{relatedaccountgroup}`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "recaptchaenterprise.googleapis.com/RelatedAccountGroupMembership"
+    }
+  ];
+
+  // Optional. The maximum number of accounts to return. The service may return fewer than
+  // this value.
+  // If unspecified, at most 50 accounts will be returned.
+  // The maximum value is 1000; values above 1000 will be coerced to 1000.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A page token, received from a previous `ListRelatedAccountGroupMemberships`
+  // call.
+  //
+  // When paginating, all other parameters provided to
+  // `ListRelatedAccountGroupMemberships` must match the call that provided the
+  // page token.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The response to a `ListRelatedAccountGroupMemberships` call.
+message ListRelatedAccountGroupMembershipsResponse {
+  // The memberships listed by the query.
+  repeated RelatedAccountGroupMembership related_account_group_memberships = 1;
+
+  // A token, which can be sent as `page_token` to retrieve the next page.
+  // If this field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
+}
+
+// The request message to list related account groups.
+message ListRelatedAccountGroupsRequest {
+  // Required. The name of the project to list related account groups from, in the format
+  // "projects/{project}".
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "recaptchaenterprise.googleapis.com/RelatedAccountGroup"
+    }
+  ];
+
+  // Optional. The maximum number of groups to return. The service may return fewer than
+  // this value.
+  // If unspecified, at most 50 groups will be returned.
+  // The maximum value is 1000; values above 1000 will be coerced to 1000.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A page token, received from a previous `ListRelatedAccountGroups` call.
+  // Provide this to retrieve the subsequent page.
+  //
+  // When paginating, all other parameters provided to
+  // `ListRelatedAccountGroups` must match the call that provided the page
+  // token.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The response to a `ListRelatedAccountGroups` call.
+message ListRelatedAccountGroupsResponse {
+  // The groups of related accounts listed by the query.
+  repeated RelatedAccountGroup related_account_groups = 1;
+
+  // A token, which can be sent as `page_token` to retrieve the next page.
+  // If this field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
+}
+
+// The request message to search related account group memberships.
+message SearchRelatedAccountGroupMembershipsRequest {
+  // Required. The name of the project to search related account group memberships from,
+  // in the format "projects/{project}".
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "recaptchaenterprise.googleapis.com/RelatedAccountGroupMembership"
+    }
+  ];
+
+  // Optional. The unique stable hashed user identifier we should search connections to.
+  // The identifier should correspond to a `hashed_account_id` provided in a
+  // previous CreateAssessment or AnnotateAssessment call.
+  bytes hashed_account_id = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The maximum number of groups to return. The service may return fewer than
+  // this value.
+  // If unspecified, at most 50 groups will be returned.
+  // The maximum value is 1000; values above 1000 will be coerced to 1000.
+  int32 page_size = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A page token, received from a previous
+  // `SearchRelatedAccountGroupMemberships` call. Provide this to retrieve the
+  // subsequent page.
+  //
+  // When paginating, all other parameters provided to
+  // `SearchRelatedAccountGroupMemberships` must match the call that provided
+  // the page token.
+  string page_token = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The response to a `SearchRelatedAccountGroupMemberships` call.
+message SearchRelatedAccountGroupMembershipsResponse {
+  // The queried memberships.
+  repeated RelatedAccountGroupMembership related_account_group_memberships = 1;
+
+  // A token, which can be sent as `page_token` to retrieve the next page.
+  // If this field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
+}
+
+// A membership in a group of related accounts.
+message RelatedAccountGroupMembership {
+  option (google.api.resource) = {
+    type: "recaptchaenterprise.googleapis.com/RelatedAccountGroupMembership"
+    pattern: "projects/{project}/relatedaccountgroups/{relatedaccountgroup}/memberships/{membership}"
+  };
+
+  // Required. The resource name for this membership in the format
+  // `projects/{project}/relatedaccountgroups/{relatedaccountgroup}/memberships/{membership}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "recaptchaenterprise.googleapis.com/RelatedAccountGroupMembership"
+    }
+  ];
+
+  // The unique stable hashed user identifier of the member. The identifier
+  // corresponds to a `hashed_account_id` provided in a previous
+  // CreateAssessment or AnnotateAssessment call.
+  bytes hashed_account_id = 2;
+}
+
+// A group of related accounts.
+message RelatedAccountGroup {
+  option (google.api.resource) = {
+    type: "recaptchaenterprise.googleapis.com/RelatedAccountGroup"
+    pattern: "projects/{project}/relatedaccountgroups/{relatedaccountgroup}"
+  };
+
+  // Required. The resource name for the related account group in the format
+  // `projects/{project}/relatedaccountgroups/{related_account_group}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "recaptchaenterprise.googleapis.com/RelatedAccountGroup"
+    }
+  ];
 }
