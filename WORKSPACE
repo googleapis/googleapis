@@ -120,9 +120,9 @@ go_register_toolchains()
 
 gazelle_dependencies()
 
-_rules_gapic_version = "0.9.1"
+_rules_gapic_version = "0.10.0"
 
-_rules_gapic_sha256 = "59336f2b382b40f3ef25080c373bd20b4d36ae9bf925cd6b3135666c9ae0a2e2"
+_rules_gapic_sha256 = "d2186eaea419434f253ca9a55f24d4f07b576d6cb05e73ed49e658788e154b42"
 
 http_archive(
     name = "rules_gapic",
@@ -343,9 +343,9 @@ http_archive(
     urls = ["https://github.com/googleapis/gax-dotnet/archive/refs/tags/%s.tar.gz" % _gax_dotnet_version],
 )
 
-_gapic_generator_csharp_version = "1.3.12"
+_gapic_generator_csharp_version = "1.3.15"
 
-_gapic_generator_csharp_sha256 = "c4aee3bd6970bd9e66b85ff05a3ea836b9d5e96ff93b52a82c280d0e2f58ee17"
+_gapic_generator_csharp_sha256 = "4938eeea3b98a9571f07db2847efeb74e9c90984e5e0ca0eb9f311827f541122"
 
 http_archive(
     name = "gapic_generator_csharp",
