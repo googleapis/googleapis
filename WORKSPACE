@@ -177,7 +177,7 @@ apple_support_dependencies()
 ##############################################################################
 # Java
 ##############################################################################
-_gax_java_version = "2.3.0"
+_gax_java_version = "2.6.1"
 
 http_archive(
     name = "com_google_api_gax_java",
@@ -202,7 +202,7 @@ grpc_java_repositories()
 
 # Java microgenerator.
 # Must go AFTER java-gax, since both java gax and gapic-generator are written in java and may conflict.
-_gapic_generator_java_version = "2.2.1"
+_gapic_generator_java_version = "2.2.2"
 
 http_archive(
     name = "gapic_generator_java",
@@ -232,7 +232,7 @@ load("@rules_python//python:pip.bzl", "pip_repositories")
 
 pip_repositories()
 
-_gapic_generator_python_version = "0.53.4"
+_gapic_generator_python_version = "0.56.2"
 
 http_archive(
     name = "gapic_generator_python",
@@ -383,8 +383,8 @@ gapic_generator_ruby_repositories()
 
 http_archive(
     name = "com_google_disco_to_proto3_converter",
-    strip_prefix = "disco-to-proto3-converter-bbcb38b24c32c282eac720a48158e2d82f136e90",
-    urls = ["https://github.com/googleapis/disco-to-proto3-converter/archive/bbcb38b24c32c282eac720a48158e2d82f136e90.zip"],
+    strip_prefix = "disco-to-proto3-converter-bcf626ce1d72c7ea8db610fa0a121175f0b4c561",
+    urls = ["https://github.com/googleapis/disco-to-proto3-converter/archive/bcf626ce1d72c7ea8db610fa0a121175f0b4c561.zip"],
 )
 
 load("@com_google_disco_to_proto3_converter//:repository_rules.bzl", "com_google_disco_to_proto3_converter_properties")
