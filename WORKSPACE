@@ -381,10 +381,12 @@ gapic_generator_ruby_repositories()
 # Discovery
 ##############################################################################
 
+_disco_to_proto3_converter_version = "91953d241824df417b6d4e7c2292e4622b4af432"
+
 http_archive(
     name = "com_google_disco_to_proto3_converter",
-    strip_prefix = "disco-to-proto3-converter-bcf626ce1d72c7ea8db610fa0a121175f0b4c561",
-    urls = ["https://github.com/googleapis/disco-to-proto3-converter/archive/bcf626ce1d72c7ea8db610fa0a121175f0b4c561.zip"],
+    strip_prefix = "disco-to-proto3-converter-%s" % _disco_to_proto3_converter_version,
+    urls = ["https://github.com/googleapis/disco-to-proto3-converter/archive/%s.zip" % _disco_to_proto3_converter_version],
 )
 
 load("@com_google_disco_to_proto3_converter//:repository_rules.bzl", "com_google_disco_to_proto3_converter_properties")
