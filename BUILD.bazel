@@ -1,0 +1,6 @@
+load("@bazel_tools//tools/build_defs/pkg:pkg.bzl", "pkg_tar")
+
+alias(
+    name = "build_gen",
+    actual = "@rules_gapic//bazel:build_file_generator",
+)
