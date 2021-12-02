@@ -381,7 +381,7 @@ gapic_generator_ruby_repositories()
 # Discovery
 ##############################################################################
 
-_disco_to_proto3_converter_version = "91953d241824df417b6d4e7c2292e4622b4af432"
+_disco_to_proto3_converter_version = "ce8d8732120cdfb5bf4847c3238b5be8acde87e3"
 
 http_archive(
     name = "com_google_disco_to_proto3_converter",
