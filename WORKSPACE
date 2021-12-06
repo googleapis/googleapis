@@ -177,7 +177,7 @@ apple_support_dependencies()
 ##############################################################################
 # Java
 ##############################################################################
-_gax_java_version = "2.6.1"
+_gax_java_version = "2.7.1"
 
 http_archive(
     name = "com_google_api_gax_java",
@@ -202,7 +202,7 @@ grpc_java_repositories()
 
 # Java microgenerator.
 # Must go AFTER java-gax, since both java gax and gapic-generator are written in java and may conflict.
-_gapic_generator_java_version = "2.2.2"
+_gapic_generator_java_version = "2.2.3"
 
 http_archive(
     name = "gapic_generator_java",
