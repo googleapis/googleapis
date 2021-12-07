@@ -147,9 +147,9 @@ rules_gapic_repositories()
 # for most of the other languages as well, so they can be considered as the core cross-language
 # dependencies.
 
-_grpc_version = "1.39.1"
+_grpc_version = "1.42.0"
 
-_grpc_sha256 = "4608e92cf528b625888cc874a5d21c78923322dc8c66d2c4c146134efbac69bc"
+_grpc_sha256 = "9f387689b7fdf6c003fd90ef55853107f89a2121792146770df5486f0199f400"
 
 http_archive(
     name = "com_github_grpc_grpc",
