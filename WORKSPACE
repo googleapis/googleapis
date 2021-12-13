@@ -302,17 +302,6 @@ yarn_install(
 # PHP
 ##############################################################################
 
-load("@rules_gapic//php:php_gapic_repositories.bzl", "php", "php_gapic_repositories")
-
-php(
-    name = "php",
-    prebuilt_phps = ["@rules_gapic//php:resources/php-7.1.30_linux_x86_64.tar.gz"],
-    strip_prefix = "php-7.1.30",
-    urls = ["https://www.php.net/distributions/php-7.1.30.tar.gz"],
-)
-
-php_gapic_repositories()
-
 # PHP micro-generator
 _gapic_generator_php_version = "1.2.1"
 
@@ -321,6 +310,17 @@ http_archive(
     strip_prefix = "gapic-generator-php-%s" % _gapic_generator_php_version,
     urls = ["https://github.com/googleapis/gapic-generator-php/archive/v%s.zip" % _gapic_generator_php_version],
 )
+
+load("@rules_gapic//php:php_gapic_repositories.bzl", "php", "php_gapic_repositories")
+
+php(
+    name = "php",
+    prebuilt_phps = ["@gapic_generator_php//rules_php_gapic:resources/php-7.4.15_linux_x86_64.tar.gz"],
+    strip_prefix = "php-7.4.15",
+    urls = ["https://www.php.net/distributions/php-7.4.15.tar.gz"],
+)
+
+php_gapic_repositories()
 
 load("@gapic_generator_php//:repositories.bzl", "gapic_generator_php_repositories")
 
