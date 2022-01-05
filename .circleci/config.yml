@@ -1,0 +1,116 @@
+version: 2.1
+
+orbs:
+  snyk: snyk/snyk@1.1.1
+
+executors:
+  golang-executor:
+    docker:
+      - image: cimg/go:1.16
+
+jobs:
+  snyk:
+    executor: golang-executor
+    environment:
+      APP_ENV: test
+    steps:
+      - checkout
+      - snyk/scan:
+          monitor-on-build: true
+          severity-threshold: high
+          project: 'RedVentures/${CIRCLE_PROJECT_REPONAME}'
+
+  build-artifact:
+    executor: golang-executor
+    resource_class: xlarge
+    working_directory: /tmp/src/googleapis
+    steps:
+      - checkout
+      - run:
+          name: "Install Protoc"
+          command: |
+            mkdir /tmp/protoc
+            PROTOC_ZIP=protoc-3.19.1-linux-x86_64.zip
+            curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v3.19.1/$PROTOC_ZIP
+            sudo unzip -o $PROTOC_ZIP -d /usr/local bin/protoc
+            sudo unzip -o $PROTOC_ZIP -d /usr/local 'include/*'
+            rm -f $PROTOC_ZIP
+            sudo chmod +x /usr/local/bin/protoc
+            protoc --version
+      - run:
+          name: "Clone google-cloud-go that contains gapgen app"
+          working_directory: "/tmp/src/cloud.google.com"
+          command: |
+            git clone https://github.com/googleapis/google-cloud-go.git
+            grep -rl 'google.golang.org/genproto/googleapis/ads' ./google-cloud-go/internal/gapicgen/generator |
+            xargs sed --in-place=backup 's,google.golang.org/genproto/googleapis/ads,google.golang.org/genproto/googleapis/ads_disabled,g'
+            cp -r google-cloud-go go
+      - run:
+          name: "Build genbot binary"
+          working_directory: "/tmp/src/cloud.google.com/go/internal/gapicgen/cmd"
+          command: |
+            mkdir -p /tmp/run
+            go build -o /tmp/src/genbot cloud.google.com/go/internal/gapicgen/cmd/genbot
+      - run:
+          name: "Build package"
+          working_directory: "/tmp/run"
+          command: |
+            go get \
+              github.com/golang/protobuf/protoc-gen-go \
+              golang.org/x/lint/golint \
+              golang.org/x/tools/cmd/goimports \
+              honnef.co/go/tools/cmd/staticcheck \
+              github.com/googleapis/gapic-generator-go/cmd/protoc-gen-go_gapic
+            /tmp/src/genbot \
+              -local \
+              -forceAll \
+              -gocloud-dir=/tmp/src \
+              -googleapis-dir=/tmp/src/googleapis \
+              -gapic="google.golang.org/google/ads/googleads"
+      - run:
+          name: "Zip results"
+          when: always
+          command: |
+            mkdir -p /tmp/artifacts
+            zip -r /tmp/artifacts/gapgen.zip /tmp/src/*
+            mv /tmp/run/update-genproto* /tmp/run/update-genproto
+            zip -r /tmp/artifacts/artifacts.zip /tmp/run/update-genproto/*
+      - store_artifacts:
+          path: /tmp/artifacts
+
+workflows:
+  version: 2
+
+  build-artifact:
+    jobs:
+      - snyk:
+          context: sematic
+          filters:
+            # ignore any commit on any branch by default
+            branches:
+              ignore: /.*/
+            # only act on version tags
+            tags:
+              only: /^v\d.*/
+      - build-artifact:
+          requires:
+            - snyk
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v\d.*/
+
+  build-artifact2:
+    jobs:
+      - snyk:
+          context: sematic
+          filters:
+            branches:
+              only: add_circle
+      - build-artifact:
+          requires:
+            - snyk
+          filters:
+            branches:
+              only: add_circle
