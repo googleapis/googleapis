@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2021 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 
 syntax = "proto3";
 
@@ -21,11 +20,14 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/firestore/admin/v1/database.proto";
 import "google/firestore/admin/v1/field.proto";
 import "google/firestore/admin/v1/index.proto";
+import "google/firestore/admin/v1/operation.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "Google.Cloud.Firestore.Admin.V1";
 option go_package = "google.golang.org/genproto/googleapis/firestore/admin/v1;admin";
@@ -36,14 +38,40 @@ option objc_class_prefix = "GCFS";
 option php_namespace = "Google\\Cloud\\Firestore\\Admin\\V1";
 option ruby_package = "Google::Cloud::Firestore::Admin::V1";
 option (google.api.resource_definition) = {
-  type: "firestore.googleapis.com/Database"
-  pattern: "projects/{project}/databases/{database}"
+  type: "firestore.googleapis.com/Location"
+  pattern: "projects/{project}/locations/{location}"
 };
 option (google.api.resource_definition) = {
   type: "firestore.googleapis.com/CollectionGroup"
   pattern: "projects/{project}/databases/{database}/collectionGroups/{collection}"
 };
 
+// The Cloud Firestore Admin API.
+//
+// This API provides several administrative services for Cloud Firestore.
+//
+// Project, Database, Namespace, Collection, Collection Group, and Document are
+// used as defined in the Google Cloud Firestore API.
+//
+// Operation: An Operation represents work being performed in the background.
+//
+// The index service manages Cloud Firestore indexes.
+//
+// Index creation is performed asynchronously.
+// An Operation resource is created for each such asynchronous operation.
+// The state of the operation (including any errors encountered)
+// may be queried via the Operation resource.
+//
+// The Operations collection provides a record of actions performed for the
+// specified Project (including any Operations in progress). Operations are not
+// created directly but through calls on other collections or resources.
+//
+// An Operation that is done may be deleted so that it is no longer listed as
+// part of the Operation collection. Operations are garbage collected after
+// 30 days. By default, ListOperations will only return in progress and failed
+// operations. To list completed operation, issue a ListOperations request with
+// the filter `done: true`.
+//
 // Operations are created by service `FirestoreAdmin`, but are accessed via
 // service `google.longrunning.Operations`.
 service FirestoreAdmin {
@@ -129,7 +157,7 @@ service FirestoreAdmin {
   // Currently, [FirestoreAdmin.ListFields][google.firestore.admin.v1.FirestoreAdmin.ListFields] only supports listing fields
   // that have been explicitly overridden. To issue this query, call
   // [FirestoreAdmin.ListFields][google.firestore.admin.v1.FirestoreAdmin.ListFields] with the filter set to
-  // `indexConfig.usesAncestorConfig:false`.
+  // `indexConfig.usesAncestorConfig:false` .
   rpc ListFields(ListFieldsRequest) returns (ListFieldsResponse) {
     option (google.api.http) = {
       get: "/v1/{parent=projects/*/databases/*/collectionGroups/*}/fields"
@@ -145,6 +173,9 @@ service FirestoreAdmin {
   // used once the associated operation is done. If an export operation is
   // cancelled before completion it may leave partial data behind in Google
   // Cloud Storage.
+  //
+  // For more details on export behavior and output format, refer to:
+  // https://cloud.google.com/firestore/docs/manage-data/export-import
   rpc ExportDocuments(ExportDocumentsRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
       post: "/v1/{name=projects/*/databases/*}:exportDocuments"
@@ -173,6 +204,79 @@ service FirestoreAdmin {
       metadata_type: "ImportDocumentsMetadata"
     };
   }
+
+  // Gets information about a database.
+  rpc GetDatabase(GetDatabaseRequest) returns (Database) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/databases/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // List all the databases in the project.
+  rpc ListDatabases(ListDatabasesRequest) returns (ListDatabasesResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*}/databases"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Updates a database.
+  rpc UpdateDatabase(UpdateDatabaseRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      patch: "/v1/{database.name=projects/*/databases/*}"
+      body: "database"
+    };
+    option (google.api.method_signature) = "database,update_mask";
+    option (google.longrunning.operation_info) = {
+      response_type: "Database"
+      metadata_type: "UpdateDatabaseMetadata"
+    };
+  }
+}
+
+// A request to list the Firestore Databases in all locations for a project.
+message ListDatabasesRequest {
+  // Required. A parent name of the form
+  // `projects/{project_id}`
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "firestore.googleapis.com/Database"
+    }
+  ];
+}
+
+// The list of databases for a project.
+message ListDatabasesResponse {
+  // The databases in the project.
+  repeated Database databases = 1;
+}
+
+// The request for [FirestoreAdmin.GetDatabase][google.firestore.admin.v1.FirestoreAdmin.GetDatabase].
+message GetDatabaseRequest {
+  // Required. A name of the form
+  // `projects/{project_id}/databases/{database_id}`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "firestore.googleapis.com/Database"
+    }
+  ];
+}
+
+// The request for [FirestoreAdmin.UpdateDatabase][google.firestore.admin.v1.FirestoreAdmin.UpdateDatabase].
+message UpdateDatabaseRequest {
+  // Required. The database to update.
+  Database database = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The list of fields to be updated.
+  google.protobuf.FieldMask update_mask = 2;
+}
+
+// Metadata related to the update database operation.
+message UpdateDatabaseMetadata {
+
 }
 
 // The request for [FirestoreAdmin.CreateIndex][google.firestore.admin.v1.FirestoreAdmin.CreateIndex].
@@ -283,8 +387,8 @@ message ListFieldsRequest {
   // The filter to apply to list results. Currently,
   // [FirestoreAdmin.ListFields][google.firestore.admin.v1.FirestoreAdmin.ListFields] only supports listing fields
   // that have been explicitly overridden. To issue this query, call
-  // [FirestoreAdmin.ListFields][google.firestore.admin.v1.FirestoreAdmin.ListFields] with the filter set to
-  // `indexConfig.usesAncestorConfig:false`.
+  // [FirestoreAdmin.ListFields][google.firestore.admin.v1.FirestoreAdmin.ListFields] with a filter that includes
+  // `indexConfig.usesAncestorConfig:false` .
   string filter = 2;
 
   // The number of results to return.
