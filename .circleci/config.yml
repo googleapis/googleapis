@@ -11,7 +11,6 @@ jobs:
     resource_class: xlarge
     working_directory: /tmp/src/googleapis
     steps:
-      - checkout
       - setup_remote_docker:
           docker_layer_caching: true
       - run:
@@ -40,6 +39,7 @@ jobs:
           command: |
             mkdir -p /tmp/run
             go build -o /tmp/src/genbot cloud.google.com/go/internal/gapicgen/cmd/genbot
+      - checkout
       - run:
           name: "Build package"
           working_directory: "/tmp/run"
@@ -67,10 +67,39 @@ jobs:
       - store_artifacts:
           path: /tmp/artifacts
       - run:
-          name: "Publish Release on GitHub"
+          name: "Publish Release for googleapis on GitHub"
           command: |
             go get github.com/tcnksm/ghr
-            ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} -delete ${CIRCLE_TAG} /tmp/artifacts/artifacts.zip
+
+            ghr -t ${GITHUB_TOKEN} \
+              -u ${CIRCLE_PROJECT_USERNAME} \
+              -r ${CIRCLE_PROJECT_REPONAME} \
+              -c ${CIRCLE_SHA1} \
+              -delete ${CIRCLE_TAG} \
+              /tmp/artifacts/artifacts.zip
+      - run:
+          name: "Create release for go-genproto on GitHub"
+          working_directory: "/tmp/git"
+          command: |
+            git clone https://github.com/RedVentures/go-genproto.git
+            rm -rf /tmp/update-genproto/genproto/.git
+            cp -R -a /tmp/update-genproto/genproto/. go-genproto/
+            cd go-genproto
+            ls -lah
+            git switch -C update-genproto-${CIRCLE_TAG}
+            git add .
+            git config --global user.email "sematic-it@redventures.com"
+            git config --global user.name "Sematic Protobuf Generator"
+            git commit -m "Update genproto to ${CIRCLE_TAG}"
+            git remote remove origin
+            git remote add origin https://${GITHUB_TOKEN}@github.com/RedVentures/go-genproto.git
+            git push origin update-genproto-${CIRCLE_TAG}
+            ghr -t ${GITHUB_TOKEN} \
+              -u ${CIRCLE_PROJECT_USERNAME} \
+              -r go-genproto \
+              -c $(git rev-parse HEAD) \
+              -delete ${CIRCLE_TAG} \
+              /tmp/artifacts/artifacts.zip
 
 workflows:
   version: 2
