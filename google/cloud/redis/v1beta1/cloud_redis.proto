@@ -21,8 +21,11 @@ import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/longrunning/operations.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
+import "google/type/dayofweek.proto";
+import "google/type/timeofday.proto";
 
 option go_package = "google.golang.org/genproto/googleapis/cloud/redis/v1beta1;redis";
 option java_multiple_files = true;
@@ -46,8 +49,7 @@ option java_package = "com.google.cloud.redis.v1beta1";
 // * `projects/redpepper-1290/locations/us-central1/instances/my-redis`
 service CloudRedis {
   option (google.api.default_host) = "redis.googleapis.com";
-  option (google.api.oauth_scopes) =
-      "https://www.googleapis.com/auth/cloud-platform";
+  option (google.api.oauth_scopes) = "https://www.googleapis.com/auth/cloud-platform";
 
   // Lists all Redis instances owned by a project in either the specified
   // location (region) or all locations.
@@ -73,6 +75,16 @@ service CloudRedis {
     option (google.api.method_signature) = "name";
   }
 
+  // Gets the AUTH string for a Redis instance. If AUTH is not enabled for the
+  // instance the response will be empty. This information is not included in
+  // the details returned to GetInstance.
+  rpc GetInstanceAuthString(GetInstanceAuthStringRequest) returns (InstanceAuthString) {
+    option (google.api.http) = {
+      get: "/v1beta1/{name=projects/*/locations/*/instances/*}/authString"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
   // Creates a Redis instance based on the specified tier and memory size.
   //
   // By default, the instance is accessible from the project's
@@ -85,8 +97,7 @@ service CloudRedis {
   //
   // The returned operation is automatically deleted after a few hours, so there
   // is no need to call DeleteOperation.
-  rpc CreateInstance(CreateInstanceRequest)
-      returns (google.longrunning.Operation) {
+  rpc CreateInstance(CreateInstanceRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
       post: "/v1beta1/{parent=projects/*/locations/*}/instances"
       body: "instance"
@@ -103,8 +114,7 @@ service CloudRedis {
   // Completed longrunning.Operation will contain the new instance object
   // in the response field. The returned operation is automatically deleted
   // after a few hours, so there is no need to call DeleteOperation.
-  rpc UpdateInstance(UpdateInstanceRequest)
-      returns (google.longrunning.Operation) {
+  rpc UpdateInstance(UpdateInstanceRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
       patch: "/v1beta1/{instance.name=projects/*/locations/*/instances/*}"
       body: "instance"
@@ -118,8 +128,7 @@ service CloudRedis {
 
   // Upgrades Redis instance to the newer Redis version specified in the
   // request.
-  rpc UpgradeInstance(UpgradeInstanceRequest)
-      returns (google.longrunning.Operation) {
+  rpc UpgradeInstance(UpgradeInstanceRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
       post: "/v1beta1/{name=projects/*/locations/*/instances/*}:upgrade"
       body: "*"
@@ -139,8 +148,7 @@ service CloudRedis {
   //
   // The returned operation is automatically deleted after a few hours, so
   // there is no need to call DeleteOperation.
-  rpc ImportInstance(ImportInstanceRequest)
-      returns (google.longrunning.Operation) {
+  rpc ImportInstance(ImportInstanceRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
       post: "/v1beta1/{name=projects/*/locations/*/instances/*}:import"
       body: "*"
@@ -158,8 +166,7 @@ service CloudRedis {
   //
   // The returned operation is automatically deleted after a few hours, so
   // there is no need to call DeleteOperation.
-  rpc ExportInstance(ExportInstanceRequest)
-      returns (google.longrunning.Operation) {
+  rpc ExportInstance(ExportInstanceRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
       post: "/v1beta1/{name=projects/*/locations/*/instances/*}:export"
       body: "*"
@@ -173,8 +180,7 @@ service CloudRedis {
 
   // Initiates a failover of the primary node to current replica node for a
   // specific STANDARD tier Cloud Memorystore for Redis instance.
-  rpc FailoverInstance(FailoverInstanceRequest)
-      returns (google.longrunning.Operation) {
+  rpc FailoverInstance(FailoverInstanceRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
       post: "/v1beta1/{name=projects/*/locations/*/instances/*}:failover"
       body: "*"
@@ -188,14 +194,27 @@ service CloudRedis {
 
   // Deletes a specific Redis instance.  Instance stops serving and data is
   // deleted.
-  rpc DeleteInstance(DeleteInstanceRequest)
-      returns (google.longrunning.Operation) {
+  rpc DeleteInstance(DeleteInstanceRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
       delete: "/v1beta1/{name=projects/*/locations/*/instances/*}"
     };
     option (google.api.method_signature) = "name";
     option (google.longrunning.operation_info) = {
       response_type: "google.protobuf.Empty"
+      metadata_type: "google.protobuf.Any"
+    };
+  }
+
+  // Reschedule maintenance for a given instance in a given project and
+  // location.
+  rpc RescheduleMaintenance(RescheduleMaintenanceRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1beta1/{name=projects/*/locations/*/instances/*}:rescheduleMaintenance"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name, reschedule_type, schedule_time";
+    option (google.longrunning.operation_info) = {
+      response_type: "google.cloud.redis.v1beta1.Instance"
       metadata_type: "google.protobuf.Any"
     };
   }
@@ -275,10 +294,22 @@ message Instance {
     PRIVATE_SERVICE_ACCESS = 2;
   }
 
+  // Available TLS modes.
+  enum TransitEncryptionMode {
+    // Not set.
+    TRANSIT_ENCRYPTION_MODE_UNSPECIFIED = 0;
+
+    // Client to Server traffic encryption enabled with server authentication.
+    SERVER_AUTHENTICATION = 1;
+
+    // TLS is disabled for the instance.
+    DISABLED = 2;
+  }
+
   // Read replicas mode.
   enum ReadReplicasMode {
-    // If not set, Memorystore for Redis backend will pick the mode based on
-    // other fields in the request.
+    // If not set, Memorystore Redis backend will default to
+    // READ_REPLICAS_DISABLED.
     READ_REPLICAS_MODE_UNSPECIFIED = 0;
 
     // If disabled, read endpoint will not be provided and the instance cannot
@@ -286,7 +317,7 @@ message Instance {
     READ_REPLICAS_DISABLED = 1;
 
     // If enabled, read endpoint will be provided and the instance can scale
-    // up and down the number of replicas.
+    // up and down the number of replicas. Not valid for basic tier.
     READ_REPLICAS_ENABLED = 2;
   }
 
@@ -297,10 +328,8 @@ message Instance {
   // Note: Redis instances are managed and addressed at regional level so
   // location_id here refers to a GCP region; however, users may choose which
   // specific zone (or collection of zones for cross-zone instances) an instance
-  // should be provisioned in. Refer to
-  // [location_id][google.cloud.redis.v1beta1.Instance.location_id] and
-  // [alternative_location_id][google.cloud.redis.v1beta1.Instance.alternative_location_id]
-  // fields for more details.
+  // should be provisioned in. Refer to [location_id][google.cloud.redis.v1beta1.Instance.location_id] and
+  // [alternative_location_id][google.cloud.redis.v1beta1.Instance.alternative_location_id] fields for more details.
   string name = 1 [(google.api.field_behavior) = REQUIRED];
 
   // An arbitrary and optional user-provided name for the instance.
@@ -356,8 +385,7 @@ message Instance {
   string current_location_id = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The time the instance was created.
-  google.protobuf.Timestamp create_time = 13
-      [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp create_time = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The current state of this instance.
   State state = 14 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -386,8 +414,7 @@ message Instance {
   //
   //  *   stream-node-max-bytes
   //  *   stream-node-max-entries
-  map<string, string> redis_configs = 16
-      [(google.api.field_behavior) = OPTIONAL];
+  map<string, string> redis_configs = 16 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. The service tier of the instance.
   Tier tier = 17 [(google.api.field_behavior) = REQUIRED];
@@ -406,16 +433,37 @@ message Instance {
   // "serviceAccount:<service_account_email>". The value may change over time
   // for a given instance so should be checked before each import/export
   // operation.
-  string persistence_iam_identity = 21
-      [(google.api.field_behavior) = OUTPUT_ONLY];
+  string persistence_iam_identity = 21 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Optional. The network connect mode of the Redis instance.
   // If not provided, the connect mode defaults to DIRECT_PEERING.
   ConnectMode connect_mode = 22 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The number of replica nodes. Valid range for standard tier
-  // is [1-5] and defaults to 1. Valid value for basic tier is 0 and defaults
-  // to 0.
+  // Optional. Indicates whether OSS Redis AUTH is enabled for the instance. If set to
+  // "true" AUTH is enabled on the instance. Default value is "false" meaning
+  // AUTH is disabled.
+  bool auth_enabled = 23 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. List of server CA certificates for the instance.
+  repeated TlsCertificate server_ca_certs = 25 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The TLS mode of the Redis instance.
+  // If not provided, TLS is disabled for the instance.
+  TransitEncryptionMode transit_encryption_mode = 26 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The maintenance policy for the instance. If not provided,
+  // maintenance events can be performed at any time.
+  MaintenancePolicy maintenance_policy = 27 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Date and time of upcoming maintenance events which have been
+  // scheduled.
+  MaintenanceSchedule maintenance_schedule = 28 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The number of replica nodes. The valid range for the Standard Tier with
+  // read replicas enabled is [1-5] and defaults to 2. If read replicas are not
+  // enabled for a Standard Tier instance, the only valid value is 1 and the
+  // default is 1. The valid value for basic tier is 0 and the default is also
+  // 0.
   int32 replica_count = 31 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. Info per node.
@@ -431,13 +479,97 @@ message Instance {
   // endpoint. Standard tier only. Write requests should target 'port'.
   int32 read_endpoint_port = 34 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Optional. Read replica mode.
-  ReadReplicasMode read_replicas_mode = 35
-      [(google.api.field_behavior) = OPTIONAL];
+  // Optional. Read replica mode. Can only be specified when trying to create the
+  // instance.
+  ReadReplicasMode read_replicas_mode = 35 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Request for
-// [ListInstances][google.cloud.redis.v1beta1.CloudRedis.ListInstances].
+// Request for [RescheduleMaintenance][google.cloud.redis.v1beta1.CloudRedis.RescheduleMaintenance].
+message RescheduleMaintenanceRequest {
+  // Reschedule options.
+  enum RescheduleType {
+    // Not set.
+    RESCHEDULE_TYPE_UNSPECIFIED = 0;
+
+    // If the user wants to schedule the maintenance to happen now.
+    IMMEDIATE = 1;
+
+    // If the user wants to use the existing maintenance policy to find the
+    // next available window.
+    NEXT_AVAILABLE_WINDOW = 2;
+
+    // If the user wants to reschedule the maintenance to a specific time.
+    SPECIFIC_TIME = 3;
+  }
+
+  // Required. Redis instance resource name using the form:
+  //     `projects/{project_id}/locations/{location_id}/instances/{instance_id}`
+  // where `location_id` refers to a GCP region.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "redis.googleapis.com/Instance"
+    }
+  ];
+
+  // Required. If reschedule type is SPECIFIC_TIME, must set up schedule_time as well.
+  RescheduleType reschedule_type = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Timestamp when the maintenance shall be rescheduled to if
+  // reschedule_type=SPECIFIC_TIME, in RFC 3339 format, for
+  // example `2012-11-15T16:19:00.094Z`.
+  google.protobuf.Timestamp schedule_time = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Maintenance policy for an instance.
+message MaintenancePolicy {
+  // Output only. The time when the policy was created.
+  google.protobuf.Timestamp create_time = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time when the policy was last updated.
+  google.protobuf.Timestamp update_time = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Description of what this policy is for. Create/Update methods
+  // return INVALID_ARGUMENT if the length is greater than 512.
+  string description = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Maintenance window that is applied to resources covered by this
+  // policy. Minimum 1. For the current version, the maximum number of
+  // weekly_window is expected to be one.
+  repeated WeeklyMaintenanceWindow weekly_maintenance_window = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Time window in which disruptive maintenance updates occur. Non-disruptive
+// updates can occur inside or outside this window.
+message WeeklyMaintenanceWindow {
+  // Required. The day of week that maintenance updates occur.
+  google.type.DayOfWeek day = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Start time of the window in UTC time.
+  google.type.TimeOfDay start_time = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Output only. Duration of the maintenance window. The current window is fixed at 1 hour.
+  google.protobuf.Duration duration = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Upcoming maintenance schedule. If no maintenance is scheduled, fields are not
+// populated.
+message MaintenanceSchedule {
+  // Output only. The start time of any upcoming scheduled maintenance for this instance.
+  google.protobuf.Timestamp start_time = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The end time of any upcoming scheduled maintenance for this instance.
+  google.protobuf.Timestamp end_time = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // If the scheduled maintenance can be rescheduled, default is true.
+  bool can_reschedule = 3 [deprecated = true];
+
+  // Output only. The deadline that the maintenance schedule start time can not go beyond,
+  // including reschedule.
+  google.protobuf.Timestamp schedule_deadline_time = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Request for [ListInstances][google.cloud.redis.v1beta1.CloudRedis.ListInstances].
 message ListInstancesRequest {
   // Required. The resource name of the instance location using the form:
   //     `projects/{project_id}/locations/{location_id}`
@@ -459,13 +591,11 @@ message ListInstancesRequest {
   int32 page_size = 2;
 
   // The `next_page_token` value returned from a previous
-  // [ListInstances][google.cloud.redis.v1beta1.CloudRedis.ListInstances]
-  // request, if any.
+  // [ListInstances][google.cloud.redis.v1beta1.CloudRedis.ListInstances] request, if any.
   string page_token = 3;
 }
 
-// Response for
-// [ListInstances][google.cloud.redis.v1beta1.CloudRedis.ListInstances].
+// Response for [ListInstances][google.cloud.redis.v1beta1.CloudRedis.ListInstances].
 message ListInstancesResponse {
   // A list of Redis instances in the project in the specified location,
   // or across all locations.
@@ -495,12 +625,32 @@ message GetInstanceRequest {
   // where `location_id` refers to a GCP region.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = { type: "redis.googleapis.com/Instance" }
+    (google.api.resource_reference) = {
+      type: "redis.googleapis.com/Instance"
+    }
   ];
 }
 
-// Request for
-// [CreateInstance][google.cloud.redis.v1beta1.CloudRedis.CreateInstance].
+// Request for [GetInstanceAuthString][google.cloud.redis.v1beta1.CloudRedis.GetInstanceAuthString].
+message GetInstanceAuthStringRequest {
+  // Required. Redis instance resource name using the form:
+  //     `projects/{project_id}/locations/{location_id}/instances/{instance_id}`
+  // where `location_id` refers to a GCP region.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "redis.googleapis.com/Instance"
+    }
+  ];
+}
+
+// Instance AUTH string details.
+message InstanceAuthString {
+  // AUTH string set on the instance.
+  string auth_string = 1;
+}
+
+// Request for [CreateInstance][google.cloud.redis.v1beta1.CloudRedis.CreateInstance].
 message CreateInstanceRequest {
   // Required. The resource name of the instance location using the form:
   //     `projects/{project_id}/locations/{location_id}`
@@ -526,8 +676,7 @@ message CreateInstanceRequest {
   Instance instance = 3 [(google.api.field_behavior) = REQUIRED];
 }
 
-// Request for
-// [UpdateInstance][google.cloud.redis.v1beta1.CloudRedis.UpdateInstance].
+// Request for [UpdateInstance][google.cloud.redis.v1beta1.CloudRedis.UpdateInstance].
 message UpdateInstanceRequest {
   // Required. Mask of fields to update. At least one path must be supplied in
   // this field. The elements of the repeated paths field may only include these
@@ -538,38 +687,39 @@ message UpdateInstanceRequest {
   //  *   `memorySizeGb`
   //  *   `redisConfig`
   //  *   `replica_count`
-  google.protobuf.FieldMask update_mask = 1
-      [(google.api.field_behavior) = REQUIRED];
+  google.protobuf.FieldMask update_mask = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. Update description.
   // Only fields specified in update_mask are updated.
   Instance instance = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
-// Request for
-// [UpgradeInstance][google.cloud.redis.v1beta1.CloudRedis.UpgradeInstance].
+// Request for [UpgradeInstance][google.cloud.redis.v1beta1.CloudRedis.UpgradeInstance].
 message UpgradeInstanceRequest {
   // Required. Redis instance resource name using the form:
   //     `projects/{project_id}/locations/{location_id}/instances/{instance_id}`
   // where `location_id` refers to a GCP region.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = { type: "redis.googleapis.com/Instance" }
+    (google.api.resource_reference) = {
+      type: "redis.googleapis.com/Instance"
+    }
   ];
 
   // Required. Specifies the target version of Redis software to upgrade to.
   string redis_version = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
-// Request for
-// [DeleteInstance][google.cloud.redis.v1beta1.CloudRedis.DeleteInstance].
+// Request for [DeleteInstance][google.cloud.redis.v1beta1.CloudRedis.DeleteInstance].
 message DeleteInstanceRequest {
   // Required. Redis instance resource name using the form:
   //     `projects/{project_id}/locations/{location_id}/instances/{instance_id}`
   // where `location_id` refers to a GCP region.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = { type: "redis.googleapis.com/Instance" }
+    (google.api.resource_reference) = {
+      type: "redis.googleapis.com/Instance"
+    }
   ];
 }
 
@@ -626,8 +776,7 @@ message ExportInstanceRequest {
   OutputConfig output_config = 3 [(google.api.field_behavior) = REQUIRED];
 }
 
-// Request for
-// [Failover][google.cloud.redis.v1beta1.CloudRedis.FailoverInstance].
+// Request for [Failover][google.cloud.redis.v1beta1.CloudRedis.FailoverInstance].
 message FailoverInstanceRequest {
   // Specifies different modes of operation in relation to the data retention.
   enum DataProtectionMode {
@@ -650,13 +799,14 @@ message FailoverInstanceRequest {
   // where `location_id` refers to a GCP region.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = { type: "redis.googleapis.com/Instance" }
+    (google.api.resource_reference) = {
+      type: "redis.googleapis.com/Instance"
+    }
   ];
 
   // Optional. Available data protection modes that the user can choose. If it's
   // unspecified, data protection mode will be LIMITED_DATA_LOSS by default.
-  DataProtectionMode data_protection_mode = 2
-      [(google.api.field_behavior) = OPTIONAL];
+  DataProtectionMode data_protection_mode = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // This location metadata represents additional configuration options for a
@@ -668,10 +818,33 @@ message LocationMetadata {
   // by the lowercase ID of each zone, as defined by GCE. These keys can be
   // specified in `location_id` or `alternative_location_id` fields when
   // creating a Redis instance.
-  map<string, ZoneMetadata> available_zones = 1
-      [(google.api.field_behavior) = OUTPUT_ONLY];
+  map<string, ZoneMetadata> available_zones = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Defines specific information for a particular zone. Currently empty and
 // reserved for future use only.
-message ZoneMetadata {}
+message ZoneMetadata {
+
+}
+
+// TlsCertificate Resource
+message TlsCertificate {
+  // Serial number, as extracted from the certificate.
+  string serial_number = 1;
+
+  // PEM representation.
+  string cert = 2;
+
+  // Output only. The time when the certificate was created in [RFC
+  // 3339](https://tools.ietf.org/html/rfc3339) format, for example
+  // `2020-05-18T00:00:00.094Z`.
+  google.protobuf.Timestamp create_time = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time when the certificate expires in [RFC
+  // 3339](https://tools.ietf.org/html/rfc3339) format, for example
+  // `2020-05-18T00:00:00.094Z`.
+  google.protobuf.Timestamp expire_time = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Sha1 Fingerprint of the certificate.
+  string sha1_fingerprint = 5;
+}
