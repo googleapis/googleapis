@@ -1,0 +1,210 @@
+// Copyright 2021 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package maps.fleetengine.delivery.v1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/maps/fleetengine/v1/fleetengine.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/wrappers.proto";
+import "google/type/latlng.proto";
+
+option go_package = "google.golang.org/genproto/googleapis/maps/fleetengine/delivery/v1;delivery";
+option java_multiple_files = true;
+option java_outer_classname = "DeliveryVehicles";
+option java_package = "google.maps.fleetengine.delivery.v1";
+option objc_class_prefix = "CFE";
+
+// DeliveryVehicle metadata.
+message DeliveryVehicle {
+  option (google.api.resource) = {
+    type: "fleetengine.googleapis.com/DeliveryVehicle"
+    pattern: "providers/{provider}/deliveryVehicles/{vehicle}"
+  };
+
+  // The unique name for this vehicle.
+  // The format is providers/{provider}/deliveryVehicles/{vehicle}
+  string name = 1;
+
+  // The last reported location of the vehicle.
+  maps.fleetengine.v1.VehicleLocation last_location = 2;
+
+  // The Vehicle's navigation status.
+  maps.fleetengine.v1.NavigationStatus navigation_status = 3;
+
+  // The encoded polyline specifying the route the navigation recommends taking
+  // to the next waypoint. Your driver app updates this every time a stop is
+  // reached or passed, or the navigation reroutes. These LatLngs are returned
+  // in `Task.journey_sharing_info.remaining_vehicle_journey_segments[0].path`
+  // for all active tasks assigned to the vehicle.
+  //
+  // There are a few cases where this field may not be used to populate
+  // `Task.journey_sharing_info.remaining_vehicle_journey_segments[0].path`:
+  //
+  // 1. The endpoint of the `current_route_segment` does not match
+  // `DeliveryVehicle.remaining_vehicle_journey_segments[0].stop`.
+  //
+  // 2. The driver app has not updated its location recently, so the last
+  // updated value for this field may be stale.
+  //
+  // 3. The driver app has recently updated its location, but the
+  // `current_route_segment` is stale and points to a previous vehicle stop.
+  //
+  // In these cases, Fleet Engine will populate this field with a
+  // route from the most recently passed VehicleStop to the upcoming VehicleStop
+  // to ensure the consumer of this field has the best available information on
+  // the current path of the delivery vehicle.
+  bytes current_route_segment = 4;
+
+  // The location where the `current_route_segment` ends. This is not currently
+  // populated by the driver app, but it can be supplied on
+  // UpdateDeliveryVehicle calls as the latlng from the upcoming vehicle stop or
+  // the last latlng of the `current_route_segment`. Fleet Engine will then do
+  // its best to interpolate to an actual VehicleStop.
+  //
+  // This field is ignored in UpdateDeliveryVehicle calls if the
+  // `DeliveryVehicle.current_route_segment` field is empty.
+  google.type.LatLng current_route_segment_end_point = 5;
+
+  // The remaining driving distance for the `current_route_segment`.
+  // This value is usually updated by the driver app because it is considered to
+  // have more accurate information about the current route than Fleet Engine.
+  // However, it may be populated by Fleet Engine. For more information, see the
+  // documentation for `DeliveyVehicle.current_route_segment'. This field is
+  // returned in
+  // `Task.remaining_vehicle_journey_segment[0].driving_distance_meters` for all
+  // active tasks assigned to the vehicle.
+  //
+  // This field is ignored in UpdateDeliveryVehicle calls if the
+  // `DeliveryVehicle.current_route_segment` field is empty.
+  google.protobuf.Int32Value remaining_distance_meters = 6;
+
+  // The remaining driving time for the `current_route_segment`.
+  // This value is usually updated by the driver app because it is considered to
+  // have more accurate information about the current route than Fleet Engine.
+  // However, it may be populated by Fleet Engine. For more information, see the
+  // documentation for `DeliveyVehicle.current_route_segment'. This field is
+  // returned in `Task.remaining_vehicle_journey_segment[0].driving_duration`
+  // for all active tasks assigned to the vehicle.
+  //
+  // This field is ignored in UpdateDeliveryVehicle calls if the
+  // `DeliveryVehicle.current_route_segment` field is empty.
+  google.protobuf.Duration remaining_duration = 7;
+
+  // The journey segments assigned to this vehicle, starting from the vehicle's
+  // most recently reported location.
+  repeated VehicleJourneySegment remaining_vehicle_journey_segments = 8;
+
+  // List of custom delivery vehicle attributes.
+  // Each attribute has a unique key.
+  repeated maps.fleetengine.v1.VehicleAttribute attributes = 9;
+}
+
+// A location with any additional identifiers.
+message LocationInfo {
+  // The lat/lng of the location.
+  google.type.LatLng point = 1;
+}
+
+// Represents a vehicle’s travel segment from its previous stop to the
+// current stop. If it is the first active stop, then it is from
+// Vehicle’s current location to this stop.
+message VehicleJourneySegment {
+  // Specifies the actual stop location and the tasks associated with
+  // the stop. Some fields of the VehicleStop may not be present if this journey
+  // segment is part of JourneySharingInfo.
+  VehicleStop stop = 1;
+
+  // Output only. The travel distance from the previous stop to this stop.
+  // If the current stop is the first stop in the list of journey
+  // segments, then the starting point is the vehicle's location recorded
+  // at the time that this stop was added to the list. This field may not be
+  // present if this journey segment is part of JourneySharingInfo.
+  google.protobuf.Int32Value driving_distance_meters = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The travel time from the previous stop to this stop.
+  // If the current stop is the first stop in the list of journey
+  // segments, then the starting point is the vehicle's location recorded
+  // at the time that this stop was added to the list.
+  //
+  // If this field is defined in the path
+  // `Task.journey_sharing_info.remaining_vehicle_journey_segments[0].driving_duration`,
+  // then it may be populated with the value from
+  // `DeliveryVehicle.remaining_duration` so it provides the remaining driving
+  // duration from the driver app's latest known location, not the driving time
+  // from the previous stop.
+  google.protobuf.Duration driving_duration = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The path from the previous stop to this stop. If the current stop is the
+  // first stop in the list of journey segments, then this is the path from the
+  // vehicle's current location to this stop at the time that the stop was
+  // added to the list. This field may not be present if this journey segment is
+  // part of JourneySharingInfo.
+  //
+  // If this field is defined in the path
+  // `Task.journey_sharing_info.remaining_vehicle_journey_segments[0].path`,
+  // then it may be populated with the LatLngs decoded from
+  // `DeliveryVehicle.current_route_segment` so it provides the driving
+  // path from the driver app's latest known location, not the path from
+  // the previous stop.
+  repeated google.type.LatLng path = 5;
+}
+
+// Describes a point where a vehicle will stop on its journey to perform
+// one or more tasks.
+message VehicleStop {
+  // Additional information about the task performed at this stop.
+  message TaskInfo {
+    // The task ID. This field will not be present when returned as part
+    // of GetTaskResponse or SearchTasksResponse.
+    string task_id = 1;
+
+    // The time required to perform the task.
+    google.protobuf.Duration task_duration = 2;
+  }
+
+  // The current state of a VehicleStop.
+  enum State {
+    // Unknown.
+    STATE_UNSPECIFIED = 0;
+
+    // Created but not actively routing to.
+    NEW = 1;
+
+    // Assigned and actively routing to.
+    ENROUTE = 2;
+
+    // Arrived at stop. Assumes that when the vehicle is routing to the next
+    // stop, all previous stops are completed.
+    ARRIVED = 3;
+  }
+
+  // Required. The location of the stop. Note that the locations in the tasks may not
+  // exactly match this location, but will be within a short distance.
+  // This field will not be present when returned as part of GetTaskResponse and
+  // SearchTasksResponse.
+  LocationInfo planned_location = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The list of tasks to be performed at this stop. Some fields of TaskInfo
+  // will not be present when returned as part of GetTaskResponse or
+  // SearchTasksResponse.
+  repeated TaskInfo tasks = 2;
+
+  // The state of the VehicleStop. This field will not be present when returned
+  // as part of GetTaskResponse or SearchTasksResponse.
+  State state = 3;
+}
