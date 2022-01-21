@@ -303,7 +303,7 @@ yarn_install(
 ##############################################################################
 
 # PHP micro-generator
-_gapic_generator_php_version = "1.3.1"
+_gapic_generator_php_version = "1.4.0"
 
 http_archive(
     name = "gapic_generator_php",
