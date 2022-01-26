@@ -110,8 +110,8 @@ go_repository(
     name = "org_golang_google_genproto",
     build_file_proto_mode = "disable_global",
     importpath = "google.golang.org/genproto",
-    sum = "h1:4xoALQmXxqVdDdLimpPyPeDdsJzo+nFTJw9euAMpqgM=",
-    version = "v0.0.0-20210729151513-df9385d47c1b",
+    sum = "h1:Et6SkiuvnBn+SgrSYXs/BrUpGB4mbdwt4R3vaPIlicA=",
+    version = "v0.0.0-20220107163113-42d7afdf6368",
 )
 
 go_rules_dependencies()
