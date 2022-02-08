@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -237,6 +237,30 @@ service DataCatalog {
     option (google.api.method_signature) = "parent";
   }
 
+  // Modifies entry overview, part of the business context of an
+  // [Entry][google.cloud.datacatalog.v1.Entry].
+  //
+  // To call this method, you must have the `datacatalog.entries.updateOverview`
+  // IAM permission on the corresponding project.
+  rpc ModifyEntryOverview(ModifyEntryOverviewRequest) returns (EntryOverview) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/entryGroups/*/entries/*}:modifyEntryOverview"
+      body: "*"
+    };
+  }
+
+  // Modifies contacts, part of the business context of an
+  // [Entry][google.cloud.datacatalog.v1.Entry].
+  //
+  // To call this method, you must have the `datacatalog.entries.updateContacts`
+  // IAM permission on the corresponding project.
+  rpc ModifyEntryContacts(ModifyEntryContactsRequest) returns (Contacts) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/entryGroups/*/entries/*}:modifyEntryContacts"
+      body: "*"
+    };
+  }
+
   // Creates a tag template.
   //
   // You must enable the Data Catalog API in the project identified by the
@@ -406,6 +430,8 @@ service DataCatalog {
   }
 
   // Lists tags assigned to an [Entry][google.cloud.datacatalog.v1.Entry].
+  // The [columns][google.cloud.datacatalog.v1.Tag.column] in the response are
+  // lowercased.
   rpc ListTags(ListTagsRequest) returns (ListTagsResponse) {
     option (google.api.http) = {
       get: "/v1/{parent=projects/*/locations/*/entryGroups/*/entries/*}/tags"
@@ -414,6 +440,26 @@ service DataCatalog {
       }
     };
     option (google.api.method_signature) = "parent";
+  }
+
+  // Marks an [Entry][google.cloud.datacatalog.v1.Entry] as starred by
+  // the current user. Starring information is private to each user.
+  rpc StarEntry(StarEntryRequest) returns (StarEntryResponse) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/entryGroups/*/entries/*}:star"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Marks an [Entry][google.cloud.datacatalog.v1.Entry] as NOT starred by
+  // the current user. Starring information is private to each user.
+  rpc UnstarEntry(UnstarEntryRequest) returns (UnstarEntryResponse) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/entryGroups/*/entries/*}:unstar"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
   }
 
   // Sets an access control policy for a resource. Replaces any existing
@@ -549,16 +595,17 @@ message SearchCatalogRequest {
     // value of this parameter.
     repeated string restricted_locations = 16 [(google.api.field_behavior) = OPTIONAL];
 
-    // Optional. If `true`, include [public tag
-    // templates][google.cloud.datacatalog.v1.TagTemplate.is_publicly_readable]
-    // in the search results. By default, they are included only if you have
-    // explicit permissions on them to view them. For example, if you are the
-    // owner.
+    // Optional. If `true`, search only among starred entries.
     //
-    // Other scope fields, for example, `include_org_ids`,
-    // still restrict the returned public tag templates and at least one of
-    // them is required.
-    bool include_public_tag_templates = 19 [(google.api.field_behavior) = OPTIONAL];
+    // By default, all results are returned, starred or not.
+    bool starred_only = 18 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. This field is deprecated. The search mechanism for public and private tag
+    // templates is the same.
+    bool include_public_tag_templates = 19 [
+      deprecated = true,
+      (google.api.field_behavior) = OPTIONAL
+    ];
   }
 
   // Required. The scope of this search request.
@@ -605,6 +652,7 @@ message SearchCatalogRequest {
   //
   // * `relevance` that can only be descending
   // * `last_modified_timestamp [asc|desc]` with descending (`desc`) as default
+  // * `default` that can only be descending
   //
   // If this parameter is omitted, it defaults to the descending `relevance`.
   string order_by = 5;
@@ -1037,6 +1085,9 @@ message Entry {
   // Default value is an empty string.
   string description = 4;
 
+  // Business Context of the entry. Not supported for BigQuery datasets.
+  BusinessContext business_context = 37;
+
   // Schema of the entry. An entry might not have any schema attached to it.
   Schema schema = 5;
 
@@ -1060,6 +1111,9 @@ message Entry {
 
   // Output only. Physical location of the entry.
   DataSource data_source = 20 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Additional information related to the entry. Private to the current user.
+  PersonalDetails personal_details = 26 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Specification that applies to a table resource. Valid only
@@ -1091,6 +1145,18 @@ message DataSourceConnectionSpec {
 // Specification that applies to a routine. Valid only for
 // entries with the `ROUTINE` type.
 message RoutineSpec {
+  // The fine-grained type of the routine.
+  enum RoutineType {
+    // Unspecified type.
+    ROUTINE_TYPE_UNSPECIFIED = 0;
+
+    // Non-builtin permanent scalar function.
+    SCALAR_FUNCTION = 1;
+
+    // Stored procedure.
+    PROCEDURE = 2;
+  }
+
   // Input or output argument of a function or stored procedure.
   message Argument {
     // The input or output mode of the argument.
@@ -1120,18 +1186,6 @@ message RoutineSpec {
     string type = 3;
   }
 
-  // The fine-grained type of the routine.
-  enum RoutineType {
-    // Unspecified type.
-    ROUTINE_TYPE_UNSPECIFIED = 0;
-
-    // Non-builtin permanent scalar function.
-    SCALAR_FUNCTION = 1;
-
-    // Stored procedure.
-    PROCEDURE = 2;
-  }
-
   // The type of the routine.
   RoutineType routine_type = 1;
 
@@ -1157,6 +1211,43 @@ message RoutineSpec {
     // Fields specific for BigQuery routines.
     BigQueryRoutineSpec bigquery_routine_spec = 6;
   }
+}
+
+// Business Context of the entry.
+message BusinessContext {
+  // Entry overview fields for rich text descriptions of entries.
+  EntryOverview entry_overview = 1;
+
+  // Contact people for the entry.
+  Contacts contacts = 2;
+}
+
+// Entry overview fields for rich text descriptions of entries.
+message EntryOverview {
+  // Entry overview with support for rich text.
+  //
+  // The overview must only contain Unicode characters, and should be
+  // formatted using HTML.
+  // The maximum length is 10 MiB as this value holds HTML descriptions
+  // including encoded images. The maximum length of the text without images
+  // is 100 KiB.
+  string overview = 1;
+}
+
+// Contact people for the entry.
+message Contacts {
+  // A contact person for the entry.
+  message Person {
+    // Designation of the person, for example, Data Steward.
+    string designation = 1;
+
+    // Email of the person in the format of `john.doe@example.com`,
+    // `<john.doe@example.com>`, or `John Doe<john.doe@example.com>`.
+    string email = 2;
+  }
+
+  // The list of contact people for the entry.
+  repeated Person people = 1;
 }
 
 // Entry group metadata.
@@ -1237,9 +1328,7 @@ message UpdateTagTemplateRequest {
   // request body, their values are emptied.
   //
   // Note: Updating the `is_publicly_readable` field may require up to 12
-  // hours to take effect in search results. Additionally, it also requires
-  // the `tagTemplates.getIamPolicy` and `tagTemplates.setIamPolicy`
-  // permissions.
+  // hours to take effect in search results.
   google.protobuf.FieldMask update_mask = 2;
 }
 
@@ -1486,6 +1575,74 @@ message ListEntriesResponse {
   // Pagination token of the next results page. Empty if there are no more items
   // in results.
   string next_page_token = 2;
+}
+
+// Request message for
+// [StarEntry][google.cloud.datacatalog.v1.DataCatalog.StarEntry].
+message StarEntryRequest {
+  // Required. The name of the entry to mark as starred.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "datacatalog.googleapis.com/Entry"
+    }
+  ];
+}
+
+// Response message for
+// [StarEntry][google.cloud.datacatalog.v1.DataCatalog.StarEntry].
+// Empty for now
+message StarEntryResponse {
+
+}
+
+// Request message for
+// [UnstarEntry][google.cloud.datacatalog.v1.DataCatalog.UnstarEntry].
+message UnstarEntryRequest {
+  // Required. The name of the entry to mark as **not** starred.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "datacatalog.googleapis.com/Entry"
+    }
+  ];
+}
+
+// Response message for
+// [UnstarEntry][google.cloud.datacatalog.v1.DataCatalog.UnstarEntry].
+// Empty for now
+message UnstarEntryResponse {
+
+}
+
+// Request message for
+// [ModifyEntryOverview][google.cloud.datacatalog.v1.DataCatalog.ModifyEntryOverview].
+message ModifyEntryOverviewRequest {
+  // Required. The full resource name of the entry.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "datacatalog.googleapis.com/Entry"
+    }
+  ];
+
+  // Required. The new value for the Entry Overview.
+  EntryOverview entry_overview = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request message for
+// [ModifyEntryContacts][google.cloud.datacatalog.v1.DataCatalog.ModifyEntryContacts].
+message ModifyEntryContactsRequest {
+  // Required. The full resource name of the entry.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "datacatalog.googleapis.com/Entry"
+    }
+  ];
+
+  // Required. The new value for the Contacts.
+  Contacts contacts = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
 // The enum field that lists all the types of entry resources in Data
