@@ -21,7 +21,6 @@ import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/protobuf/empty.proto";
-import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "google.golang.org/genproto/googleapis/cloud/dataplex/v1;dataplex";
@@ -34,6 +33,31 @@ option java_package = "com.google.cloud.dataplex.v1";
 service MetadataService {
   option (google.api.default_host) = "dataplex.googleapis.com";
   option (google.api.oauth_scopes) = "https://www.googleapis.com/auth/cloud-platform";
+
+  // Create a metadata entity.
+  rpc CreateEntity(CreateEntityRequest) returns (Entity) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/locations/*/lakes/*/zones/*}/entities"
+      body: "entity"
+    };
+    option (google.api.method_signature) = "parent,entity";
+  }
+
+  // Update a metadata entity. Only supports full resource update.
+  rpc UpdateEntity(UpdateEntityRequest) returns (Entity) {
+    option (google.api.http) = {
+      put: "/v1/{entity.name=projects/*/locations/*/lakes/*/zones/*/entities/*}"
+      body: "entity"
+    };
+  }
+
+  // Delete a metadata entity.
+  rpc DeleteEntity(DeleteEntityRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/v1/{name=projects/*/locations/*/lakes/*/zones/*/entities/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
 
   // Get a metadata entity.
   rpc GetEntity(GetEntityRequest) returns (Entity) {
@@ -51,6 +75,23 @@ service MetadataService {
     option (google.api.method_signature) = "parent";
   }
 
+  // Create a metadata partition.
+  rpc CreatePartition(CreatePartitionRequest) returns (Partition) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/locations/*/lakes/*/zones/*/entities/*}/partitions"
+      body: "partition"
+    };
+    option (google.api.method_signature) = "parent,partition";
+  }
+
+  // Delete a metadata partition.
+  rpc DeletePartition(DeletePartitionRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/v1/{name=projects/*/locations/*/lakes/*/zones/*/entities/*/partitions/**}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
   // Get a metadata partition of an entity.
   rpc GetPartition(GetPartitionRequest) returns (Partition) {
     option (google.api.http) = {
@@ -66,6 +107,53 @@ service MetadataService {
     };
     option (google.api.method_signature) = "parent";
   }
+}
+
+// Create a metadata entity request.
+message CreateEntityRequest {
+  // Required. The resource name of the parent zone:
+  // `projects/{project_number}/locations/{location_id}/lakes/{lake_id}/zones/{zone_id}`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dataplex.googleapis.com/Zone"
+    }
+  ];
+
+  // Required. Entity resource.
+  Entity entity = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Only validate the request, but do not perform mutations.
+  // The default is false.
+  bool validate_only = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Update a metadata entity request.
+// The exiting entity will be fully replaced by the entity in the request.
+// The entity ID is mutable. To modify the ID, use the current entity ID in the
+// request URL and specify the new ID in the request body.
+message UpdateEntityRequest {
+  // Required. Update description.
+  Entity entity = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Only validate the request, but do not perform mutations.
+  // The default is false.
+  bool validate_only = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Delete a metadata entity request.
+message DeleteEntityRequest {
+  // Required. The resource name of the entity:
+  // `projects/{project_number}/locations/{location_id}/lakes/{lake_id}/zones/{zone_id}/entities/{entity_id}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dataplex.googleapis.com/Entity"
+    }
+  ];
+
+  // Required. The etag associated with the partition if it was previously retrieved.
+  string etag = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
 // List metadata entities request.
@@ -95,8 +183,8 @@ message ListEntitiesRequest {
   EntityView view = 2 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. Maximum number of entities to return. The service may return fewer than
-  // this value. If unspecified, at most 10 entities will be returned. The
-  // maximum value is 1000; values above 1000 are set to 1000.
+  // this value. If unspecified, 100 entities will be returned by default. The
+  // maximum value is 500; larger values will will be truncated to 500.
   int32 page_size = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Page token received from a previous `ListEntities` call. Provide
@@ -105,7 +193,14 @@ message ListEntitiesRequest {
   // page token.
   string page_token = 4 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Filter request by name prefix.
+  // Optional. The following filter parameters can be added to the URL to limit the
+  // entities returned by the API:
+  //
+  // - Entity ID: ?filter="id=entityID"
+  // - Asset ID: ?filter="asset=assetID"
+  // - Data path ?filter="data_path=gs://my-bucket"
+  // - Is HIVE compatible: ?filter=”hive_compatible=true”
+  // - Is BigQuery compatible: ?filter=”bigquery_compatible=true”
   string filter = 5 [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -132,7 +227,7 @@ message GetEntityRequest {
     // Include basic information and schema.
     SCHEMA = 2;
 
-    // Include everything.
+    // Include everything. Currently, this is the same as the SCHEMA view.
     FULL = 4;
   }
 
@@ -162,8 +257,8 @@ message ListPartitionsRequest {
   ];
 
   // Optional. Maximum number of partitions to return. The service may return fewer than
-  // this value. If unspecified, at most 10 partitions will be returned. The
-  // maximum value is 1000; values above 1000 will be coerced to 1000.
+  // this value. If unspecified, 100 partitions will be returned by default. The
+  // maximum page size is 500; larger values will will be truncated to 500.
   int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Page token received from a previous `ListPartitions` call. Provide
@@ -172,8 +267,66 @@ message ListPartitionsRequest {
   // page token.
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Filter request.
+  // Optional. Filter the partitions returned to the caller using a key vslue pair
+  // expression. The filter expression supports:
+  //
+  // - logical operators: AND, OR
+  // - comparison operators: <, >, >=, <= ,=, !=
+  // - LIKE operators:
+  //     - The right hand of a LIKE operator supports “.” and
+  //       “*” for wildcard searches, for example "value1 LIKE ".*oo.*"
+  // - parenthetical grouping: ( )
+  //
+  // Sample filter expression: `?filter="key1 < value1 OR key2 > value2"
+  //
+  // **Notes:**
+  //
+  // - Keys to the left of operators are case insensitive.
+  // - Partition results are sorted first by creation time, then by
+  //   lexicographic order.
+  // - Up to 20 key value filter pairs are allowed, but due to performance
+  //   considerations, only the first 10 will be used as a filter.
   string filter = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Create metadata partition request.
+message CreatePartitionRequest {
+  // Required. The resource name of the parent zone:
+  // `projects/{project_number}/locations/{location_id}/lakes/{lake_id}/zones/{zone_id}/entities/{entity_id}`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dataplex.googleapis.com/Entity"
+    }
+  ];
+
+  // Required. Partition resource.
+  Partition partition = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Only validate the request, but do not perform mutations.
+  // The default is false.
+  bool validate_only = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Delete metadata partition request.
+message DeletePartitionRequest {
+  // Required. The resource name of the partition.
+  // format:
+  // `projects/{project_number}/locations/{location_id}/lakes/{lake_id}/zones/{zone_id}/entities/{entity_id}/partitions/{partition_value_path}`.
+  // The {partition_value_path} segment consists of an ordered sequence of
+  // partition values separated by "/". All values must be provided.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dataplex.googleapis.com/Partition"
+    }
+  ];
+
+  // Optional. The etag associated with the partition if it was previously retrieved.
+  string etag = 2 [
+    deprecated = true,
+    (google.api.field_behavior) = OPTIONAL
+  ];
 }
 
 // List metadata partitions response.
@@ -189,7 +342,9 @@ message ListPartitionsResponse {
 // Get metadata partition request.
 message GetPartitionRequest {
   // Required. The resource name of the partition:
-  // `projects/{project_number}/locations/{location_id}/lakes/{lake_id}/zones/{zone_id}/entities/{entity_id}/partitions/{partition_id}`.
+  // `projects/{project_number}/locations/{location_id}/lakes/{lake_id}/zones/{zone_id}/entities/{entity_id}/partitions/{partition_value_path}`.
+  // The {partition_value_path} segment consists of an ordered sequence of
+  // partition values separated by "/". All values must be provided.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -246,10 +401,11 @@ message Entity {
     }
   ];
 
-  // Optional. User friendly display name.
+  // Optional. Display name must be shorter than or equal to 63 characters.
   string display_name = 2 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. User friendly longer description text.
+  // Optional. User friendly longer description text. Must be shorter than or equal to
+  // 1024 characters.
   string description = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. The time when the entity was created.
@@ -261,18 +417,26 @@ message Entity {
   // Required. A user-provided entity ID. It is mutable, and will be used as the
   // published table name. Specifying a new ID in an update entity
   // request will override the existing value.
+  // The ID must contain only letters (a-z, A-Z), numbers (0-9), and
+  // underscores. Must begin with a letter.
   string id = 7 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. The etag for this entity.
-  // Required for update requests. It must match the server's etag.
+  // Optional. The etag for this entity. Required for update and delete requests. Must
+  // match the server's etag.
   string etag = 8 [(google.api.field_behavior) = OPTIONAL];
 
-  // Required. The type of entity.
-  Type type = 10 [(google.api.field_behavior) = REQUIRED];
+  // Required. Immutable. The type of entity.
+  Type type = 10 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
 
-  // Required. The name of the asset associated with the storage location containing the
-  // entity data.
-  string asset = 11 [(google.api.field_behavior) = REQUIRED];
+  // Required. Immutable. The ID of the asset associated with the storage location containing the
+  // entity data. The entity must be with in the same zone with the asset.
+  string asset = 11 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
 
   // Required. Immutable. The storage path of the entity data.
   // For Cloud Storage data, this is the fully-qualified path to the entity,
@@ -292,8 +456,11 @@ message Entity {
   // Output only. The name of the associated Data Catalog entry.
   string catalog_entry = 14 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Required. Identifies the storage system of the entity data.
-  StorageSystem system = 15 [(google.api.field_behavior) = REQUIRED];
+  // Required. Immutable. Identifies the storage system of the entity data.
+  StorageSystem system = 15 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
 
   // Required. Identifies the storage format of the entity data.
   // It does not apply to entities with data stored in BigQuery.
@@ -315,9 +482,13 @@ message Partition {
     pattern: "projects/{project}/locations/{location}/lakes/{lake}/zones/{zone}/entities/{entity}/partitions/{partition}"
   };
 
-  // Output only. The resource name of the partition, of the form:
-  // `projects/{project_number}/locations/{location_id}/lakes/{lake_id}/zones/{zone_id}/entities/{entity_id}/partitions/{partition_id}`.
-  // {partition_id} is a generated unique ID.
+  // Output only. The values must be HTML URL encoded two times before constructing the path.
+  // For example, if you have a value of "US:CA", encoded it two times and you
+  // get "US%253ACA". Then if you have the 2nd value is "CA#Sunnyvale", encoded
+  // two times and you get "CA%2523Sunnyvale". The partition values path is
+  // "US%253ACA/CA%2523Sunnyvale". The final URL will be
+  // "https://.../partitions/US%253ACA/CA%2523Sunnyvale". The name field in the
+  // responses will always have the encoded format.
   string name = 1 [
     (google.api.field_behavior) = OUTPUT_ONLY,
     (google.api.resource_reference) = {
@@ -334,14 +505,17 @@ message Partition {
 
   // Required. Immutable. The location of the entity data within the partition, for example,
   // `gs://bucket/path/to/entity/key1=value1/key2=value2`.
+  // Or `projects/<project_id>/datasets/<dataset_id>/tables/<table_id>`
   string location = 3 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.field_behavior) = IMMUTABLE
   ];
 
   // Optional. The etag for this partition.
-  // Required for update requests. It must match the server's etag.
-  string etag = 4 [(google.api.field_behavior) = OPTIONAL];
+  string etag = 4 [
+    deprecated = true,
+    (google.api.field_behavior) = OPTIONAL
+  ];
 }
 
 // Schema information describing the structure and layout of the data.
@@ -415,10 +589,12 @@ message Schema {
 
   // Represents a column field within a table schema.
   message SchemaField {
-    // Required. The name of the field.
+    // Required. The name of the field. The maximum length is 767 characters. The name
+    // must begins with a letter and not contains `:` and `.`.
     string name = 1 [(google.api.field_behavior) = REQUIRED];
 
-    // Optional. User friendly field description.
+    // Optional. User friendly field description. Must be less than or equal to 1024
+    // characters.
     string description = 2 [(google.api.field_behavior) = OPTIONAL];
 
     // Required. The type of field.
@@ -431,13 +607,19 @@ message Schema {
     repeated SchemaField fields = 10 [(google.api.field_behavior) = OPTIONAL];
   }
 
-  // Represents a key field within the entity's partition structure.
+  // Represents a key field within the entity's partition structure. You could
+  // have up to 20 partition fields, but only the first 10 partitions have the
+  // filtering ability due to performance consideration.
   message PartitionField {
-    // Required. The name of the field.
+    // Required. Partition name is editable if only the partition style is not HIVE
+    // compatible. The maximum length allowed is 767 characters.
     string name = 1 [(google.api.field_behavior) = REQUIRED];
 
-    // Required. The type of field.
-    Type type = 2 [(google.api.field_behavior) = REQUIRED];
+    // Required. Immutable. The type of field.
+    Type type = 2 [
+      (google.api.field_behavior) = REQUIRED,
+      (google.api.field_behavior) = IMMUTABLE
+    ];
   }
 
   // The structure of paths within the entity, which represent partitions.
@@ -451,8 +633,23 @@ message Schema {
     HIVE_COMPATIBLE = 1;
   }
 
-  // Required. Whether the schema is user-managed or managed by the service. User-managed
-  // schemas are not automatically updated by discovery jobs.
+  // Required. Whether the schema is user-managed or managed by the service.
+  // - Set user_manage to false if you would like Dataplex to help you manage
+  // the schema. You will get the full service provided by Dataplex discovery,
+  // including new data discovery, schema inference and schema evolution. You
+  // can still provide input the schema of the entities, for example renaming a
+  // schema field, changing CSV or Json options if you think the discovered
+  // values are not as accurate. Dataplex will consider your input as the
+  // initial schema (as if they were produced by the previous discovery run),
+  // and will evolve schema or flag actions based on that.
+  // - Set user_manage to true if you would like to fully manage the entity
+  // schema by yourself. This is useful when you would like to manually specify
+  // the schema for a table. In this case, the schema defined by the user is
+  // guaranteed to be kept unchanged and would not be overwritten. But this also
+  // means Dataplex will not provide schema evolution management for you.
+  // Dataplex will still be able to manage partition registration (i.e., keeping
+  // the list of partitions up to date) when Dataplex discovery is turned on and
+  // user_managed is set to true.
   bool user_managed = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. The sequence of fields describing data in table entities.
@@ -470,24 +667,26 @@ message Schema {
 message StorageFormat {
   // Describes CSV and similar semi-structured data formats.
   message CsvOptions {
-    // Optional. The character encoding of the data. The default is UTF-8.
+    // Optional. The character encoding of the data. Accepts "US-ASCII", "UTF-8", and
+    // "ISO-8859-1". Defaults to UTF-8 if unspecified.
     string encoding = 1 [(google.api.field_behavior) = OPTIONAL];
 
     // Optional. The number of rows to interpret as header rows that should be skipped
-    // when reading data rows.
+    // when reading data rows. Defaults to 0.
     int32 header_rows = 2 [(google.api.field_behavior) = OPTIONAL];
 
     // Optional. The delimiter used to separate values. Defaults to ','.
     string delimiter = 3 [(google.api.field_behavior) = OPTIONAL];
 
-    // Optional. The character used to quote column values. Defaults to empty,
-    // implying unquoted data.
+    // Optional. The character used to quote column values. Accepts '"' and '''.
+    // Defaults to '"' if unspecified.
     string quote = 4 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Describes JSON data format.
   message JsonOptions {
-    // Optional. The character encoding of the data. The default is UTF-8.
+    // Optional. The character encoding of the data. Accepts "US-ASCII", "UTF-8" and
+    // "ISO-8859-1". Defaults to UTF-8 if not specified.
     string encoding = 1 [(google.api.field_behavior) = OPTIONAL];
   }
 
@@ -514,7 +713,7 @@ message StorageFormat {
     // Image data formats (such as jpg and png).
     IMAGE = 200;
 
-    // Audio data formats (such as mp3 and wav).
+    // Audio data formats (such as mp3, and wav).
     AUDIO = 201;
 
     // Video data formats (such as mp4 and mpg).
@@ -546,15 +745,26 @@ message StorageFormat {
   }
 
   // Output only. The data format associated with the stored data, which represents
-  // content type values.
+  // content type values. The value is inferred from mime type.
   Format format = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Optional. The compression type associated with the stored data.
   // If unspecified, the data is uncompressed.
   CompressionFormat compression_format = 2 [(google.api.field_behavior) = OPTIONAL];
 
-  // Required. The mime type descriptor for the data. This field is valid for formats
-  // other than `UNKNOWN` and `MIXED`.
+  // Required. The mime type descriptor for the data. Must match the pattern
+  // {type}/{subtype}. Supported values:
+  // - application/x-parquet
+  // - application/x-avro
+  // - application/x-orc
+  // - application/x-tfrecord
+  // - application/json
+  // - application/{subtypes}
+  // - text/csv
+  // - text/<subtypes>
+  // - image/{image subtype}
+  // - video/{video subtype}
+  // - audio/{audio subtype}
   string mime_type = 3 [(google.api.field_behavior) = REQUIRED];
 
   // Additional format-specific options.
