@@ -120,9 +120,9 @@ go_register_toolchains()
 
 gazelle_dependencies()
 
-_rules_gapic_version = "0.11.1"
+_rules_gapic_version = "0.12.0"
 
-_rules_gapic_sha256 = "edf4fa526cd8d9ae0d4aab3dc608a985ef75f631fe14f0c109a793eab2b5c31d"
+_rules_gapic_sha256 = "b5953a97a2e10b72ce9376a20f8446a55a30823c2984c42e19da20efffb57858"
 
 http_archive(
     name = "rules_gapic",
