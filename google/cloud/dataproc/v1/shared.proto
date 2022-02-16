@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -106,6 +106,179 @@ message RuntimeInfo {
 
   // Output only. A URI pointing to the location of the diagnostics tarball.
   string diagnostic_output_uri = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The cluster's GKE config.
+message GkeClusterConfig {
+  // Optional. A target GKE cluster to deploy to. It must be in the same project and
+  // region as the Dataproc cluster (the GKE cluster can be zonal or regional).
+  // Format: 'projects/{project}/locations/{location}/clusters/{cluster_id}'
+  string gke_cluster_target = 2 [
+    (google.api.field_behavior) = OPTIONAL
+  ];
+
+  // Optional. GKE NodePools where workloads will be scheduled. At least one node pool
+  // must be assigned the 'default' role. Each role can be given to only a
+  // single NodePoolTarget. All NodePools must have the same location settings.
+  // If a nodePoolTarget is not specified, Dataproc constructs a default
+  // nodePoolTarget.
+  repeated GkeNodePoolTarget node_pool_target = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The configuration for running the Dataproc cluster on Kubernetes.
+message KubernetesClusterConfig {
+  // Optional. A namespace within the Kubernetes cluster to deploy into. If this namespace
+  // does not exist, it is created. If it exists, Dataproc
+  // verifies that another Dataproc VirtualCluster is not installed
+  // into it. If not specified, the name of the Dataproc Cluster is used.
+  string kubernetes_namespace = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  oneof config {
+    // Required. The configuration for running the Dataproc cluster on GKE.
+    GkeClusterConfig gke_cluster_config = 2 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Optional. The software configuration for this Dataproc cluster running on Kubernetes.
+  KubernetesSoftwareConfig kubernetes_software_config = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The software configuration for this Dataproc cluster running on Kubernetes.
+message KubernetesSoftwareConfig {
+  // The components that should be installed in this Dataproc cluster. The key
+  // must be a string from the KubernetesComponent enumeration. The value is
+  // the version of the software to be installed.
+  // At least one entry must be specified.
+  map<string, string> component_version = 1;
+
+  // The properties to set on daemon config files.
+  //
+  // Property keys are specified in `prefix:property` format, for example
+  // `spark:spark.kubernetes.container.image`. The following are supported
+  // prefixes and their mappings:
+  //
+  // * spark:  `spark-defaults.conf`
+  //
+  // For more information, see [Cluster
+  // properties](https://cloud.google.com/dataproc/docs/concepts/cluster-properties).
+  map<string, string> properties = 2;
+}
+
+// GKE NodePools that Dataproc workloads run on.
+message GkeNodePoolTarget {
+  // `Role` specifies whose tasks will run on the NodePool. The roles can be
+  // specific to workloads. Exactly one GkeNodePoolTarget within the
+  // VirtualCluster must have 'default' role, which is used to run all workloads
+  // that are not associated with a NodePool.
+  enum Role {
+    // Role is unspecified.
+    ROLE_UNSPECIFIED = 0;
+
+    // Any roles that are not directly assigned to a NodePool run on the
+    // `default` role's NodePool.
+    DEFAULT = 1;
+
+    // Run controllers and webhooks.
+    CONTROLLER = 2;
+
+    // Run spark driver.
+    SPARK_DRIVER = 3;
+
+    // Run spark executors.
+    SPARK_EXECUTOR = 4;
+  }
+
+  // Required. The target GKE NodePool.
+  // Format:
+  // 'projects/{project}/locations/{location}/clusters/{cluster}/nodePools/{node_pool}'
+  string node_pool = 1 [
+    (google.api.field_behavior) = REQUIRED
+  ];
+
+  // Required. The types of role for a GKE NodePool
+  repeated Role roles = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The configuration for the GKE NodePool.
+  //
+  // If specified, Dataproc attempts to create a NodePool with the
+  // specified shape. If one with the same name already exists, it is
+  // verified against all specified fields. If a field differs, the
+  // virtual cluster creation will fail.
+  //
+  // If omitted, any NodePool with the specified name is used. If a
+  // NodePool with the specified name does not exist, Dataproc create a NodePool
+  // with default values.
+  GkeNodePoolConfig node_pool_config = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The configuration of a GKE NodePool used by a [Dataproc-on-GKE
+// cluster](https://cloud.google.com/dataproc/docs/concepts/jobs/dataproc-gke#create-a-dataproc-on-gke-cluster).
+message GkeNodePoolConfig {
+  // Parameters that describe cluster nodes.
+  message GkeNodeConfig {
+    // Optional. The name of a Compute Engine [machine
+    // type](https://cloud.google.com/compute/docs/machine-types).
+    string machine_type = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Whether the nodes are created as [preemptible VM
+    // instances](https://cloud.google.com/compute/docs/instances/preemptible).
+    bool preemptible = 10 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The number of local SSD disks to attach to the node, which is limited by
+    // the maximum number of disks allowable per zone (see [Adding Local
+    // SSDs](https://cloud.google.com/compute/docs/disks/local-ssd)).
+    int32 local_ssd_count = 7 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. A list of [hardware
+    // accelerators](https://cloud.google.com/compute/docs/gpus) to attach to
+    // each node.
+    repeated GkeNodePoolAcceleratorConfig accelerators = 11 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. [Minimum CPU
+    // platform](https://cloud.google.com/compute/docs/instances/specify-min-cpu-platform)
+    // to be used by this instance. The instance may be scheduled on the
+    // specified or a newer CPU platform. Specify the friendly names of CPU
+    // platforms, such as "Intel Haswell"` or Intel Sandy Bridge".
+    string min_cpu_platform = 13 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // A GkeNodeConfigAcceleratorConfig represents a Hardware Accelerator request
+  // for a NodePool.
+  message GkeNodePoolAcceleratorConfig {
+    // The number of accelerator cards exposed to an instance.
+    int64 accelerator_count = 1;
+
+    // The accelerator type resource namename (see GPUs on Compute Engine).
+    string accelerator_type = 2;
+  }
+
+  // GkeNodePoolAutoscaling contains information the cluster autoscaler needs to
+  // adjust the size of the node pool to the current cluster usage.
+  message GkeNodePoolAutoscalingConfig {
+    // The minimum number of nodes in the NodePool. Must be >= 0 and <=
+    // max_node_count.
+    int32 min_node_count = 2;
+
+    // The maximum number of nodes in the NodePool. Must be >= min_node_count.
+    // **Note:** Quota must be sufficient to scale up the cluster.
+    int32 max_node_count = 3;
+  }
+
+  // Optional. The node pool configuration.
+  GkeNodeConfig config = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The list of Compute Engine
+  // [zones](https://cloud.google.com/compute/docs/zones#available) where
+  // NodePool's nodes will be located.
+  //
+  // **Note:** Currently, only one zone may be specified.
+  //
+  // If a location is not specified during NodePool creation, Dataproc will
+  // choose a location.
+  repeated string locations = 13 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The autoscaler configuration for this NodePool. The autoscaler is enabled
+  // only when a valid configuration is present.
+  GkeNodePoolAutoscalingConfig autoscaling = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Cluster components that can be activated.
