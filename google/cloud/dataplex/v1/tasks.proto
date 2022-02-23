@@ -1,0 +1,344 @@
+// Copyright 2022 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.dataplex.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/dataplex/v1/resources.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "google.golang.org/genproto/googleapis/cloud/dataplex/v1;dataplex";
+option java_multiple_files = true;
+option java_outer_classname = "TasksProto";
+option java_package = "com.google.cloud.dataplex.v1";
+
+// A task represents a user-visible job.
+message Task {
+  option (google.api.resource) = {
+    type: "dataplex.googleapis.com/Task"
+    pattern: "projects/{project}/locations/{location}/lakes/{lake}/tasks/{task}"
+  };
+
+  // Configuration for the underlying infrastructure used to run workloads.
+  message InfrastructureSpec {
+    // Batch compute resources associated with the task.
+    message BatchComputeResources {
+      // Optional. Total number of job executors.
+      int32 executors_count = 1 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Max configurable executors.
+      // If max_executors_count > executors_count, then auto-scaling is enabled.
+      int32 max_executors_count = 2 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Container Image Runtime Configuration used with Batch execution.
+    message ContainerImageRuntime {
+      // Optional. A list of Java JARS to add to the classpath.
+      // Valid input includes Cloud Storage URIs to Jar binaries.
+      // For example, `gs://bucket-name/my/path/to/file.jar`.
+      repeated string java_jars = 2 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. A list of python packages to be installed.
+      // Valid formats include Cloud Storage URI to a PIP installable library.
+      // For example, `gs://bucket-name/my/path/to/lib.tar.gz`.
+      repeated string python_packages = 3 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Override to common configuration of open source components installed on
+      // the Dataproc cluster.
+      // The properties to set on daemon config files.
+      // Property keys are specified in `prefix:property` format, for example
+      // `core:hadoop.tmp.dir`.
+      // For more information, see [Cluster
+      // properties](https://cloud.google.com/dataproc/docs/concepts/cluster-properties).
+      map<string, string> properties = 4 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Cloud VPC Network used to run the infrastructure.
+    message VpcNetwork {
+      // The Cloud VPC network identifier.
+      oneof network_name {
+        // Optional. The Cloud VPC network in which the job is run. By default, the Cloud
+        // VPC network named Default within the project is used.
+        string network = 1 [(google.api.field_behavior) = OPTIONAL];
+
+        // Optional. The Cloud VPC sub-network in which the job is run.
+        string sub_network = 2 [(google.api.field_behavior) = OPTIONAL];
+      }
+
+      // Optional. List of network tags to apply to the job.
+      repeated string network_tags = 3 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Hardware config.
+    oneof resources {
+      // Compute resources needed for a Task when using Dataproc Serverless.
+      BatchComputeResources batch = 52;
+    }
+
+    // Software config.
+    oneof runtime {
+      // Container Image Runtime Configuration.
+      ContainerImageRuntime container_image = 101;
+    }
+
+    // Networking config.
+    oneof network {
+      // Vpc network.
+      VpcNetwork vpc_network = 150;
+    }
+  }
+
+  // Task scheduling and trigger settings.
+  message TriggerSpec {
+    // Determines how often and when the job will run.
+    enum Type {
+      // Unspecified trigger type.
+      TYPE_UNSPECIFIED = 0;
+
+      // The task runs one-time shortly after Task Creation.
+      ON_DEMAND = 1;
+
+      // The task is scheduled to run periodically.
+      RECURRING = 2;
+    }
+
+    // Required. Immutable. Trigger type of the user-specified Task.
+    Type type = 5 [
+      (google.api.field_behavior) = REQUIRED,
+      (google.api.field_behavior) = IMMUTABLE
+    ];
+
+    // Optional. The first run of the task will be after this time.
+    // If not specified, the task will run shortly after being submitted if
+    // ON_DEMAND and based on the schedule if RECURRING.
+    google.protobuf.Timestamp start_time = 6 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Prevent the task from executing.
+    // This does not cancel already running tasks. It is intended to temporarily
+    // disable RECURRING tasks.
+    bool disabled = 4 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Number of retry attempts before aborting.
+    // Set to zero to never attempt to retry a failed task.
+    int32 max_retries = 7 [(google.api.field_behavior) = OPTIONAL];
+
+    // Trigger only applies for `RECURRING` tasks.
+    oneof trigger {
+      // Optional. Cron schedule (https://en.wikipedia.org/wiki/Cron) for running
+      // tasks periodically.
+      // To explicitly set a timezone to the cron tab, apply a prefix in the
+      // cron tab: "CRON_TZ=${IANA_TIME_ZONE}" or "TZ=${IANA_TIME_ZONE}".
+      // The ${IANA_TIME_ZONE} may only be a valid string from IANA time zone
+      // database. For example, "CRON_TZ=America/New_York 1 * * * *", or
+      // "TZ=America/New_York 1 * * * *".
+      // This field is required for RECURRING tasks.
+      string schedule = 100 [(google.api.field_behavior) = OPTIONAL];
+    }
+  }
+
+  // Execution related settings, like retry and service_account.
+  message ExecutionSpec {
+    // Optional. The arguments to pass to the task.
+    // The args can use placeholders of the format ${placeholder} as
+    // part of key/value string. These will be interpolated before passing the
+    // args to the driver. Currently supported placeholders:
+    // - ${task_id}
+    // - ${job_time}
+    // To pass positional args, set the key as TASK_ARGS. The value should be a
+    // comma-separated string of all the positional arguments. To use a
+    // delimiter other than comma, refer to
+    // https://cloud.google.com/sdk/gcloud/reference/topic/escaping. In case of
+    // other keys being present in the args, then TASK_ARGS will be passed as
+    // the last argument.
+    map<string, string> args = 4 [(google.api.field_behavior) = OPTIONAL];
+
+    // Required. Service account to use to execute a task.
+    // If not provided, the default Compute service account for the project is
+    // used.
+    string service_account = 5 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. The maximum duration after which the job execution is expired.
+    google.protobuf.Duration max_job_execution_lifetime = 8 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // User-specified config for running a Spark task.
+  message SparkTaskConfig {
+    // Required. The specification of the main method to call to drive the
+    // job. Specify either the jar file that contains the main class or the
+    // main class name.
+    oneof driver {
+      // The Cloud Storage URI of the jar file that contains the main class.
+      // The execution args are passed in as a sequence of named process
+      // arguments (`--key=value`).
+      string main_jar_file_uri = 100;
+
+      // The name of the driver's main class. The jar file that contains the
+      // class must be in the default CLASSPATH or specified in
+      // `jar_file_uris`.
+      // The execution args are passed in as a sequence of named process
+      // arguments (`--key=value`).
+      string main_class = 101;
+
+      // The Gcloud Storage URI of the main Python file to use as the driver.
+      // Must be a .py file. The execution args are passed in as a sequence of
+      // named process arguments (`--key=value`).
+      string python_script_file = 102;
+
+      // A reference to a query file. This can be the Cloud Storage URI of the
+      // query file or it can the path to a SqlScript Content. The execution
+      // args are used to declare a set of script variables
+      // (`set key="value";`).
+      string sql_script_file = 104;
+
+      // The query text.
+      // The execution args are used to declare a set of script variables
+      // (`set key="value";`).
+      string sql_script = 105;
+    }
+
+    // Optional. Cloud Storage URIs of files to be placed in the working directory of each
+    // executor.
+    repeated string file_uris = 3 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Cloud Storage URIs of archives to be extracted into the working directory
+    // of each executor. Supported file types: .jar, .tar, .tar.gz, .tgz, and
+    // .zip.
+    repeated string archive_uris = 4 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Infrastructure specification for the execution.
+    InfrastructureSpec infrastructure_spec = 6 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Output only. The relative resource name of the task, of the form:
+  // projects/{project_number}/locations/{location_id}/lakes/{lake_id}/
+  // tasks/{task_id}.
+  string name = 1 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "dataplex.googleapis.com/Task"
+    }
+  ];
+
+  // Output only. System generated globally unique ID for the task. This ID will be
+  // different if the task is deleted and re-created with the same name.
+  string uid = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time when the task was created.
+  google.protobuf.Timestamp create_time = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time when the task was last updated.
+  google.protobuf.Timestamp update_time = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Description of the task.
+  string description = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. User friendly display name.
+  string display_name = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Current state of the task.
+  State state = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. User-defined labels for the task.
+  map<string, string> labels = 8 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. Spec related to how often and when a task should be triggered.
+  TriggerSpec trigger_spec = 100 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Spec related to how a task is executed.
+  ExecutionSpec execution_spec = 101 [(google.api.field_behavior) = REQUIRED];
+
+  // Task template specific user-specified config.
+  oneof config {
+    // Config related to running custom Spark tasks.
+    SparkTaskConfig spark = 300;
+  }
+}
+
+// A job represents an instance of a task.
+message Job {
+  option (google.api.resource) = {
+    type: "dataplex.googleapis.com/Job"
+    pattern: "projects/{project}/locations/{location}/lakes/{lake}/tasks/{task}/jobs/{job}"
+  };
+
+  enum Service {
+    // Service used to run the job is unspecified.
+    SERVICE_UNSPECIFIED = 0;
+
+    // Dataproc service is used to run this job.
+    DATAPROC = 1;
+  }
+
+  enum State {
+    // The job state is unknown.
+    STATE_UNSPECIFIED = 0;
+
+    // The job is running.
+    RUNNING = 1;
+
+    // The job is cancelling.
+    CANCELLING = 2;
+
+    // The job cancellation was successful.
+    CANCELLED = 3;
+
+    // The job completed successfully.
+    SUCCEEDED = 4;
+
+    // The job is no longer running due to an error.
+    FAILED = 5;
+
+    // The job was cancelled outside of Dataplex.
+    ABORTED = 6;
+  }
+
+  // Output only. The relative resource name of the job, of the form:
+  // `projects/{project_number}/locations/{location_id}/lakes/{lake_id}/tasks/{task_id}/jobs/{job_id}`.
+  string name = 1 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "dataplex.googleapis.com/Job"
+    }
+  ];
+
+  // Output only. System generated globally unique ID for the job.
+  string uid = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time when the job was started.
+  google.protobuf.Timestamp start_time = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time when the job ended.
+  google.protobuf.Timestamp end_time = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Execution state for the job.
+  State state = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The number of times the job has been retried (excluding the
+  // initial attempt).
+  uint32 retry_count = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The underlying service running a job.
+  Service service = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The full resource name for the job run under a particular service.
+  string service_job = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Additional information about the current state.
+  string message = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
