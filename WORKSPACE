@@ -296,7 +296,7 @@ yarn_install(
 ##############################################################################
 
 # PHP micro-generator
-_gapic_generator_php_version = "1.4.5"
+_gapic_generator_php_version = "1.4.6"
 
 http_archive(
     name = "gapic_generator_php",
@@ -355,9 +355,9 @@ gapic_generator_csharp_repositories()
 # Ruby
 ##############################################################################
 
-_gapic_generator_ruby_version = "v0.10.6"
+_gapic_generator_ruby_version = "v0.10.7"
 
-_gapic_generator_ruby_sha256 = "12fc0b999099594272bc327bcce789745d7059a4dd836120e863434b159e1f9e"
+_gapic_generator_ruby_sha256 = "730c6e8708a861c6f1db80ed3ebd781e18c07476269ee3fe4582424fb367481a"
 
 http_archive(
     name = "gapic_generator_ruby",
