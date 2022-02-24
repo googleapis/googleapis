@@ -30,8 +30,9 @@ jobs:
           description: "Google like to break things, so ensure that google-cloud-go is up to date, but still working"
           command: |
             git clone https://github.com/googleapis/google-cloud-go.git .
-            git checkout tags/v0.100.2
-            # enable generation for gads which has a hardcoded value to skip by renaming the skip string
+            echo "temporary fix to checkout a bugfix branch instead of a tag. issue: https://github.com/googleapis/google-cloud-go/pull/5674"
+            git checkout logging-service-yaml
+            echo "replacing hardcoded gads bypass string"
             grep -rl 'google.golang.org/genproto/googleapis/ads' ./internal/gapicgen/generator |
             xargs sed --in-place=backup 's,google.golang.org/genproto/googleapis/ads,google.golang.org/genproto/googleapis/ads_disabled,g'
       - run:
@@ -41,6 +42,13 @@ jobs:
             mkdir -p /tmp/run
             go build -o /tmp/src/genbot cloud.google.com/go/internal/gapicgen/cmd/genbot
       - checkout
+      - run:
+          name: "Fixing filenames"
+          working_directory: "/tmp/src/googleapis"
+          description: "fixing golang _arm.proto filename conflicts https://groups.google.com/g/adwords-api/c/Tti9vvDPdK4/m/6a86kM18AAAJ"
+          command: |
+            cd google
+            find . -name '*_arm.proto' -exec sh -c 'mv "$0" "${0%_arm.proto}_arm0.proto" && grep -rl "$(basename $0)" . | xargs sed --in-place=backup "s,_arm.proto,_arm0.proto,g"' {} \;
       - run:
           name: "Build package"
           working_directory: "/tmp/run"
@@ -67,17 +75,6 @@ jobs:
             zip -r /tmp/artifacts/artifacts.zip /tmp/update-genproto/genproto/*
       - store_artifacts:
           path: /tmp/artifacts
-      - run:
-          name: "Publish Release for googleapis on GitHub"
-          command: |
-            go get github.com/tcnksm/ghr
-
-            ghr -t ${GITHUB_TOKEN} \
-              -u ${CIRCLE_PROJECT_USERNAME} \
-              -r ${CIRCLE_PROJECT_REPONAME} \
-              -c ${CIRCLE_SHA1} \
-              -delete ${CIRCLE_TAG} \
-              /tmp/artifacts/artifacts.zip
 
 workflows:
   version: 2
