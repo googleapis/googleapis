@@ -225,7 +225,7 @@ load("@rules_python//python:pip.bzl", "pip_repositories")
 
 pip_repositories()
 
-_gapic_generator_python_version = "0.63.2"
+_gapic_generator_python_version = "0.63.5"
 
 http_archive(
     name = "gapic_generator_python",
@@ -263,9 +263,9 @@ com_googleapis_gapic_generator_go_repositories()
 # TypeScript
 ##############################################################################
 
-_gapic_generator_typescript_version = "2.14.0"
+_gapic_generator_typescript_version = "2.14.1"
 
-_gapic_generator_typescript_sha256 = "b49689aec9a9ba2745f9c02f0ed8419bc581eb8142e542de64263ba0ccab6573"
+_gapic_generator_typescript_sha256 = "c3ac6a44f3ba0c631ad7634abceb17ad8da2423d1177648bfe6b97b8ac0014da"
 
 ### TypeScript generator
 http_archive(
@@ -296,7 +296,7 @@ yarn_install(
 ##############################################################################
 
 # PHP micro-generator
-_gapic_generator_php_version = "1.4.5"
+_gapic_generator_php_version = "1.4.6"
 
 http_archive(
     name = "gapic_generator_php",
@@ -355,9 +355,9 @@ gapic_generator_csharp_repositories()
 # Ruby
 ##############################################################################
 
-_gapic_generator_ruby_version = "v0.10.6"
+_gapic_generator_ruby_version = "v0.11.0"
 
-_gapic_generator_ruby_sha256 = "12fc0b999099594272bc327bcce789745d7059a4dd836120e863434b159e1f9e"
+_gapic_generator_ruby_sha256 = "e71aab7e48b102355640c5e78693dd21d1f2ede55e552ab5f90763bffa81a35d"
 
 http_archive(
     name = "gapic_generator_ruby",
