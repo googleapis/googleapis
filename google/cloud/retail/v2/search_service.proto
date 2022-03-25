@@ -37,8 +37,7 @@ option ruby_package = "Google::Cloud::Retail::V2";
 // Service for search.
 //
 // This feature is only available for users who have Retail Search enabled.
-// Please submit a form [here](https://cloud.google.com/contact) to contact
-// cloud sales if you are interested in using Retail Search.
+// Please enable Retail Search on Cloud Console before using this feature.
 service SearchService {
   option (google.api.default_host) = "retail.googleapis.com";
   option (google.api.oauth_scopes) =
@@ -47,8 +46,7 @@ service SearchService {
   // Performs a search.
   //
   // This feature is only available for users who have Retail Search enabled.
-  // Please submit a form [here](https://cloud.google.com/contact) to contact
-  // cloud sales if you are interested in using Retail Search.
+  // Please enable Retail Search on Cloud Console before using this feature.
   rpc Search(SearchRequest) returns (SearchResponse) {
     option (google.api.http) = {
       post: "/v2/{placement=projects/*/locations/*/catalogs/*/placements/*}:search"
@@ -103,6 +101,7 @@ message SearchRequest {
       //     * "ratingCount"
       //     * "attributes.key"
       //     * "inventory(place_id,price)"
+      //     * "inventory(place_id,original_price)"
       //     * "inventory(place_id,attributes.key)"
       string key = 1 [(google.api.field_behavior) = REQUIRED];
 
@@ -320,6 +319,14 @@ message SearchRequest {
     // applied and combined in a non-linear way. Maximum number of
     // specifications is 10.
     repeated ConditionBoostSpec condition_boost_specs = 1;
+
+    // Whether to skip boostspec validation. If this field is set to true,
+    // invalid
+    // [BoostSpec.condition_boost_specs][google.cloud.retail.v2.SearchRequest.BoostSpec.condition_boost_specs]
+    // will be ignored and valid
+    // [BoostSpec.condition_boost_specs][google.cloud.retail.v2.SearchRequest.BoostSpec.condition_boost_specs]
+    // will still be applied.
+    optional bool skip_boost_spec_validation = 2;
   }
 
   // Specification to determine under which conditions query expansion should
@@ -348,6 +355,26 @@ message SearchRequest {
     // unexpanded products are always at the top of the search results, followed
     // by the expanded results.
     bool pin_unexpanded_results = 2;
+  }
+
+  // The specification for personalization.
+  message PersonalizationSpec {
+    // The personalization mode of each search request.
+    enum Mode {
+      // Default value. Defaults to
+      // [Mode.AUTO][google.cloud.retail.v2.SearchRequest.PersonalizationSpec.Mode.AUTO].
+      MODE_UNSPECIFIED = 0;
+
+      // Let CRS decide whether to use personalization.
+      AUTO = 1;
+
+      // Disable personalization.
+      DISABLED = 2;
+    }
+
+    // Defaults to
+    // [Mode.AUTO][google.cloud.retail.v2.SearchRequest.PersonalizationSpec.Mode.AUTO].
+    Mode mode = 1;
   }
 
   // The search mode of each search request.
@@ -380,7 +407,7 @@ message SearchRequest {
   }
 
   // Required. The resource name of the search engine placement, such as
-  // `projects/*/locations/global/catalogs/default_catalog/placements/default_search`.
+  // `projects/*/locations/global/catalogs/default_catalog/placements/default_search`
   // This field is used to identify the serving configuration name and the set
   // of models that will be used to make the search.
   string placement = 1 [(google.api.field_behavior) = REQUIRED];
@@ -401,6 +428,9 @@ message SearchRequest {
   // could be implemented with an HTTP cookie, which should be able to uniquely
   // identify a visitor on a single device. This unique identifier should not
   // change if the visitor logs in or out of the website.
+  //
+  // This should be the same identifier as
+  // [UserEvent.visitor_id][google.cloud.retail.v2.UserEvent.visitor_id].
   //
   // The field must be a UTF-8 encoded string with a length limit of 128
   // characters. Otherwise, an INVALID_ARGUMENT error is returned.
@@ -445,6 +475,9 @@ message SearchRequest {
   // If this field is unrecognizable, an INVALID_ARGUMENT is returned.
   string filter = 10;
 
+  // The default filter that is applied when a user performs a search without
+  // checking any filters on the search page.
+  //
   // The filter applied to every search request when quality improvement such as
   // query expansion is needed. For example, if a query does not have enough
   // results, an expanded query with
@@ -471,12 +504,12 @@ message SearchRequest {
   // is returned.
   repeated FacetSpec facet_specs = 12;
 
+  // Deprecated. Refer to https://cloud.google.com/retail/docs/configs#dynamic
+  // to enable dynamic facets. Do not set this field.
+  //
   // The specification for dynamically generated facets. Notice that only
   // textual facets can be dynamically generated.
-  //
-  // This feature requires additional allowlisting. Contact Retail Search
-  // support team if you are interested in using dynamic facet feature.
-  DynamicFacetSpec dynamic_facet_spec = 21;
+  DynamicFacetSpec dynamic_facet_spec = 21 [deprecated = true];
 
   // Boost specification to boost certain products. See more details at this
   // [user guide](https://cloud.google.com/retail/docs/boosting).
@@ -495,12 +528,15 @@ message SearchRequest {
 
   // The keys to fetch and rollup the matching
   // [variant][google.cloud.retail.v2.Product.Type.VARIANT]
-  // [Product][google.cloud.retail.v2.Product]s attributes. The attributes from
-  // all the matching [variant][google.cloud.retail.v2.Product.Type.VARIANT]
-  // [Product][google.cloud.retail.v2.Product]s are merged and de-duplicated.
-  // Notice that rollup [variant][google.cloud.retail.v2.Product.Type.VARIANT]
-  // [Product][google.cloud.retail.v2.Product]s attributes will lead to extra
-  // query latency. Maximum number of keys is 10.
+  // [Product][google.cloud.retail.v2.Product]s attributes,
+  // [FulfillmentInfo][google.cloud.retail.v2.FulfillmentInfo] or
+  // [LocalInventory][google.cloud.retail.v2.LocalInventory]s attributes. The
+  // attributes from all the matching
+  // [variant][google.cloud.retail.v2.Product.Type.VARIANT]
+  // [Product][google.cloud.retail.v2.Product]s or
+  // [LocalInventory][google.cloud.retail.v2.LocalInventory]s are merged and
+  // de-duplicated. Notice that rollup attributes will lead to extra query
+  // latency. Maximum number of keys is 30.
   //
   // For [FulfillmentInfo][google.cloud.retail.v2.FulfillmentInfo], a
   // fulfillment type and a fulfillment ID must be provided in the format of
@@ -515,6 +551,7 @@ message SearchRequest {
   // * discount
   // * variantId
   // * inventory(place_id,price)
+  // * inventory(place_id,original_price)
   // * inventory(place_id,attributes.key), where key is any key in the
   //   [Product.inventories.attributes][] map.
   // * attributes.key, where key is any key in the
@@ -577,6 +614,9 @@ message SearchRequest {
   // The search mode of the search request. If not specified, a single search
   // request triggers both product search and faceted search.
   SearchMode search_mode = 31;
+
+  // The specification for personalization.
+  PersonalizationSpec personalization_spec = 32;
 }
 
 // Response message for
@@ -733,4 +773,14 @@ message SearchResponse {
   // [attribution_token][google.cloud.retail.v2.SearchResponse.attribution_token]
   // will be set in the response.
   string redirect_uri = 10;
+
+  // The fully qualified resource name of applied
+  // [controls](https://cloud.google.com/retail/docs/serving-control-rules).
+  repeated string applied_controls = 12;
+
+  // The invalid
+  // [SearchRequest.BoostSpec.condition_boost_specs][google.cloud.retail.v2.SearchRequest.BoostSpec.condition_boost_specs]
+  // that are not applied during serving.
+  repeated SearchRequest.BoostSpec.ConditionBoostSpec
+      invalid_condition_boost_specs = 14;
 }
