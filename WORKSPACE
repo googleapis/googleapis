@@ -72,14 +72,18 @@ rules_proto_dependencies()
 
 rules_proto_toolchains()
 
-# rules_go (support Golang under bazel)
-# This is not in the Go section because we override the same, older dependency brought in by gRPC.
-# TODO(ndietz): move this back to the Go section if gRPC is updated per https://github.com/grpc/grpc/issues/22172
-#
+
+##############################################################################
+# Go
+##############################################################################
+
 # rules_go cannot be updated beyond v0.24.x because in v0.25.x the linker warnings regarding multiple copies of the same package
 # became errors. Until rules_go is migrated to use the go_proto_library targets defined in here instead of in go-genproto, we cannot
-# update this beyong v0.24.x.
+# update this beyond v0.24.x.
 # TODO(ndietz): https://github.com/bazelbuild/rules_go/issues/1986
+#
+# Furthermore, this must be above the download of gRPC (in C++ section) and rules_gapic because both repositories depend on rules_go
+# and we would rather manage our version of rules_go explicitly rather than depend on the version those bring in transitively.
 http_archive(
     name = "io_bazel_rules_go",
     sha256 = "dbf5a9ef855684f84cac2e7ae7886c5a001d4f66ae23f6904da0faaaef0d61fc",
@@ -89,7 +93,12 @@ http_archive(
     ],
 )
 
-# bazel-gazelle (support Golang under bazel)
+load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
+
+go_rules_dependencies()
+
+go_register_toolchains()
+
 http_archive(
     name = "bazel_gazelle",
     sha256 = "62ca106be173579c0a167deb23358fdfe71ffa1e4cfdddf5582af26520f1c66f",
@@ -99,27 +108,26 @@ http_archive(
     ],
 )
 
-load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
-load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
-
-# Override the go-genproto dependency to enable use of GapicMetadata types.
-#
-# TODO(noahdietz): remove with next rules_go release.
-# https://github.com/googleapis/gapic-generator-go/issues/529
-go_repository(
-    name = "org_golang_google_genproto",
-    build_file_proto_mode = "disable_global",
-    importpath = "google.golang.org/genproto",
-    sum = "h1:Et6SkiuvnBn+SgrSYXs/BrUpGB4mbdwt4R3vaPIlicA=",
-    version = "v0.0.0-20220107163113-42d7afdf6368",
-)
-
-go_rules_dependencies()
-
-go_register_toolchains()
+load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
 
 gazelle_dependencies()
 
+_gapic_generator_go_version = "0.27.0"
+
+http_archive(
+    name = "com_googleapis_gapic_generator_go",
+    strip_prefix = "gapic-generator-go-%s" % _gapic_generator_go_version,
+    urls = ["https://github.com/googleapis/gapic-generator-go/archive/v%s.tar.gz" % _gapic_generator_go_version],
+    repo_mapping = {
+      "@go_googleapis": "@com_google_googleapis",
+    },
+)
+
+load("@com_googleapis_gapic_generator_go//:repositories.bzl", "com_googleapis_gapic_generator_go_repositories")
+
+com_googleapis_gapic_generator_go_repositories()
+
+# rules_gapic also depends on rules_go, so it must come after our own dependency on rules_go.
 _rules_gapic_version = "0.12.0"
 
 _rules_gapic_sha256 = "b5953a97a2e10b72ce9376a20f8446a55a30823c2984c42e19da20efffb57858"
@@ -242,22 +250,6 @@ load(
 gapic_generator_python()
 
 gapic_generator_register_toolchains()
-
-##############################################################################
-# Go
-##############################################################################
-
-_gapic_generator_go_version = "0.25.0"
-
-http_archive(
-    name = "com_googleapis_gapic_generator_go",
-    strip_prefix = "gapic-generator-go-%s" % _gapic_generator_go_version,
-    urls = ["https://github.com/googleapis/gapic-generator-go/archive/v%s.tar.gz" % _gapic_generator_go_version],
-)
-
-load("@com_googleapis_gapic_generator_go//:repositories.bzl", "com_googleapis_gapic_generator_go_repositories")
-
-com_googleapis_gapic_generator_go_repositories()
 
 ##############################################################################
 # TypeScript
