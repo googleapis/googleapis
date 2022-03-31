@@ -3586,6 +3586,134 @@ message InspectJobConfig {
   repeated Action actions = 4;
 }
 
+// A task to execute when a data profile has been generated.
+message DataProfileAction {
+  // If set, the detailed data profiles will be persisted to the location
+  // of your choice whenever updated.
+  message Export {
+    // Store all table and column profiles in an existing table or a new table
+    // in an existing dataset. Each re-generation will result in a new row in
+    // BigQuery.
+    BigQueryTable profile_table = 1;
+  }
+
+  // Send a Pub/Sub message into the given Pub/Sub topic to connect other
+  // systems to data profile generation. The message payload data will
+  // be the byte serialization of `DataProfilePubSubMessage`.
+  message PubSubNotification {
+    // The levels of detail that can be included in the Pub/Sub message.
+    enum DetailLevel {
+      // Unused.
+      DETAIL_LEVEL_UNSPECIFIED = 0;
+
+      // The full table data profile.
+      TABLE_PROFILE = 1;
+
+      // The resource name of the table.
+      RESOURCE_NAME = 2;
+    }
+
+    // Cloud Pub/Sub topic to send notifications to.
+    // Format is projects/{project}/topics/{topic}.
+    string topic = 1;
+
+    // The type of event that triggers a Pub/Sub. At most one
+    // `PubSubNotification` per EventType is permitted.
+    EventType event = 2;
+
+    // Conditions (e.g., data risk or sensitivity level) for triggering a
+    // Pub/Sub.
+    DataProfilePubSubCondition pubsub_condition = 3;
+
+    // How much data to include in the Pub/Sub message. If the user wishes to
+    // limit the size of the message, they can use resource_name and fetch the
+    // profile fields they wish to. Per table profile (not per column).
+    DetailLevel detail_of_message = 4;
+  }
+
+  // Types of event that can trigger an action.
+  enum EventType {
+    // Unused.
+    EVENT_TYPE_UNSPECIFIED = 0;
+
+    // New profile (not a re-profile).
+    NEW_PROFILE = 1;
+
+    // Changed one of the following profile metrics:
+    // * Table data risk score
+    // * Table sensitivity score
+    // * Table resource visibility
+    // * Table encryption type
+    // * Table predicted infoTypes
+    // * Table other infoTypes
+    CHANGED_PROFILE = 2;
+
+    // Table data risk score or sensitivity score increased.
+    SCORE_INCREASED = 3;
+
+    // A user (non-internal) error occurred.
+    ERROR_CHANGED = 4;
+  }
+
+  oneof action {
+    // Export data profiles into a provided location.
+    Export export_data = 1;
+
+    // Publish a message into the Pub/Sub topic.
+    PubSubNotification pub_sub_notification = 2;
+  }
+}
+
+// Configuration for setting up a job to scan resources for profile generation.
+// Only one data profile configuration may exist per organization, folder,
+// or project.
+//
+// The generated data profiles are retained according to the
+// [data retention policy]
+// (https://cloud.google.com/dlp/docs/data-profiles#retention).
+message DataProfileJobConfig {
+  // The data to scan.
+  DataProfileLocation location = 1;
+
+  // The project that will run the scan. The DLP service
+  // account that exists within this project must have access to all resources
+  // that are profiled, and the Cloud DLP API must be enabled.
+  string project_id = 5;
+
+  // Detection logic for profile generation.
+  //
+  // Not all template features are used by profiles. FindingLimits,
+  // include_quote and exclude_info_types have no impact on
+  // data profiling.
+  //
+  // Multiple templates may be provided if there is data in multiple regions.
+  // At most one template must be specified per-region (including "global").
+  // Each region is scanned using the applicable template. If no region-specific
+  // template is specified, but a "global" template is specified, it will be
+  // copied to that region and used instead. If no global or region-specific
+  // template is provided for a region with data, that region's data will not be
+  // scanned.
+  //
+  // For more information, see
+  // https://cloud.google.com/dlp/docs/data-profiles#data_residency.
+  repeated string inspect_templates = 7;
+
+  // Actions to execute at the completion of the job.
+  repeated DataProfileAction data_profile_actions = 6;
+}
+
+// The data that will be profiled.
+message DataProfileLocation {
+  // The location to be scanned.
+  oneof location {
+    // The ID of an organization to scan.
+    int64 organization_id = 1;
+
+    // The ID of the Folder within an organization to scan.
+    int64 folder_id = 2;
+  }
+}
+
 // Combines all of the information about a DLP job.
 message DlpJob {
   option (google.api.resource) = {
@@ -4424,4 +4552,275 @@ enum StoredInfoTypeState {
   // user-controlled storage were modified. To fix an invalid StoredInfoType,
   // use the `UpdateStoredInfoType` method to create a new version.
   INVALID = 4;
+}
+
+// Score is a summary of all elements in the data profile.
+// A higher number means more sensitive.
+message SensitivityScore {
+  // Various score levels for resources.
+  enum SensitivityScoreLevel {
+    // Unused.
+    SENSITIVITY_SCORE_UNSPECIFIED = 0;
+
+    // No sensitive information detected. Limited access.
+    SENSITIVITY_LOW = 10;
+
+    // Medium risk - PII, potentially sensitive data, or fields with free-text
+    // data that are at higher risk of having intermittent sensitive data.
+    // Consider limiting access.
+    SENSITIVITY_MODERATE = 20;
+
+    // High risk – SPII may be present. Exfiltration of data may lead to user
+    // data loss. Re-identification of users may be possible. Consider limiting
+    // usage and or removing SPII.
+    SENSITIVITY_HIGH = 30;
+  }
+
+  // The score applied to the resource.
+  SensitivityScoreLevel score = 1;
+}
+
+// Score is a summary of all elements in the data profile.
+// A higher number means more risky.
+message DataRiskLevel {
+  // Various score levels for resources.
+  enum DataRiskLevelScore {
+    // Unused.
+    RISK_SCORE_UNSPECIFIED = 0;
+
+    // Low risk - Lower indication of sensitive data that appears to have
+    // additional access restrictions in place or no indication of sensitive
+    // data found.
+    RISK_LOW = 10;
+
+    // Medium risk - Sensitive data may be present but additional access or fine
+    // grain access restrictions appears to be present.  Consider limiting
+    // access even further or transforming data to mask.
+    RISK_MODERATE = 20;
+
+    // High risk – SPII may be present. Access controls may include public
+    // ACLs. Exfiltration of data may lead to user data loss. Re-identification
+    // of users may be possible. Consider limiting usage and or removing SPII.
+    RISK_HIGH = 30;
+  }
+
+  // The score applied to the resource.
+  DataRiskLevelScore score = 1;
+}
+
+// How broadly a resource has been shared. New items may be added over time.
+// A higher number means more restricted.
+enum ResourceVisibility {
+  // Unused.
+  RESOURCE_VISIBILITY_UNSPECIFIED = 0;
+
+  // Visible to any user.
+  RESOURCE_VISIBILITY_PUBLIC = 10;
+
+  // Visible only to specific users.
+  RESOURCE_VISIBILITY_RESTRICTED = 20;
+}
+
+// Snapshot of the configurations used to generate the profile.
+message DataProfileConfigSnapshot {
+  // A copy of the inspection config used to generate this profile. This
+  // is a copy of the inspect_template specified in `DataProfileJobConfig`.
+  InspectConfig inspect_config = 2;
+
+  // A copy of the configuration used to generate this profile.
+  DataProfileJobConfig data_profile_job = 3;
+}
+
+// The profile for a scanned table.
+message TableDataProfile {
+  // Possible states of a profile. New items may be added.
+  enum State {
+    // Unused.
+    STATE_UNSPECIFIED = 0;
+
+    // The profile is currently running. Once a profile has finished it will
+    // transition to DONE.
+    RUNNING = 1;
+
+    // The profile is no longer generating.
+    // If profile_status.status.code is 0, the profile succeeded, otherwise, it
+    // failed.
+    DONE = 2;
+  }
+
+  // The name of the profile.
+  string name = 1;
+
+  // The resource name to the project data profile for this table.
+  string project_data_profile = 2;
+
+  // The GCP project ID that owns the BigQuery dataset.
+  string dataset_project_id = 24;
+
+  // The BigQuery location where the dataset's data is stored.
+  // See https://cloud.google.com/bigquery/docs/locations for supported
+  // locations.
+  string dataset_location = 29;
+
+  // The BigQuery dataset ID.
+  string dataset_id = 25;
+
+  // The BigQuery table ID.
+  string table_id = 26;
+
+  // The resource name of the table.
+  // https://cloud.google.com/apis/design/resource_names#full_resource_name
+  string full_resource = 3;
+
+  // Success or error status from the most recent profile generation attempt.
+  // May be empty if the profile is still being generated.
+  ProfileStatus profile_status = 21;
+
+  // State of a profile.
+  State state = 22;
+
+  // The sensitivity score of this table.
+  SensitivityScore sensitivity_score = 5;
+
+  // The data risk level of this table.
+  DataRiskLevel data_risk_level = 6;
+
+  // The infoTypes predicted from this table's data.
+  repeated InfoTypeSummary predicted_info_types = 27;
+
+  // Other infoTypes found in this table's data.
+  repeated OtherInfoTypeSummary other_info_types = 28;
+
+  // The snapshot of the configurations used to generate the profile.
+  DataProfileConfigSnapshot config_snapshot = 7;
+
+  // The time when this table was last modified
+  google.protobuf.Timestamp last_modified_time = 8;
+
+  // Optional. The time when this table expires.
+  google.protobuf.Timestamp expiration_time = 9;
+
+  // The number of columns profiled in the table.
+  int64 scanned_column_count = 10;
+
+  // The number of columns skipped in the table because of an error.
+  int64 failed_column_count = 11;
+
+  // The size of the table when the profile was generated.
+  int64 table_size_bytes = 12;
+
+  // Number of rows in the table when the profile was generated.
+  int64 row_count = 13;
+
+  // How the table is encrypted.
+  EncryptionStatus encryption_status = 14;
+
+  // How broadly a resource has been shared.
+  ResourceVisibility resource_visibility = 15;
+
+  // The last time the profile was generated.
+  google.protobuf.Timestamp profile_last_generated = 16;
+
+  // The labels applied to the resource at the time the profile was generated.
+  map<string, string> resource_labels = 17;
+
+  // The time at which the table was created.
+  google.protobuf.Timestamp create_time = 23;
+}
+
+message ProfileStatus {
+  // Profiling status code and optional message
+  google.rpc.Status status = 1;
+
+  // Time when the profile generation status was updated
+  google.protobuf.Timestamp timestamp = 3;
+}
+
+// How a resource is encrypted.
+enum EncryptionStatus {
+  // Unused.
+  ENCRYPTION_STATUS_UNSPECIFIED = 0;
+
+  // Google manages server-side encryption keys on your behalf.
+  ENCRYPTION_GOOGLE_MANAGED = 1;
+
+  // Customer provides the key.
+  ENCRYPTION_CUSTOMER_MANAGED = 2;
+}
+
+// The infoType details for this column.
+message InfoTypeSummary {
+  // The infoType.
+  InfoType info_type = 1;
+}
+
+// Infotype details for other infoTypes found within a column.
+message OtherInfoTypeSummary {
+  // The other infoType.
+  InfoType info_type = 1;
+}
+
+// A condition for determining whether a PubSub should be triggered.
+message DataProfilePubSubCondition {
+  // Various score levels for resources.
+  enum ProfileScoreBucket {
+    // Unused.
+    PROFILE_SCORE_BUCKET_UNSPECIFIED = 0;
+
+    // High risk/sensitivity detected.
+    HIGH = 1;
+
+    // Medium or high risk/sensitivity detected.
+    MEDIUM_OR_HIGH = 2;
+  }
+
+  // A condition consisting of a value.
+  message PubSubCondition {
+    // The value for the condition to trigger.
+    oneof value {
+      // The minimum data risk score that triggers the condition.
+      ProfileScoreBucket minimum_risk_score = 1;
+
+      // The minimum sensitivity level that triggers the condition.
+      ProfileScoreBucket minimum_sensitivity_score = 2;
+    }
+  }
+
+  // An expression, consisting of an operator and conditions.
+  message PubSubExpressions {
+    // Logical operators for conditional checks.
+    enum PubSubLogicalOperator {
+      // Unused.
+      LOGICAL_OPERATOR_UNSPECIFIED = 0;
+
+      // Conditional OR.
+      OR = 1;
+
+      // Conditional AND.
+      AND = 2;
+    }
+
+    // The operator to apply to the collection of conditions.
+    PubSubLogicalOperator logical_operator = 1;
+
+    // Conditions to apply to the expression.
+    repeated PubSubCondition conditions = 2;
+  }
+
+  // An expression.
+  PubSubExpressions expressions = 1;
+}
+
+// The message that will be published to a Pub/Sub topic.
+// To receive a message of protocol buffer schema type, convert the message data
+// to an object of this proto class.
+// https://cloud.google.com/pubsub/docs/samples/pubsub-subscribe-proto-messages
+message DataProfilePubSubMessage {
+  // If `DetailLevel` is `TABLE_PROFILE` this will be fully populated.
+  // Otherwise, if `DetailLevel` is `RESOURCE_NAME`, then only `name` and
+  // `full_resource` will be populated.
+  TableDataProfile profile = 1;
+
+  // The event that caused the Pub/Sub message to be sent.
+  DataProfileAction.EventType event = 2;
 }
