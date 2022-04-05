@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -44,6 +44,10 @@ option (google.api.resource_definition) = {
 option (google.api.resource_definition) = {
   type: "cloudbuild.googleapis.com/WorkerPool"
   pattern: "projects/{project}/locations/{location}/workerPools/{worker_pool}"
+};
+option (google.api.resource_definition) = {
+  type: "gkehub.googleapis.com/Membership"
+  pattern: "projects/{project}/locations/{location}/memberships/{membership}"
 };
 
 // CloudDeploy service creates and manages Continuous Delivery operations
@@ -264,10 +268,16 @@ message DeliveryPipeline {
 
   // Labels are attributes that can be set and used by both the
   // user and by Google Cloud Deploy. Labels must meet the following
-  // constraints: Each resource is limited to 64 labels. Keys must conform to
-  // the regexp: `[a-zA-Z][a-zA-Z0-9_-]{0,62}`. Values must conform to the
-  // regexp: `[a-zA-Z0-9_-]{0,63}`. Both keys and values are additionally
-  // constrained to be <= 128 bytes in size.
+  // constraints:
+  //
+  // * Keys and values can contain only lowercase letters, numeric characters,
+  // underscores, and dashes.
+  // * All characters must use UTF-8 encoding, and international characters are
+  // allowed.
+  // * Keys must start with a lowercase letter or international character.
+  // * Each resource is limited to a maximum of 64 labels.
+  //
+  // Both keys and values are additionally constrained to be <= 128 bytes.
   map<string, string> labels = 5;
 
   // Output only. Time at which the pipeline was created.
@@ -304,9 +314,9 @@ message Stage {
   // The target_id to which this stage points. This field refers exclusively to
   // the last segment of a target name. For example, this field would just be
   // `my-target` (rather than
-  // `projects/project/deliveryPipelines/pipeline/targets/my-target`). The
-  // parent `DeliveryPipeline` of the `Target` is inferred to be the parent
-  // `DeliveryPipeline` of the `Release` in which this `Stage` lives.
+  // `projects/project/locations/location/targets/my-target`). The location of
+  // the `Target` is inferred to be the same as the location of the
+  // `DeliveryPipeline` that contains this `Stage`.
   string target_id = 1;
 
   // Skaffold profiles to use when rendering the manifest for this stage's
@@ -376,7 +386,7 @@ message ListDeliveryPipelinesRequest {
   // the call that provided the page token.
   string page_token = 3;
 
-  // Filter builds to be returned. See https://google.aip.dev/160 for more
+  // Filter pipelines to be returned. See https://google.aip.dev/160 for more
   // details.
   string filter = 4;
 
@@ -537,8 +547,8 @@ message Target {
     pattern: "projects/{project}/locations/{location}/targets/{target}"
   };
 
-  // Optional. Name of the `Target`. Format is projects/{project}/locations/{location}/
-  // deliveryPipelines/{deliveryPipeline}/targets/[a-z][a-z0-9\-]{0,62}.
+  // Optional. Name of the `Target`. Format is
+  // projects/{project}/locations/{location}/targets/[a-z][a-z0-9\-]{0,62}.
   string name = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. Resource id of the `Target`.
@@ -558,10 +568,16 @@ message Target {
 
   // Optional. Labels are attributes that can be set and used by both the
   // user and by Google Cloud Deploy. Labels must meet the following
-  // constraints: Each resource is limited to 64 labels. Keys must conform to
-  // the regexp: `[a-zA-Z][a-zA-Z0-9_-]{0,62}`. Values must conform to the
-  // regexp: `[a-zA-Z0-9_-]{0,63}`. Both keys and values are additionally
-  // constrained to be <= 128 bytes in size.
+  // constraints:
+  //
+  // * Keys and values can contain only lowercase letters, numeric characters,
+  // underscores, and dashes.
+  // * All characters must use UTF-8 encoding, and international characters are
+  // allowed.
+  // * Keys must start with a lowercase letter or international character.
+  // * Each resource is limited to a maximum of 64 labels.
+  //
+  // Both keys and values are additionally constrained to be <= 128 bytes.
   map<string, string> labels = 6 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Whether or not the `Target` requires approval.
@@ -578,6 +594,9 @@ message Target {
   oneof deployment_target {
     // Information specifying a GKE Cluster.
     GkeCluster gke = 15;
+
+    // Information specifying an Anthos Cluster.
+    AnthosCluster anthos_cluster = 17;
   }
 
   // Optional. This checksum is computed by the server based on the value of other
@@ -620,6 +639,28 @@ message ExecutionConfig {
     // Optional. Use private Cloud Build pool.
     PrivatePool private_pool = 3 [(google.api.field_behavior) = OPTIONAL];
   }
+
+  // Optional. The resource name of the `WorkerPool`, with the format
+  // `projects/{project}/locations/{location}/workerPools/{worker_pool}`.
+  // If this optional field is unspecified, the default Cloud Build pool will be
+  // used.
+  string worker_pool = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "cloudbuild.googleapis.com/WorkerPool"
+    }
+  ];
+
+  // Optional. Google service account to use for execution. If unspecified,
+  // the project execution service account
+  // (<PROJECT_NUMBER>-compute@developer.gserviceaccount.com) is used.
+  string service_account = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Cloud Storage location in which to store execution outputs. This can
+  // either be a bucket ("gs://my-bucket") or a path within a bucket
+  // ("gs://my-bucket/my-dir").
+  // If unspecified, a default bucket located in the same region will be used.
+  string artifact_storage = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Execution using the default Cloud Build pool.
@@ -666,6 +707,26 @@ message GkeCluster {
   string cluster = 1 [(google.api.resource_reference) = {
                         type: "container.googleapis.com/Cluster"
                       }];
+
+  // Optional. If true, `cluster` is accessed using the private IP address of the control
+  // plane endpoint. Otherwise, the default IP address of the control plane
+  // endpoint is used. The default IP address is the private IP address for
+  // clusters with private control-plane endpoints and the public IP address
+  // otherwise.
+  //
+  // Only specify this option when `cluster` is a [private GKE
+  // cluster](https://cloud.google.com/kubernetes-engine/docs/concepts/private-cluster-concept).
+  bool internal_ip = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Information specifying an Anthos Cluster.
+message AnthosCluster {
+  // Membership of the GKE Hub-registered cluster to which to apply the Skaffold
+  // configuration. Format is
+  // `projects/{project}/locations/{location}/memberships/{membership_name}`.
+  string membership = 1 [(google.api.resource_reference) = {
+                           type: "gkehub.googleapis.com/Membership"
+                         }];
 }
 
 // The request object for `ListTargets`.
@@ -691,7 +752,7 @@ message ListTargetsRequest {
   // the call that provided the page token.
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Filter builds to be returned. See https://google.aip.dev/160 for more
+  // Optional. Filter targets to be returned. See https://google.aip.dev/160 for more
   // details.
   string filter = 4 [(google.api.field_behavior) = OPTIONAL];
 
@@ -848,6 +909,21 @@ message Release {
     pattern: "projects/{project}/locations/{location}/deliveryPipelines/{delivery_pipeline}/releases/{release}"
   };
 
+  // Valid states of the render operation.
+  enum RenderState {
+    // The render state is unspecified.
+    RENDER_STATE_UNSPECIFIED = 0;
+
+    // All rendering operations have completed successfully.
+    SUCCEEDED = 1;
+
+    // All rendering operations have completed, and one or more have failed.
+    FAILED = 2;
+
+    // Rendering has started and is not complete.
+    IN_PROGRESS = 3;
+  }
+
   // Details of rendering for a single target.
   message TargetRender {
     // Valid states of the render operation.
@@ -865,6 +941,21 @@ message Release {
       IN_PROGRESS = 3;
     }
 
+    // Well-known rendering failures.
+    enum FailureCause {
+      // No reason for failure is specified.
+      FAILURE_CAUSE_UNSPECIFIED = 0;
+
+      // Cloud Build is not available, either because it is not enabled or
+      // because Cloud Deploy has insufficient permissions. See [required
+      // permission](/deploy/docs/cloud-deploy-service-account#required_permissions).
+      CLOUD_BUILD_UNAVAILABLE = 1;
+
+      // The render operation did not complete successfully; check Cloud Build
+      // logs.
+      EXECUTION_FAILED = 2;
+    }
+
     // Output only. The resource name of the Cloud Build `Build` object that is used to
     // render the manifest for this target. Format is
     // `projects/{project}/locations/{location}/builds/{build}`.
@@ -877,21 +968,10 @@ message Release {
 
     // Output only. Current state of the render operation for this Target.
     TargetRenderState rendering_state = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
-  }
 
-  // Valid states of the render operation.
-  enum RenderState {
-    // The render state is unspecified.
-    RENDER_STATE_UNSPECIFIED = 0;
-
-    // All rendering operations have completed successfully.
-    SUCCEEDED = 1;
-
-    // All rendering operations have completed, and one or more have failed.
-    FAILED = 2;
-
-    // Rendering has started and is not complete.
-    IN_PROGRESS = 3;
+    // Output only. Reason this render failed. This will always be unspecified while the
+    // render in progress.
+    FailureCause failure_cause = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
   // Optional. Name of the `Release`. Format is projects/{project}/
@@ -913,10 +993,16 @@ message Release {
 
   // Labels are attributes that can be set and used by both the
   // user and by Google Cloud Deploy. Labels must meet the following
-  // constraints: Each resource is limited to 64 labels. Keys must conform to
-  // the regexp: `[a-zA-Z][a-zA-Z0-9_-]{0,62}`. Values must conform to the
-  // regexp: `[a-zA-Z0-9_-]{0,63}`. Both keys and values are additionally
-  // constrained to be <= 128 bytes in size.
+  // constraints:
+  //
+  // * Keys and values can contain only lowercase letters, numeric characters,
+  // underscores, and dashes.
+  // * All characters must use UTF-8 encoding, and international characters are
+  // allowed.
+  // * Keys must start with a lowercase letter or international character.
+  // * Each resource is limited to a maximum of 64 labels.
+  //
+  // Both keys and values are additionally constrained to be <= 128 bytes.
   map<string, string> labels = 5;
 
   // Output only. Time at which the `Release` was created.
@@ -940,7 +1026,7 @@ message Release {
   // Output only. Snapshot of the parent pipeline taken at release creation time.
   DeliveryPipeline delivery_pipeline_snapshot = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. Snapshot of the parent pipeline's targets taken at release creation time.
+  // Output only. Snapshot of the targets taken at release creation time.
   repeated Target target_snapshots = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Current state of the render operation.
@@ -1015,7 +1101,7 @@ message ListReleasesRequest {
   // the call that provided the page token.
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Filter builds to be returned. See https://google.aip.dev/160 for more
+  // Optional. Filter releases to be returned. See https://google.aip.dev/160 for more
   // details.
   string filter = 4 [(google.api.field_behavior) = OPTIONAL];
 
@@ -1141,6 +1227,27 @@ message Rollout {
     PENDING_RELEASE = 7;
   }
 
+  // Well-known deployment failures.
+  enum FailureCause {
+    // No reason for failure is specified.
+    FAILURE_CAUSE_UNSPECIFIED = 0;
+
+    // Cloud Build is not available, either because it is not enabled or because
+    // Cloud Deploy has insufficient permissions. See [required
+    // permission](/deploy/docs/cloud-deploy-service-account#required_permissions).
+    CLOUD_BUILD_UNAVAILABLE = 1;
+
+    // The deploy operation did not complete successfully; check Cloud Build
+    // logs.
+    EXECUTION_FAILED = 2;
+
+    // Deployment did not complete within the alloted time.
+    DEADLINE_EXCEEDED = 3;
+
+    // Release is in a failed state.
+    RELEASE_FAILED = 4;
+  }
+
   // Optional. Name of the `Rollout`. Format is projects/{project}/
   // locations/{location}/deliveryPipelines/{deliveryPipeline}/
   // releases/{release}/rollouts/[a-z][a-z0-9\-]{0,62}.
@@ -1161,10 +1268,16 @@ message Rollout {
 
   // Labels are attributes that can be set and used by both the
   // user and by Google Cloud Deploy. Labels must meet the following
-  // constraints: Each resource is limited to 64 labels. Keys must conform to
-  // the regexp: `[a-zA-Z][a-zA-Z0-9_-]{0,62}`. Values must conform to the
-  // regexp: `[a-zA-Z0-9_-]{0,63}`. Both keys and values are additionally
-  // constrained to be <= 128 bytes in size.
+  // constraints:
+  //
+  // * Keys and values can contain only lowercase letters, numeric characters,
+  // underscores, and dashes.
+  // * All characters must use UTF-8 encoding, and international characters are
+  // allowed.
+  // * Keys must start with a lowercase letter or international character.
+  // * Each resource is limited to a maximum of 64 labels.
+  //
+  // Both keys and values are additionally constrained to be <= 128 bytes.
   map<string, string> labels = 5;
 
   // Output only. Time at which the `Rollout` was created.
@@ -1208,6 +1321,10 @@ message Rollout {
   // fields, and may be sent on update and delete requests to ensure the
   // client has an up-to-date value before proceeding.
   string etag = 16;
+
+  // Output only. The reason this deploy failed. This will always be unspecified while the
+  // deploy in progress.
+  FailureCause deploy_failure_cause = 19 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // ListRolloutsRequest is the request object used by `ListRollouts`.
@@ -1232,7 +1349,7 @@ message ListRolloutsRequest {
   // the call that provided the page token.
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Filter builds to be returned. See https://google.aip.dev/160 for more
+  // Optional. Filter rollouts to be returned. See https://google.aip.dev/160 for more
   // details.
   string filter = 4 [(google.api.field_behavior) = OPTIONAL];
 
