@@ -20,15 +20,12 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
-import "google/cloud/aiplatform/v1beta1/encryption_spec.proto";
-import "google/cloud/aiplatform/v1beta1/explanation.proto";
 import "google/cloud/aiplatform/v1beta1/io.proto";
 import "google/cloud/aiplatform/v1beta1/model.proto";
 import "google/cloud/aiplatform/v1beta1/model_evaluation.proto";
 import "google/cloud/aiplatform/v1beta1/model_evaluation_slice.proto";
 import "google/cloud/aiplatform/v1beta1/operation.proto";
 import "google/longrunning/operations.proto";
-
 import "google/protobuf/field_mask.proto";
 
 option csharp_namespace = "Google.Cloud.AIPlatform.V1Beta1";
@@ -73,6 +70,14 @@ service ModelService {
     option (google.api.method_signature) = "parent";
   }
 
+  // Lists versions of the specified model.
+  rpc ListModelVersions(ListModelVersionsRequest) returns (ListModelVersionsResponse) {
+    option (google.api.http) = {
+      get: "/v1beta1/{name=projects/*/locations/*/models/*}:listVersions"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
   // Updates a Model.
   rpc UpdateModel(UpdateModelRequest) returns (Model) {
     option (google.api.http) = {
@@ -96,6 +101,31 @@ service ModelService {
       response_type: "google.protobuf.Empty"
       metadata_type: "DeleteOperationMetadata"
     };
+  }
+
+  // Deletes a Model version.
+  //
+  // Model version can only be deleted if there are no [DeployedModels][]
+  // created from it. Deleting the only version in the Model is not allowed. Use
+  // [DeleteModel][google.cloud.aiplatform.v1beta1.ModelService.DeleteModel] for deleting the Model instead.
+  rpc DeleteModelVersion(DeleteModelVersionRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      delete: "/v1beta1/{name=projects/*/locations/*/models/*}:deleteVersion"
+    };
+    option (google.api.method_signature) = "name";
+    option (google.longrunning.operation_info) = {
+      response_type: "google.protobuf.Empty"
+      metadata_type: "DeleteOperationMetadata"
+    };
+  }
+
+  // Merges a set of aliases for a Model version.
+  rpc MergeVersionAliases(MergeVersionAliasesRequest) returns (Model) {
+    option (google.api.http) = {
+      post: "/v1beta1/{name=projects/*/locations/*/models/*}:mergeVersionAliases"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name,version_aliases";
   }
 
   // Exports a trained, exportable Model to a location specified by the
@@ -166,6 +196,17 @@ message UploadModelRequest {
     }
   ];
 
+  // Optional. The resource name of the model into which to upload the version. Only
+  // specify this field when uploading a new version.
+  string parent_model = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The ID to use for the uploaded Model, which will become the final
+  // component of the model resource name.
+  //
+  // This value may be up to 63 characters, and valid characters are
+  // `[a-z0-9_-]`. The first character cannot be a number or hyphen.
+  string model_id = 5 [(google.api.field_behavior) = OPTIONAL];
+
   // Required. The Model to create.
   Model model = 2 [(google.api.field_behavior) = REQUIRED];
 }
@@ -183,6 +224,9 @@ message UploadModelResponse {
   string model = 1 [(google.api.resource_reference) = {
                       type: "aiplatform.googleapis.com/Model"
                     }];
+
+  // Output only. The version ID of the model that is uploaded.
+  string model_version_id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Request message for [ModelService.GetModel][google.cloud.aiplatform.v1beta1.ModelService.GetModel].
@@ -248,9 +292,73 @@ message ListModelsResponse {
   string next_page_token = 2;
 }
 
+// Request message for [ModelService.ListModelVersions][google.cloud.aiplatform.v1beta1.ModelService.ListModelVersions].
+message ListModelVersionsRequest {
+  // Required. The name of the model to list versions for.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/Model"
+    }
+  ];
+
+  // The standard list page size.
+  int32 page_size = 2;
+
+  // The standard list page token.
+  // Typically obtained via
+  // [ListModelVersionsResponse.next_page_token][google.cloud.aiplatform.v1beta1.ListModelVersionsResponse.next_page_token] of the previous
+  // [ModelService.ListModelversions][] call.
+  string page_token = 3;
+
+  // An expression for filtering the results of the request. For field names
+  // both snake_case and camelCase are supported.
+  //
+  //   * `labels` supports general map functions that is:
+  //     * `labels.key=value` - key:value equality
+  //     * `labels.key:* or labels:key - key existence
+  //     * A key including a space must be quoted. `labels."a key"`.
+  //
+  // Some examples:
+  //   * `labels.myKey="myValue"`
+  string filter = 4;
+
+  // Mask specifying which fields to read.
+  google.protobuf.FieldMask read_mask = 5;
+}
+
+// Response message for [ModelService.ListModelVersions][google.cloud.aiplatform.v1beta1.ModelService.ListModelVersions]
+message ListModelVersionsResponse {
+  // List of Model versions in the requested page.
+  // In the returned Model name field, version ID instead of regvision tag will
+  // be included.
+  repeated Model models = 1;
+
+  // A token to retrieve the next page of results.
+  // Pass to [ListModelVersionsRequest.page_token][google.cloud.aiplatform.v1beta1.ListModelVersionsRequest.page_token] to obtain that page.
+  string next_page_token = 2;
+}
+
 // Request message for [ModelService.UpdateModel][google.cloud.aiplatform.v1beta1.ModelService.UpdateModel].
 message UpdateModelRequest {
   // Required. The Model which replaces the resource on the server.
+  // When Model Versioning is enabled, the model.name will be used to determine
+  // whether to update the model or model version.
+  // 1. model.name with the @ value, e.g. models/123@1, refers to a version
+  // specific update.
+  // 2. model.name without the @ value, e.g. models/123, refers to a model
+  // update.
+  // 3. model.name with @-, e.g. models/123@-, refers to a model update.
+  // 4. Supported model fields: display_name, description; supported
+  // version-specific fields: version_description. Labels are supported in both
+  // scenarios. Both the model labels and the version labels are merged when a
+  // model is returned. When updating labels, if the request is for
+  // model-specific update, model label gets updated. Otherwise, version labels
+  // get updated.
+  // 5. A model name or model version name fields update mismatch will cause a
+  // precondition error.
+  // 6. One request cannot update both the model and the version fields. You
+  // must update them separately.
   Model model = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. The update mask applies to the resource.
@@ -268,6 +376,48 @@ message DeleteModelRequest {
       type: "aiplatform.googleapis.com/Model"
     }
   ];
+}
+
+// Request message for [ModelService.DeleteModelVersion][google.cloud.aiplatform.v1beta1.ModelService.DeleteModelVersion].
+message DeleteModelVersionRequest {
+  // Required. The name of the model version to be deleted, with a version ID explicitly
+  // included.
+  //
+  // Example: `projects/{project}/locations/{location}/models/{model}@1234`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/Model"
+    }
+  ];
+}
+
+// Request message for [ModelService.MergeVersionAliases][google.cloud.aiplatform.v1beta1.ModelService.MergeVersionAliases].
+message MergeVersionAliasesRequest {
+  // Required. The name of the model version to merge aliases, with a version ID
+  // explicitly included.
+  //
+  // Example: `projects/{project}/locations/{location}/models/{model}@1234`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/Model"
+    }
+  ];
+
+  // Required. The set of version aliases to merge.
+  // The alias should be at most 128 characters, and match
+  // `[a-z][a-z0-9-]{0,126}[a-z-0-9]`.
+  // Add the `-` prefix to an alias means removing that alias from the version.
+  // `-` is NOT counted in the 128 characters. Example: `-golden` means removing
+  // the `golden` alias from the version.
+  //
+  // There is NO ordering in aliases, which means
+  // 1) The aliases returned from GetModel API might not have the exactly same
+  // order from this MergeVersionAliases API. 2) Adding and deleting the same
+  // alias in the request is not recommended, and the 2 operations will be
+  // cancelled out.
+  repeated string version_aliases = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
 // Request message for [ModelService.ExportModel][google.cloud.aiplatform.v1beta1.ModelService.ExportModel].
