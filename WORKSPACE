@@ -112,7 +112,7 @@ load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
 
 gazelle_dependencies()
 
-_gapic_generator_go_version = "0.27.1"
+_gapic_generator_go_version = "0.28.0"
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
