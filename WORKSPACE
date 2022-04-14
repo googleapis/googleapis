@@ -328,9 +328,9 @@ http_archive(
     urls = ["https://github.com/googleapis/gax-dotnet/archive/refs/tags/%s.tar.gz" % _gax_dotnet_version],
 )
 
-_gapic_generator_csharp_version = "1.3.17"
+_gapic_generator_csharp_version = "1.3.18"
 
-_gapic_generator_csharp_sha256 = "c32121547a99e75a21630bedcf736a8ae4cb5b99ba9c8646f00a4306a5f7ac31"
+_gapic_generator_csharp_sha256 = "74d2c4a9e8e6dac54c329a7f4002d7e23a02972329e14f5dfb710b1d67755408"
 
 http_archive(
     name = "gapic_generator_csharp",
