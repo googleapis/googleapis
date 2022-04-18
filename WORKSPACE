@@ -128,9 +128,9 @@ load("@com_googleapis_gapic_generator_go//:repositories.bzl", "com_googleapis_ga
 com_googleapis_gapic_generator_go_repositories()
 
 # rules_gapic also depends on rules_go, so it must come after our own dependency on rules_go.
-_rules_gapic_version = "0.12.0"
+_rules_gapic_version = "0.12.1"
 
-_rules_gapic_sha256 = "b5953a97a2e10b72ce9376a20f8446a55a30823c2984c42e19da20efffb57858"
+_rules_gapic_sha256 = "6638f042d67ec145c62e7cad81b6c76d0e3d1c916fd995ab813a006ccb168bd5"
 
 http_archive(
     name = "rules_gapic",
