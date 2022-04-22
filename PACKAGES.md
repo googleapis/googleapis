@@ -1,6 +1,6 @@
 # Auto-Generated Packages for Google Cloud Platform
 
-This indexes the gRPC and GAPIC packages delivered to the the [Google Cloud
+This indexes the gRPC and GAPIC packages delivered to the [Google Cloud
 Platform](https://github.com/GoogleCloudPlatform) teams and where they can be
 found. Currently, package delivery is only being done for Python.
 
