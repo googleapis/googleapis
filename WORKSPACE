@@ -47,9 +47,9 @@ http_archive(
 
 http_archive(
     name = "com_google_protobuf",
-    sha256 = "9111bf0b542b631165fadbd80aa60e7fb25b25311c532139ed2089d76ddf6dd7",
-    strip_prefix = "protobuf-3.18.1",
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.18.1.tar.gz"],
+    sha256 = "8b28fdd45bab62d15db232ec404248901842e5340299a57765e48abe8a80d930",
+    strip_prefix = "protobuf-3.20.1",
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.20.1.tar.gz"],
 )
 
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
@@ -185,6 +185,32 @@ apple_support_dependencies()
 ##############################################################################
 # Java
 ##############################################################################
+load("@com_google_protobuf//:protobuf_deps.bzl", "PROTOBUF_MAVEN_ARTIFACTS")
+
+# Starting in protobuf 3.19, protobuf project started to provide
+# PROTOBUF_MAVEN_ARTIFACTS variable so that Bazel users can resolve their
+# dependencies through maven_install.
+# https://github.com/protocolbuffers/protobuf/issues/9132
+RULES_JVM_EXTERNAL_TAG = "4.2"
+RULES_JVM_EXTERNAL_SHA = "cd1a77b7b02e8e008439ca76fd34f5b07aecb8c752961f9640dea15e9e5ba1ca"
+
+http_archive(
+    name = "rules_jvm_external",
+    strip_prefix = "rules_jvm_external-%s" % RULES_JVM_EXTERNAL_TAG,
+    sha256 = RULES_JVM_EXTERNAL_SHA,
+    url = "https://github.com/bazelbuild/rules_jvm_external/archive/%s.zip" % RULES_JVM_EXTERNAL_TAG,
+)
+
+load("@rules_jvm_external//:defs.bzl", "maven_install")
+
+maven_install(
+    artifacts = PROTOBUF_MAVEN_ARTIFACTS,
+    generate_compat_repositories = True,
+    repositories = [
+        "https://repo.maven.apache.org/maven2/",
+    ],
+)
+
 _gax_java_version = "2.12.2"
 
 http_archive(
