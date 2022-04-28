@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 
 syntax = "proto3";
 
@@ -21,8 +20,6 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
-import "google/protobuf/empty.proto";
-import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "Google.Cloud.RecaptchaEnterprise.V1Beta1";
@@ -57,43 +54,6 @@ service RecaptchaEnterpriseServiceV1Beta1 {
     };
     option (google.api.method_signature) = "name,annotation";
   }
-
-  // Creates a new reCAPTCHA Enterprise key.
-  rpc CreateKey(CreateKeyRequest) returns (Key) {
-    option (google.api.http) = {
-      post: "/v1beta1/{parent=projects/*}/keys"
-      body: "key"
-    };
-  }
-
-  // Returns the list of all keys that belong to a project.
-  rpc ListKeys(ListKeysRequest) returns (ListKeysResponse) {
-    option (google.api.http) = {
-      get: "/v1beta1/{parent=projects/*}/keys"
-    };
-  }
-
-  // Returns the specified key.
-  rpc GetKey(GetKeyRequest) returns (Key) {
-    option (google.api.http) = {
-      get: "/v1beta1/{name=projects/*/keys/*}"
-    };
-  }
-
-  // Updates the specified key.
-  rpc UpdateKey(UpdateKeyRequest) returns (Key) {
-    option (google.api.http) = {
-      patch: "/v1beta1/{key.name=projects/*/keys/*}"
-      body: "key"
-    };
-  }
-
-  // Deletes the specified key.
-  rpc DeleteKey(DeleteKeyRequest) returns (google.protobuf.Empty) {
-    option (google.api.http) = {
-      delete: "/v1beta1/{name=projects/*/keys/*}"
-    };
-  }
 }
 
 // The create assessment request message.
@@ -113,7 +73,7 @@ message CreateAssessmentRequest {
 
 // The request message to annotate an Assessment.
 message AnnotateAssessmentRequest {
-  // Enum that reprensents the types of annotations.
+  // Enum that represents the types of annotations.
   enum Annotation {
     // Default unspecified type.
     ANNOTATION_UNSPECIFIED = 0;
@@ -123,6 +83,60 @@ message AnnotateAssessmentRequest {
 
     // Provides information that the event turned out to be fraudulent.
     FRAUDULENT = 2;
+
+    // Provides information that the event was related to a login event in which
+    // the user typed the correct password. Deprecated, prefer indicating
+    // CORRECT_PASSWORD through the reasons field instead.
+    PASSWORD_CORRECT = 3 [deprecated = true];
+
+    // Provides information that the event was related to a login event in which
+    // the user typed the incorrect password. Deprecated, prefer indicating
+    // INCORRECT_PASSWORD through the reasons field instead.
+    PASSWORD_INCORRECT = 4 [deprecated = true];
+  }
+
+  // Enum that represents potential reasons for annotating an assessment.
+  enum Reason {
+    // Default unspecified reason.
+    REASON_UNSPECIFIED = 0;
+
+    // Indicates a chargeback issued for the transaction with no other details.
+    // When possible, specify the type by using CHARGEBACK_FRAUD or
+    // CHARGEBACK_DISPUTE instead.
+    CHARGEBACK = 1;
+
+    // Indicates a chargeback related to an alleged unauthorized transaction
+    // from the cardholder's perspective (for example, the card number was
+    // stolen).
+    CHARGEBACK_FRAUD = 8;
+
+    // Indicates a chargeback related to the cardholder having provided their
+    // card details but allegedly not being satisfied with the purchase
+    // (for example, misrepresentation, attempted cancellation).
+    CHARGEBACK_DISPUTE = 9;
+
+    // Indicates the transaction associated with the assessment is suspected of
+    // being fraudulent based on the payment method, billing details, shipping
+    // address or other transaction information.
+    PAYMENT_HEURISTICS = 2;
+
+    // Indicates that the user was served a 2FA challenge. An old assessment
+    // with `ENUM_VALUES.INITIATED_TWO_FACTOR` reason that has not been
+    // overwritten with `PASSED_TWO_FACTOR` is treated as an abandoned 2FA flow.
+    // This is equivalent to `FAILED_TWO_FACTOR`.
+    INITIATED_TWO_FACTOR = 7;
+
+    // Indicates that the user passed a 2FA challenge.
+    PASSED_TWO_FACTOR = 3;
+
+    // Indicates that the user failed a 2FA challenge.
+    FAILED_TWO_FACTOR = 4;
+
+    // Indicates the user provided the correct password.
+    CORRECT_PASSWORD = 5;
+
+    // Indicates the user provided an incorrect password.
+    INCORRECT_PASSWORD = 6;
   }
 
   // Required. The resource name of the Assessment, in the format
@@ -134,13 +148,40 @@ message AnnotateAssessmentRequest {
     }
   ];
 
-  // Required. The annotation that will be assigned to the Event.
-  Annotation annotation = 2 [(google.api.field_behavior) = REQUIRED];
+  // Optional. The annotation that will be assigned to the Event. This field can be left
+  // empty to provide reasons that apply to an event without concluding whether
+  // the event is legitimate or fraudulent.
+  Annotation annotation = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional reasons for the annotation that will be assigned to the Event.
+  repeated Reason reasons = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional unique stable hashed user identifier to apply to the assessment.
+  // This is an alternative to setting the hashed_account_id in
+  // CreateAssessment, for example when the account identifier is not yet known
+  // in the initial request. It is recommended that the identifier is hashed
+  // using hmac-sha256 with stable secret.
+  bytes hashed_account_id = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Empty response for AnnotateAssessment.
 message AnnotateAssessmentResponse {
 
+}
+
+// Password leak verification info.
+message PasswordLeakVerification {
+  // Optional. Scrypt hash of the username+password that the customer wants to verify
+  // against a known password leak.
+  bytes hashed_user_credentials = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Whether or not the user's credentials are present in a known leak.
+  bool credentials_leaked = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The username part of the user credentials for which we want to trigger a
+  // leak check in canonicalized form. This is the same data used to create the
+  // hashed_user_credentials on the customer side.
+  string canonicalized_username = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // A recaptcha assessment resource.
@@ -150,7 +191,6 @@ message Assessment {
     pattern: "projects/{project}/assessments/{assessment}"
   };
 
-  // LINT.IfChange(classification_reason)
   // Reasons contributing to the risk analysis verdict.
   enum ClassificationReason {
     // Default unspecified type.
@@ -191,6 +231,16 @@ message Assessment {
 
   // Output only. Reasons contributing to the risk analysis verdict.
   repeated ClassificationReason reasons = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Information about the user's credentials used to check for leaks.
+  // This feature is part of the Early Access Program (EAP). Exercise caution,
+  // and do not deploy integrations based on this feature in a production
+  // environment.
+  PasswordLeakVerification password_leak_verification = 7;
+
+  // Assessment returned by Account Defender when a hashed_account_id is
+  // provided.
+  AccountDefenderAssessment account_defender_assessment = 8;
 }
 
 message Event {
@@ -213,10 +263,13 @@ message Event {
   // provided at token generation time on client-side platforms already
   // integrated with recaptcha enterprise.
   string expected_action = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional unique stable hashed user identifier for the request. The
+  // identifier should ideally be hashed using sha256 with stable secret.
+  bytes hashed_account_id = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
 message TokenProperties {
-  // LINT.IfChange
   // Enum that represents the types of invalid token reasons.
   enum InvalidReason {
     // Default unspecified type.
@@ -238,13 +291,21 @@ message TokenProperties {
     // This may be a configuration error (e.g. development keys used in
     // production) or end users trying to use verification tokens from other
     // sites.
-    SITE_MISMATCH = 5;
+    SITE_MISMATCH = 5 [deprecated = true];
 
     // The user verification token was not present.  It is a required input.
     MISSING = 6;
+
+    // A retriable error (such as network failure) occurred on the browser.
+    // Could easily be simulated by an attacker.
+    BROWSER_ERROR = 7;
   }
 
-  // Whether the provided user response token is valid.
+  // Whether the provided user response token is valid. When valid = false, the
+  // reason could be specified in invalid_reason or it could also be due to
+  // a user failing to solve a challenge or a sitekey mismatch (i.e the sitekey
+  // used to generate the token was different than the one specified in the
+  // assessment).
   bool valid = 1;
 
   // Reason associated with the response when valid = false.
@@ -260,183 +321,30 @@ message TokenProperties {
   string action = 5;
 }
 
-// The create key request message.
-message CreateKeyRequest {
-  // Required. The name of the project in which the key will be created, in the
-  // format "projects/{project_number}".
-  string parent = 1 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = {
-      type: "cloudresourcemanager.googleapis.com/Project"
-    }
-  ];
+// Account Defender risk assessment.
+message AccountDefenderAssessment {
+  // Labels returned by Account Defender for this request.
+  enum AccountDefenderLabel {
+    // Default unspecified type.
+    ACCOUNT_DEFENDER_LABEL_UNSPECIFIED = 0;
 
-  // Required. Information to create a reCAPTCHA Enterprise key.
-  Key key = 2 [(google.api.field_behavior) = REQUIRED];
-}
+    // The request matches a known good profile for the user.
+    PROFILE_MATCH = 1;
 
-// The list keys request message.
-message ListKeysRequest {
-  // Required. The name of the project that contains the keys that will be
-  // listed, in the format "projects/{project_number}".
-  string parent = 1 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = {
-      type: "cloudresourcemanager.googleapis.com/Project"
-    }
-  ];
+    // The request is potentially a suspicious login event and should be further
+    // verified either via multi-factor authentication or another system.
+    SUSPICIOUS_LOGIN_ACTIVITY = 2;
 
-  // Optional. The maximum number of keys to return. Default is 10. Max limit is
-  // 1000.
-  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+    // The request matched a profile that previously had suspicious account
+    // creation behavior. This could mean this is a fake account.
+    SUSPICIOUS_ACCOUNT_CREATION = 3;
 
-  // Optional. The next_page_token value returned from a previous.
-  // ListKeysRequest, if any.
-  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
-}
-
-// Response to request to list keys in a project.
-message ListKeysResponse {
-  // Key details.
-  repeated Key keys = 1;
-
-  // Token to retrieve the next page of results. It is set to empty if no keys
-  // remain in results.
-  string next_page_token = 2;
-}
-
-// The get key request message.
-message GetKeyRequest {
-  // Required. The name of the requested key, in the format
-  // "projects/{project_number}/keys/{key_id}".
-  string name = 1 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = {
-      type: "recaptchaenterprise.googleapis.com/Key"
-    }
-  ];
-}
-
-// The update key request message.
-message UpdateKeyRequest {
-  // Required. The key to update.
-  Key key = 1 [(google.api.field_behavior) = REQUIRED];
-
-  // Optional. The mask to control which field of the key get updated. If the mask is not
-  // present, all fields will be updated.
-  google.protobuf.FieldMask update_mask = 2 [(google.api.field_behavior) = OPTIONAL];
-}
-
-// The delete key request message.
-message DeleteKeyRequest {
-  // Required. The name of the key to be deleted, in the format
-  // "projects/{project_number}/keys/{key_id}".
-  string name = 1 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = {
-      type: "recaptchaenterprise.googleapis.com/Key"
-    }
-  ];
-}
-
-// A key used to identify and configure applications (web and/or mobile) that
-// use reCAPTCHA Enterprise.
-message Key {
-  option (google.api.resource) = {
-    type: "recaptchaenterprise.googleapis.com/Key"
-    pattern: "projects/{project}/keys/{key}"
-  };
-
-  // The resource name for the Key in the format
-  // "projects/{project_number}/keys/{key_id}".
-  string name = 1;
-
-  // Human-readable display name of this key. Modifiable by user.
-  string display_name = 2;
-
-  // Platform specific settings for this key. The key can only be used on one
-  // platform, the one it has settings for.
-  oneof platform_settings {
-    // Settings for keys that can be used by websites.
-    WebKeySettings web_settings = 3;
-
-    // Settings for keys that can be used by Android apps.
-    AndroidKeySettings android_settings = 4;
-
-    // Settings for keys that can be used by iOS apps.
-    IOSKeySettings ios_settings = 5;
-  }
-}
-
-// Settings specific to keys that can be used by websites.
-message WebKeySettings {
-  // Enum that represents the integration types for web keys.
-  enum IntegrationType {
-    // Default type that indicates this enum hasn't been specified. This is not
-    // a valid IntegrationType, one of the other types must be specified
-    // instead.
-    INTEGRATION_TYPE_UNSPECIFIED = 0;
-
-    // Only used to produce scores. It doesn't display the "I'm not a robot"
-    // checkbox and never shows captcha challenges.
-    SCORE_ONLY = 1;
-
-    // Displays the "I'm not a robot" checkbox and may show captcha challenges
-    // after it is checked.
-    CHECKBOX_CHALLENGE = 2;
-
-    // Doesn't display the "I'm not a robot" checkbox, but may show captcha
-    // challenges after risk analysis.
-    INVISIBLE_CHALLENGE = 3;
+    // The account in the request has a high number of related accounts. It does
+    // not necessarily imply that the account is bad but could require
+    // investigating.
+    RELATED_ACCOUNTS_NUMBER_HIGH = 4;
   }
 
-  // Enum that represents the possible challenge frequency and difficulty
-  // configurations for a web key.
-  enum ChallengeSecurityPreference {
-    // Default type that indicates this enum hasn't been specified.
-    CHALLENGE_SECURITY_PREFERENCE_UNSPECIFIED = 0;
-
-    // Key tends to show fewer and easier challenges.
-    USABILITY = 1;
-
-    // Key tends to show balanced (in amount and difficulty) challenges.
-    BALANCED = 2;
-
-    // Key tends to show more and harder challenges.
-    SECURITY = 3;
-  }
-
-  // Whether allowed_domains is enforced or not.
-  bool enforce_allowed_domains = 3;
-
-  // Domains or subdomains of websites allowed to use the key. All subdomains
-  // of an allowed domain are automatically allowed. A valid domain requires a
-  // host and must not include any path, port, query or fragment.
-  // Examples: 'example.com' or 'subdomain.example.com'
-  repeated string allowed_domains = 1;
-
-  // Whether this key can be used on AMP (Accelerated Mobile Pages) websites.
-  bool allow_amp_traffic = 2;
-
-  // Required. Describes how this key is integrated with the website.
-  IntegrationType integration_type = 4 [(google.api.field_behavior) = REQUIRED];
-
-  // Settings for the frequency and difficulty at which this key triggers
-  // captcha challenges. This should only be specified for IntegrationTypes
-  // CHECKBOX_CHALLENGE and INVISIBLE_CHALLENGE.
-  ChallengeSecurityPreference challenge_security_preference = 5;
-}
-
-// Settings specific to keys that can be used by Android apps.
-message AndroidKeySettings {
-  // Android package names of apps allowed to use the key.
-  // Example: 'com.companyname.appname'
-  repeated string allowed_package_names = 1;
-}
-
-// Settings specific to keys that can be used by iOS apps.
-message IOSKeySettings {
-  // iOS bundle ids of apps allowed to use the key.
-  // Example: 'com.companyname.productname.appname'
-  repeated string allowed_bundle_ids = 1;
+  // Labels for this request.
+  repeated AccountDefenderLabel labels = 1;
 }
