@@ -343,7 +343,6 @@ gapic_generator_php_repositories()
 
 # Required to access the C#-specific common resources config.
 _gax_dotnet_version = "Google.Api.Gax-3.3.0"
-
 _gax_dotnet_sha256 = "c4d31345a226987e8551cb81afa685c9322d3f806077d9f02011676cf00c15d9"
 
 http_archive(
@@ -355,14 +354,34 @@ http_archive(
 )
 
 _gapic_generator_csharp_version = "1.3.18"
-
 _gapic_generator_csharp_sha256 = "74d2c4a9e8e6dac54c329a7f4002d7e23a02972329e14f5dfb710b1d67755408"
+
+#http_archive(
+#    name = "gapic_generator_csharp",
+#    sha256 = _gapic_generator_csharp_sha256,
+#    strip_prefix = "gapic-generator-csharp-%s" % _gapic_generator_csharp_version,
+#    urls = ["https://github.com/googleapis/gapic-generator-csharp/archive/refs/tags/v%s.tar.gz" % _gapic_generator_csharp_version],
+#)
+
+# For development purposes, comment out the above, and uncomment/change this:
+
+_gapic_generator_csharp_org = "jskeet"
+_gapic_generator_csharp_branch = "generator-versions"
 
 http_archive(
     name = "gapic_generator_csharp",
-    sha256 = _gapic_generator_csharp_sha256,
-    strip_prefix = "gapic-generator-csharp-%s" % _gapic_generator_csharp_version,
-    urls = ["https://github.com/googleapis/gapic-generator-csharp/archive/refs/tags/v%s.tar.gz" % _gapic_generator_csharp_version],
+    strip_prefix = "gapic-generator-csharp-%s" % _gapic_generator_csharp_branch,
+    urls = ["https://github.com/%s/gapic-generator-csharp/archive/refs/heads/%s.tar.gz" % (_gapic_generator_csharp_org, _gapic_generator_csharp_branch) ],
+)
+
+_gapic_generator_csharp_gax_v3_version = "1.3.18"
+_gapic_generator_csharp_gax_v3_sha256 = "74d2c4a9e8e6dac54c329a7f4002d7e23a02972329e14f5dfb710b1d67755408"
+
+http_archive(
+    name = "gapic_generator_csharp_gax_v3",
+    sha256 = _gapic_generator_csharp_gax_v3_sha256,
+    strip_prefix = "gapic-generator-csharp-%s" % _gapic_generator_csharp_gax_v3_version,
+    urls = ["https://github.com/googleapis/gapic-generator-csharp/archive/refs/tags/v%s.tar.gz" % _gapic_generator_csharp_gax_v3_version],
 )
 
 load("@gapic_generator_csharp//:repositories.bzl", "gapic_generator_csharp_repositories")
