@@ -67,17 +67,17 @@ option ruby_package = "Google::Cloud::AccessApproval::V1";
 // If a request is not approved or dismissed, we call it pending.
 service AccessApproval {
   option (google.api.default_host) = "accessapproval.googleapis.com";
-  option (google.api.oauth_scopes) =
-      "https://www.googleapis.com/auth/cloud-platform";
+  option (google.api.oauth_scopes) = "https://www.googleapis.com/auth/cloud-platform";
 
   // Lists approval requests associated with a project, folder, or organization.
   // Approval requests can be filtered by state (pending, active, dismissed).
   // The order is reverse chronological.
-  rpc ListApprovalRequests(ListApprovalRequestsMessage)
-      returns (ListApprovalRequestsResponse) {
+  rpc ListApprovalRequests(ListApprovalRequestsMessage) returns (ListApprovalRequestsResponse) {
     option (google.api.http) = {
       get: "/v1/{parent=projects/*}/approvalRequests"
-      additional_bindings { get: "/v1/{parent=folders/*}/approvalRequests" }
+      additional_bindings {
+        get: "/v1/{parent=folders/*}/approvalRequests"
+      }
       additional_bindings {
         get: "/v1/{parent=organizations/*}/approvalRequests"
       }
@@ -89,7 +89,9 @@ service AccessApproval {
   rpc GetApprovalRequest(GetApprovalRequestMessage) returns (ApprovalRequest) {
     option (google.api.http) = {
       get: "/v1/{name=projects/*/approvalRequests/*}"
-      additional_bindings { get: "/v1/{name=folders/*/approvalRequests/*}" }
+      additional_bindings {
+        get: "/v1/{name=folders/*/approvalRequests/*}"
+      }
       additional_bindings {
         get: "/v1/{name=organizations/*/approvalRequests/*}"
       }
@@ -101,8 +103,7 @@ service AccessApproval {
   //
   // Returns NOT_FOUND if the request does not exist. Returns
   // FAILED_PRECONDITION if the request exists but is not in a pending state.
-  rpc ApproveApprovalRequest(ApproveApprovalRequestMessage)
-      returns (ApprovalRequest) {
+  rpc ApproveApprovalRequest(ApproveApprovalRequestMessage) returns (ApprovalRequest) {
     option (google.api.http) = {
       post: "/v1/{name=projects/*/approvalRequests/*}:approve"
       body: "*"
@@ -127,8 +128,7 @@ service AccessApproval {
   //
   // Returns FAILED_PRECONDITION if the request exists but is not in a pending
   // state.
-  rpc DismissApprovalRequest(DismissApprovalRequestMessage)
-      returns (ApprovalRequest) {
+  rpc DismissApprovalRequest(DismissApprovalRequestMessage) returns (ApprovalRequest) {
     option (google.api.http) = {
       post: "/v1/{name=projects/*/approvalRequests/*}:dismiss"
       body: "*"
@@ -143,12 +143,36 @@ service AccessApproval {
     };
   }
 
+  // Invalidates an existing ApprovalRequest. Returns the updated
+  // ApprovalRequest.
+  //
+  // NOTE: This does not deny access to the resource if another request has been
+  // made and approved. It only invalidates a single approval.
+  //
+  // Returns FAILED_PRECONDITION if the request exists but is not in an approved
+  // state.
+  rpc InvalidateApprovalRequest(InvalidateApprovalRequestMessage) returns (ApprovalRequest) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/approvalRequests/*}:invalidate"
+      body: "*"
+      additional_bindings {
+        post: "/v1/{name=folders/*/approvalRequests/*}:invalidate"
+        body: "*"
+      }
+      additional_bindings {
+        post: "/v1/{name=organizations/*/approvalRequests/*}:invalidate"
+        body: "*"
+      }
+    };
+  }
+
   // Gets the settings associated with a project, folder, or organization.
-  rpc GetAccessApprovalSettings(GetAccessApprovalSettingsMessage)
-      returns (AccessApprovalSettings) {
+  rpc GetAccessApprovalSettings(GetAccessApprovalSettingsMessage) returns (AccessApprovalSettings) {
     option (google.api.http) = {
       get: "/v1/{name=projects/*/accessApprovalSettings}"
-      additional_bindings { get: "/v1/{name=folders/*/accessApprovalSettings}" }
+      additional_bindings {
+        get: "/v1/{name=folders/*/accessApprovalSettings}"
+      }
       additional_bindings {
         get: "/v1/{name=organizations/*/accessApprovalSettings}"
       }
@@ -158,8 +182,7 @@ service AccessApproval {
 
   // Updates the settings associated with a project, folder, or organization.
   // Settings to update are determined by the value of field_mask.
-  rpc UpdateAccessApprovalSettings(UpdateAccessApprovalSettingsMessage)
-      returns (AccessApprovalSettings) {
+  rpc UpdateAccessApprovalSettings(UpdateAccessApprovalSettingsMessage) returns (AccessApprovalSettings) {
     option (google.api.http) = {
       patch: "/v1/{settings.name=projects/*/accessApprovalSettings}"
       body: "settings"
@@ -181,8 +204,7 @@ service AccessApproval {
   // Approval disabled. If Access Approval is enabled at a higher level of the
   // hierarchy, then Access Approval will still be enabled at this level as
   // the settings are inherited.
-  rpc DeleteAccessApprovalSettings(DeleteAccessApprovalSettingsMessage)
-      returns (google.protobuf.Empty) {
+  rpc DeleteAccessApprovalSettings(DeleteAccessApprovalSettingsMessage) returns (google.protobuf.Empty) {
     option (google.api.http) = {
       delete: "/v1/{name=projects/*/accessApprovalSettings}"
       additional_bindings {
@@ -190,6 +212,21 @@ service AccessApproval {
       }
       additional_bindings {
         delete: "/v1/{name=organizations/*/accessApprovalSettings}"
+      }
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Retrieves the service account that is used by Access Approval to access KMS
+  // keys for signing approved approval requests.
+  rpc GetAccessApprovalServiceAccount(GetAccessApprovalServiceAccountMessage) returns (AccessApprovalServiceAccount) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/serviceAccount}"
+      additional_bindings {
+        get: "/v1/{name=folders/*/serviceAccount}"
+      }
+      additional_bindings {
+        get: "/v1/{name=organizations/*/serviceAccount}"
       }
     };
     option (google.api.method_signature) = "name";
@@ -249,14 +286,23 @@ message AccessReason {
     CUSTOMER_INITIATED_SUPPORT = 1;
 
     // The principal accessed customer data in order to diagnose or resolve a
-    // suspected issue in services or a known outage. Often this access is used
-    // to confirm that customers are not affected by a suspected service issue
-    // or to remediate a reversible system issue.
+    // suspected issue in services. Often this access is used to confirm that
+    // customers are not affected by a suspected service issue or to remediate a
+    // reversible system issue.
     GOOGLE_INITIATED_SERVICE = 2;
 
     // Google initiated service for security, fraud, abuse, or compliance
     // purposes.
     GOOGLE_INITIATED_REVIEW = 3;
+
+    // The principal was compelled to access customer data in order to respond
+    // to a legal third party data request or process, including legal processes
+    // from customers themselves.
+    THIRD_PARTY_DATA_REQUEST = 4;
+
+    // The principal accessed customer data in order to diagnose or resolve a
+    // suspected issue in services or a known outage.
+    GOOGLE_RESPONSE_TO_PRODUCTION_ALERT = 5;
   }
 
   // Type of access justification.
@@ -266,6 +312,23 @@ message AccessReason {
   string detail = 2;
 }
 
+// Information about the digital signature of the resource.
+message SignatureInfo {
+  // The digital signature.
+  bytes signature = 1;
+
+  // How this signature may be verified.
+  oneof verification_info {
+    // The public key for the Google default signing, encoded in PEM format. The
+    // signature was created using a private key which may be verified using
+    // this public key.
+    string google_public_key_pem = 2;
+
+    // The resource name of the customer CryptoKeyVersion used for signing.
+    string customer_kms_key_version = 3;
+  }
+}
+
 // A decision that has been made to approve access to a resource.
 message ApproveDecision {
   // The time at which approval was granted.
@@ -273,6 +336,15 @@ message ApproveDecision {
 
   // The time at which the approval expires.
   google.protobuf.Timestamp expire_time = 2;
+
+  // If set, denotes the timestamp at which the approval is invalidated.
+  google.protobuf.Timestamp invalidate_time = 3;
+
+  // The signature for the ApprovalRequest and details on how it was signed.
+  SignatureInfo signature_info = 4;
+
+  // True when the request has been auto-approved.
+  bool auto_approved = 5;
 }
 
 // A decision that has been made to dismiss an approval request.
@@ -280,8 +352,8 @@ message DismissDecision {
   // The time at which the approval request was dismissed.
   google.protobuf.Timestamp dismiss_time = 1;
 
-  // This field will be true if the ApprovalRequest was implcitly dismissed
-  // due to inaction by the access approval approvers (the request is not acted
+  // This field will be true if the ApprovalRequest was implicitly dismissed due
+  // to inaction by the access approval approvers (the request is not acted
   // on by the approvers before the exiration time).
   bool implicit = 2;
 }
@@ -431,8 +503,8 @@ message AccessApprovalSettings {
   //   * "folders/{folder}/accessApprovalSettings"
   //   * "organizations/{organization}/accessApprovalSettings"
   string name = 1 [(google.api.resource_reference) = {
-    type: "accessapproval.googleapis.com/AccessApprovalSettings"
-  }];
+                     type: "accessapproval.googleapis.com/AccessApprovalSettings"
+                   }];
 
   // A list of email addresses to which notifications relating to approval
   // requests should be sent. Notifications relating to a resource will be sent
@@ -459,6 +531,49 @@ message AccessApprovalSettings {
   // or more ancestors of the Project or Folder (this field will always be
   // unset for the organization since organizations do not have ancestors).
   bool enrolled_ancestor = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The asymmetric crypto key version to use for signing approval requests.
+  // Empty active_key_version indicates that a Google-managed key should be used
+  // for signing. This property will be ignored if set by an ancestor of this
+  // resource, and new non-empty values may not be set.
+  string active_key_version = 6;
+
+  // Output only. This field is read only (not settable via UpdateAccessApprovalSettings
+  // method). If the field is true, that indicates that an ancestor of this
+  // Project or Folder has set active_key_version (this field will always be
+  // unset for the organization since organizations do not have ancestors).
+  bool ancestor_has_active_key_version = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. This field is read only (not settable via UpdateAccessApprovalSettings
+  // method). If the field is true, that indicates that there is some
+  // configuration issue with the active_key_version configured at this level in
+  // the resource hierarchy (e.g. it doesn't exist or the Access Approval
+  // service account doesn't have the correct permissions on it, etc.) This key
+  // version is not necessarily the effective key version at this level, as key
+  // versions are inherited top-down.
+  bool invalid_key_version = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Access Approval service account related to a project/folder/organization.
+message AccessApprovalServiceAccount {
+  option (google.api.resource) = {
+    type: "accessapproval.googleapis.com/AccessApprovalServiceAccount"
+    pattern: "projects/{project}/serviceAccount"
+    pattern: "folders/{folder}/serviceAccount"
+    pattern: "organizations/{organization}/serviceAccount"
+  };
+
+  // The resource name of the Access Approval service account. Format is one of:
+  //
+  //   * "projects/{project}/serviceAccount"
+  //   * "folders/{folder}/serviceAccount"
+  //   * "organizations/{organization}/serviceAccount"
+  string name = 1 [(google.api.resource_reference) = {
+                     type: "accessapproval.googleapis.com/AccessApprovalServiceAccount"
+                   }];
+
+  // Email address of the service account.
+  string account_email = 2;
 }
 
 // Request to list approval requests.
@@ -466,8 +581,8 @@ message ListApprovalRequestsMessage {
   // The parent resource. This may be "projects/{project}",
   // "folders/{folder}", or "organizations/{organization}".
   string parent = 1 [(google.api.resource_reference) = {
-    child_type: "accessapproval.googleapis.com/ApprovalRequest"
-  }];
+                       child_type: "accessapproval.googleapis.com/ApprovalRequest"
+                     }];
 
   // A filter on the type of approval requests to retrieve. Must be one of the
   // following values:
@@ -505,16 +620,16 @@ message GetApprovalRequestMessage {
   // Format:
   // "{projects|folders|organizations}/{id}/approvalRequests/{approval_request}"
   string name = 1 [(google.api.resource_reference) = {
-    type: "accessapproval.googleapis.com/ApprovalRequest"
-  }];
+                     type: "accessapproval.googleapis.com/ApprovalRequest"
+                   }];
 }
 
 // Request to approve an ApprovalRequest.
 message ApproveApprovalRequestMessage {
   // Name of the approval request to approve.
   string name = 1 [(google.api.resource_reference) = {
-    type: "accessapproval.googleapis.com/ApprovalRequest"
-  }];
+                     type: "accessapproval.googleapis.com/ApprovalRequest"
+                   }];
 
   // The expiration time of this approval.
   google.protobuf.Timestamp expire_time = 2;
@@ -524,8 +639,16 @@ message ApproveApprovalRequestMessage {
 message DismissApprovalRequestMessage {
   // Name of the ApprovalRequest to dismiss.
   string name = 1 [(google.api.resource_reference) = {
-    type: "accessapproval.googleapis.com/ApprovalRequest"
-  }];
+                     type: "accessapproval.googleapis.com/ApprovalRequest"
+                   }];
+}
+
+// Request to invalidate an existing approval.
+message InvalidateApprovalRequestMessage {
+  // Name of the ApprovalRequest to invalidate.
+  string name = 1 [(google.api.resource_reference) = {
+                     type: "accessapproval.googleapis.com/ApprovalRequest"
+                   }];
 }
 
 // Request to get access approval settings.
@@ -533,8 +656,8 @@ message GetAccessApprovalSettingsMessage {
   // The name of the AccessApprovalSettings to retrieve.
   // Format: "{projects|folders|organizations}/{id}/accessApprovalSettings"
   string name = 1 [(google.api.resource_reference) = {
-    type: "accessapproval.googleapis.com/AccessApprovalSettings"
-  }];
+                     type: "accessapproval.googleapis.com/AccessApprovalSettings"
+                   }];
 }
 
 // Request to update access approval settings.
@@ -559,6 +682,12 @@ message UpdateAccessApprovalSettingsMessage {
 message DeleteAccessApprovalSettingsMessage {
   // Name of the AccessApprovalSettings to delete.
   string name = 1 [(google.api.resource_reference) = {
-    type: "accessapproval.googleapis.com/AccessApprovalSettings"
-  }];
+                     type: "accessapproval.googleapis.com/AccessApprovalSettings"
+                   }];
+}
+
+// Request to get an Access Approval service account.
+message GetAccessApprovalServiceAccountMessage {
+  // Name of the AccessApprovalServiceAccount to retrieve.
+  string name = 1;
 }
