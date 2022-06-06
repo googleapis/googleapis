@@ -343,7 +343,6 @@ gapic_generator_php_repositories()
 
 # Required to access the C#-specific common resources config.
 _gax_dotnet_version = "Google.Api.Gax-3.3.0"
-
 _gax_dotnet_sha256 = "c4d31345a226987e8551cb81afa685c9322d3f806077d9f02011676cf00c15d9"
 
 http_archive(
@@ -354,9 +353,8 @@ http_archive(
     urls = ["https://github.com/googleapis/gax-dotnet/archive/refs/tags/%s.tar.gz" % _gax_dotnet_version],
 )
 
-_gapic_generator_csharp_version = "1.3.18"
-
-_gapic_generator_csharp_sha256 = "74d2c4a9e8e6dac54c329a7f4002d7e23a02972329e14f5dfb710b1d67755408"
+_gapic_generator_csharp_version = "1.3.19"
+_gapic_generator_csharp_sha256 = "0e624db75f11a4d8ca1f8cc5c619c143be312aef892f76fc94695f9723a9c1e9"
 
 http_archive(
     name = "gapic_generator_csharp",
@@ -366,8 +364,28 @@ http_archive(
 )
 
 load("@gapic_generator_csharp//:repositories.bzl", "gapic_generator_csharp_repositories")
-
 gapic_generator_csharp_repositories()
+
+
+# Version of C# generator targeting GAX v3. This is present so that teams that
+# do not want to move immediately to GAX v4 when it comes out (e.g. Ads) are
+# able to stick with the GAX-v3-based generator.
+
+_gapic_generator_csharp_gax_v3_version = "1.3.19"
+_gapic_generator_csharp_gax_v3_sha256 = "0e624db75f11a4d8ca1f8cc5c619c143be312aef892f76fc94695f9723a9c1e9"
+
+http_archive(
+    name = "gapic_generator_csharp_gax_v3",
+    sha256 = _gapic_generator_csharp_gax_v3_sha256,
+    strip_prefix = "gapic-generator-csharp-%s" % _gapic_generator_csharp_gax_v3_version,
+    urls = ["https://github.com/googleapis/gapic-generator-csharp/archive/refs/tags/v%s.tar.gz" % _gapic_generator_csharp_gax_v3_version],
+    repo_mapping = {
+        "@gapic_generator_restore": "@gapic_generator_restore_gax_v3",
+    },
+)
+
+load("@gapic_generator_csharp_gax_v3//:repositories.bzl", gapic_generator_csharp_repositories_gax_v3 = "gapic_generator_csharp_repositories")
+gapic_generator_csharp_repositories_gax_v3(gapic_generator_suffix = "_gax_v3")
 
 ##############################################################################
 # Ruby
