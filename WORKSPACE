@@ -128,9 +128,9 @@ load("@com_googleapis_gapic_generator_go//:repositories.bzl", "com_googleapis_ga
 com_googleapis_gapic_generator_go_repositories()
 
 # rules_gapic also depends on rules_go, so it must come after our own dependency on rules_go.
-_rules_gapic_version = "0.12.1"
+_rules_gapic_version = "0.13.0"
 
-_rules_gapic_sha256 = "6638f042d67ec145c62e7cad81b6c76d0e3d1c916fd995ab813a006ccb168bd5"
+_rules_gapic_sha256 = "1ebbd74b064697f4ff01d8f59764ba8431d52673f48f636be6b135b6da640b8e"
 
 http_archive(
     name = "rules_gapic",
@@ -236,7 +236,7 @@ grpc_java_repositories()
 
 # Java microgenerator.
 # Must go AFTER java-gax, since both java gax and gapic-generator are written in java and may conflict.
-_gapic_generator_java_version = "2.8.0"
+_gapic_generator_java_version = "2.8.1"
 
 http_archive(
     name = "gapic_generator_java",
