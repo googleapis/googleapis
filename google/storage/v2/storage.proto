@@ -175,13 +175,37 @@ service Storage {
   // true, or else it is an error.
   //
   // For a resumable write, the client should instead call
-  // `StartResumableWrite()` and provide that method an `WriteObjectSpec.`
+  // `StartResumableWrite()`, populating a `WriteObjectSpec` into that request.
   // They should then attach the returned `upload_id` to the first message of
-  // each following call to `Create`. If there is an error or the connection is
-  // broken during the resumable `Create()`, the client should check the status
-  // of the `Create()` by calling `QueryWriteStatus()` and continue writing from
-  // the returned `persisted_size`. This may be less than the amount of data the
-  // client previously sent.
+  // each following call to `WriteObject`. If the stream is closed before
+  // finishing the upload (either explicitly by the client or due to a network
+  // error or an error response from the server), the client should do as
+  // follows:
+  //   - Check the result Status of the stream, to determine if writing can be
+  //     resumed on this stream or must be restarted from scratch (by calling
+  //     `StartResumableWrite()`). The resumable errors are DEADLINE_EXCEEDED,
+  //     INTERNAL, and UNAVAILABLE. For each case, the client should use binary
+  //     exponential backoff before retrying.  Additionally, writes can be
+  //     resumed after RESOURCE_EXHAUSTED errors, but only after taking
+  //     appropriate measures, which may include reducing aggregate send rate
+  //     across clients and/or requesting a quota increase for your project.
+  //   - If the call to `WriteObject` returns `ABORTED`, that indicates
+  //     concurrent attempts to update the resumable write, caused either by
+  //     multiple racing clients or by a single client where the previous
+  //     request was timed out on the client side but nonetheless reached the
+  //     server. In this case the client should take steps to prevent further
+  //     concurrent writes (e.g., increase the timeouts, stop using more than
+  //     one process to perform the upload, etc.), and then should follow the
+  //     steps below for resuming the upload.
+  //   - For resumable errors, the client should call `QueryWriteStatus()` and
+  //     then continue writing from the returned `persisted_size`. This may be
+  //     less than the amount of data the client previously sent. Note also that
+  //     it is acceptable to send data starting at an offset earlier than the
+  //     returned `persisted_size`; in this case, the service will skip data at
+  //     offsets that were already persisted (without checking that it matches
+  //     the previously written data), and write only the data starting from the
+  //     persisted offset. This behavior can make client-side handling simpler
+  //     in some cases.
   //
   // The service will not view the object as complete until the client has
   // sent a `WriteObjectRequest` with `finish_write` set to `true`. Sending any
@@ -189,6 +213,10 @@ service Storage {
   // `true` will cause an error. The client **should** check the response it
   // receives to determine how much data the service was able to commit and
   // whether the service views the object as complete.
+  //
+  // Attempting to resume an already finalized object will result in an OK
+  // status, with a WriteObjectResponse containing the finalized object's
+  // metadata.
   rpc WriteObject(stream WriteObjectRequest) returns (WriteObjectResponse) {
   }
 
@@ -472,7 +500,8 @@ message ListNotificationsRequest {
 
   // The maximum number of notifications to return. The service may return fewer
   // than this value.
-  // The maximum value is 100; values above 100 will be coerced to 100.
+  // The default value is 100. Specifying a value above 100 will result in a
+  // page_size of 100.
   int32 page_size = 2;
 
   // A page token, received from a previous `ListNotifications` call.
@@ -571,7 +600,7 @@ message DeleteObjectRequest {
   // there are no live versions of the object.
   optional int64 if_generation_match = 5;
 
-  // Makes the operation conditional on whether the object's current generation
+  // Makes the operation conditional on whether the object's live generation
   // does not match the given value. If no live object exists, the precondition
   // fails. Setting to 0 makes the operation succeed only if there is a live
   // version of the object.
@@ -608,8 +637,8 @@ message ReadObjectRequest {
   // back from the end of the object to be returned. For example, if an object's
   // length is 15 bytes, a ReadObjectRequest with `read_offset` = -5 and
   // `read_limit` = 3 would return bytes 10 through 12 of the object. Requesting
-  // a negative offset whose magnitude is larger than the size of the object
-  // will result in an error.
+  // a negative offset with magnitude larger than the size of the object will
+  // return the entire object.
   int64 read_offset = 4;
 
   // The maximum number of `data` bytes the server is allowed to return in the
@@ -626,7 +655,7 @@ message ReadObjectRequest {
   // there are no live versions of the object.
   optional int64 if_generation_match = 6;
 
-  // Makes the operation conditional on whether the object's current generation
+  // Makes the operation conditional on whether the object's live generation
   // does not match the given value. If no live object exists, the precondition
   // fails. Setting to 0 makes the operation succeed only if there is a live
   // version of the object.
@@ -668,7 +697,7 @@ message GetObjectRequest {
   // there are no live versions of the object.
   optional int64 if_generation_match = 4;
 
-  // Makes the operation conditional on whether the object's current generation
+  // Makes the operation conditional on whether the object's live generation
   // does not match the given value. If no live object exists, the precondition
   // fails. Setting to 0 makes the operation succeed only if there is a live
   // version of the object.
@@ -730,7 +759,7 @@ message WriteObjectSpec {
   // succeed only if there are no live versions of the object.
   optional int64 if_generation_match = 3;
 
-  // Makes the operation conditional on whether the object's current
+  // Makes the operation conditional on whether the object's live
   // generation does not match the given value. If no live object exists, the
   // precondition fails. Setting to 0 makes the operation succeed only if
   // there is a live version of the object.
@@ -970,7 +999,7 @@ message RewriteObjectRequest {
   // there are no live versions of the object.
   optional int64 if_generation_match = 7;
 
-  // Makes the operation conditional on whether the object's current generation
+  // Makes the operation conditional on whether the object's live generation
   // does not match the given value. If no live object exists, the precondition
   // fails. Setting to 0 makes the operation succeed only if there is a live
   // version of the object.
@@ -984,11 +1013,11 @@ message RewriteObjectRequest {
   // metageneration does not match the given value.
   optional int64 if_metageneration_not_match = 10;
 
-  // Makes the operation conditional on whether the source object's current
+  // Makes the operation conditional on whether the source object's live
   // generation matches the given value.
   optional int64 if_source_generation_match = 11;
 
-  // Makes the operation conditional on whether the source object's current
+  // Makes the operation conditional on whether the source object's live
   // generation does not match the given value.
   optional int64 if_source_generation_not_match = 12;
 
@@ -1073,7 +1102,7 @@ message UpdateObjectRequest {
   // The object's bucket and name fields are used to identify the object to
   // update. If present, the object's generation field selects a specific
   // revision of this object whose metadata should be updated. Otherwise,
-  // assumes the current, live version of the object.
+  // assumes the live version of the object.
   Object object = 1;
 
   // Makes the operation conditional on whether the object's current generation
@@ -1081,7 +1110,7 @@ message UpdateObjectRequest {
   // there are no live versions of the object.
   optional int64 if_generation_match = 2;
 
-  // Makes the operation conditional on whether the object's current generation
+  // Makes the operation conditional on whether the object's live generation
   // does not match the given value. If no live object exists, the precondition
   // fails. Setting to 0 makes the operation succeed only if there is a live
   // version of the object.
@@ -1483,7 +1512,8 @@ message Bucket {
 
   // Logging-related properties of a bucket.
   message Logging {
-    // The destination bucket where the current bucket's logs should be placed.
+    // The destination bucket where the current bucket's logs should be placed,
+    // using path format (like `projects/123456/buckets/foo`).
     string log_bucket = 1;
 
     // A prefix for log object names.
@@ -1532,6 +1562,14 @@ message Bucket {
     string not_found_page = 2;
   }
 
+  // Configuration for Custom Dual Regions.  It should specify precisely two
+  // eligible regions within the same Multiregion. More information on regions
+  // may be found [https://cloud.google.com/storage/docs/locations][here].
+  message CustomPlacementConfig {
+    // List of locations to use for data placement.
+    repeated string data_locations = 1;
+  }
+
   // Configuration for a bucket's Autoclass feature.
   message Autoclass {
     // Enables Autoclass.
@@ -1551,6 +1589,11 @@ message Bucket {
   // `name` field. For globally unique buckets, this is equal to the "bucket
   // name" of other Cloud Storage APIs. Example: "pub".
   string bucket_id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The etag of the bucket.
+  // If included in the metadata of an UpdateBucketRequest, the operation will
+  // only be performed if the etag matches that of the bucket.
+  string etag = 29;
 
   // Immutable. The project which owns this bucket.
   string project = 3 [
@@ -1677,6 +1720,10 @@ message Bucket {
   // Reserved for future use.
   bool satisfies_pzs = 25;
 
+  // Configuration that, if present, specifies the data placement for a Custom
+  // Dual Region.
+  CustomPlacementConfig custom_placement_config = 26;
+
   // The bucket's Autoclass configuration. If there is no configuration, the
   // Autoclass feature will be disabled and have no effect on the bucket.
   Autoclass autoclass = 28;
@@ -1709,6 +1756,12 @@ message BucketAccessControl {
 
   // The ID for the entity, if any.
   string entity_id = 4;
+
+  // The etag of the BucketAccessControl.
+  // If included in the metadata of an update or delete request message, the
+  // operation operation will only be performed if the etag matches that of the
+  // bucket's BucketAccessControl.
+  string etag = 8;
 
   // The email address associated with the entity, if any.
   string email = 5;
@@ -1772,6 +1825,9 @@ message HmacKeyMetadata {
 
   // The last modification time of the HMAC key metadata.
   google.protobuf.Timestamp update_time = 7;
+
+  // The etag of the HMAC key.
+  string etag = 8;
 }
 
 // A directive to publish Pub/Sub notifications upon changes to a bucket.
@@ -1790,6 +1846,11 @@ message Notification {
   // Required. The Pub/Sub topic to which this subscription publishes. Formatted as:
   // '//pubsub.googleapis.com/projects/{project-identifier}/topics/{my-topic}'
   string topic = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // The etag of the Notification.
+  // If included in the metadata of GetNotificationRequest, the operation will
+  // only be performed if the etag matches that of the Notification.
+  string etag = 7;
 
   // Optional. If present, only send notifications about listed event types. If empty,
   // sent notifications for all event types.
@@ -1836,6 +1897,12 @@ message Object {
       type: "storage.googleapis.com/Bucket"
     }
   ];
+
+  // The etag of the object.
+  // If included in the metadata of an update or delete request message, the
+  // operation will only be performed if the etag matches that of the live
+  // object.
+  string etag = 27;
 
   // Immutable. The content generation of this object. Used for object versioning.
   // Attempting to set or update this field will result in a
@@ -1997,6 +2064,12 @@ message ObjectAccessControl {
 
   // The ID for the entity, if any.
   string entity_id = 4;
+
+  // The etag of the ObjectAccessControl.
+  // If included in the metadata of an update or delete request message, the
+  // operation will only be performed if the etag matches that of the live
+  // object's ObjectAccessControl.
+  string etag = 8;
 
   // The email address associated with the entity, if any.
   string email = 5;
