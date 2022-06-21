@@ -248,11 +248,13 @@ message CreateReadSessionRequest {
   // Max initial number of streams. If unset or zero, the server will
   // provide a value of streams so as to produce reasonable throughput. Must be
   // non-negative. The number of streams may be lower than the requested number,
-  // depending on the amount parallelism that is reasonable for the table. Error
-  // will be returned if the max count is greater than the current system
-  // max limit of 1,000.
+  // depending on the amount parallelism that is reasonable for the table.
+  // There is a default system max limit of 1,000.
   //
-  // Streams must be read starting from offset 0.
+  // This must be greater than or equal to preferred_min_stream_count.
+  // Typically, clients should either leave this unset to let the system to
+  // determine an upper bound OR set this a size for the maximum "units of work"
+  // it can gracefully handle.
   int32 max_stream_count = 3;
 }
 
@@ -329,7 +331,7 @@ message ReadRowsResponse {
 
   // The schema for the read. If read_options.selected_fields is set, the
   // schema may be different from the table schema as it will only contain
-  // the selected fields. This schema is equivelant to the one returned by
+  // the selected fields. This schema is equivalent to the one returned by
   // CreateSession. This field is only populated in the first ReadRowsResponse
   // RPC.
   oneof schema {
@@ -488,6 +490,11 @@ message AppendRowsResponse {
   // use it to input new type of message. It will be empty when no schema
   // updates have occurred.
   TableSchema updated_schema = 3;
+
+  // If a request failed due to corrupted rows, no rows in the batch will be
+  // appended. The API will return row level error info, so that the caller can
+  // remove the bad rows and retry the request.
+  repeated RowError row_errors = 4;
 }
 
 // Request message for `GetWriteStreamRequest`.
@@ -621,4 +628,25 @@ message StorageError {
 
   // Message that describes the error.
   string error_message = 3;
+}
+
+// The message that presents row level error info in a request.
+message RowError {
+  // Error code for `RowError`.
+  enum RowErrorCode {
+    // Default error.
+    ROW_ERROR_CODE_UNSPECIFIED = 0;
+
+    // One or more fields in the row has errors.
+    FIELDS_ERROR = 1;
+  }
+
+  // Index of the malformed row in the request.
+  int64 index = 1;
+
+  // Structured error reason for a row error.
+  RowErrorCode code = 2;
+
+  // Description of the issue encountered when processing the row.
+  string message = 3;
 }
