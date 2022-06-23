@@ -72,7 +72,6 @@ rules_proto_dependencies()
 
 rules_proto_toolchains()
 
-
 ##############################################################################
 # Go
 ##############################################################################
@@ -116,11 +115,11 @@ _gapic_generator_go_version = "0.31.0"
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
+    repo_mapping = {
+        "@go_googleapis": "@com_google_googleapis",
+    },
     strip_prefix = "gapic-generator-go-%s" % _gapic_generator_go_version,
     urls = ["https://github.com/googleapis/gapic-generator-go/archive/v%s.tar.gz" % _gapic_generator_go_version],
-    repo_mapping = {
-      "@go_googleapis": "@com_google_googleapis",
-    },
 )
 
 load("@com_googleapis_gapic_generator_go//:repositories.bzl", "com_googleapis_gapic_generator_go_repositories")
@@ -128,9 +127,9 @@ load("@com_googleapis_gapic_generator_go//:repositories.bzl", "com_googleapis_ga
 com_googleapis_gapic_generator_go_repositories()
 
 # rules_gapic also depends on rules_go, so it must come after our own dependency on rules_go.
-_rules_gapic_version = "0.13.0"
+_rules_gapic_version = "0.14.1"
 
-_rules_gapic_sha256 = "1ebbd74b064697f4ff01d8f59764ba8431d52673f48f636be6b135b6da640b8e"
+_rules_gapic_sha256 = "8483dfe3def57fb6549167dfc9792cdb878af2d521340fc50f094050a7a4180d"
 
 http_archive(
     name = "rules_gapic",
@@ -192,12 +191,13 @@ load("@com_google_protobuf//:protobuf_deps.bzl", "PROTOBUF_MAVEN_ARTIFACTS")
 # dependencies through maven_install.
 # https://github.com/protocolbuffers/protobuf/issues/9132
 RULES_JVM_EXTERNAL_TAG = "4.2"
+
 RULES_JVM_EXTERNAL_SHA = "cd1a77b7b02e8e008439ca76fd34f5b07aecb8c752961f9640dea15e9e5ba1ca"
 
 http_archive(
     name = "rules_jvm_external",
-    strip_prefix = "rules_jvm_external-%s" % RULES_JVM_EXTERNAL_TAG,
     sha256 = RULES_JVM_EXTERNAL_SHA,
+    strip_prefix = "rules_jvm_external-%s" % RULES_JVM_EXTERNAL_TAG,
     url = "https://github.com/bazelbuild/rules_jvm_external/archive/%s.zip" % RULES_JVM_EXTERNAL_TAG,
 )
 
@@ -343,6 +343,7 @@ gapic_generator_php_repositories()
 
 # Required to access the C#-specific common resources config.
 _gax_dotnet_version = "Google.Api.Gax-3.3.0"
+
 _gax_dotnet_sha256 = "c4d31345a226987e8551cb81afa685c9322d3f806077d9f02011676cf00c15d9"
 
 http_archive(
@@ -354,6 +355,7 @@ http_archive(
 )
 
 _gapic_generator_csharp_version = "1.4.2"
+
 _gapic_generator_csharp_sha256 = "8141912164b242dfa25d7b10118faac68ce04b209112170057da7b95962a15c6"
 
 http_archive(
@@ -364,27 +366,29 @@ http_archive(
 )
 
 load("@gapic_generator_csharp//:repositories.bzl", "gapic_generator_csharp_repositories")
-gapic_generator_csharp_repositories()
 
+gapic_generator_csharp_repositories()
 
 # Version of C# generator targeting GAX v3. This is present so that teams that
 # do not want to move immediately to GAX v4 when it comes out (e.g. Ads) are
 # able to stick with the GAX-v3-based generator.
 
 _gapic_generator_csharp_gax_v3_version = "1.3.19"
+
 _gapic_generator_csharp_gax_v3_sha256 = "0e624db75f11a4d8ca1f8cc5c619c143be312aef892f76fc94695f9723a9c1e9"
 
 http_archive(
     name = "gapic_generator_csharp_gax_v3",
-    sha256 = _gapic_generator_csharp_gax_v3_sha256,
-    strip_prefix = "gapic-generator-csharp-%s" % _gapic_generator_csharp_gax_v3_version,
-    urls = ["https://github.com/googleapis/gapic-generator-csharp/archive/refs/tags/v%s.tar.gz" % _gapic_generator_csharp_gax_v3_version],
     repo_mapping = {
         "@gapic_generator_restore": "@gapic_generator_restore_gax_v3",
     },
+    sha256 = _gapic_generator_csharp_gax_v3_sha256,
+    strip_prefix = "gapic-generator-csharp-%s" % _gapic_generator_csharp_gax_v3_version,
+    urls = ["https://github.com/googleapis/gapic-generator-csharp/archive/refs/tags/v%s.tar.gz" % _gapic_generator_csharp_gax_v3_version],
 )
 
 load("@gapic_generator_csharp_gax_v3//:repositories.bzl", gapic_generator_csharp_repositories_gax_v3 = "gapic_generator_csharp_repositories")
+
 gapic_generator_csharp_repositories_gax_v3(gapic_generator_suffix = "_gax_v3")
 
 ##############################################################################
