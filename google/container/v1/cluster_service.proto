@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/wrappers.proto";
@@ -350,6 +351,15 @@ service ClusterManager {
     option (google.api.method_signature) = "name";
   }
 
+  // CompleteNodePoolUpgrade will signal an on-going node pool upgrade to
+  // complete.
+  rpc CompleteNodePoolUpgrade(CompleteNodePoolUpgradeRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/clusters/*/nodePools/*}:completeUpgrade"
+      body: "*"
+    };
+  }
+
   // Rolls back a previously Aborted or Failed NodePool upgrade.
   // This makes no changes if the last upgrade successfully completed.
   rpc RollbackNodePoolUpgrade(RollbackNodePoolUpgradeRequest) returns (Operation) {
@@ -488,6 +498,8 @@ message LinuxNodeConfig {
   //
   // The following parameters are supported.
   //
+  // net.core.busy_poll
+  // net.core.busy_read
   // net.core.netdev_max_backlog
   // net.core.rmem_max
   // net.core.wmem_default
@@ -533,9 +545,21 @@ message NodeKubeletConfig {
   // Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
   // The value must be a positive duration.
   string cpu_cfs_quota_period = 3;
+
+  // Set the Pod PID limits. See
+  // https://kubernetes.io/docs/concepts/policy/pid-limiting/#pod-pid-limits
+  //
+  // Controls the maximum number of processes allowed to run in a pod. The value
+  // must be greater than or equal to 1024 and less than 4194304.
+  int64 pod_pids_limit = 4;
 }
 
 // Parameters that describe the nodes in a cluster.
+//
+// GKE Autopilot clusters do not
+// recognize parameters in `NodeConfig`. Use
+// [AutoprovisioningNodePoolDefaults][google.container.v1.AutoprovisioningNodePoolDefaults]
+// instead.
 message NodeConfig {
   // The name of a Google Compute Engine [machine
   // type](https://cloud.google.com/compute/docs/machine-types)
@@ -577,6 +601,7 @@ message NodeConfig {
   // in length. These are reflected as part of a URL in the metadata server.
   // Additionally, to avoid ambiguity, keys must not conflict with any other
   // metadata keys for the project or be one of the reserved keys:
+  //
   //  - "cluster-location"
   //  - "cluster-name"
   //  - "cluster-uid"
@@ -707,6 +732,14 @@ message NodeConfig {
 
   // Enable or disable gvnic in the node pool.
   VirtualNIC gvnic = 29;
+
+  // Spot flag for enabling Spot VM, which is a rebrand of
+  // the existing preemptible flag.
+  bool spot = 32;
+
+  // Confidential nodes config.
+  // All the nodes in the node pool will be Confidential VM once enabled.
+  ConfidentialNodes confidential_nodes = 35;
 }
 
 // Specifies options for controlling advanced machine features.
@@ -719,6 +752,21 @@ message AdvancedMachineFeatures {
 
 // Parameters for node pool-level network config.
 message NodeNetworkConfig {
+  // Configuration of all network bandwidth tiers
+  message NetworkPerformanceConfig {
+    // Node network tier
+    enum Tier {
+      // Default value
+      TIER_UNSPECIFIED = 0;
+
+      // Higher bandwidth, actual values based on VM size.
+      TIER_1 = 1;
+    }
+
+    // Specifies the total network bandwidth tier for the NodePool.
+    optional Tier total_egress_bandwidth_tier = 1;
+  }
+
   // Input only. Whether to create a new range for pod IPs in this node pool.
   // Defaults are provided for `pod_range` and `pod_ipv4_cidr_block` if they
   // are not specified.
@@ -759,6 +807,9 @@ message NodeNetworkConfig {
   //
   // This field cannot be changed after the node pool has been created.
   string pod_ipv4_cidr_block = 6;
+
+  // Network bandwidth tier configuration.
+  optional NetworkPerformanceConfig network_performance_config = 11;
 }
 
 // A set of Shielded Instance options.
@@ -863,6 +914,27 @@ message NodeTaint {
 
   // Effect for taint.
   Effect effect = 3;
+}
+
+// Collection of Kubernetes [node
+// taints](https://kubernetes.io/docs/concepts/configuration/taint-and-toleration).
+message NodeTaints {
+  // List of node taints.
+  repeated NodeTaint taints = 1;
+}
+
+// Collection of node-level [Kubernetes
+// labels](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels).
+message NodeLabels {
+  // Map of node label keys and node label values.
+  map<string, string> labels = 1;
+}
+
+// Collection of Compute Engine network tags that can be applied to a node's
+// underlying VM instance.
+message NetworkTags {
+  // List of network tags.
+  repeated string tags = 1;
 }
 
 // The authentication information for accessing the master endpoint.
@@ -1133,9 +1205,28 @@ message NetworkPolicy {
 
 // Configuration for Binary Authorization.
 message BinaryAuthorization {
+  // Binary Authorization mode of operation.
+  enum EvaluationMode {
+    // Default value
+    EVALUATION_MODE_UNSPECIFIED = 0;
+
+    // Disable BinaryAuthorization
+    DISABLED = 1;
+
+    // Enforce Kubernetes admission requests with BinaryAuthorization using the
+    // project's singleton policy. This is equivalent to setting the
+    // enabled boolean to true.
+    PROJECT_SINGLETON_POLICY_ENFORCE = 2;
+  }
+
   // Enable Binary Authorization for this cluster. If enabled, all container
   // images will be validated by Binary Authorization.
   bool enabled = 1;
+
+  // Mode of operation for binauthz policy evaluation. Currently the only
+  // options are equivalent to enable/disable. If unspecified, defaults to
+  // DISABLED.
+  EvaluationMode evaluation_mode = 2;
 }
 
 // Configuration for controlling how IPs are allocated in the cluster.
@@ -1473,8 +1564,12 @@ message Cluster {
   // Notification configuration of the cluster.
   NotificationConfig notification_config = 49;
 
-  // Configuration of Confidential Nodes
+  // Configuration of Confidential Nodes.
+  // All the nodes in the cluster will be Confidential VM once enabled.
   ConfidentialNodes confidential_nodes = 50;
+
+  // Configuration for Identity Service component.
+  IdentityServiceConfig identity_service_config = 54;
 
   // [Output only] Server-defined URL for the resource.
   string self_link = 100;
@@ -1586,6 +1681,20 @@ message Cluster {
 
   // Monitoring configuration for the cluster.
   MonitoringConfig monitoring_config = 133;
+
+  // Node pool configs that apply to all auto-provisioned node pools
+  // in autopilot clusters and node auto-provisioning enabled clusters.
+  NodePoolAutoConfig node_pool_auto_config = 136;
+}
+
+// Node pool configs that apply to all auto-provisioned node pools
+// in autopilot clusters and node auto-provisioning enabled clusters.
+message NodePoolAutoConfig {
+  // The list of instance tags applied to all nodes. Tags are used to identify
+  // valid sources or targets for network firewalls and are specified by
+  // the client during cluster creation. Each tag within the list
+  // must comply with RFC1035.
+  NetworkTags network_tags = 1;
 }
 
 // Subset of Nodepool message that has defaults.
@@ -1596,7 +1705,7 @@ message NodePoolDefaults {
 
 // Subset of NodeConfig message that has defaults.
 message NodeConfigDefaults {
-  // GCFS (Google Container File System, a.k.a Riptide) options.
+  // GCFS (Google Container File System, a.k.a. Riptide) options.
   GcfsConfig gcfs_config = 1;
 }
 
@@ -1736,6 +1845,9 @@ message ClusterUpdate {
   // The desired monitoring configuration.
   MonitoringConfig desired_monitoring_config = 65;
 
+  // The desired Identity Service component configuration.
+  IdentityServiceConfig desired_identity_service_config = 66;
+
   // ServiceExternalIPsConfig specifies the config for the use of Services with
   // ExternalIPs field.
   ServiceExternalIPsConfig desired_service_external_ips_config = 60;
@@ -1754,6 +1866,10 @@ message ClusterUpdate {
 
   // The desired GCFS config for the cluster
   GcfsConfig desired_gcfs_config = 109;
+
+  // The desired network tags that apply to all auto-provisioned node pools
+  // in autopilot clusters and node auto-provisioning enabled clusters.
+  NetworkTags desired_node_pool_auto_config_network_tags = 110;
 }
 
 // This operation resource represents operations that may have happened or are
@@ -1934,7 +2050,7 @@ message OperationProgress {
 // CreateClusterRequest creates a cluster.
 message CreateClusterRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the parent field.
   string project_id = 1 [deprecated = true];
 
@@ -1956,7 +2072,7 @@ message CreateClusterRequest {
 // GetClusterRequest gets the settings of a cluster.
 message GetClusterRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -1978,7 +2094,7 @@ message GetClusterRequest {
 // UpdateClusterRequest updates the settings of a cluster.
 message UpdateClusterRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -2003,7 +2119,7 @@ message UpdateClusterRequest {
 // UpdateNodePoolRequests update a node pool's image and/or version.
 message UpdateNodePoolRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -2055,14 +2171,36 @@ message UpdateNodePoolRequest {
   // Upgrade settings control disruption and speed of the upgrade.
   NodePool.UpgradeSettings upgrade_settings = 15;
 
+  // The desired network tags to be applied to all nodes in the node pool.
+  // If this field is not present, the tags will not be changed. Otherwise,
+  // the existing network tags will be *replaced* with the provided tags.
+  NetworkTags tags = 16;
+
+  // The desired node taints to be applied to all nodes in the node pool.
+  // If this field is not present, the taints will not be changed. Otherwise,
+  // the existing node taints will be *replaced* with the provided taints.
+  NodeTaints taints = 17;
+
+  // The desired node labels to be applied to all nodes in the node pool.
+  // If this field is not present, the labels will not be changed. Otherwise,
+  // the existing node labels will be *replaced* with the provided labels.
+  NodeLabels labels = 18;
+
   // Parameters that can be configured on Linux nodes.
   LinuxNodeConfig linux_node_config = 19;
 
   // Node kubelet configs.
   NodeKubeletConfig kubelet_config = 20;
 
+  // Node network config.
+  NodeNetworkConfig node_network_config = 21;
+
   // GCFS config.
   GcfsConfig gcfs_config = 22;
+
+  // Confidential nodes config.
+  // All the nodes in the node pool will be Confidential VM once enabled.
+  ConfidentialNodes confidential_nodes = 23;
 
   // Enable or disable gvnic on the node pool.
   VirtualNIC gvnic = 29;
@@ -2071,7 +2209,7 @@ message UpdateNodePoolRequest {
 // SetNodePoolAutoscalingRequest sets the autoscaler settings of a node pool.
 message SetNodePoolAutoscalingRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -2101,7 +2239,7 @@ message SetNodePoolAutoscalingRequest {
 // SetLoggingServiceRequest sets the logging service of a cluster.
 message SetLoggingServiceRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -2136,7 +2274,7 @@ message SetLoggingServiceRequest {
 // SetMonitoringServiceRequest sets the monitoring service of a cluster.
 message SetMonitoringServiceRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -2171,7 +2309,7 @@ message SetMonitoringServiceRequest {
 // SetAddonsConfigRequest sets the addons associated with the cluster.
 message SetAddonsConfigRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -2197,7 +2335,7 @@ message SetAddonsConfigRequest {
 // SetLocationsRequest sets the locations of the cluster.
 message SetLocationsRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -2228,7 +2366,7 @@ message SetLocationsRequest {
 // UpdateMasterRequest updates the master of the cluster.
 message UpdateMasterRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -2280,7 +2418,7 @@ message SetMasterAuthRequest {
   }
 
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -2308,7 +2446,7 @@ message SetMasterAuthRequest {
 // DeleteClusterRequest deletes a cluster.
 message DeleteClusterRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -2330,7 +2468,7 @@ message DeleteClusterRequest {
 // ListClustersRequest lists clusters.
 message ListClustersRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the parent field.
   string project_id = 1 [deprecated = true];
 
@@ -2360,7 +2498,7 @@ message ListClustersResponse {
 // GetOperationRequest gets a single operation.
 message GetOperationRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -2382,7 +2520,7 @@ message GetOperationRequest {
 // ListOperationsRequest lists operations.
 message ListOperationsRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the parent field.
   string project_id = 1 [deprecated = true];
 
@@ -2401,7 +2539,7 @@ message ListOperationsRequest {
 // CancelOperationRequest cancels a single operation.
 message CancelOperationRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -2433,7 +2571,7 @@ message ListOperationsResponse {
 // Gets the current Kubernetes Engine service configuration.
 message GetServerConfigRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -2484,7 +2622,7 @@ message ServerConfig {
 // CreateNodePoolRequest creates a node pool for a cluster.
 message CreateNodePoolRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://developers.google.com/console/help/new/#projectnumber).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the parent field.
   string project_id = 1 [deprecated = true];
 
@@ -2501,7 +2639,7 @@ message CreateNodePoolRequest {
   // Required. The node pool to create.
   NodePool node_pool = 4 [(google.api.field_behavior) = REQUIRED];
 
-  // The parent (project, location, cluster id) where the node pool will be
+  // The parent (project, location, cluster name) where the node pool will be
   // created. Specified in the format
   // `projects/*/locations/*/clusters/*`.
   string parent = 6;
@@ -2510,7 +2648,7 @@ message CreateNodePoolRequest {
 // DeleteNodePoolRequest deletes a node pool for a cluster.
 message DeleteNodePoolRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://developers.google.com/console/help/new/#projectnumber).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -2537,7 +2675,7 @@ message DeleteNodePoolRequest {
 // ListNodePoolsRequest lists the node pool(s) for a cluster.
 message ListNodePoolsRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://developers.google.com/console/help/new/#projectnumber).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the parent field.
   string project_id = 1 [deprecated = true];
 
@@ -2551,7 +2689,7 @@ message ListNodePoolsRequest {
   // This field has been deprecated and replaced by the parent field.
   string cluster_id = 3 [deprecated = true];
 
-  // The parent (project, location, cluster id) where the node pools will be
+  // The parent (project, location, cluster name) where the node pools will be
   // listed. Specified in the format `projects/*/locations/*/clusters/*`.
   string parent = 5;
 }
@@ -2559,7 +2697,7 @@ message ListNodePoolsRequest {
 // GetNodePoolRequest retrieves a node pool for a cluster.
 message GetNodePoolRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://developers.google.com/console/help/new/#projectnumber).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -2581,6 +2719,35 @@ message GetNodePoolRequest {
   // get. Specified in the format
   // `projects/*/locations/*/clusters/*/nodePools/*`.
   string name = 6;
+}
+
+// Settings for blue-green upgrade.
+message BlueGreenSettings {
+  // Standard rollout policy is the default policy for blue-green.
+  message StandardRolloutPolicy {
+    // Blue pool size to drain in a batch.
+    oneof update_batch_size {
+      // Percentage of the bool pool nodes to drain in a batch.
+      // The range of this field should be (0.0, 1.0].
+      float batch_percentage = 1;
+
+      // Number of blue nodes to drain in a batch.
+      int32 batch_node_count = 2;
+    }
+
+    // Soak time after each batch gets drained. Default to zero.
+    optional google.protobuf.Duration batch_soak_duration = 3;
+  }
+
+  // The rollout policy controls the general rollout progress of blue-green.
+  oneof rollout_policy {
+    // Standard policy for the blue-green upgrade.
+    StandardRolloutPolicy standard_rollout_policy = 1;
+  }
+
+  // Time needed after draining entire blue pool. After this period, blue pool
+  // will be cleaned up.
+  optional google.protobuf.Duration node_pool_soak_duration = 2;
 }
 
 // NodePool contains the name and configuration for a cluster's node pool.
@@ -2613,6 +2780,29 @@ message NodePool {
   // simultaneously. It creates 2 additional (upgraded) nodes, then it brings
   // down 3 old (not yet upgraded) nodes at the same time. This ensures that
   // there are always at least 4 nodes available.
+  //
+  // These upgrade settings configure the upgrade strategy for the node pool.
+  // Use strategy to switch between the strategies applied to the node pool.
+  //
+  // If the strategy is ROLLING, use max_surge and max_unavailable to control
+  // the level of parallelism and the level of disruption caused by upgrade.
+  // 1. maxSurge controls the number of additional nodes that can be added to
+  // the node pool temporarily for the time of the upgrade to increase the
+  // number of available nodes.
+  // 2. maxUnavailable controls the number of nodes that can be simultaneously
+  // unavailable.
+  // 3. (maxUnavailable + maxSurge) determines the level of parallelism (how
+  // many nodes are being upgraded at the same time).
+  //
+  // If the strategy is BLUE_GREEN, use blue_green_settings to configure the
+  // blue-green upgrade related settings.
+  // 1. standard_rollout_policy is the default policy. The policy is used to
+  // control the way blue pool gets drained. The draining is executed in the
+  // batch mode. The batch size could be specified as either percentage of the
+  // node pool size or the number of nodes. batch_soak_duration is the soak
+  // time after each batch gets drained.
+  // 2. node_pool_soak_duration is the soak time after all blue nodes are
+  // drained. After this period, the blue pool nodes will be deleted.
   message UpgradeSettings {
     // The maximum number of nodes that can be created beyond the current size
     // of the node pool during the upgrade process.
@@ -2622,6 +2812,69 @@ message NodePool {
     // the upgrade process. A node is considered available if its status is
     // Ready.
     int32 max_unavailable = 2;
+
+    // Update strategy of the node pool.
+    optional NodePoolUpdateStrategy strategy = 3;
+
+    // Settings for blue-green upgrade strategy.
+    optional BlueGreenSettings blue_green_settings = 4;
+  }
+
+  // UpdateInfo contains resource (instance groups, etc), status and other
+  // intermediate information relevant to a node pool upgrade.
+  message UpdateInfo {
+    // Information relevant to blue-green upgrade.
+    message BlueGreenInfo {
+      // Phase represents the different stages blue-green upgrade is running in.
+      enum Phase {
+        // Unspecified phase.
+        PHASE_UNSPECIFIED = 0;
+
+        // blue-green upgrade has been initiated.
+        UPDATE_STARTED = 1;
+
+        // Start creating green pool nodes.
+        CREATING_GREEN_POOL = 2;
+
+        // Start cordoning blue pool nodes.
+        CORDONING_BLUE_POOL = 3;
+
+        // Start draining blue pool nodes.
+        DRAINING_BLUE_POOL = 4;
+
+        // Start soaking time after draining entire blue pool.
+        NODE_POOL_SOAKING = 5;
+
+        // Start deleting blue nodes.
+        DELETING_BLUE_POOL = 6;
+
+        // Rollback has been initiated.
+        ROLLBACK_STARTED = 7;
+      }
+
+      // Current blue-green upgrade phase.
+      Phase phase = 1;
+
+      // The resource URLs of the [managed instance groups]
+      // (/compute/docs/instance-groups/creating-groups-of-managed-instances)
+      // associated with blue pool.
+      repeated string blue_instance_group_urls = 2;
+
+      // The resource URLs of the [managed instance groups]
+      // (/compute/docs/instance-groups/creating-groups-of-managed-instances)
+      // associated with green pool.
+      repeated string green_instance_group_urls = 3;
+
+      // Time to start deleting blue pool to complete blue-green upgrade,
+      // in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+      string blue_pool_deletion_start_time = 4;
+
+      // Version of green pool.
+      string green_pool_version = 5;
+    }
+
+    // Information of a blue-green upgrade.
+    BlueGreenInfo blue_green_info = 1;
   }
 
   // The current status of the node pool instance.
@@ -2692,6 +2945,8 @@ message NodePool {
   // [Output only] The resource URLs of the [managed instance
   // groups](https://cloud.google.com/compute/docs/instance-groups/creating-groups-of-managed-instances)
   // associated with this node pool.
+  // During the node pool blue-green upgrade operation, the URLs contain both
+  // blue and green resources.
   repeated string instance_group_urls = 102;
 
   // [Output only] The status of the nodes in this pool instance.
@@ -2721,6 +2976,10 @@ message NodePool {
 
   // Upgrade settings control disruption and speed of the upgrade.
   UpgradeSettings upgrade_settings = 107;
+
+  // Output only. [Output only] Update info contains relevant information during a node
+  // pool update.
+  UpdateInfo update_info = 109 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // NodeManagement defines the set of node management services turned on for the
@@ -2882,7 +3141,7 @@ message DailyMaintenanceWindow {
 // pool.
 message SetNodePoolManagementRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -2912,7 +3171,7 @@ message SetNodePoolManagementRequest {
 // SetNodePoolSizeRequest sets the size of a node pool.
 message SetNodePoolSizeRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -2939,12 +3198,21 @@ message SetNodePoolSizeRequest {
   string name = 7;
 }
 
+// CompleteNodePoolUpgradeRequest sets the name of target node pool to complete
+// upgrade.
+message CompleteNodePoolUpgradeRequest {
+  // The name (project, location, cluster, node pool id) of the node pool to
+  // complete upgrade.
+  // Specified in the format 'projects/*/locations/*/clusters/*/nodePools/*'.
+  string name = 1;
+}
+
 // RollbackNodePoolUpgradeRequest rollbacks the previously Aborted or Failed
 // NodePool upgrade. This will be an no-op if the last upgrade successfully
 // completed.
 message RollbackNodePoolUpgradeRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -2966,6 +3234,10 @@ message RollbackNodePoolUpgradeRequest {
   // rollback upgrade.
   // Specified in the format `projects/*/locations/*/clusters/*/nodePools/*`.
   string name = 6;
+
+  // Option for rollback to ignore the PodDisruptionBudget.
+  // Default value is false.
+  bool respect_pdb = 7;
 }
 
 // ListNodePoolsResponse is the result of ListNodePoolsRequest.
@@ -3026,16 +3298,18 @@ message AutoprovisioningNodePoolDefaults {
   // Specifies the node management options for NAP created node-pools.
   NodeManagement management = 4;
 
-  // Minimum CPU platform to be used for NAP created node pools.
+  // Deprecated. Minimum CPU platform to be used for NAP created node pools.
   // The instance may be scheduled on the specified or newer CPU platform.
   // Applicable values are the friendly names of CPU platforms, such as
   // minCpuPlatform: Intel Haswell or
   // minCpuPlatform: Intel Sandy Bridge. For more
   // information, read [how to specify min CPU
   // platform](https://cloud.google.com/compute/docs/instances/specify-min-cpu-platform)
+  // This field is deprecated, min_cpu_platform should be specified using
+  // cloud.google.com/requested-min-cpu-platform label selector on the pod.
   // To unset the min cpu platform field pass "automatic"
   // as field value.
-  string min_cpu_platform = 5;
+  string min_cpu_platform = 5 [deprecated = true];
 
   // Size of the disk attached to each node, specified in GB.
   // The smallest allowed disk size is 10GB.
@@ -3080,6 +3354,20 @@ message ResourceLimit {
 // NodePoolAutoscaling contains information required by cluster autoscaler to
 // adjust the size of the node pool to the current cluster usage.
 message NodePoolAutoscaling {
+  // Location policy specifies how zones are picked when scaling up the
+  // nodepool.
+  enum LocationPolicy {
+    // Not set.
+    LOCATION_POLICY_UNSPECIFIED = 0;
+
+    // BALANCED is a best effort policy that aims to balance the sizes of
+    // different zones.
+    BALANCED = 1;
+
+    // ANY policy picks zones that have the highest capacity available.
+    ANY = 2;
+  }
+
   // Is autoscaling enabled for this node pool.
   bool enabled = 1;
 
@@ -3093,6 +3381,21 @@ message NodePoolAutoscaling {
 
   // Can this node pool be deleted automatically.
   bool autoprovisioned = 4;
+
+  // Location policy used when scaling up a nodepool.
+  LocationPolicy location_policy = 5;
+
+  // Minimum number of nodes in the node pool. Must be greater than 1 less than
+  // total_max_node_count.
+  // The total_*_node_count fields are mutually exclusive with the *_node_count
+  // fields.
+  int32 total_min_node_count = 6;
+
+  // Maximum number of nodes in the node pool. Must be greater than
+  // total_min_node_count. There has to be enough quota to scale up the cluster.
+  // The total_*_node_count fields are mutually exclusive with the *_node_count
+  // fields.
+  int32 total_max_node_count = 7;
 }
 
 // SetLabelsRequest sets the Google Cloud Platform labels on a Google Container
@@ -3100,7 +3403,7 @@ message NodePoolAutoscaling {
 // resources used by that cluster
 message SetLabelsRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://developers.google.com/console/help/new/#projectnumber).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -3125,7 +3428,7 @@ message SetLabelsRequest {
   // resource to get the latest fingerprint.
   string label_fingerprint = 5 [(google.api.field_behavior) = REQUIRED];
 
-  // The name (project, location, cluster id) of the cluster to set labels.
+  // The name (project, location, cluster name) of the cluster to set labels.
   // Specified in the format `projects/*/locations/*/clusters/*`.
   string name = 7;
 }
@@ -3134,7 +3437,7 @@ message SetLabelsRequest {
 // a cluster.
 message SetLegacyAbacRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -3151,8 +3454,8 @@ message SetLegacyAbacRequest {
   // Required. Whether ABAC authorization will be enabled in the cluster.
   bool enabled = 4 [(google.api.field_behavior) = REQUIRED];
 
-  // The name (project, location, cluster id) of the cluster to set legacy abac.
-  // Specified in the format `projects/*/locations/*/clusters/*`.
+  // The name (project, location, cluster name) of the cluster to set legacy
+  // abac. Specified in the format `projects/*/locations/*/clusters/*`.
   string name = 6;
 }
 
@@ -3160,7 +3463,7 @@ message SetLegacyAbacRequest {
 // a node upgrade on each node pool to point to the new IP.
 message StartIPRotationRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://developers.google.com/console/help/new/#projectnumber).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -3174,7 +3477,7 @@ message StartIPRotationRequest {
   // This field has been deprecated and replaced by the name field.
   string cluster_id = 3 [deprecated = true];
 
-  // The name (project, location, cluster id) of the cluster to start IP
+  // The name (project, location, cluster name) of the cluster to start IP
   // rotation. Specified in the format `projects/*/locations/*/clusters/*`.
   string name = 6;
 
@@ -3185,7 +3488,7 @@ message StartIPRotationRequest {
 // CompleteIPRotationRequest moves the cluster master back into single-IP mode.
 message CompleteIPRotationRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://developers.google.com/console/help/new/#projectnumber).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -3199,7 +3502,7 @@ message CompleteIPRotationRequest {
   // This field has been deprecated and replaced by the name field.
   string cluster_id = 3 [deprecated = true];
 
-  // The name (project, location, cluster id) of the cluster to complete IP
+  // The name (project, location, cluster name) of the cluster to complete IP
   // rotation. Specified in the format `projects/*/locations/*/clusters/*`.
   string name = 7;
 }
@@ -3217,6 +3520,28 @@ message AcceleratorConfig {
   // NVIDIA [mig user
   // guide](https://docs.nvidia.com/datacenter/tesla/mig-user-guide/#partitioning).
   string gpu_partition_size = 3;
+
+  // The configuration for GPU sharing options.
+  optional GPUSharingConfig gpu_sharing_config = 5;
+}
+
+// GPUSharingConfig represents the GPU sharing configuration for Hardware
+// Accelerators.
+message GPUSharingConfig {
+  // The type of GPU sharing strategy currently provided.
+  enum GPUSharingStrategy {
+    // Default value.
+    GPU_SHARING_STRATEGY_UNSPECIFIED = 0;
+
+    // GPUs are time-shared between containers.
+    TIME_SHARING = 1;
+  }
+
+  // The max number of containers that can share a physical GPU.
+  int64 max_shared_clients_per_gpu = 1;
+
+  // The type of GPU sharing strategy to enable on the GPU node.
+  optional GPUSharingStrategy gpu_sharing_strategy = 2;
 }
 
 // WorkloadMetadataConfig defines the metadata configuration to expose to
@@ -3247,7 +3572,7 @@ message WorkloadMetadataConfig {
 // SetNetworkPolicyRequest enables/disables network policy for a cluster.
 message SetNetworkPolicyRequest {
   // Deprecated. The Google Developers Console [project ID or project
-  // number](https://developers.google.com/console/help/new/#projectnumber).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   // This field has been deprecated and replaced by the name field.
   string project_id = 1 [deprecated = true];
 
@@ -3264,7 +3589,7 @@ message SetNetworkPolicyRequest {
   // Required. Configuration options for the NetworkPolicy feature.
   NetworkPolicy network_policy = 4 [(google.api.field_behavior) = REQUIRED];
 
-  // The name (project, location, cluster id) of the cluster to set networking
+  // The name (project, location, cluster name) of the cluster to set networking
   // policy. Specified in the format `projects/*/locations/*/clusters/*`.
   string name = 6;
 }
@@ -3272,7 +3597,7 @@ message SetNetworkPolicyRequest {
 // SetMaintenancePolicyRequest sets the maintenance policy for a cluster.
 message SetMaintenancePolicyRequest {
   // Required. The Google Developers Console [project ID or project
-  // number](https://support.google.com/cloud/answer/6158840).
+  // number](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
   string project_id = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. The name of the Google Compute Engine
@@ -3287,8 +3612,8 @@ message SetMaintenancePolicyRequest {
   // clears the existing maintenance policy.
   MaintenancePolicy maintenance_policy = 4 [(google.api.field_behavior) = REQUIRED];
 
-  // The name (project, location, cluster id) of the cluster to set maintenance
-  // policy.
+  // The name (project, location, cluster name) of the cluster to set
+  // maintenance policy.
   // Specified in the format `projects/*/locations/*/clusters/*`.
   string name = 5;
 }
@@ -3422,7 +3747,7 @@ message GetOpenIDConfigResponse {
 // document returned by getOpenIDConfig. See the OpenID Connect
 // Discovery 1.0 specification for details.
 message GetJSONWebKeysRequest {
-  // The cluster (project, location, cluster id) to get keys for. Specified in
+  // The cluster (project, location, cluster name) to get keys for. Specified in
   // the format `projects/*/locations/*/clusters/*`.
   string parent = 1;
 }
@@ -3556,6 +3881,13 @@ message MaxPodsConstraint {
 message WorkloadIdentityConfig {
   // The workload pool to attach all Kubernetes service accounts to.
   string workload_pool = 2;
+}
+
+// IdentityServiceConfig is configuration for Identity Service which allows
+// customers to use external identity providers with the K8S API
+message IdentityServiceConfig {
+  // Whether to enable the Identity Service component
+  bool enabled = 1;
 }
 
 // Configuration for issuance of mTLS keys and certificates to Kubernetes pods.
@@ -3761,22 +4093,6 @@ enum PrivateIPv6GoogleAccess {
   PRIVATE_IPV6_GOOGLE_ACCESS_BIDIRECTIONAL = 3;
 }
 
-// The datapath provider selects the implementation of the Kubernetes networking
-// model for service resolution and network policy enforcement.
-enum DatapathProvider {
-  // Default value.
-  DATAPATH_PROVIDER_UNSPECIFIED = 0;
-
-  // Use the IPTables implementation based on kube-proxy.
-  LEGACY_DATAPATH = 1;
-
-  // Use the eBPF based GKE Dataplane V2 with additional features. See the [GKE
-  // Dataplane V2
-  // documentation](https://cloud.google.com/kubernetes-engine/docs/how-to/dataplane-v2)
-  // for more.
-  ADVANCED_DATAPATH = 2;
-}
-
 // NotificationConfig is the configuration of notifications.
 message NotificationConfig {
   // Types of notifications currently supported. Can be used to filter what
@@ -3828,8 +4144,7 @@ message NotificationConfig {
 // ConfidentialNodes is configuration for the confidential nodes feature, which
 // makes nodes run on confidential VMs.
 message ConfidentialNodes {
-  // Whether Confidential Nodes feature is enabled for all nodes in this
-  // cluster.
+  // Whether Confidential Nodes feature is enabled.
   bool enabled = 1;
 }
 
@@ -3963,6 +4278,10 @@ message LoggingComponentConfig {
 message MonitoringConfig {
   // Monitoring components configuration
   MonitoringComponentConfig component_config = 1;
+
+  // Enable Google Cloud Managed Service for Prometheus
+  // in the cluster.
+  ManagedPrometheusConfig managed_prometheus_config = 2;
 }
 
 // MonitoringComponentConfig is cluster monitoring component configuration.
@@ -3974,9 +4293,54 @@ message MonitoringComponentConfig {
 
     // system components
     SYSTEM_COMPONENTS = 1;
+
+    // kube-apiserver
+    APISERVER = 3;
+
+    // kube-scheduler
+    SCHEDULER = 4;
+
+    // kube-controller-manager
+    CONTROLLER_MANAGER = 5;
   }
 
   // Select components to collect metrics. An empty set would disable all
   // monitoring.
   repeated Component enable_components = 1;
+}
+
+// The datapath provider selects the implementation of the Kubernetes networking
+// model for service resolution and network policy enforcement.
+enum DatapathProvider {
+  // Default value.
+  DATAPATH_PROVIDER_UNSPECIFIED = 0;
+
+  // Use the IPTables implementation based on kube-proxy.
+  LEGACY_DATAPATH = 1;
+
+  // Use the eBPF based GKE Dataplane V2 with additional features. See the [GKE
+  // Dataplane V2
+  // documentation](https://cloud.google.com/kubernetes-engine/docs/how-to/dataplane-v2)
+  // for more.
+  ADVANCED_DATAPATH = 2;
+}
+
+// Strategy used for node pool update.
+enum NodePoolUpdateStrategy {
+  // Default value.
+  NODE_POOL_UPDATE_STRATEGY_UNSPECIFIED = 0;
+
+  // blue-green upgrade.
+  BLUE_GREEN = 2;
+
+  // SURGE is the traditional way of upgrade a node pool.
+  // max_surge and max_unavailable determines the level of upgrade parallelism.
+  SURGE = 3;
+}
+
+// ManagedPrometheusConfig defines the configuration for
+// Google Cloud Managed Service for Prometheus.
+message ManagedPrometheusConfig {
+  // Enable Managed Collection.
+  bool enabled = 1;
 }
