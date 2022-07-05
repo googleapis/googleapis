@@ -41,8 +41,8 @@ http_archive(
 # version of the library will be selected as a transitive dependency of gRPC.
 http_archive(
     name = "rules_python",
-    strip_prefix = "rules_python-0.5.0",
-    url = "https://github.com/bazelbuild/rules_python/archive/0.5.0.tar.gz",
+    strip_prefix = "rules_python-0.9.0",
+    url = "https://github.com/bazelbuild/rules_python/archive/0.9.0.tar.gz",
 )
 
 http_archive(
@@ -255,9 +255,19 @@ load("@rules_gapic//python:py_gapic_repositories.bzl", "py_gapic_repositories")
 
 py_gapic_repositories()
 
-load("@rules_python//python:pip.bzl", "pip_repositories")
+load("@rules_python//python:repositories.bzl", "python_register_toolchains")
 
-pip_repositories()
+python_register_toolchains(
+    name = "python39",
+    python_version = "3.9",
+)
+
+load("@python39//:defs.bzl", "interpreter")
+load("@rules_python//python:pip.bzl", "pip_install")
+
+pip_install(
+    python_interpreter_target = interpreter,
+)
 
 _gapic_generator_python_version = "1.1.0"
 
