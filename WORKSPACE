@@ -269,7 +269,7 @@ pip_install(
     python_interpreter_target = interpreter,
 )
 
-_gapic_generator_python_version = "1.1.0"
+_gapic_generator_python_version = "1.1.1"
 
 http_archive(
     name = "gapic_generator_python",
