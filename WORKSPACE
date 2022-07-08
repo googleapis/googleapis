@@ -76,19 +76,15 @@ rules_proto_toolchains()
 # Go
 ##############################################################################
 
-# rules_go cannot be updated beyond v0.24.x because in v0.25.x the linker warnings regarding multiple copies of the same package
-# became errors. Until rules_go is migrated to use the go_proto_library targets defined in here instead of in go-genproto, we cannot
-# update this beyond v0.24.x.
-# TODO(ndietz): https://github.com/bazelbuild/rules_go/issues/1986
-#
-# Furthermore, this must be above the download of gRPC (in C++ section) and rules_gapic because both repositories depend on rules_go
+# This must be above the download of gRPC (in C++ section) and rules_gapic because both repositories depend on rules_go
 # and we would rather manage our version of rules_go explicitly rather than depend on the version those bring in transitively.
+_io_bazel_rules_go_version = "0.33.0"
 http_archive(
     name = "io_bazel_rules_go",
-    sha256 = "dbf5a9ef855684f84cac2e7ae7886c5a001d4f66ae23f6904da0faaaef0d61fc",
+    sha256 = "685052b498b6ddfe562ca7a97736741d87916fe536623afb7da2824c0211c369",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.24.11/rules_go-v0.24.11.tar.gz",
-        "https://github.com/bazelbuild/rules_go/releases/download/v0.24.11/rules_go-v0.24.11.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v{0}/rules_go-v{0}.zip".format(_io_bazel_rules_go_version),
+        "https://github.com/bazelbuild/rules_go/releases/download/v{0}/rules_go-v{0}.zip".format(_io_bazel_rules_go_version),
     ],
 )
 
@@ -96,20 +92,19 @@ load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_depe
 
 go_rules_dependencies()
 
-go_register_toolchains()
+go_register_toolchains(version = "1.16")
+
+# Gazelle dependency version should match gazelle dependency expected by gRPC
+_bazel_gazelle_version = "0.24.0"
 
 http_archive(
     name = "bazel_gazelle",
-    sha256 = "62ca106be173579c0a167deb23358fdfe71ffa1e4cfdddf5582af26520f1c66f",
+    sha256 = "de69a09dc70417580aabf20a28619bb3ef60d038470c7cf8442fafcf627c21cb",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.23.0/bazel-gazelle-v0.23.0.tar.gz",
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.23.0/bazel-gazelle-v0.23.0.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v{0}/bazel-gazelle-v{0}.tar.gz".format(_bazel_gazelle_version),
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v{0}/bazel-gazelle-v{0}.tar.gz".format(_bazel_gazelle_version),
     ],
 )
-
-load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
-
-gazelle_dependencies()
 
 _gapic_generator_go_version = "0.31.0"
 
@@ -125,6 +120,14 @@ http_archive(
 load("@com_googleapis_gapic_generator_go//:repositories.bzl", "com_googleapis_gapic_generator_go_repositories")
 
 com_googleapis_gapic_generator_go_repositories()
+
+# Gazelle dependencies should go after gapic-generator-go dependencies to make sure that
+# gazelle does not override some of the critical dependencies of the gapic-generator-go.
+# At the same time gazelle repository itself must be imported before gapic-generator-go,
+# because gapic-generator-go depends on go_repository rule, which is defined in gazelle repo.
+load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
+
+gazelle_dependencies()
 
 # rules_gapic also depends on rules_go, so it must come after our own dependency on rules_go.
 _rules_gapic_version = "0.14.1"
@@ -154,9 +157,9 @@ rules_gapic_repositories()
 # for most of the other languages as well, so they can be considered as the core cross-language
 # dependencies.
 
-_grpc_version = "1.42.0"
+_grpc_version = "1.47.0"
 
-_grpc_sha256 = "9f387689b7fdf6c003fd90ef55853107f89a2121792146770df5486f0199f400"
+_grpc_sha256 = "edf25f4db6c841853b7a29d61b0980b516dc31a1b6cdc399bcf24c1446a4a249"
 
 http_archive(
     name = "com_github_grpc_grpc",
@@ -169,9 +172,9 @@ load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
 
 grpc_deps()
 
-load("@com_github_grpc_grpc//bazel:grpc_extra_deps.bzl", "grpc_extra_deps")
-
-grpc_extra_deps()
+# gRPC enforces a specific version of Go toolchain which conflicts with our build.
+# All the relevant parts of grpc_extra_deps() are imported in this  WORKSPACE file
+# explicitly, that is why we do not call grpc_extra_deps() here.
 
 load("@build_bazel_rules_apple//apple:repositories.bzl", "apple_rules_dependencies")
 
@@ -255,19 +258,9 @@ load("@rules_gapic//python:py_gapic_repositories.bzl", "py_gapic_repositories")
 
 py_gapic_repositories()
 
-load("@rules_python//python:repositories.bzl", "python_register_toolchains")
-
-python_register_toolchains(
-    name = "python39",
-    python_version = "3.9",
-)
-
-load("@python39//:defs.bzl", "interpreter")
 load("@rules_python//python:pip.bzl", "pip_install")
 
-pip_install(
-    python_interpreter_target = interpreter,
-)
+pip_install()
 
 _gapic_generator_python_version = "1.1.1"
 
