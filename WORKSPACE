@@ -94,6 +94,24 @@ go_rules_dependencies()
 
 go_register_toolchains(version = "1.16")
 
+# rules_gapic also depends on rules_go, so it must come after our own dependency on rules_go.
+# It must also come before gapic-generator-go so as to ensure that it does not bring in an old
+# version of rules_gapic.
+_rules_gapic_version = "0.14.1"
+
+_rules_gapic_sha256 = "8483dfe3def57fb6549167dfc9792cdb878af2d521340fc50f094050a7a4180d"
+
+http_archive(
+    name = "rules_gapic",
+    sha256 = _rules_gapic_sha256,
+    strip_prefix = "rules_gapic-%s" % _rules_gapic_version,
+    urls = ["https://github.com/googleapis/rules_gapic/archive/v%s.tar.gz" % _rules_gapic_version],
+)
+
+load("@rules_gapic//:repositories.bzl", "rules_gapic_repositories")
+
+rules_gapic_repositories()
+
 # Gazelle dependency version should match gazelle dependency expected by gRPC
 _bazel_gazelle_version = "0.24.0"
 
@@ -128,22 +146,6 @@ com_googleapis_gapic_generator_go_repositories()
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
 
 gazelle_dependencies()
-
-# rules_gapic also depends on rules_go, so it must come after our own dependency on rules_go.
-_rules_gapic_version = "0.14.1"
-
-_rules_gapic_sha256 = "8483dfe3def57fb6549167dfc9792cdb878af2d521340fc50f094050a7a4180d"
-
-http_archive(
-    name = "rules_gapic",
-    sha256 = _rules_gapic_sha256,
-    strip_prefix = "rules_gapic-%s" % _rules_gapic_version,
-    urls = ["https://github.com/googleapis/rules_gapic/archive/v%s.tar.gz" % _rules_gapic_version],
-)
-
-load("@rules_gapic//:repositories.bzl", "rules_gapic_repositories")
-
-rules_gapic_repositories()
 
 ##############################################################################
 # C++
