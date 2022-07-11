@@ -22,6 +22,8 @@ set -e
 
 PWD="`pwd`"
 SHARED="$PWD/volume"
+SCRIPT=$0
+DIRNAME=`dirname $SCRIPT`
 
 if test -d "$SHARED"; then
   echo "The working directory $SHARED already exists, please delete it first."
@@ -30,7 +32,9 @@ fi
 mkdir -p "$SHARED"
 
 # 1. Build the latest Docker image using the Dockerfile from google3
-cat /google/src/head/depot/google3/third_party/googleapis/stable/.kokoro/Dockerfile > "$PWD/Dockerfile"
+
+echo "Using Dockerfile from $DIRNAME"
+cat "$DIRNAME/Dockerfile" > "$PWD/Dockerfile"
 
 echo "Building googleapis Docker image..."
 docker build -t googleapis .
