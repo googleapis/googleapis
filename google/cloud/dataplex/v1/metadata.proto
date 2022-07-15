@@ -152,7 +152,8 @@ message DeleteEntityRequest {
     }
   ];
 
-  // Required. The etag associated with the partition if it was previously retrieved.
+  // Required. The etag associated with the entity, which can be retrieved with a
+  // [GetEntity][] request.
   string etag = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
@@ -160,7 +161,8 @@ message DeleteEntityRequest {
 message ListEntitiesRequest {
   // Entity views.
   enum EntityView {
-    // The default unset value. The API will default to the FULL view.
+    // The default unset value. Return both table and fileset entities
+    // if unspecified.
     ENTITY_VIEW_UNSPECIFIED = 0;
 
     // Only list table entities.
@@ -199,8 +201,8 @@ message ListEntitiesRequest {
   // - Entity ID: ?filter="id=entityID"
   // - Asset ID: ?filter="asset=assetID"
   // - Data path ?filter="data_path=gs://my-bucket"
-  // - Is HIVE compatible: ?filter=”hive_compatible=true”
-  // - Is BigQuery compatible: ?filter=”bigquery_compatible=true”
+  // - Is HIVE compatible: ?filter="hive_compatible=true"
+  // - Is BigQuery compatible: ?filter="bigquery_compatible=true"
   string filter = 5 [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -267,14 +269,14 @@ message ListPartitionsRequest {
   // page token.
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Filter the partitions returned to the caller using a key vslue pair
-  // expression. The filter expression supports:
+  // Optional. Filter the partitions returned to the caller using a key value pair
+  // expression. Supported operators and syntax:
   //
-  // - logical operators: AND, OR
+  // - logic operators: AND, OR
   // - comparison operators: <, >, >=, <= ,=, !=
   // - LIKE operators:
-  //     - The right hand of a LIKE operator supports “.” and
-  //       “*” for wildcard searches, for example "value1 LIKE ".*oo.*"
+  //   - The right hand of a LIKE operator supports "." and
+  //     "*" for wildcard searches, for example "value1 LIKE ".*oo.*"
   // - parenthetical grouping: ( )
   //
   // Sample filter expression: `?filter="key1 < value1 OR key2 > value2"
@@ -322,7 +324,7 @@ message DeletePartitionRequest {
     }
   ];
 
-  // Optional. The etag associated with the partition if it was previously retrieved.
+  // Optional. The etag associated with the partition.
   string etag = 2 [
     deprecated = true,
     (google.api.field_behavior) = OPTIONAL
@@ -401,7 +403,7 @@ message Entity {
     }
   ];
 
-  // Optional. Display name must be shorter than or equal to 63 characters.
+  // Optional. Display name must be shorter than or equal to 256 characters.
   string display_name = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. User friendly longer description text. Must be shorter than or equal to
@@ -418,11 +420,12 @@ message Entity {
   // published table name. Specifying a new ID in an update entity
   // request will override the existing value.
   // The ID must contain only letters (a-z, A-Z), numbers (0-9), and
-  // underscores. Must begin with a letter.
+  // underscores. Must begin with a letter and consist of 256 or fewer
+  // characters.
   string id = 7 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. The etag for this entity. Required for update and delete requests. Must
-  // match the server's etag.
+  // Optional. The etag associated with the entity, which can be retrieved with a
+  // [GetEntity][] request. Required for update and delete requests.
   string etag = 8 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. Immutable. The type of entity.
@@ -482,13 +485,11 @@ message Partition {
     pattern: "projects/{project}/locations/{location}/lakes/{lake}/zones/{zone}/entities/{entity}/partitions/{partition}"
   };
 
-  // Output only. The values must be HTML URL encoded two times before constructing the path.
-  // For example, if you have a value of "US:CA", encoded it two times and you
-  // get "US%253ACA". Then if you have the 2nd value is "CA#Sunnyvale", encoded
-  // two times and you get "CA%2523Sunnyvale". The partition values path is
-  // "US%253ACA/CA%2523Sunnyvale". The final URL will be
-  // "https://.../partitions/US%253ACA/CA%2523Sunnyvale". The name field in the
-  // responses will always have the encoded format.
+  // Output only. Partition values used in the HTTP URL must be
+  // double encoded. For example, `url_encode(url_encode(value))` can be used
+  // to encode "US:CA/CA#Sunnyvale so that the request URL ends
+  // with "/partitions/US%253ACA/CA%2523Sunnyvale".
+  // The name field in the response retains the encoded format.
   string name = 1 [
     (google.api.field_behavior) = OUTPUT_ONLY,
     (google.api.resource_reference) = {
@@ -589,8 +590,9 @@ message Schema {
 
   // Represents a column field within a table schema.
   message SchemaField {
-    // Required. The name of the field. The maximum length is 767 characters. The name
-    // must begins with a letter and not contains `:` and `.`.
+    // Required. The name of the field. Must contain only letters, numbers and
+    // underscores, with a maximum length of 767 characters,
+    // and must begin with a letter or underscore.
     string name = 1 [(google.api.field_behavior) = REQUIRED];
 
     // Optional. User friendly field description. Must be less than or equal to 1024
@@ -609,10 +611,12 @@ message Schema {
 
   // Represents a key field within the entity's partition structure. You could
   // have up to 20 partition fields, but only the first 10 partitions have the
-  // filtering ability due to performance consideration.
+  // filtering ability due to performance consideration. **Note:**
+  // Partition fields are immutable.
   message PartitionField {
-    // Required. Partition name is editable if only the partition style is not HIVE
-    // compatible. The maximum length allowed is 767 characters.
+    // Required. Partition field name must consist of letters, numbers, and underscores
+    // only, with a maximum of length of 256 characters,
+    // and must begin with a letter or underscore..
     string name = 1 [(google.api.field_behavior) = REQUIRED];
 
     // Required. Immutable. The type of field.
@@ -633,26 +637,23 @@ message Schema {
     HIVE_COMPATIBLE = 1;
   }
 
-  // Required. Whether the schema is user-managed or managed by the service.
-  // - Set user_manage to false if you would like Dataplex to help you manage
-  // the schema. You will get the full service provided by Dataplex discovery,
-  // including new data discovery, schema inference and schema evolution. You
-  // can still provide input the schema of the entities, for example renaming a
-  // schema field, changing CSV or Json options if you think the discovered
-  // values are not as accurate. Dataplex will consider your input as the
-  // initial schema (as if they were produced by the previous discovery run),
-  // and will evolve schema or flag actions based on that.
-  // - Set user_manage to true if you would like to fully manage the entity
-  // schema by yourself. This is useful when you would like to manually specify
-  // the schema for a table. In this case, the schema defined by the user is
-  // guaranteed to be kept unchanged and would not be overwritten. But this also
-  // means Dataplex will not provide schema evolution management for you.
-  // Dataplex will still be able to manage partition registration (i.e., keeping
-  // the list of partitions up to date) when Dataplex discovery is turned on and
-  // user_managed is set to true.
+  // Required. Set to `true` if user-managed or `false` if managed by Dataplex. The
+  // default is `false` (managed by Dataplex).
+  //
+  // - Set to `false`to enable Dataplex discovery to update the schema.
+  //   including new data discovery, schema inference, and schema evolution.
+  //   Users retain the ability to input and edit the schema. Dataplex
+  //   treats schema input by the user as though produced
+  //   by a previous Dataplex discovery operation, and it will
+  //   evolve the schema and take action based on that treatment.
+  //
+  // - Set to `true` to fully manage the entity
+  //   schema. This setting guarantees that Dataplex will not
+  //   change schema fields.
   bool user_managed = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. The sequence of fields describing data in table entities.
+  // **Note:** BigQuery SchemaFields are immutable.
   repeated SchemaField fields = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The sequence of fields describing the partition structure in entities.
@@ -678,8 +679,9 @@ message StorageFormat {
     // Optional. The delimiter used to separate values. Defaults to ','.
     string delimiter = 3 [(google.api.field_behavior) = OPTIONAL];
 
-    // Optional. The character used to quote column values. Accepts '"' and '''.
-    // Defaults to '"' if unspecified.
+    // Optional. The character used to quote column values. Accepts '"'
+    // (double quotation mark) or ''' (single quotation mark). Defaults to
+    // '"' (double quotation mark) if unspecified.
     string quote = 4 [(google.api.field_behavior) = OPTIONAL];
   }
 
@@ -754,6 +756,7 @@ message StorageFormat {
 
   // Required. The mime type descriptor for the data. Must match the pattern
   // {type}/{subtype}. Supported values:
+  //
   // - application/x-parquet
   // - application/x-avro
   // - application/x-orc
