@@ -124,7 +124,7 @@ http_archive(
     ],
 )
 
-_gapic_generator_go_version = "0.31.1"
+_gapic_generator_go_version = "0.31.2"
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
