@@ -46,6 +46,19 @@ http_archive(
 )
 
 http_archive(
+    name = "rules_pkg",
+    sha256 = "8a298e832762eda1830597d64fe7db58178aa84cd5926d76d5b744d6558941c2",
+    urls = [
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_pkg/releases/download/0.7.0/rules_pkg-0.7.0.tar.gz",
+        "https://github.com/bazelbuild/rules_pkg/releases/download/0.7.0/rules_pkg-0.7.0.tar.gz",
+    ],
+)
+
+load("@rules_pkg//:deps.bzl", "rules_pkg_dependencies")
+
+rules_pkg_dependencies()
+
+http_archive(
     name = "com_google_protobuf",
     sha256 = "c29d8b4b79389463c546f98b15aa4391d4ed7ec459340c47bffe15db63eb9126",
     strip_prefix = "protobuf-3.21.3",
@@ -79,6 +92,7 @@ rules_proto_toolchains()
 # This must be above the download of gRPC (in C++ section) and rules_gapic because both repositories depend on rules_go
 # and we would rather manage our version of rules_go explicitly rather than depend on the version those bring in transitively.
 _io_bazel_rules_go_version = "0.33.0"
+
 http_archive(
     name = "io_bazel_rules_go",
     sha256 = "685052b498b6ddfe562ca7a97736741d87916fe536623afb7da2824c0211c369",
@@ -97,9 +111,9 @@ go_register_toolchains(version = "1.16")
 # rules_gapic also depends on rules_go, so it must come after our own dependency on rules_go.
 # It must also come before gapic-generator-go so as to ensure that it does not bring in an old
 # version of rules_gapic.
-_rules_gapic_version = "0.14.1"
+_rules_gapic_version = "0.15.0"
 
-_rules_gapic_sha256 = "8483dfe3def57fb6549167dfc9792cdb878af2d521340fc50f094050a7a4180d"
+_rules_gapic_sha256 = "1da19934301ed71a1faa6a4dc19c9c1c01729fe31a58edcf520befc1002af22d"
 
 http_archive(
     name = "rules_gapic",
@@ -264,7 +278,7 @@ load("@rules_python//python:pip.bzl", "pip_install")
 
 pip_install()
 
-_gapic_generator_python_version = "1.1.1"
+_gapic_generator_python_version = "1.1.2"
 
 http_archive(
     name = "gapic_generator_python",
