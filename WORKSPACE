@@ -343,6 +343,7 @@ http_archive(
 
 load("@rules_gapic//php:php_gapic_repositories.bzl", "php", "php_gapic_repositories")
 
+# TODO(ndietz): upgrade to PHP 8x
 php(
     name = "php",
     prebuilt_phps = ["@gapic_generator_php//rules_php_gapic:resources/php-7.4.15_linux_x86_64.tar.gz"],
