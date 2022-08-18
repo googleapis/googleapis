@@ -373,9 +373,9 @@ http_archive(
     urls = ["https://github.com/googleapis/gax-dotnet/archive/refs/tags/%s.tar.gz" % _gax_dotnet_version],
 )
 
-_gapic_generator_csharp_version = "1.4.6"
+_gapic_generator_csharp_version = "1.4.7"
 
-_gapic_generator_csharp_sha256 = "2fc66b40592243b8d58646a5c790731e8bf0e244bbeeaad3c98c020b90c0fc62"
+_gapic_generator_csharp_sha256 = "cb75b2e12a56485c63c25f9de29d80a82710168a19b44f267a5739427eb7fc24"
 
 http_archive(
     name = "gapic_generator_csharp",
@@ -392,9 +392,9 @@ gapic_generator_csharp_repositories()
 # do not want to move immediately to GAX v4 when it comes out (e.g. Ads) are
 # able to stick with the GAX-v3-based generator.
 
-_gapic_generator_csharp_gax_v3_version = "1.3.19"
+_gapic_generator_csharp_gax_v3_version = "1.3.20"
 
-_gapic_generator_csharp_gax_v3_sha256 = "0e624db75f11a4d8ca1f8cc5c619c143be312aef892f76fc94695f9723a9c1e9"
+_gapic_generator_csharp_gax_v3_sha256 = "20cacae7641c51eda434adb1279716030def82c2617f4d3507ba56478ff879f9"
 
 http_archive(
     name = "gapic_generator_csharp_gax_v3",
