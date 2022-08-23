@@ -256,22 +256,24 @@ message StructuredQuery {
 
   // The order to apply to the query results.
   //
-  // Firestore guarantees a stable ordering through the following rules:
+  // Firestore allows callers to provide a full ordering, a partial ordering, or
+  // no ordering at all. In all cases, Firestore guarantees a stable ordering
+  // through the following rules:
   //
-  //  * Any field required to appear in `order_by`, that is not already
-  //    specified in `order_by`, is appended to the order in field name order
-  //    by default.
+  //  * The `order_by` is required to reference all fields used with an
+  //    inequality filter.
+  //  * All fields that are required to be in the `order_by` but are not already
+  //    present are appended in lexicographical ordering of the field name.
   //  * If an order on `__name__` is not specified, it is appended by default.
   //
   // Fields are appended with the same sort direction as the last order
   // specified, or 'ASCENDING' if no order was specified. For example:
   //
-  //  * `SELECT * FROM Foo ORDER BY A` becomes
-  //    `SELECT * FROM Foo ORDER BY A, __name__`
-  //  * `SELECT * FROM Foo ORDER BY A DESC` becomes
-  //    `SELECT * FROM Foo ORDER BY A DESC, __name__ DESC`
-  //  * `SELECT * FROM Foo WHERE A > 1` becomes
-  //    `SELECT * FROM Foo WHERE A > 1 ORDER BY A, __name__`
+  //  * `ORDER BY a` becomes `ORDER BY a ASC, __name__ ASC`
+  //  * `ORDER BY a DESC` becomes `ORDER BY a DESC, __name__ DESC`
+  //  * `WHERE a > 1` becomes `WHERE a > 1 ORDER BY a ASC, __name__ ASC`
+  //  * `WHERE __name__ > ... AND a > 1` becomes
+  //     `WHERE __name__ > ... AND a > 1 ORDER BY a ASC, __name__ ASC`
   repeated Order order_by = 4;
 
   // A starting point for the query results.
@@ -307,16 +309,18 @@ message StructuredAggregationQuery {
       // This provides a way to set an upper bound on the number of documents
       // to scan, limiting latency and cost.
       //
+      // Unspecified is interpreted as no bound.
+      //
       // High-Level Example:
       //
       // ```
-      // SELECT COUNT_UP_TO(1000) FROM ( SELECT * FROM k );
+      // AGGREGATE COUNT_UP_TO(1000) OVER ( SELECT * FROM k );
       // ```
       //
       // Requires:
       //
       // * Must be greater than zero when present.
-      int32 up_to = 1 [(google.api.field_behavior) = OPTIONAL];
+      google.protobuf.Int64Value up_to = 1 [(google.api.field_behavior) = OPTIONAL];
     }
 
     // The type of aggregation to perform, required.
@@ -325,14 +329,39 @@ message StructuredAggregationQuery {
       Count count = 1;
     }
 
-    // Optional. The name of the field to store the result of the aggregation into. If
-    // not provided, a default alias `field_<incremental_id>` will be used.
-    // For example: field_1, field_2
+    // Optional. Optional name of the field to store the result of the aggregation into.
+    //
+    // If not provided, Firestore will pick a default name following the format
+    // `field_<incremental_id++>`. For example:
+    //
+    // ```
+    // AGGREGATE
+    //   COUNT_UP_TO(1) AS count_up_to_1,
+    //   COUNT_UP_TO(2),
+    //   COUNT_UP_TO(3) AS count_up_to_3,
+    //   COUNT_UP_TO(4)
+    // OVER (
+    //   ...
+    // );
+    // ```
+    //
+    // becomes:
+    //
+    // ```
+    // AGGREGATE
+    //   COUNT_UP_TO(1) AS count_up_to_1,
+    //   COUNT_UP_TO(2) AS field_1,
+    //   COUNT_UP_TO(3) AS count_up_to_3,
+    //   COUNT_UP_TO(4) AS field_2
+    // OVER (
+    //   ...
+    // );
+    // ```
     //
     // Requires:
     //
     // * Must be unique across all aggregation aliases.
-    // * Conform to existing [document field name][google.firestore.v1.Document.fields] limitations.
+    // * Conform to [document field name][google.firestore.v1.Document.fields] limitations.
     string alias = 7 [(google.api.field_behavior) = OPTIONAL];
   }
 
@@ -342,7 +371,11 @@ message StructuredAggregationQuery {
     StructuredQuery structured_query = 1;
   }
 
-  // Optional. Series of aggregations to apply on top of the `structured_query`.
+  // Optional. Series of aggregations to apply over the results of the `structured_query`.
+  //
+  // Requires:
+  //
+  // * A minimum of one and maximum of five aggregations per query.
   repeated Aggregation aggregations = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
