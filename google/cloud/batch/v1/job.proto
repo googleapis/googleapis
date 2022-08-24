@@ -218,16 +218,25 @@ message JobNotification {
 // resources should be allocated for the Job.
 message AllocationPolicy {
   message LocationPolicy {
-    // A list of allowed location names represented by internal URLs,
-    // First location in the list must be a region.
-    // for example,
-    // ["regions/us-central1"] allow VMs in region us-central1,
-    // ["regions/us-central1", "zones/us-central1-a"] only allow VMs in zone
-    // us-central1-a.
+    // A list of allowed location names represented by internal URLs.
+    // Each location can be a region or a zone.
+    // Only one region or multiple zones in one region is supported now.
+    // For example,
+    // ["regions/us-central1"] allow VMs in any zones in region us-central1.
+    // ["zones/us-central1-a", "zones/us-central1-c"] only allow VMs
+    // in zones us-central1-a and us-central1-c.
+    // All locations end up in different regions would cause errors.
+    // For example,
+    // ["regions/us-central1", "zones/us-central1-a", "zones/us-central1-b",
+    // "zones/us-west1-a"] contains 2 regions "us-central1" and
+    // "us-west1". An error is expected in this case.
     repeated string allowed_locations = 1;
   }
 
-  // A new persistent disk.
+  // A new persistent disk or a local ssd.
+  // A VM can only have one local SSD setting but multiple local SSD partitions.
+  // https://cloud.google.com/compute/docs/disks#pdspecs.
+  // https://cloud.google.com/compute/docs/disks#localssds.
   message Disk {
     // A data source from which a PD will be created.
     oneof data_source {
@@ -239,15 +248,23 @@ message AllocationPolicy {
     }
 
     // Disk type as shown in `gcloud compute disk-types list`
-    // For example, "pd-ssd", "pd-standard", "pd-balanced".
+    // For example, "pd-ssd", "pd-standard", "pd-balanced", "local-ssd".
     string type = 1;
 
     // Disk size in GB.
     // This field is ignored if `data_source` is `disk` or `image`.
+    // If `type` is `local-ssd`, size_gb should be a multiple of 375GB,
+    // otherwise, the final size will be the next greater multiple of 375 GB.
     int64 size_gb = 2;
+
+    // Local SSDs are available through both "SCSI" and "NVMe" interfaces.
+    // If not indicated, "NVMe" will be the default one for local ssds.
+    // We only support "SCSI" for persistent disks now.
+    string disk_interface = 6;
   }
 
-  // A new or an existing persistent disk attached to a VM instance.
+  // A new or an existing persistent disk or a local ssd attached to a VM
+  // instance.
   message AttachedDisk {
     oneof attached {
       Disk new_disk = 1;
@@ -269,6 +286,10 @@ message AllocationPolicy {
 
     // The number of accelerators of this type.
     int64 count = 2;
+
+    // When true, Batch will install the GPU drivers.
+    // This field will be ignored if specified.
+    bool install_gpu_drivers = 3 [deprecated = true];
   }
 
   // InstancePolicy describes an instance type and resources attached to each VM
