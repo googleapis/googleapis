@@ -173,7 +173,7 @@ gazelle_dependencies()
 # for most of the other languages as well, so they can be considered as the core cross-language
 # dependencies.
 
-# Import boringss explicitly to override what gRPC imports as its dependency.
+# Import boringssl explicitly to override what gRPC imports as its dependency.
 # Boringssl build fails on gcc12 without this fix:
 # https://github.com/google/boringssl/commit/8462a367bb57e9524c3d8eca9c62733c63a63cf4,
 # which is present only in the newest version of boringssl, not the one imported
