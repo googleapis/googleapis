@@ -314,9 +314,9 @@ gapic_generator_register_toolchains()
 # TypeScript
 ##############################################################################
 
-_gapic_generator_typescript_version = "2.16.1"
+_gapic_generator_typescript_version = "2.17.0"
 
-_gapic_generator_typescript_sha256 = "64ff0c512923c00b0a413d6ec6181f607a9b3ed8831c447fcd0360134ce4770b"
+_gapic_generator_typescript_sha256 = "8f8f7a0cd60030cf6b722b618ca06c37ef70e419f34ccc7ead712ec49e55faa8"
 
 ### TypeScript generator
 http_archive(
