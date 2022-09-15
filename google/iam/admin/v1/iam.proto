@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ syntax = "proto3";
 
 package google.iam.admin.v1;
 
+import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
@@ -25,13 +26,11 @@ import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 import "google/type/expr.proto";
-import "google/api/annotations.proto";
 
 option cc_enable_arenas = true;
 option csharp_namespace = "Google.Cloud.Iam.Admin.V1";
 option go_package = "google.golang.org/genproto/googleapis/iam/admin/v1;admin";
 option java_multiple_files = true;
-option java_outer_classname = "IamProto";
 option java_package = "com.google.iam.admin.v1";
 option php_namespace = "Google\\Cloud\\Iam\\Admin\\V1";
 
@@ -44,9 +43,9 @@ option php_namespace = "Google\\Cloud\\Iam\\Admin\\V1";
 // * **Service account keys**, which service accounts use to authenticate with
 //   Google APIs
 // * **IAM policies for service accounts**, which specify the roles that a
-//   member has for the service account
+//   principal has for the service account
 // * **IAM custom roles**, which help you limit the number of permissions that
-//   you grant to members
+//   you grant to principals
 //
 // In addition, you can use this service to complete the following tasks, among
 // others:
@@ -54,6 +53,16 @@ option php_namespace = "Google\\Cloud\\Iam\\Admin\\V1";
 // * Test whether a service account can use specific permissions
 // * Check which roles you can grant for a specific resource
 // * Lint, or validate, condition expressions in an IAM policy
+//
+// When you read data from the IAM API, each read is eventually consistent. In
+// other words, if you write data with the IAM API, then immediately read that
+// data, the read operation might return an older version of the data. To deal
+// with this behavior, your application can retry the request with truncated
+// exponential backoff.
+//
+// In contrast, writing data to the IAM API is sequentially consistent. In other
+// words, write operations are always processed in the order in which they were
+// received.
 service IAM {
   option (google.api.default_host) = "iam.googleapis.com";
   option (google.api.oauth_scopes) = "https://www.googleapis.com/auth/cloud-platform";
@@ -88,7 +97,7 @@ service IAM {
   //
   // Updates a [ServiceAccount][google.iam.admin.v1.ServiceAccount].
   //
-  // You can update only the `display_name` and `description` fields.
+  // You can update only the `display_name` field.
   rpc UpdateServiceAccount(ServiceAccount) returns (ServiceAccount) {
     option (google.api.http) = {
       put: "/v1/{name=projects/*/serviceAccounts/*}"
@@ -204,7 +213,11 @@ service IAM {
     option (google.api.method_signature) = "name,private_key_type,key_algorithm";
   }
 
-  // Creates a [ServiceAccountKey][google.iam.admin.v1.ServiceAccountKey], using a public key that you provide.
+  // Uploads the public key portion of a key pair that you manage, and
+  // associates the public key with a [ServiceAccount][google.iam.admin.v1.ServiceAccount].
+  //
+  // After you upload the public key, you can use the private key from the key
+  // pair as a service account key.
   rpc UploadServiceAccountKey(UploadServiceAccountKeyRequest) returns (ServiceAccountKey) {
     option (google.api.http) = {
       post: "/v1/{name=projects/*/serviceAccounts/*}/keys:upload"
@@ -218,6 +231,25 @@ service IAM {
   rpc DeleteServiceAccountKey(DeleteServiceAccountKeyRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
       delete: "/v1/{name=projects/*/serviceAccounts/*/keys/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Disable a [ServiceAccountKey][google.iam.admin.v1.ServiceAccountKey]. A disabled service account key can be
+  // re-enabled with [EnableServiceAccountKey][google.iam.admin.v1.IAM.EnableServiceAccountKey].
+  rpc DisableServiceAccountKey(DisableServiceAccountKeyRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/serviceAccounts/*/keys/*}:disable"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Enable a [ServiceAccountKey][google.iam.admin.v1.ServiceAccountKey].
+  rpc EnableServiceAccountKey(EnableServiceAccountKeyRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/serviceAccounts/*/keys/*}:enable"
+      body: "*"
     };
     option (google.api.method_signature) = "name";
   }
@@ -258,7 +290,7 @@ service IAM {
   }
 
   // Gets the IAM policy that is attached to a [ServiceAccount][google.iam.admin.v1.ServiceAccount]. This IAM
-  // policy specifies which members have access to the service account.
+  // policy specifies which principals have access to the service account.
   //
   // This method does not tell you whether the service account has been granted
   // any roles on other resources. To check whether a service account has role
@@ -277,7 +309,7 @@ service IAM {
   // Sets the IAM policy that is attached to a [ServiceAccount][google.iam.admin.v1.ServiceAccount].
   //
   // Use this method to grant or revoke access to the service account. For
-  // example, you could grant a member the ability to impersonate the service
+  // example, you could grant a principal the ability to impersonate the service
   // account.
   //
   // This method does not enable the service account to access other resources.
@@ -289,8 +321,10 @@ service IAM {
   // 3. Call the resource's `setIamPolicy` method to update its IAM policy.
   //
   // For detailed instructions, see
-  // [Granting roles to a service account for specific
-  // resources](https://cloud.google.com/iam/help/service-accounts/granting-access-to-service-accounts).
+  // [Manage access to project, folders, and
+  // organizations](https://cloud.google.com/iam/help/service-accounts/granting-access-to-service-accounts)
+  // or [Manage access to other
+  // resources](https://cloud.google.com/iam/help/access/manage-other-resources).
   rpc SetIamPolicy(google.iam.v1.SetIamPolicyRequest) returns (google.iam.v1.Policy) {
     option (google.api.http) = {
       post: "/v1/{resource=projects/*/serviceAccounts/*}:setIamPolicy"
@@ -375,7 +409,7 @@ service IAM {
   //
   // When you delete a custom role, the following changes occur immediately:
   //
-  // * You cannot bind a member to the custom role in an IAM
+  // * You cannot bind a principal to the custom role in an IAM
   // [Policy][google.iam.v1.Policy].
   // * Existing bindings to the custom role are not changed, but they have no
   // effect.
@@ -410,7 +444,7 @@ service IAM {
   }
 
   // Lists every permission that you can test on a resource. A permission is
-  // testable if you can check whether a member has that permission on the
+  // testable if you can check whether a principal has that permission on the
   // resource.
   rpc QueryTestablePermissions(QueryTestablePermissionsRequest) returns (QueryTestablePermissionsResponse) {
     option (google.api.http) = {
@@ -603,8 +637,7 @@ message DeleteServiceAccountRequest {
   ];
 }
 
-// The request for
-// [PatchServiceAccount][google.iam.admin.v1.PatchServiceAccount].
+// The service account patch request.
 //
 // You can patch only the `display_name` and `description` fields. You must use
 // the `update_mask` field to specify which of these fields you want to patch.
@@ -707,9 +740,59 @@ message GetServiceAccountKeyRequest {
     }
   ];
 
-  // The output format of the public key requested.
-  // X509_PEM is the default output format.
-  ServiceAccountPublicKeyType public_key_type = 2;
+  // Optional. The output format of the public key. The default is `TYPE_NONE`, which
+  // means that the public key is not returned.
+  ServiceAccountPublicKeyType public_key_type = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Supported key algorithms.
+enum ServiceAccountKeyAlgorithm {
+  // An unspecified key algorithm.
+  KEY_ALG_UNSPECIFIED = 0;
+
+  // 1k RSA Key.
+  KEY_ALG_RSA_1024 = 1;
+
+  // 2k RSA Key.
+  KEY_ALG_RSA_2048 = 2;
+}
+
+// Supported private key output formats.
+enum ServiceAccountPrivateKeyType {
+  // Unspecified. Equivalent to `TYPE_GOOGLE_CREDENTIALS_FILE`.
+  TYPE_UNSPECIFIED = 0;
+
+  // PKCS12 format.
+  // The password for the PKCS12 file is `notasecret`.
+  // For more information, see https://tools.ietf.org/html/rfc7292.
+  TYPE_PKCS12_FILE = 1;
+
+  // Google Credentials File format.
+  TYPE_GOOGLE_CREDENTIALS_FILE = 2;
+}
+
+// Supported public key output formats.
+enum ServiceAccountPublicKeyType {
+  // Do not return the public key.
+  TYPE_NONE = 0;
+
+  // X509 PEM format.
+  TYPE_X509_PEM_FILE = 1;
+
+  // Raw public key.
+  TYPE_RAW_PUBLIC_KEY = 2;
+}
+
+// Service Account Key Origin.
+enum ServiceAccountKeyOrigin {
+  // Unspecified key origin.
+  ORIGIN_UNSPECIFIED = 0;
+
+  // Key is provided by user.
+  USER_PROVIDED = 1;
+
+  // Key is provided by Google.
+  GOOGLE_PROVIDED = 2;
 }
 
 // Represents a service account key.
@@ -783,6 +866,9 @@ message ServiceAccountKey {
 
   // The key type.
   ListServiceAccountKeysRequest.KeyType key_type = 10;
+
+  // The key status.
+  bool disabled = 11;
 }
 
 // The service account key create request.
@@ -819,10 +905,10 @@ message UploadServiceAccountKeyRequest {
   // `unique_id` of the service account.
   string name = 1;
 
-  // A field that allows clients to upload their own public key. If set,
-  // use this public key data to create a service account key for given
-  // service account.
-  // Please note, the expected format for this field is X509_PEM.
+  // The public key to associate with the service account. Must be an RSA public
+  // key that is wrapped in an X.509 v3 certificate. Include the first line,
+  // `-----BEGIN CERTIFICATE-----`, and the last line,
+  // `-----END CERTIFICATE-----`.
   bytes public_key_data = 2;
 }
 
@@ -830,6 +916,38 @@ message UploadServiceAccountKeyRequest {
 message DeleteServiceAccountKeyRequest {
   // Required. The resource name of the service account key in the following format:
   // `projects/{PROJECT_ID}/serviceAccounts/{ACCOUNT}/keys/{key}`.
+  // Using `-` as a wildcard for the `PROJECT_ID` will infer the project from
+  // the account. The `ACCOUNT` value can be the `email` address or the
+  // `unique_id` of the service account.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "iam.googleapis.com/Key"
+    }
+  ];
+}
+
+// The service account key disable request.
+message DisableServiceAccountKeyRequest {
+  // Required. The resource name of the service account key in the following format:
+  // `projects/{PROJECT_ID}/serviceAccounts/{ACCOUNT}/keys/{key}`.
+  //
+  // Using `-` as a wildcard for the `PROJECT_ID` will infer the project from
+  // the account. The `ACCOUNT` value can be the `email` address or the
+  // `unique_id` of the service account.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "iam.googleapis.com/Key"
+    }
+  ];
+}
+
+// The service account key enable request.
+message EnableServiceAccountKeyRequest {
+  // Required. The resource name of the service account key in the following format:
+  // `projects/{PROJECT_ID}/serviceAccounts/{ACCOUNT}/keys/{key}`.
+  //
   // Using `-` as a wildcard for the `PROJECT_ID` will infer the project from
   // the account. The `ACCOUNT` value can be the `email` address or the
   // `unique_id` of the service account.
@@ -890,56 +1008,6 @@ message SignBlobResponse {
   bytes signature = 2 [deprecated = true];
 }
 
-// Supported key algorithms.
-enum ServiceAccountKeyAlgorithm {
-  // An unspecified key algorithm.
-  KEY_ALG_UNSPECIFIED = 0;
-
-  // 1k RSA Key.
-  KEY_ALG_RSA_1024 = 1;
-
-  // 2k RSA Key.
-  KEY_ALG_RSA_2048 = 2;
-}
-
-// Supported private key output formats.
-enum ServiceAccountPrivateKeyType {
-  // Unspecified. Equivalent to `TYPE_GOOGLE_CREDENTIALS_FILE`.
-  TYPE_UNSPECIFIED = 0;
-
-  // PKCS12 format.
-  // The password for the PKCS12 file is `notasecret`.
-  // For more information, see https://tools.ietf.org/html/rfc7292.
-  TYPE_PKCS12_FILE = 1;
-
-  // Google Credentials File format.
-  TYPE_GOOGLE_CREDENTIALS_FILE = 2;
-}
-
-// Supported public key output formats.
-enum ServiceAccountPublicKeyType {
-  // Unspecified. Returns nothing here.
-  TYPE_NONE = 0;
-
-  // X509 PEM format.
-  TYPE_X509_PEM_FILE = 1;
-
-  // Raw public key.
-  TYPE_RAW_PUBLIC_KEY = 2;
-}
-
-// Service Account Key Origin.
-enum ServiceAccountKeyOrigin {
-  // Unspecified key origin.
-  ORIGIN_UNSPECIFIED = 0;
-
-  // Key is provided by user.
-  USER_PROVIDED = 1;
-
-  // Key is provided by Google.
-  GOOGLE_PROVIDED = 2;
-}
-
 // Deprecated. [Migrate to Service Account Credentials
 // API](https://cloud.google.com/iam/help/credentials/migrate-api).
 //
@@ -968,8 +1036,8 @@ message SignJwtRequest {
   // JWT Claims Set. For example: `{"sub": "user@example.com", "iat": 313435}`
   //
   // If the JWT Claims Set contains an expiration time (`exp`) claim, it must be
-  // an integer timestamp that is not in the past and no more than 1 hour in the
-  // future.
+  // an integer timestamp that is not in the past and no more than 12 hours in
+  // the future.
   //
   // If the JWT Claims Set does not contain an expiration time (`exp`) claim,
   // this claim is added automatically, with a timestamp that is 1 hour in the
@@ -1016,8 +1084,8 @@ message Role {
     // The user has indicated this role is being deprecated.
     DEPRECATED = 4;
 
-    // This role is disabled and will not contribute permissions to any members
-    // it is granted to in policies.
+    // This role is disabled and will not contribute permissions to any
+    // principals it is granted to in policies.
     DISABLED = 5;
 
     // The user has indicated this role is currently in an EAP phase.
@@ -1087,36 +1155,51 @@ message QueryGrantableRolesResponse {
   string next_page_token = 2;
 }
 
+// A view for Role objects.
+enum RoleView {
+  // Omits the `included_permissions` field.
+  // This is the default value.
+  BASIC = 0;
+
+  // Returns all fields.
+  FULL = 1;
+}
+
 // The request to get all roles defined under a resource.
 message ListRolesRequest {
   // The `parent` parameter's value depends on the target resource for the
   // request, namely
-  // [`roles`](/iam/reference/rest/v1/roles),
-  // [`projects`](/iam/reference/rest/v1/projects.roles), or
-  // [`organizations`](/iam/reference/rest/v1/organizations.roles). Each
-  // resource type's `parent` value format is described below:
+  // [`roles`](https://cloud.google.com/iam/reference/rest/v1/roles),
+  // [`projects`](https://cloud.google.com/iam/reference/rest/v1/projects.roles),
+  // or
+  // [`organizations`](https://cloud.google.com/iam/reference/rest/v1/organizations.roles).
+  // Each resource type's `parent` value format is described below:
   //
-  // * [`roles.list()`](/iam/reference/rest/v1/roles/list): An empty string.
+  // * [`roles.list()`](https://cloud.google.com/iam/reference/rest/v1/roles/list): An empty string.
   //   This method doesn't require a resource; it simply returns all
-  //   [predefined roles](/iam/docs/understanding-roles#predefined_roles) in
-  //   Cloud IAM. Example request URL:
-  //   `https://iam.googleapis.com/v1/roles`
+  //   [predefined
+  //   roles](https://cloud.google.com/iam/docs/understanding-roles#predefined_roles)
+  //   in Cloud IAM. Example request URL: `https://iam.googleapis.com/v1/roles`
   //
-  // * [`projects.roles.list()`](/iam/reference/rest/v1/projects.roles/list):
+  // * [`projects.roles.list()`](https://cloud.google.com/iam/reference/rest/v1/projects.roles/list):
   //   `projects/{PROJECT_ID}`. This method lists all project-level
-  //   [custom roles](/iam/docs/understanding-custom-roles).
+  //   [custom
+  //   roles](https://cloud.google.com/iam/docs/understanding-custom-roles).
   //   Example request URL:
   //   `https://iam.googleapis.com/v1/projects/{PROJECT_ID}/roles`
   //
-  // * [`organizations.roles.list()`](/iam/reference/rest/v1/organizations.roles/list):
+  // * [`organizations.roles.list()`](https://cloud.google.com/iam/reference/rest/v1/organizations.roles/list):
   //   `organizations/{ORGANIZATION_ID}`. This method lists all
-  //   organization-level [custom roles](/iam/docs/understanding-custom-roles).
+  //   organization-level [custom
+  //   roles](https://cloud.google.com/iam/docs/understanding-custom-roles).
   //   Example request URL:
   //   `https://iam.googleapis.com/v1/organizations/{ORGANIZATION_ID}/roles`
   //
   // Note: Wildcard (*) values are invalid; you must specify a complete project
   // ID or organization ID.
-  string parent = 1 [(google.api.resource_reference).type = "*"];
+  string parent = 1 [(google.api.resource_reference) = {
+                       type: "*"
+                     }];
 
   // Optional limit on the number of roles to include in the response.
   //
@@ -1150,57 +1233,68 @@ message ListRolesResponse {
 message GetRoleRequest {
   // The `name` parameter's value depends on the target resource for the
   // request, namely
-  // [`roles`](/iam/reference/rest/v1/roles),
-  // [`projects`](/iam/reference/rest/v1/projects.roles), or
-  // [`organizations`](/iam/reference/rest/v1/organizations.roles). Each
-  // resource type's `name` value format is described below:
+  // [`roles`](https://cloud.google.com/iam/reference/rest/v1/roles),
+  // [`projects`](https://cloud.google.com/iam/reference/rest/v1/projects.roles),
+  // or
+  // [`organizations`](https://cloud.google.com/iam/reference/rest/v1/organizations.roles).
+  // Each resource type's `name` value format is described below:
   //
-  // * [`roles.get()`](/iam/reference/rest/v1/roles/get): `roles/{ROLE_NAME}`.
+  // * [`roles.get()`](https://cloud.google.com/iam/reference/rest/v1/roles/get): `roles/{ROLE_NAME}`.
   //   This method returns results from all
-  //   [predefined roles](/iam/docs/understanding-roles#predefined_roles) in
-  //   Cloud IAM. Example request URL:
+  //   [predefined
+  //   roles](https://cloud.google.com/iam/docs/understanding-roles#predefined_roles)
+  //   in Cloud IAM. Example request URL:
   //   `https://iam.googleapis.com/v1/roles/{ROLE_NAME}`
   //
-  // * [`projects.roles.get()`](/iam/reference/rest/v1/projects.roles/get):
+  // * [`projects.roles.get()`](https://cloud.google.com/iam/reference/rest/v1/projects.roles/get):
   //   `projects/{PROJECT_ID}/roles/{CUSTOM_ROLE_ID}`. This method returns only
-  //   [custom roles](/iam/docs/understanding-custom-roles) that have been
-  //   created at the project level. Example request URL:
+  //   [custom
+  //   roles](https://cloud.google.com/iam/docs/understanding-custom-roles) that
+  //   have been created at the project level. Example request URL:
   //   `https://iam.googleapis.com/v1/projects/{PROJECT_ID}/roles/{CUSTOM_ROLE_ID}`
   //
-  // * [`organizations.roles.get()`](/iam/reference/rest/v1/organizations.roles/get):
+  // * [`organizations.roles.get()`](https://cloud.google.com/iam/reference/rest/v1/organizations.roles/get):
   //   `organizations/{ORGANIZATION_ID}/roles/{CUSTOM_ROLE_ID}`. This method
-  //   returns only [custom roles](/iam/docs/understanding-custom-roles) that
+  //   returns only [custom
+  //   roles](https://cloud.google.com/iam/docs/understanding-custom-roles) that
   //   have been created at the organization level. Example request URL:
   //   `https://iam.googleapis.com/v1/organizations/{ORGANIZATION_ID}/roles/{CUSTOM_ROLE_ID}`
   //
   // Note: Wildcard (*) values are invalid; you must specify a complete project
   // ID or organization ID.
-  string name = 1 [(google.api.resource_reference).type = "*"];
+  string name = 1 [(google.api.resource_reference) = {
+                     type: "*"
+                   }];
 }
 
 // The request to create a new role.
 message CreateRoleRequest {
   // The `parent` parameter's value depends on the target resource for the
   // request, namely
-  // [`projects`](/iam/reference/rest/v1/projects.roles) or
-  // [`organizations`](/iam/reference/rest/v1/organizations.roles). Each
-  // resource type's `parent` value format is described below:
+  // [`projects`](https://cloud.google.com/iam/reference/rest/v1/projects.roles)
+  // or
+  // [`organizations`](https://cloud.google.com/iam/reference/rest/v1/organizations.roles).
+  // Each resource type's `parent` value format is described below:
   //
-  // * [`projects.roles.create()`](/iam/reference/rest/v1/projects.roles/create):
+  // * [`projects.roles.create()`](https://cloud.google.com/iam/reference/rest/v1/projects.roles/create):
   //   `projects/{PROJECT_ID}`. This method creates project-level
-  //   [custom roles](/iam/docs/understanding-custom-roles).
+  //   [custom
+  //   roles](https://cloud.google.com/iam/docs/understanding-custom-roles).
   //   Example request URL:
   //   `https://iam.googleapis.com/v1/projects/{PROJECT_ID}/roles`
   //
-  // * [`organizations.roles.create()`](/iam/reference/rest/v1/organizations.roles/create):
+  // * [`organizations.roles.create()`](https://cloud.google.com/iam/reference/rest/v1/organizations.roles/create):
   //   `organizations/{ORGANIZATION_ID}`. This method creates organization-level
-  //   [custom roles](/iam/docs/understanding-custom-roles). Example request
-  //   URL:
+  //   [custom
+  //   roles](https://cloud.google.com/iam/docs/understanding-custom-roles).
+  //   Example request URL:
   //   `https://iam.googleapis.com/v1/organizations/{ORGANIZATION_ID}/roles`
   //
   // Note: Wildcard (*) values are invalid; you must specify a complete project
   // ID or organization ID.
-  string parent = 1 [(google.api.resource_reference).type = "*"];
+  string parent = 1 [(google.api.resource_reference) = {
+                       type: "*"
+                     }];
 
   // The role ID to use for this role.
   //
@@ -1217,25 +1311,30 @@ message CreateRoleRequest {
 message UpdateRoleRequest {
   // The `name` parameter's value depends on the target resource for the
   // request, namely
-  // [`projects`](/iam/reference/rest/v1/projects.roles) or
-  // [`organizations`](/iam/reference/rest/v1/organizations.roles). Each
-  // resource type's `name` value format is described below:
+  // [`projects`](https://cloud.google.com/iam/reference/rest/v1/projects.roles)
+  // or
+  // [`organizations`](https://cloud.google.com/iam/reference/rest/v1/organizations.roles).
+  // Each resource type's `name` value format is described below:
   //
-  // * [`projects.roles.patch()`](/iam/reference/rest/v1/projects.roles/patch):
+  // * [`projects.roles.patch()`](https://cloud.google.com/iam/reference/rest/v1/projects.roles/patch):
   //   `projects/{PROJECT_ID}/roles/{CUSTOM_ROLE_ID}`. This method updates only
-  //   [custom roles](/iam/docs/understanding-custom-roles) that have been
-  //   created at the project level. Example request URL:
+  //   [custom
+  //   roles](https://cloud.google.com/iam/docs/understanding-custom-roles) that
+  //   have been created at the project level. Example request URL:
   //   `https://iam.googleapis.com/v1/projects/{PROJECT_ID}/roles/{CUSTOM_ROLE_ID}`
   //
-  // * [`organizations.roles.patch()`](/iam/reference/rest/v1/organizations.roles/patch):
+  // * [`organizations.roles.patch()`](https://cloud.google.com/iam/reference/rest/v1/organizations.roles/patch):
   //   `organizations/{ORGANIZATION_ID}/roles/{CUSTOM_ROLE_ID}`. This method
-  //   updates only [custom roles](/iam/docs/understanding-custom-roles) that
+  //   updates only [custom
+  //   roles](https://cloud.google.com/iam/docs/understanding-custom-roles) that
   //   have been created at the organization level. Example request URL:
   //   `https://iam.googleapis.com/v1/organizations/{ORGANIZATION_ID}/roles/{CUSTOM_ROLE_ID}`
   //
   // Note: Wildcard (*) values are invalid; you must specify a complete project
   // ID or organization ID.
-  string name = 1 [(google.api.resource_reference).type = "*"];
+  string name = 1 [(google.api.resource_reference) = {
+                     type: "*"
+                   }];
 
   // The updated role.
   Role role = 2;
@@ -1248,25 +1347,30 @@ message UpdateRoleRequest {
 message DeleteRoleRequest {
   // The `name` parameter's value depends on the target resource for the
   // request, namely
-  // [`projects`](/iam/reference/rest/v1/projects.roles) or
-  // [`organizations`](/iam/reference/rest/v1/organizations.roles). Each
-  // resource type's `name` value format is described below:
+  // [`projects`](https://cloud.google.com/iam/reference/rest/v1/projects.roles)
+  // or
+  // [`organizations`](https://cloud.google.com/iam/reference/rest/v1/organizations.roles).
+  // Each resource type's `name` value format is described below:
   //
-  // * [`projects.roles.delete()`](/iam/reference/rest/v1/projects.roles/delete):
+  // * [`projects.roles.delete()`](https://cloud.google.com/iam/reference/rest/v1/projects.roles/delete):
   //   `projects/{PROJECT_ID}/roles/{CUSTOM_ROLE_ID}`. This method deletes only
-  //   [custom roles](/iam/docs/understanding-custom-roles) that have been
-  //   created at the project level. Example request URL:
+  //   [custom
+  //   roles](https://cloud.google.com/iam/docs/understanding-custom-roles) that
+  //   have been created at the project level. Example request URL:
   //   `https://iam.googleapis.com/v1/projects/{PROJECT_ID}/roles/{CUSTOM_ROLE_ID}`
   //
-  // * [`organizations.roles.delete()`](/iam/reference/rest/v1/organizations.roles/delete):
+  // * [`organizations.roles.delete()`](https://cloud.google.com/iam/reference/rest/v1/organizations.roles/delete):
   //   `organizations/{ORGANIZATION_ID}/roles/{CUSTOM_ROLE_ID}`. This method
-  //   deletes only [custom roles](/iam/docs/understanding-custom-roles) that
+  //   deletes only [custom
+  //   roles](https://cloud.google.com/iam/docs/understanding-custom-roles) that
   //   have been created at the organization level. Example request URL:
   //   `https://iam.googleapis.com/v1/organizations/{ORGANIZATION_ID}/roles/{CUSTOM_ROLE_ID}`
   //
   // Note: Wildcard (*) values are invalid; you must specify a complete project
   // ID or organization ID.
-  string name = 1 [(google.api.resource_reference).type = "*"];
+  string name = 1 [(google.api.resource_reference) = {
+                     type: "*"
+                   }];
 
   // Used to perform a consistent read-modify-write.
   bytes etag = 2;
@@ -1276,25 +1380,30 @@ message DeleteRoleRequest {
 message UndeleteRoleRequest {
   // The `name` parameter's value depends on the target resource for the
   // request, namely
-  // [`projects`](/iam/reference/rest/v1/projects.roles) or
-  // [`organizations`](/iam/reference/rest/v1/organizations.roles). Each
-  // resource type's `name` value format is described below:
+  // [`projects`](https://cloud.google.com/iam/reference/rest/v1/projects.roles)
+  // or
+  // [`organizations`](https://cloud.google.com/iam/reference/rest/v1/organizations.roles).
+  // Each resource type's `name` value format is described below:
   //
-  // * [`projects.roles.undelete()`](/iam/reference/rest/v1/projects.roles/undelete):
+  // * [`projects.roles.undelete()`](https://cloud.google.com/iam/reference/rest/v1/projects.roles/undelete):
   //   `projects/{PROJECT_ID}/roles/{CUSTOM_ROLE_ID}`. This method undeletes
-  //   only [custom roles](/iam/docs/understanding-custom-roles) that have been
-  //   created at the project level. Example request URL:
+  //   only [custom
+  //   roles](https://cloud.google.com/iam/docs/understanding-custom-roles) that
+  //   have been created at the project level. Example request URL:
   //   `https://iam.googleapis.com/v1/projects/{PROJECT_ID}/roles/{CUSTOM_ROLE_ID}`
   //
-  // * [`organizations.roles.undelete()`](/iam/reference/rest/v1/organizations.roles/undelete):
+  // * [`organizations.roles.undelete()`](https://cloud.google.com/iam/reference/rest/v1/organizations.roles/undelete):
   //   `organizations/{ORGANIZATION_ID}/roles/{CUSTOM_ROLE_ID}`. This method
-  //   undeletes only [custom roles](/iam/docs/understanding-custom-roles) that
+  //   undeletes only [custom
+  //   roles](https://cloud.google.com/iam/docs/understanding-custom-roles) that
   //   have been created at the organization level. Example request URL:
   //   `https://iam.googleapis.com/v1/organizations/{ORGANIZATION_ID}/roles/{CUSTOM_ROLE_ID}`
   //
   // Note: Wildcard (*) values are invalid; you must specify a complete project
   // ID or organization ID.
-  string name = 1 [(google.api.resource_reference).type = "*"];
+  string name = 1 [(google.api.resource_reference) = {
+                     type: "*"
+                   }];
 
   // Used to perform a consistent read-modify-write.
   bytes etag = 2;
@@ -1319,7 +1428,7 @@ message Permission {
 
   // The state of the permission with regards to custom roles.
   enum CustomRolesSupportLevel {
-    // Permission is fully supported for custom role use.
+    // Default state. Permission is fully supported for custom role use.
     SUPPORTED = 0;
 
     // Permission is being tested to check custom role compatibility.
@@ -1459,7 +1568,7 @@ message LintResult {
     // This includes the following common scenarios:
     //
     // - Unsatisfiable condition: Expired timestamp in date/time condition.
-    // - Ineffective condition: Condition on a <member, role> pair which is
+    // - Ineffective condition: Condition on a <principal, role> pair which is
     //   granted unconditionally in another binding of the same policy.
     WARNING = 2;
 
@@ -1511,14 +1620,4 @@ message LintResult {
 message LintPolicyResponse {
   // List of lint results sorted by `severity` in descending order.
   repeated LintResult lint_results = 1;
-}
-
-// A view for Role objects.
-enum RoleView {
-  // Omits the `included_permissions` field.
-  // This is the default value.
-  BASIC = 0;
-
-  // Returns all fields.
-  FULL = 1;
 }
