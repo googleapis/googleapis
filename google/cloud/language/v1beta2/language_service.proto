@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 
 syntax = "proto3";
 
@@ -68,7 +67,7 @@ service LanguageService {
   }
 
   // Analyzes the syntax of the text and provides sentence boundaries and
-  // tokenization along with part-of-speech tags, dependency trees, and other
+  // tokenization along with part of speech tags, dependency trees, and other
   // properties.
   rpc AnalyzeSyntax(AnalyzeSyntaxRequest) returns (AnalyzeSyntaxResponse) {
     option (google.api.http) = {
@@ -100,7 +99,7 @@ service LanguageService {
   }
 }
 
-
+// ################################################################ #
 //
 // Represents the input to API methods.
 message Document {
@@ -114,6 +113,19 @@ message Document {
 
     // HTML
     HTML = 2;
+  }
+
+  // Ways of handling boilerplate detected in the document
+  enum BoilerplateHandling {
+    // The boilerplate handling is not specified.
+    BOILERPLATE_HANDLING_UNSPECIFIED = 0;
+
+    // Do not analyze detected boilerplate. Reference web URI is required for
+    // detecting boilerplate.
+    SKIP_BOILERPLATE = 1;
+
+    // Treat boilerplate the same as content.
+    KEEP_BOILERPLATE = 2;
   }
 
   // Required. If the type is not set or is `TYPE_UNSPECIFIED`,
@@ -143,6 +155,15 @@ message Document {
   // specified by the caller or automatically detected) is not supported by the
   // called API method, an `INVALID_ARGUMENT` error is returned.
   string language = 4;
+
+  // The web URI where the document comes from. This URI is not used for
+  // fetching the content, but as a hint for analyzing the document.
+  string reference_web_uri = 5;
+
+  // Indicates how detected boilerplate(e.g. advertisements, copyright
+  // declarations, banners) should be handled for this document. If not
+  // specified, boilerplate will be treated the same as content.
+  BoilerplateHandling boilerplate_handling = 6;
 }
 
 // Represents a sentence in the input document.
@@ -154,6 +175,32 @@ message Sentence {
   // [AnnotateTextRequest.Features.extract_document_sentiment][google.cloud.language.v1beta2.AnnotateTextRequest.Features.extract_document_sentiment] is set to
   // true, this field will contain the sentiment for the sentence.
   Sentiment sentiment = 2;
+}
+
+// Represents the text encoding that the caller uses to process the output.
+// Providing an `EncodingType` is recommended because the API provides the
+// beginning offsets for various outputs, such as tokens and mentions, and
+// languages that natively use different text encodings may access offsets
+// differently.
+enum EncodingType {
+  // If `EncodingType` is not specified, encoding-dependent information (such as
+  // `begin_offset`) will be set at `-1`.
+  NONE = 0;
+
+  // Encoding-dependent information (such as `begin_offset`) is calculated based
+  // on the UTF-8 encoding of the input. C++ and Go are examples of languages
+  // that use this encoding natively.
+  UTF8 = 1;
+
+  // Encoding-dependent information (such as `begin_offset`) is calculated based
+  // on the UTF-16 encoding of the input. Java and JavaScript are examples of
+  // languages that use this encoding natively.
+  UTF16 = 2;
+
+  // Encoding-dependent information (such as `begin_offset`) is calculated based
+  // on the UTF-32 encoding of the input. Python is an example of a language
+  // that uses this encoding natively.
+  UTF32 = 3;
 }
 
 // Represents a phrase in the text that is a known entity, such as
@@ -284,32 +331,6 @@ message Token {
 
   // [Lemma](https://en.wikipedia.org/wiki/Lemma_%28morphology%29) of the token.
   string lemma = 4;
-}
-
-// Represents the text encoding that the caller uses to process the output.
-// Providing an `EncodingType` is recommended because the API provides the
-// beginning offsets for various outputs, such as tokens and mentions, and
-// languages that natively use different text encodings may access offsets
-// differently.
-enum EncodingType {
-  // If `EncodingType` is not specified, encoding-dependent information (such as
-  // `begin_offset`) will be set at `-1`.
-  NONE = 0;
-
-  // Encoding-dependent information (such as `begin_offset`) is calculated based
-  // on the UTF-8 encoding of the input. C++ and Go are examples of languages
-  // that use this encoding natively.
-  UTF8 = 1;
-
-  // Encoding-dependent information (such as `begin_offset`) is calculated based
-  // on the UTF-16 encoding of the input. Java and JavaScript are examples of
-  // languages that use this encoding natively.
-  UTF16 = 2;
-
-  // Encoding-dependent information (such as `begin_offset`) is calculated based
-  // on the UTF-32 encoding of the input. Python is an example of a language
-  // that uses this encoding natively.
-  UTF32 = 3;
 }
 
 // Represents the feeling associated with the entire text or entities in
@@ -968,6 +989,45 @@ message ClassificationCategory {
   float confidence = 2;
 }
 
+// Model options available for classification requests.
+message ClassificationModelOptions {
+  // Options for the V1 model.
+  message V1Model {
+
+  }
+
+  // Options for the V2 model.
+  message V2Model {
+    // The content categories used for classification.
+    enum ContentCategoriesVersion {
+      // If `ContentCategoriesVersion` is not specified, this option will
+      // default to `V1`.
+      CONTENT_CATEGORIES_VERSION_UNSPECIFIED = 0;
+
+      // Legacy content categories of our initial launch in 2017.
+      V1 = 1;
+
+      // Updated content categories in 2022.
+      V2 = 2;
+    }
+
+    // The content categories used for classification.
+    ContentCategoriesVersion content_categories_version = 1;
+  }
+
+  // If this field is not set, then the `v1_model` will be used by default.
+  oneof model_type {
+    // Setting this field will use the V1 model and V1 content categories
+    // version. The V1 model is a legacy model; support for this will be
+    // discontinued in the future.
+    V1Model v1_model = 1;
+
+    // Setting this field will use the V2 model with the appropriate content
+    // categories version. The V2 model is a better performing model.
+    V2Model v2_model = 2;
+  }
+}
+
 // The sentiment analysis request message.
 message AnalyzeSentimentRequest {
   // Required. Input document.
@@ -1059,6 +1119,10 @@ message AnalyzeSyntaxResponse {
 message ClassifyTextRequest {
   // Required. Input document.
   Document document = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Model options to use for classification. Defaults to v1 options if not
+  // specified.
+  ClassificationModelOptions classification_model_options = 3;
 }
 
 // The document classification response message.
@@ -1072,7 +1136,7 @@ message ClassifyTextResponse {
 message AnnotateTextRequest {
   // All available features for sentiment, syntax, and semantic analysis.
   // Setting each one to true will enable that specific analysis for the input.
-  // Next ID: 10
+  // Next ID: 11
   message Features {
     // Extract syntax information.
     bool extract_syntax = 1;
@@ -1091,6 +1155,10 @@ message AnnotateTextRequest {
     // [predefined
     // taxonomy](https://cloud.google.com/natural-language/docs/categories).
     bool classify_text = 6;
+
+    // The model options to use for classification. Defaults to v1 options
+    // if not specified. Only used if `classify_text` is set to true.
+    ClassificationModelOptions classification_model_options = 10;
   }
 
   // Required. Input document.
