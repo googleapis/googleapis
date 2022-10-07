@@ -244,7 +244,7 @@ maven_install(
     ],
 )
 
-_gax_java_version = "2.19.0"
+_gax_java_version = "2.19.2"
 
 http_archive(
     name = "com_google_api_gax_java",
