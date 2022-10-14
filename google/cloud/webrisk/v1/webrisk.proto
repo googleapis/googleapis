@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -79,7 +79,8 @@ service WebRiskService {
   // content, the site will be added to the [Google's Social Engineering
   // lists](https://support.google.com/webmasters/answer/6350487/) in order to
   // protect users that could get exposed to this threat in the future. Only
-  // projects with CREATE_SUBMISSION_USERS visibility can use this method.
+  // allowlisted projects can use this method during Early Access. Please reach
+  // out to Sales or your customer engineer to obtain access.
   rpc CreateSubmission(CreateSubmissionRequest) returns (Submission) {
     option (google.api.http) = {
       post: "/v1/{parent=projects/*}/submissions"
@@ -107,7 +108,9 @@ message ComputeThreatListDiffRequest {
     repeated CompressionType supported_compressions = 3;
   }
 
-  // Required. The threat list to update. Only a single ThreatType should be specified.
+  // Required. The threat list to update. Only a single ThreatType should be specified
+  // per request. If you want to handle multiple ThreatTypes, you must make one
+  // request per ThreatType.
   ThreatType threat_type = 1 [(google.api.field_behavior) = REQUIRED];
 
   // The current version token of the client for the requested list (the
@@ -122,13 +125,6 @@ message ComputeThreatListDiffRequest {
 }
 
 message ComputeThreatListDiffResponse {
-  // The expected state of a client's local database.
-  message Checksum {
-    // The SHA256 hash of the client state; that is, of the sorted list of all
-    // hashes present in the database.
-    bytes sha256 = 1;
-  }
-
   // The type of response sent to the client.
   enum ResponseType {
     // Unknown.
@@ -141,6 +137,13 @@ message ComputeThreatListDiffResponse {
     // that either the client had no state, was seriously out-of-date,
     // or the client is believed to be corrupt.
     RESET = 2;
+  }
+
+  // The expected state of a client's local database.
+  message Checksum {
+    // The SHA256 hash of the client state; that is, of the sorted list of all
+    // hashes present in the database.
+    bytes sha256 = 1;
   }
 
   // The type of response. This may indicate that an action must be taken by the
@@ -192,7 +195,7 @@ message SearchUrisResponse {
     google.protobuf.Timestamp expire_time = 2;
   }
 
-  // The threat list matches. This may be empty if the URI is on no list.
+  // The threat list matches. This might be empty if the URI is on no list.
   ThreatUri threat = 1;
 }
 
@@ -200,6 +203,8 @@ message SearchUrisResponse {
 message SearchHashesRequest {
   // A hash prefix, consisting of the most significant 4-32 bytes of a SHA256
   // hash. For JSON requests, this field is base64-encoded.
+  // Note that if this parameter is provided by a URI, it must be encoded using
+  // the web safe base64 variant (RFC 4648).
   bytes hash_prefix = 1;
 
   // Required. The ThreatLists to search in. Multiple ThreatLists may be specified.
@@ -231,6 +236,38 @@ message SearchHashesResponse {
   google.protobuf.Timestamp negative_expire_time = 2;
 }
 
+// The type of threat. This maps directly to the threat list a threat may
+// belong to.
+enum ThreatType {
+  // No entries should match this threat type. This threat type is unused.
+  THREAT_TYPE_UNSPECIFIED = 0;
+
+  // Malware targeting any platform.
+  MALWARE = 1;
+
+  // Social engineering targeting any platform.
+  SOCIAL_ENGINEERING = 2;
+
+  // Unwanted software targeting any platform.
+  UNWANTED_SOFTWARE = 3;
+
+  // A list of extended coverage social engineering URIs targeting any
+  // platform.
+  SOCIAL_ENGINEERING_EXTENDED_COVERAGE = 4;
+}
+
+// The ways in which threat entry sets can be compressed.
+enum CompressionType {
+  // Unknown.
+  COMPRESSION_TYPE_UNSPECIFIED = 0;
+
+  // Raw, uncompressed data.
+  RAW = 1;
+
+  // Rice-Golomb encoded data.
+  RICE = 2;
+}
+
 // Contains the set of entries to add to a local database.
 // May contain a combination of compressed and raw data in a single response.
 message ThreatEntryAdditions {
@@ -254,34 +291,6 @@ message ThreatEntryRemovals {
   // removal indices (uint32) are sorted in ascending order, then delta encoded
   // and stored as encoded_data.
   RiceDeltaEncoding rice_indices = 2;
-}
-
-// The type of threat. This maps dirrectly to the threat list a threat may
-// belong to.
-enum ThreatType {
-  // Unknown.
-  THREAT_TYPE_UNSPECIFIED = 0;
-
-  // Malware targeting any platform.
-  MALWARE = 1;
-
-  // Social engineering targeting any platform.
-  SOCIAL_ENGINEERING = 2;
-
-  // Unwanted software targeting any platform.
-  UNWANTED_SOFTWARE = 3;
-}
-
-// The ways in which threat entry sets can be compressed.
-enum CompressionType {
-  // Unknown.
-  COMPRESSION_TYPE_UNSPECIFIED = 0;
-
-  // Raw, uncompressed data.
-  RAW = 1;
-
-  // Rice-Golomb encoded data.
-  RICE = 2;
 }
 
 // A set of raw indices to remove from a local list.
@@ -331,9 +340,9 @@ message RiceDeltaEncoding {
   bytes encoded_data = 4;
 }
 
-// Wraps a URI that might be displaying phishing content.
+// Wraps a URI that might be displaying malicious content.
 message Submission {
-  // Required. The URI that is being reported for phishing content to be analyzed.
+  // Required. The URI that is being reported for malicious content to be analyzed.
   string uri = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
