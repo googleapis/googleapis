@@ -244,7 +244,7 @@ maven_install(
     ],
 )
 
-_gax_java_version = "2.19.2"
+_gax_java_version = "2.19.4"
 
 http_archive(
     name = "com_google_api_gax_java",
@@ -269,7 +269,7 @@ grpc_java_repositories()
 
 # Java microgenerator.
 # Must go AFTER java-gax, since both java gax and gapic-generator are written in java and may conflict.
-_gapic_generator_java_version = "2.10.0"
+_gapic_generator_java_version = "2.10.1"
 
 http_archive(
     name = "gapic_generator_java",
