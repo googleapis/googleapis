@@ -403,28 +403,6 @@ load("@gapic_generator_csharp//:repositories.bzl", "gapic_generator_csharp_repos
 
 gapic_generator_csharp_repositories()
 
-# Version of C# generator targeting GAX v3. This is present so that teams that
-# do not want to move immediately to GAX v4 when it comes out (e.g. Ads) are
-# able to stick with the GAX-v3-based generator.
-
-_gapic_generator_csharp_gax_v3_version = "1.3.20"
-
-_gapic_generator_csharp_gax_v3_sha256 = "20cacae7641c51eda434adb1279716030def82c2617f4d3507ba56478ff879f9"
-
-http_archive(
-    name = "gapic_generator_csharp_gax_v3",
-    repo_mapping = {
-        "@gapic_generator_restore": "@gapic_generator_restore_gax_v3",
-    },
-    sha256 = _gapic_generator_csharp_gax_v3_sha256,
-    strip_prefix = "gapic-generator-csharp-%s" % _gapic_generator_csharp_gax_v3_version,
-    urls = ["https://github.com/googleapis/gapic-generator-csharp/archive/refs/tags/v%s.tar.gz" % _gapic_generator_csharp_gax_v3_version],
-)
-
-load("@gapic_generator_csharp_gax_v3//:repositories.bzl", gapic_generator_csharp_repositories_gax_v3 = "gapic_generator_csharp_repositories")
-
-gapic_generator_csharp_repositories_gax_v3(gapic_generator_suffix = "_gax_v3")
-
 ##############################################################################
 # Ruby
 ##############################################################################
