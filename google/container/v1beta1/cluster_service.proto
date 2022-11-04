@@ -753,6 +753,10 @@ message NodeConfig {
   // All the nodes in the node pool will be Confidential VM once enabled.
   ConfidentialNodes confidential_nodes = 35;
 
+  // The resource labels for the node pool to use to annotate any related
+  // Google Compute Engine resources.
+  map<string, string> resource_labels = 37;
+
   // Logging configuration.
   NodePoolLoggingConfig logging_config = 38;
 }
@@ -826,6 +830,11 @@ message NodeNetworkConfig {
   //
   // This field cannot be changed after the node pool has been created.
   string pod_ipv4_cidr_block = 6;
+
+  // Whether nodes have internal IP addresses only.
+  // If enable_private_nodes is not specified, then the value is derived from
+  // [cluster.privateClusterConfig.enablePrivateNodes][google.container.v1beta1.PrivateClusterConfig.enablePrivateNodes]
+  optional bool enable_private_nodes = 9;
 
   // Network bandwidth tier configuration.
   optional NetworkPerformanceConfig network_performance_config = 11;
@@ -957,6 +966,13 @@ message NodeTaints {
 // Collection of node-level [Kubernetes
 // labels](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels).
 message NodeLabels {
+  // Map of node label keys and node label values.
+  map<string, string> labels = 1;
+}
+
+// Collection of [GCP
+// labels](https://cloud.google.com/resource-manager/docs/creating-managing-labels).
+message ResourceLabels {
   // Map of node label keys and node label values.
   map<string, string> labels = 1;
 }
@@ -1172,6 +1188,10 @@ message PrivateClusterConfig {
 
   // Controls master global access settings.
   PrivateClusterMasterGlobalAccessConfig master_global_access_config = 8;
+
+  // Subnet to provision the master's private endpoint during cluster creation.
+  // Specified in projects/*/regions/*/subnetworks/* format.
+  string private_endpoint_subnetwork = 10;
 }
 
 // Configuration options for Istio addon.
@@ -1233,6 +1253,9 @@ message MasterAuthorizedNetworksConfig {
   // cidr_blocks define up to 10 external networks that could access
   // Kubernetes master through HTTPS.
   repeated CidrBlock cidr_blocks = 2;
+
+  // Whether master is accessbile via Google Compute Engine Public IP addresses.
+  optional bool gcp_public_cidrs_access_enabled = 3;
 }
 
 // Configuration for the legacy Attribute Based Access Control authorization
@@ -2139,12 +2162,18 @@ message ClusterUpdate {
   // The desired Identity Service component configuration.
   IdentityServiceConfig desired_identity_service_config = 66;
 
+  // Enable/Disable private endpoint for the cluster's master.
+  optional bool desired_enable_private_endpoint = 71;
+
   // The desired network tags that apply to all auto-provisioned node pools
   // in autopilot clusters and node auto-provisioning enabled clusters.
   NetworkTags desired_node_pool_auto_config_network_tags = 110;
 
   // Enable/Disable Protect API features for the cluster.
   optional ProtectConfig desired_protect_config = 112;
+
+  // The desired config of Gateway API on this cluster.
+  GatewayAPIConfig desired_gateway_api_config = 114;
 
   // The desired node pool logging configuration defaults for the cluster.
   NodePoolLoggingConfig desired_node_pool_logging_config = 116;
@@ -2521,6 +2550,10 @@ message UpdateNodePoolRequest {
 
   // Logging configuration.
   NodePoolLoggingConfig logging_config = 32;
+
+  // The resource labels for the node pool to use to annotate any related
+  // Google Compute Engine resources.
+  ResourceLabels resource_labels = 33;
 }
 
 // SetNodePoolAutoscalingRequest sets the autoscaler settings of a node pool.
@@ -3234,7 +3267,7 @@ message BlueGreenSettings {
   message StandardRolloutPolicy {
     // Blue pool size to drain in a batch.
     oneof update_batch_size {
-      // Percentage of the bool pool nodes to drain in a batch.
+      // Percentage of the blue pool nodes to drain in a batch.
       // The range of this field should be (0.0, 1.0].
       float batch_percentage = 1;
 
@@ -4411,6 +4444,32 @@ message NetworkConfig {
   // ServiceExternalIPsConfig specifies if services with externalIPs field are
   // blocked or not.
   ServiceExternalIPsConfig service_external_ips_config = 15;
+
+  // GatewayAPIConfig contains the desired config of Gateway API on this
+  // cluster.
+  GatewayAPIConfig gateway_api_config = 16;
+}
+
+// GatewayAPIConfig contains the desired config of Gateway API on this cluster.
+message GatewayAPIConfig {
+  // Channel describes if/how Gateway API should be installed and implemented in
+  // a cluster.
+  enum Channel {
+    // Default value.
+    CHANNEL_UNSPECIFIED = 0;
+
+    // Gateway API support is disabled
+    CHANNEL_DISABLED = 1;
+
+    // Gateway API support is enabled, experimental CRDs are installed
+    CHANNEL_EXPERIMENTAL = 3;
+
+    // Gateway API support is enabled, standard CRDs are installed
+    CHANNEL_STANDARD = 4;
+  }
+
+  // The Gateway API release channel to use for Gateway API.
+  Channel channel = 1;
 }
 
 // Config to block services with externalIPs field.
@@ -5051,6 +5110,15 @@ message LoggingComponentConfig {
 
     // workloads
     WORKLOADS = 2;
+
+    // kube-apiserver
+    APISERVER = 3;
+
+    // kube-scheduler
+    SCHEDULER = 4;
+
+    // kube-controller-manager
+    CONTROLLER_MANAGER = 5;
   }
 
   // Select components to collect logs. An empty set would disable all logging.
