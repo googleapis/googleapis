@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -154,7 +154,7 @@ service ReservationService {
   //
   // For example, in order to downgrade from 10000 slots to 8000, you might
   // split a 10000 capacity commitment into commitments of 2000 and 8000. Then,
-  // you would change the plan of the first one to `FLEX` and then delete it.
+  // you delete the first one after the commitment end time passes.
   rpc SplitCapacityCommitment(SplitCapacityCommitmentRequest) returns (SplitCapacityCommitmentResponse) {
     option (google.api.http) = {
       post: "/v1/{name=projects/*/locations/*/capacityCommitments/*}:split"
@@ -271,8 +271,8 @@ service ReservationService {
     option (google.api.method_signature) = "name";
   }
 
-  // Deprecated: Looks up assignments for a specified resource for a particular region.
-  // If the request is about a project:
+  // Deprecated: Looks up assignments for a specified resource for a particular
+  // region. If the request is about a project:
   //
   // 1. Assignments created on the project will be returned if they exist.
   // 2. Otherwise assignments created on the closest ancestor will be
@@ -342,6 +342,17 @@ service ReservationService {
     option (google.api.method_signature) = "name,destination_id";
   }
 
+  // Updates an existing assignment.
+  //
+  // Only the `priority` field can be updated.
+  rpc UpdateAssignment(UpdateAssignmentRequest) returns (Assignment) {
+    option (google.api.http) = {
+      patch: "/v1/{assignment.name=projects/*/locations/*/reservations/*/assignments/*}"
+      body: "assignment"
+    };
+    option (google.api.method_signature) = "assignment,update_mask";
+  }
+
   // Retrieves a BI reservation.
   rpc GetBiReservation(GetBiReservationRequest) returns (BiReservation) {
     option (google.api.http) = {
@@ -376,6 +387,9 @@ message Reservation {
 
   // The resource name of the reservation, e.g.,
   // `projects/*/locations/*/reservations/team1-prod`.
+  // The reservation_id must only contain lower case alphanumeric characters or
+  // dashes. It must start with a letter and must not end with a dash. Its
+  // maximum length is 64 characters.
   string name = 1;
 
   // Minimum slots available to this reservation. A slot is a unit of
@@ -384,10 +398,14 @@ message Reservation {
   // Queries using this reservation might use more slots during runtime if
   // ignore_idle_slots is set to false.
   //
-  // If the new reservation's slot capacity exceed the parent's slot capacity or
-  // if total slot capacity of the new reservation and its siblings exceeds the
-  // parent's slot capacity, the request will fail with
+  // If the new reservation's slot capacity exceeds the project's slot capacity
+  // or if total slot capacity of the new reservation and its siblings exceeds
+  // the project's slot capacity, the request will fail with
   // `google.rpc.Code.RESOURCE_EXHAUSTED`.
+  //
+  // NOTE: for reservations in US or EU multi-regions, slot capacity constraints
+  // are checked separately for default and auxiliary regions. See
+  // multi_region_auxiliary flag for more details.
   int64 slot_capacity = 2;
 
   // If false, any query or pipeline job using this reservation will use idle
@@ -396,11 +414,26 @@ message Reservation {
   // capacity specified in the slot_capacity field at most.
   bool ignore_idle_slots = 4;
 
+  // Maximum number of queries that are allowed to run concurrently in this
+  // reservation. This is a soft limit due to asynchronous nature of the system
+  // and various optimizations for small queries.
+  // Default value is 0 which means that concurrency will be automatically set
+  // based on the reservation size.
+  int64 concurrency = 16;
+
   // Output only. Creation time of the reservation.
   google.protobuf.Timestamp creation_time = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Last update time of the reservation.
   google.protobuf.Timestamp update_time = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Applicable only for reservations located within one of the BigQuery
+  // multi-regions (US or EU).
+  //
+  // If set to true, this reservation is placed in the organization's
+  // secondary region which is designated for disaster recovery purposes.
+  // If false, this reservation is placed in the organization's default region.
+  bool multi_region_auxiliary = 14;
 }
 
 // Capacity commitment is a way to purchase compute capacity for BigQuery jobs
@@ -455,11 +488,11 @@ message CapacityCommitment {
     STATE_UNSPECIFIED = 0;
 
     // Capacity commitment is pending provisioning. Pending capacity commitment
-    // does not contribute to the parent's slot_capacity.
+    // does not contribute to the project's slot_capacity.
     PENDING = 1;
 
     // Once slots are provisioned, capacity commitment becomes active.
-    // slot_count is added to the parent's slot_capacity.
+    // slot_count is added to the project's slot_capacity.
     ACTIVE = 2;
 
     // Capacity commitment is failed to be activated by the backend.
@@ -468,6 +501,9 @@ message CapacityCommitment {
 
   // Output only. The resource name of the capacity commitment, e.g.,
   // `projects/myproject/locations/US/capacityCommitments/123`
+  // The commitment_id must only contain lower case alphanumeric characters or
+  // dashes. It must start with a letter and must not end
+  // with a dash. Its maximum length is 64 characters.
   string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Number of slots in this commitment.
@@ -494,6 +530,14 @@ message CapacityCommitment {
   // passes. Once the plan is changed, committed period is extended according to
   // commitment plan. Only applicable for ANNUAL and TRIAL commitments.
   CommitmentPlan renewal_plan = 8;
+
+  // Applicable only for commitments located within one of the BigQuery
+  // multi-regions (US or EU).
+  //
+  // If set to true, this commitment is placed in the organization's
+  // secondary region which is designated for disaster recovery purposes.
+  // If false, this commitment is placed in the organization's default region.
+  bool multi_region_auxiliary = 10;
 }
 
 // The request for [ReservationService.CreateReservation][google.cloud.bigquery.reservation.v1.ReservationService.CreateReservation].
@@ -507,8 +551,9 @@ message CreateReservationRequest {
     }
   ];
 
-  // The reservation ID. This field must only contain lower case alphanumeric
-  // characters or dash. Max length is 64 characters.
+  // The reservation ID. It must only contain lower case alphanumeric
+  // characters or dashes. It must start with a letter and must not end
+  // with a dash. Its maximum length is 64 characters.
   string reservation_id = 2;
 
   // Definition of the new reservation to create.
@@ -596,8 +641,8 @@ message CreateCapacityCommitmentRequest {
 
   // The optional capacity commitment ID. Capacity commitment name will be
   // generated automatically if this field is empty.
-  // This field must only contain lower case alphanumeric characters or dash.
-  // Max length is 64 characters.
+  // This field must only contain lower case alphanumeric characters or dashes.
+  // The first and last character cannot be a dash. Max length is 64 characters.
   // NOTE: this ID won't be kept if the capacity commitment is split or merged.
   string capacity_commitment_id = 5;
 }
@@ -708,7 +753,7 @@ message MergeCapacityCommitmentsRequest {
   repeated string capacity_commitment_ids = 2;
 }
 
-// A Assignment allows a project to submit jobs
+// An assignment allows a project to submit jobs
 // of a certain type using slots from the specified reservation.
 message Assignment {
   option (google.api.resource) = {
@@ -750,6 +795,8 @@ message Assignment {
 
   // Output only. Name of the resource. E.g.:
   // `projects/myproject/locations/US/reservations/team1-prod/assignments/123`.
+  // The assignment_id must only contain lower case alphanumeric characters or
+  // dashes and the max length is 64 characters.
   string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // The resource which will use the reservation. E.g.
@@ -781,7 +828,7 @@ message CreateAssignmentRequest {
 
   // The optional assignment ID. Assignment name will be generated automatically
   // if this field is empty.
-  // This field must only contain lower case alphanumeric characters or dash.
+  // This field must only contain lower case alphanumeric characters or dashes.
   // Max length is 64 characters.
   string assignment_id = 4;
 }
@@ -942,6 +989,28 @@ message MoveAssignmentRequest {
                              }];
 }
 
+// The request for [ReservationService.UpdateAssignment][google.cloud.bigquery.reservation.v1.ReservationService.UpdateAssignment].
+message UpdateAssignmentRequest {
+  // Content of the assignment to update.
+  Assignment assignment = 1;
+
+  // Standard field mask for the set of fields to be updated.
+  google.protobuf.FieldMask update_mask = 2;
+}
+
+// Fully qualified reference to BigQuery table.
+// Internally stored as google.cloud.bi.v1.BqTableReference.
+message TableReference {
+  // The assigned project ID of the project.
+  string project_id = 1;
+
+  // The ID of the dataset in the above project.
+  string dataset_id = 2;
+
+  // The ID of the table in the above dataset.
+  string table_id = 3;
+}
+
 // Represents a BI Reservation.
 message BiReservation {
   option (google.api.resource) = {
@@ -959,6 +1028,9 @@ message BiReservation {
 
   // Size of a reservation, in bytes.
   int64 size = 4;
+
+  // Preferred tables to use BI capacity for.
+  repeated TableReference preferred_tables = 5;
 }
 
 // A request to get a singleton BI reservation.

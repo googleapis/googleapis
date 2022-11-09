@@ -22,6 +22,7 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/api/routing.proto";
 import "google/bigtable/v2/data.proto";
+import "google/bigtable/v2/request_stats.proto";
 import "google/protobuf/wrappers.proto";
 import "google/rpc/status.proto";
 
@@ -33,12 +34,12 @@ option java_package = "com.google.bigtable.v2";
 option php_namespace = "Google\\Cloud\\Bigtable\\V2";
 option ruby_package = "Google::Cloud::Bigtable::V2";
 option (google.api.resource_definition) = {
-  type: "bigtableadmin.googleapis.com/Table"
-  pattern: "projects/{project}/instances/{instance}/tables/{table}"
-};
-option (google.api.resource_definition) = {
   type: "bigtableadmin.googleapis.com/Instance"
   pattern: "projects/{project}/instances/{instance}"
+};
+option (google.api.resource_definition) = {
+  type: "bigtableadmin.googleapis.com/Table"
+  pattern: "projects/{project}/instances/{instance}/tables/{table}"
 };
 
 // Service for reading from and writing to existing Bigtable tables.
@@ -202,6 +203,23 @@ service Bigtable {
 
 // Request message for Bigtable.ReadRows.
 message ReadRowsRequest {
+  //
+  // The desired view into RequestStats that should be returned in the response.
+  //
+  // See also: RequestStats message.
+  enum RequestStatsView {
+    // The default / unset value. The API will default to the NONE option below.
+    REQUEST_STATS_VIEW_UNSPECIFIED = 0;
+
+    // Do not include any RequestStats in the response. This will leave the
+    // RequestStats embedded message unset in the response.
+    REQUEST_STATS_NONE = 1;
+
+    // Include the full set of available RequestStats in the response,
+    // applicable to this read.
+    REQUEST_STATS_FULL = 2;
+  }
+
   // Required. The unique name of the table from which to read.
   // Values are of the form
   // `projects/<project>/instances/<instance>/tables/<table>`.
@@ -212,8 +230,8 @@ message ReadRowsRequest {
     }
   ];
 
-  // This value specifies routing for replication. If not specified, the
-  // "default" application profile will be used.
+  // This value specifies routing for replication. This API only accepts the
+  // empty value of app_profile_id.
   string app_profile_id = 5;
 
   // The row keys and/or ranges to read sequentially. If not specified, reads
@@ -227,6 +245,9 @@ message ReadRowsRequest {
   // The read will stop after committing to N rows' worth of results. The
   // default (zero) is to return all results.
   int64 rows_limit = 4;
+
+  // The view into RequestStats, as described above.
+  RequestStatsView request_stats_view = 6;
 }
 
 // Response message for Bigtable.ReadRows.
@@ -306,6 +327,28 @@ message ReadRowsResponse {
   // lot of data that was filtered out since the last committed row
   // key, allowing the client to skip that work on a retry.
   bytes last_scanned_row_key = 2;
+
+  //
+  // If requested, provide enhanced query performance statistics. The semantics
+  // dictate:
+  //   * request_stats is empty on every (streamed) response, except
+  //   * request_stats has non-empty information after all chunks have been
+  //     streamed, where the ReadRowsResponse message only contains
+  //     request_stats.
+  //       * For example, if a read request would have returned an empty
+  //         response instead a single ReadRowsResponse is streamed with empty
+  //         chunks and request_stats filled.
+  //
+  // Visually, response messages will stream as follows:
+  //    ... -> {chunks: [...]} -> {chunks: [], request_stats: {...}}
+  //   \______________________/  \________________________________/
+  //       Primary response         Trailer of RequestStats info
+  //
+  // Or if the read did not return any values:
+  //   {chunks: [], request_stats: {...}}
+  //   \________________________________/
+  //      Trailer of RequestStats info
+  RequestStats request_stats = 3;
 }
 
 // Request message for Bigtable.SampleRowKeys.
@@ -491,9 +534,7 @@ message PingAndWarmRequest {
 }
 
 // Response message for Bigtable.PingAndWarm connection keepalive and warming.
-message PingAndWarmResponse {
-
-}
+message PingAndWarmResponse {}
 
 // Request message for Bigtable.ReadModifyWriteRow.
 message ReadModifyWriteRowRequest {

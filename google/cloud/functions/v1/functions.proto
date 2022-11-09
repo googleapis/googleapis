@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -191,7 +191,6 @@ service CloudFunctionsService {
 
 // Describes a Cloud Function that contains user computation executed in
 // response to an event. It encapsulate function and triggers configurations.
-// Next tag: 36
 message CloudFunction {
   option (google.api.resource) = {
     type: "cloudfunctions.googleapis.com/CloudFunction"
@@ -231,6 +230,23 @@ message CloudFunction {
 
     // Allow HTTP traffic from private VPC sources and through GCLB.
     ALLOW_INTERNAL_AND_GCLB = 3;
+  }
+
+  // Docker Registry to use for storing function Docker images.
+  enum DockerRegistry {
+    // Unspecified.
+    DOCKER_REGISTRY_UNSPECIFIED = 0;
+
+    // Docker images will be stored in multi-regional Container Registry
+    // repositories named `gcf`.
+    CONTAINER_REGISTRY = 1;
+
+    // Docker images will be stored in regional Artifact Registry repositories.
+    // By default, GCF will create and use repositories named `gcf-artifacts`
+    // in every region in which a function is deployed. But the repository to
+    // use can also be specified by the user using the `docker_repository`
+    // field.
+    ARTIFACT_REGISTRY = 2;
   }
 
   // A user-defined name of the function. Function names must be unique
@@ -380,8 +396,9 @@ message CloudFunction {
   // the `docker_repository` field that was created with the same KMS crypto
   // key.
   //
-  // The following service accounts need to be granted Cloud KMS crypto key
-  // encrypter/decrypter roles on the key.
+  // The following service accounts need to be granted the role 'Cloud KMS
+  // CryptoKey Encrypter/Decrypter (roles/cloudkms.cryptoKeyEncrypterDecrypter)'
+  // on the Key/KeyRing/Project/Organization (least access preferred).
   //
   // 1. Google Cloud Functions service account
   //    (service-{project_number}@gcf-admin-robot.iam.gserviceaccount.com) -
@@ -450,6 +467,14 @@ message CloudFunction {
   string docker_repository = 34 [(google.api.resource_reference) = {
                                    type: "artifactregistry.googleapis.com/Repository"
                                  }];
+
+  // Docker Registry to use for this deployment.
+  //
+  // If `docker_repository` field is specified, this field will be automatically
+  // set as `ARTIFACT_REGISTRY`.
+  // If unspecified, it currently defaults to `CONTAINER_REGISTRY`.
+  // This field may be overridden by the backend for eligible deployments.
+  DockerRegistry docker_registry = 35;
 }
 
 // Describes SourceRepository, used to represent parameters related to
@@ -575,10 +600,31 @@ message FailurePolicy {
   }
 }
 
+// Describes the current stage of a deployment.
+enum CloudFunctionStatus {
+  // Not specified. Invalid state.
+  CLOUD_FUNCTION_STATUS_UNSPECIFIED = 0;
+
+  // Function has been successfully deployed and is serving.
+  ACTIVE = 1;
+
+  // Function deployment failed and the function isn’t serving.
+  OFFLINE = 2;
+
+  // Function is being created or updated.
+  DEPLOY_IN_PROGRESS = 3;
+
+  // Function is being deleted.
+  DELETE_IN_PROGRESS = 4;
+
+  // Function deployment failed and the function serving state is undefined.
+  // The function should be updated or deleted to move it out of this state.
+  UNKNOWN = 5;
+}
+
 // Configuration for a secret environment variable. It has the information
 // necessary to fetch the secret value from secret manager and expose it as an
-// environment variable. Secret value is not a part of the configuration. Secret
-// values are only fetched when a new clone starts.
+// environment variable.
 message SecretEnvVar {
   // Name of the environment variable.
   string key = 1;
@@ -594,7 +640,7 @@ message SecretEnvVar {
 
   // Version of the secret (version number or the string 'latest'). It is
   // recommended to use a numeric version for secret environment variables as
-  // any updates to the secret value is not reflected until new clones start.
+  // any updates to the secret value is not reflected until new instances start.
   string version = 4;
 }
 
@@ -662,30 +708,8 @@ message UpdateFunctionRequest {
   // Required. New version of the function.
   CloudFunction function = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // Required list of fields to be updated in this request.
+  // Required. The list of fields in `CloudFunction` that have to be updated.
   google.protobuf.FieldMask update_mask = 2;
-}
-
-// Describes the current stage of a deployment.
-enum CloudFunctionStatus {
-  // Not specified. Invalid state.
-  CLOUD_FUNCTION_STATUS_UNSPECIFIED = 0;
-
-  // Function has been successfully deployed and is serving.
-  ACTIVE = 1;
-
-  // Function deployment failed and the function isn’t serving.
-  OFFLINE = 2;
-
-  // Function is being created or updated.
-  DEPLOY_IN_PROGRESS = 3;
-
-  // Function is being deleted.
-  DELETE_IN_PROGRESS = 4;
-
-  // Function deployment failed and the function serving state is undefined.
-  // The function should be updated or deleted to move it out of this state.
-  UNKNOWN = 5;
 }
 
 // Request for the `GetFunction` method.
@@ -781,6 +805,27 @@ message GenerateUploadUrlRequest {
   // The project and location in which the Google Cloud Storage signed URL
   // should be generated, specified in the format `projects/*/locations/*`.
   string parent = 1;
+
+  // Resource name of a KMS crypto key (managed by the user) used to
+  // encrypt/decrypt function source code objects in staging Cloud Storage
+  // buckets. When you generate an upload url and upload your source code, it
+  // gets copied to a staging Cloud Storage bucket in an internal regional
+  // project. The source code is then copied to a versioned directory in the
+  // sources bucket in the consumer project during the function deployment.
+  //
+  // It must match the pattern
+  // `projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}`.
+  //
+  // The Google Cloud Functions service account
+  // (service-{project_number}@gcf-admin-robot.iam.gserviceaccount.com) must be
+  // granted the role 'Cloud KMS CryptoKey Encrypter/Decrypter
+  // (roles/cloudkms.cryptoKeyEncrypterDecrypter)' on the
+  // Key/KeyRing/Project/Organization (least access preferred). GCF will
+  // delegate access to the Google Storage service account in the internal
+  // project.
+  string kms_key_name = 2 [(google.api.resource_reference) = {
+                             type: "cloudkms.googleapis.com/CryptoKey"
+                           }];
 }
 
 // Response of `GenerateSourceUploadUrl` method.

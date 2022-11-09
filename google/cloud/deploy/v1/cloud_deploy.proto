@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/longrunning/operations.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 import "google/type/date.proto";
@@ -44,6 +45,10 @@ option (google.api.resource_definition) = {
 option (google.api.resource_definition) = {
   type: "cloudbuild.googleapis.com/WorkerPool"
   pattern: "projects/{project}/locations/{location}/workerPools/{worker_pool}"
+};
+option (google.api.resource_definition) = {
+  type: "gkehub.googleapis.com/Membership"
+  pattern: "projects/{project}/locations/{location}/memberships/{membership}"
 };
 
 // CloudDeploy service creates and manages Continuous Delivery operations
@@ -189,6 +194,15 @@ service CloudDeploy {
     };
   }
 
+  // Abandons a Release in the Delivery Pipeline.
+  rpc AbandonRelease(AbandonReleaseRequest) returns (AbandonReleaseResponse) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/deliveryPipelines/*/releases/*}:abandon"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
   // Approves a Rollout.
   rpc ApproveRollout(ApproveRolloutRequest) returns (ApproveRolloutResponse) {
     option (google.api.http) = {
@@ -227,6 +241,31 @@ service CloudDeploy {
     };
   }
 
+  // Retries the specified Job in a Rollout.
+  rpc RetryJob(RetryJobRequest) returns (RetryJobResponse) {
+    option (google.api.http) = {
+      post: "/v1/{rollout=projects/*/locations/*/deliveryPipelines/*/releases/*/rollouts/*}:retryJob"
+      body: "*"
+    };
+    option (google.api.method_signature) = "rollout,phase_id,job_id";
+  }
+
+  // Lists JobRuns in a given project and location.
+  rpc ListJobRuns(ListJobRunsRequest) returns (ListJobRunsResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*/locations/*/deliveryPipelines/*/releases/*/rollouts/*}/jobRuns"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Gets details of a single JobRun.
+  rpc GetJobRun(GetJobRunRequest) returns (JobRun) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/locations/*/deliveryPipelines/*/releases/*/rollouts/*/jobRuns/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
   // Gets the configuration for a location.
   rpc GetConfig(GetConfigRequest) returns (Config) {
     option (google.api.http) = {
@@ -257,17 +296,21 @@ message DeliveryPipeline {
   string description = 3;
 
   // User annotations. These attributes can only be set and used by the
-  // user, and not by Google Cloud Deploy. See
-  // https://google.aip.dev/128#annotations for more details such as format and
-  // size limitations.
+  // user, and not by Google Cloud Deploy.
   map<string, string> annotations = 4;
 
   // Labels are attributes that can be set and used by both the
   // user and by Google Cloud Deploy. Labels must meet the following
-  // constraints: Each resource is limited to 64 labels. Keys must conform to
-  // the regexp: `[a-zA-Z][a-zA-Z0-9_-]{0,62}`. Values must conform to the
-  // regexp: `[a-zA-Z0-9_-]{0,63}`. Both keys and values are additionally
-  // constrained to be <= 128 bytes in size.
+  // constraints:
+  //
+  // * Keys and values can contain only lowercase letters, numeric characters,
+  // underscores, and dashes.
+  // * All characters must use UTF-8 encoding, and international characters are
+  // allowed.
+  // * Keys must start with a lowercase letter or international character.
+  // * Each resource is limited to a maximum of 64 labels.
+  //
+  // Both keys and values are additionally constrained to be <= 128 bytes.
   map<string, string> labels = 5;
 
   // Output only. Time at which the pipeline was created.
@@ -290,6 +333,10 @@ message DeliveryPipeline {
   // fields, and may be sent on update and delete requests to ensure the
   // client has an up-to-date value before proceeding.
   string etag = 10;
+
+  // When suspended, no new releases or rollouts can be created,
+  // but in-progress ones will complete.
+  bool suspended = 12;
 }
 
 // SerialPipeline defines a sequential set of stages for a `DeliveryPipeline`.
@@ -304,14 +351,33 @@ message Stage {
   // The target_id to which this stage points. This field refers exclusively to
   // the last segment of a target name. For example, this field would just be
   // `my-target` (rather than
-  // `projects/project/deliveryPipelines/pipeline/targets/my-target`). The
-  // parent `DeliveryPipeline` of the `Target` is inferred to be the parent
-  // `DeliveryPipeline` of the `Release` in which this `Stage` lives.
+  // `projects/project/locations/location/targets/my-target`). The location of
+  // the `Target` is inferred to be the same as the location of the
+  // `DeliveryPipeline` that contains this `Stage`.
   string target_id = 1;
 
   // Skaffold profiles to use when rendering the manifest for this stage's
   // `Target`.
   repeated string profiles = 2;
+
+  // Optional. The strategy to use for a `Rollout` to this stage.
+  Strategy strategy = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Strategy contains deployment strategy information.
+message Strategy {
+  // Deployment strategy details.
+  oneof deployment_strategy {
+    // Standard deployment strategy executes a single deploy and allows
+    // verifying the deployment.
+    Standard standard = 1;
+  }
+}
+
+// Standard represents the standard deployment strategy.
+message Standard {
+  // Whether to verify a deployment.
+  bool verify = 1;
 }
 
 // PipelineReadyCondition contains information around the status of the
@@ -376,7 +442,7 @@ message ListDeliveryPipelinesRequest {
   // the call that provided the page token.
   string page_token = 3;
 
-  // Filter builds to be returned. See https://google.aip.dev/160 for more
+  // Filter pipelines to be returned. See https://google.aip.dev/160 for more
   // details.
   string filter = 4;
 
@@ -537,8 +603,8 @@ message Target {
     pattern: "projects/{project}/locations/{location}/targets/{target}"
   };
 
-  // Optional. Name of the `Target`. Format is projects/{project}/locations/{location}/
-  // deliveryPipelines/{deliveryPipeline}/targets/[a-z][a-z0-9\-]{0,62}.
+  // Optional. Name of the `Target`. Format is
+  // projects/{project}/locations/{location}/targets/[a-z][a-z0-9\-]{0,62}.
   string name = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. Resource id of the `Target`.
@@ -558,10 +624,16 @@ message Target {
 
   // Optional. Labels are attributes that can be set and used by both the
   // user and by Google Cloud Deploy. Labels must meet the following
-  // constraints: Each resource is limited to 64 labels. Keys must conform to
-  // the regexp: `[a-zA-Z][a-zA-Z0-9_-]{0,62}`. Values must conform to the
-  // regexp: `[a-zA-Z0-9_-]{0,63}`. Both keys and values are additionally
-  // constrained to be <= 128 bytes in size.
+  // constraints:
+  //
+  // * Keys and values can contain only lowercase letters, numeric characters,
+  // underscores, and dashes.
+  // * All characters must use UTF-8 encoding, and international characters are
+  // allowed.
+  // * Keys must start with a lowercase letter or international character.
+  // * Each resource is limited to a maximum of 64 labels.
+  //
+  // Both keys and values are additionally constrained to be <= 128 bytes.
   map<string, string> labels = 6 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Whether or not the `Target` requires approval.
@@ -578,6 +650,12 @@ message Target {
   oneof deployment_target {
     // Information specifying a GKE Cluster.
     GkeCluster gke = 15;
+
+    // Information specifying an Anthos Cluster.
+    AnthosCluster anthos_cluster = 17;
+
+    // Information specifying a Cloud Run deployment target.
+    CloudRunLocation run = 18;
   }
 
   // Optional. This checksum is computed by the server based on the value of other
@@ -607,6 +685,9 @@ message ExecutionConfig {
 
     // Use for deploying and deployment hooks.
     DEPLOY = 2;
+
+    // Use for deployment verification.
+    VERIFY = 3;
   }
 
   // Required. Usages when this configuration should be applied.
@@ -620,6 +701,33 @@ message ExecutionConfig {
     // Optional. Use private Cloud Build pool.
     PrivatePool private_pool = 3 [(google.api.field_behavior) = OPTIONAL];
   }
+
+  // Optional. The resource name of the `WorkerPool`, with the format
+  // `projects/{project}/locations/{location}/workerPools/{worker_pool}`.
+  // If this optional field is unspecified, the default Cloud Build pool will be
+  // used.
+  string worker_pool = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "cloudbuild.googleapis.com/WorkerPool"
+    }
+  ];
+
+  // Optional. Google service account to use for execution. If unspecified,
+  // the project execution service account
+  // (<PROJECT_NUMBER>-compute@developer.gserviceaccount.com) is used.
+  string service_account = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Cloud Storage location in which to store execution outputs. This can
+  // either be a bucket ("gs://my-bucket") or a path within a bucket
+  // ("gs://my-bucket/my-dir").
+  // If unspecified, a default bucket located in the same region will be used.
+  string artifact_storage = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Execution timeout for a Cloud Build Execution. This must be between 10m and
+  // 24h in seconds format.
+  // If unspecified, a default timeout of 1h is used.
+  google.protobuf.Duration execution_timeout = 7 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Execution using the default Cloud Build pool.
@@ -666,6 +774,38 @@ message GkeCluster {
   string cluster = 1 [(google.api.resource_reference) = {
                         type: "container.googleapis.com/Cluster"
                       }];
+
+  // Optional. If true, `cluster` is accessed using the private IP address of the control
+  // plane endpoint. Otherwise, the default IP address of the control plane
+  // endpoint is used. The default IP address is the private IP address for
+  // clusters with private control-plane endpoints and the public IP address
+  // otherwise.
+  //
+  // Only specify this option when `cluster` is a [private GKE
+  // cluster](https://cloud.google.com/kubernetes-engine/docs/concepts/private-cluster-concept).
+  bool internal_ip = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Information specifying an Anthos Cluster.
+message AnthosCluster {
+  // Membership of the GKE Hub-registered cluster to which to apply the Skaffold
+  // configuration. Format is
+  // `projects/{project}/locations/{location}/memberships/{membership_name}`.
+  string membership = 1 [(google.api.resource_reference) = {
+                           type: "gkehub.googleapis.com/Membership"
+                         }];
+}
+
+// Information specifying where to deploy a Cloud Run Service.
+message CloudRunLocation {
+  // Required. The location for the Cloud Run Service. Format must be
+  // `projects/{project}/locations/{location}`.
+  string location = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
 }
 
 // The request object for `ListTargets`.
@@ -691,7 +831,7 @@ message ListTargetsRequest {
   // the call that provided the page token.
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Filter builds to be returned. See https://google.aip.dev/160 for more
+  // Optional. Filter targets to be returned. See https://google.aip.dev/160 for more
   // details.
   string filter = 4 [(google.api.field_behavior) = OPTIONAL];
 
@@ -848,6 +988,21 @@ message Release {
     pattern: "projects/{project}/locations/{location}/deliveryPipelines/{delivery_pipeline}/releases/{release}"
   };
 
+  // Valid states of the render operation.
+  enum RenderState {
+    // The render state is unspecified.
+    RENDER_STATE_UNSPECIFIED = 0;
+
+    // All rendering operations have completed successfully.
+    SUCCEEDED = 1;
+
+    // All rendering operations have completed, and one or more have failed.
+    FAILED = 2;
+
+    // Rendering has started and is not complete.
+    IN_PROGRESS = 3;
+  }
+
   // Details of rendering for a single target.
   message TargetRender {
     // Valid states of the render operation.
@@ -865,6 +1020,21 @@ message Release {
       IN_PROGRESS = 3;
     }
 
+    // Well-known rendering failures.
+    enum FailureCause {
+      // No reason for failure is specified.
+      FAILURE_CAUSE_UNSPECIFIED = 0;
+
+      // Cloud Build is not available, either because it is not enabled or
+      // because Google Cloud Deploy has insufficient permissions. See [required
+      // permission](/deploy/docs/cloud-deploy-service-account#required_permissions).
+      CLOUD_BUILD_UNAVAILABLE = 1;
+
+      // The render operation did not complete successfully; check Cloud Build
+      // logs.
+      EXECUTION_FAILED = 2;
+    }
+
     // Output only. The resource name of the Cloud Build `Build` object that is used to
     // render the manifest for this target. Format is
     // `projects/{project}/locations/{location}/builds/{build}`.
@@ -877,21 +1047,13 @@ message Release {
 
     // Output only. Current state of the render operation for this Target.
     TargetRenderState rendering_state = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
-  }
 
-  // Valid states of the render operation.
-  enum RenderState {
-    // The render state is unspecified.
-    RENDER_STATE_UNSPECIFIED = 0;
+    // Output only. Reason this render failed. This will always be unspecified while the
+    // render in progress.
+    FailureCause failure_cause = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-    // All rendering operations have completed successfully.
-    SUCCEEDED = 1;
-
-    // All rendering operations have completed, and one or more have failed.
-    FAILED = 2;
-
-    // Rendering has started and is not complete.
-    IN_PROGRESS = 3;
+    // Output only. Additional information about the render failure, if available.
+    string failure_message = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
   // Optional. Name of the `Release`. Format is projects/{project}/
@@ -913,11 +1075,20 @@ message Release {
 
   // Labels are attributes that can be set and used by both the
   // user and by Google Cloud Deploy. Labels must meet the following
-  // constraints: Each resource is limited to 64 labels. Keys must conform to
-  // the regexp: `[a-zA-Z][a-zA-Z0-9_-]{0,62}`. Values must conform to the
-  // regexp: `[a-zA-Z0-9_-]{0,63}`. Both keys and values are additionally
-  // constrained to be <= 128 bytes in size.
+  // constraints:
+  //
+  // * Keys and values can contain only lowercase letters, numeric characters,
+  // underscores, and dashes.
+  // * All characters must use UTF-8 encoding, and international characters are
+  // allowed.
+  // * Keys must start with a lowercase letter or international character.
+  // * Each resource is limited to a maximum of 64 labels.
+  //
+  // Both keys and values are additionally constrained to be <= 128 bytes.
   map<string, string> labels = 5;
+
+  // Output only. Indicates whether this is an abandoned release.
+  bool abandoned = 23 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Time at which the `Release` was created.
   google.protobuf.Timestamp create_time = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -940,7 +1111,7 @@ message Release {
   // Output only. Snapshot of the parent pipeline taken at release creation time.
   DeliveryPipeline delivery_pipeline_snapshot = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. Snapshot of the parent pipeline's targets taken at release creation time.
+  // Output only. Snapshot of the targets taken at release creation time.
   repeated Target target_snapshots = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Current state of the render operation.
@@ -1015,7 +1186,7 @@ message ListReleasesRequest {
   // the call that provided the page token.
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Filter builds to be returned. See https://google.aip.dev/160 for more
+  // Optional. Filter releases to be returned. See https://google.aip.dev/160 for more
   // details.
   string filter = 4 [(google.api.field_behavior) = OPTIONAL];
 
@@ -1141,6 +1312,33 @@ message Rollout {
     PENDING_RELEASE = 7;
   }
 
+  // Well-known rollout failures.
+  enum FailureCause {
+    // No reason for failure is specified.
+    FAILURE_CAUSE_UNSPECIFIED = 0;
+
+    // Cloud Build is not available, either because it is not enabled or because
+    // Cloud Deploy has insufficient permissions. See [required
+    // permission](/deploy/docs/cloud-deploy-service-account#required_permissions).
+    CLOUD_BUILD_UNAVAILABLE = 1;
+
+    // The deploy operation did not complete successfully; check Cloud Build
+    // logs.
+    EXECUTION_FAILED = 2;
+
+    // Deployment did not complete within the alloted time.
+    DEADLINE_EXCEEDED = 3;
+
+    // Release is in a failed state.
+    RELEASE_FAILED = 4;
+
+    // Release is abandoned.
+    RELEASE_ABANDONED = 5;
+
+    // No skaffold verify configuration was found.
+    VERIFICATION_CONFIG_NOT_FOUND = 6;
+  }
+
   // Optional. Name of the `Rollout`. Format is projects/{project}/
   // locations/{location}/deliveryPipelines/{deliveryPipeline}/
   // releases/{release}/rollouts/[a-z][a-z0-9\-]{0,62}.
@@ -1161,10 +1359,16 @@ message Rollout {
 
   // Labels are attributes that can be set and used by both the
   // user and by Google Cloud Deploy. Labels must meet the following
-  // constraints: Each resource is limited to 64 labels. Keys must conform to
-  // the regexp: `[a-zA-Z][a-zA-Z0-9_-]{0,62}`. Values must conform to the
-  // regexp: `[a-zA-Z0-9_-]{0,63}`. Both keys and values are additionally
-  // constrained to be <= 128 bytes in size.
+  // constraints:
+  //
+  // * Keys and values can contain only lowercase letters, numeric characters,
+  // underscores, and dashes.
+  // * All characters must use UTF-8 encoding, and international characters are
+  // allowed.
+  // * Keys must start with a lowercase letter or international character.
+  // * Each resource is limited to a maximum of 64 labels.
+  //
+  // Both keys and values are additionally constrained to be <= 128 bytes.
   map<string, string> labels = 5;
 
   // Output only. Time at which the `Rollout` was created.
@@ -1191,7 +1395,7 @@ message Rollout {
   // Output only. Current state of the `Rollout`.
   State state = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. Reason the build failed. Empty if the build succeeded.
+  // Output only. Additional information about the rollout failure, if available.
   string failure_reason = 14 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The resource name of the Cloud Build `Build` object that is used to deploy
@@ -1208,6 +1412,149 @@ message Rollout {
   // fields, and may be sent on update and delete requests to ensure the
   // client has an up-to-date value before proceeding.
   string etag = 16;
+
+  // Output only. The reason this rollout failed. This will always be unspecified while the
+  // rollout is in progress.
+  FailureCause deploy_failure_cause = 19 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The phases that represent the workflows of this `Rollout`.
+  repeated Phase phases = 23 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Metadata contains information about the rollout.
+  Metadata metadata = 24 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Metadata includes information associated with a `Rollout`.
+message Metadata {
+  // Output only. The name of the Cloud Run Service that is associated with a `Rollout`.
+  CloudRunMetadata cloud_run = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// DeployJobRunMetadata surfaces information associated with a `DeployJobRun` to
+// the user.
+message DeployJobRunMetadata {
+  // Output only. The name of the Cloud Run Service that is associated with a `DeployJobRun`.
+  CloudRunMetadata cloud_run = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// CloudRunMetadata contains information from a Cloud Run deployment.
+message CloudRunMetadata {
+  // Output only. The name of the Cloud Run Service that is associated with a `Rollout`.
+  // Format is projects/{project}/locations/{location}/services/{service}.
+  string service = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The Cloud Run Service urls that are associated with a `Rollout`.
+  repeated string service_urls = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The Cloud Run Revision id associated with a `Rollout`.
+  string revision = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Phase represents a collection of jobs that are logically grouped together
+// for a `Rollout`.
+message Phase {
+  // Valid states of a Phase.
+  enum State {
+    // The Phase has an unspecified state.
+    STATE_UNSPECIFIED = 0;
+
+    // The Phase is waiting for an earlier Phase(s) to complete.
+    PENDING = 1;
+
+    // The Phase is in progress.
+    IN_PROGRESS = 2;
+
+    // The Phase has succeeded.
+    SUCCEEDED = 3;
+
+    // The Phase has failed.
+    FAILED = 4;
+
+    // The Phase was aborted.
+    ABORTED = 5;
+  }
+
+  // Output only. The ID of the Phase.
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Current state of the Phase.
+  State state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The job composition of this Phase.
+  oneof jobs {
+    // Output only. Deployment job composition.
+    DeploymentJobs deployment_jobs = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+}
+
+// Deployment job composition.
+message DeploymentJobs {
+  // Output only. The deploy Job. This is the first job run in the phase.
+  Job deploy_job = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The verify Job. Runs after a deploy if the deploy succeeds.
+  Job verify_job = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Job represents an operation for a `Rollout`.
+message Job {
+  // Valid states of a Job.
+  enum State {
+    // The Job has an unspecified state.
+    STATE_UNSPECIFIED = 0;
+
+    // The Job is waiting for an earlier Phase(s) or Job(s) to complete.
+    PENDING = 1;
+
+    // The Job is disabled.
+    DISABLED = 2;
+
+    // The Job is in progress.
+    IN_PROGRESS = 3;
+
+    // The Job succeeded.
+    SUCCEEDED = 4;
+
+    // The Job failed.
+    FAILED = 5;
+
+    // The Job was aborted.
+    ABORTED = 6;
+  }
+
+  // Output only. The ID of the Job.
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The current state of the Job.
+  State state = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The name of the `JobRun` responsible for the most recent invocation of this
+  // Job.
+  string job_run = 3 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "clouddeploy.googleapis.com/JobRun"
+    }
+  ];
+
+  // The type of Job.
+  oneof job_type {
+    // Output only. A deploy Job.
+    DeployJob deploy_job = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. A verify Job.
+    VerifyJob verify_job = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+}
+
+// A deploy Job.
+message DeployJob {
+
+}
+
+// A verify Job.
+message VerifyJob {
+
 }
 
 // ListRolloutsRequest is the request object used by `ListRollouts`.
@@ -1232,7 +1579,7 @@ message ListRolloutsRequest {
   // the call that provided the page token.
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Filter builds to be returned. See https://google.aip.dev/160 for more
+  // Optional. Filter rollouts to be returned. See https://google.aip.dev/160 for more
   // details.
   string filter = 4 [(google.api.field_behavior) = OPTIONAL];
 
@@ -1349,6 +1696,255 @@ message ApproveRolloutRequest {
 // The response object from `ApproveRollout`.
 message ApproveRolloutResponse {
 
+}
+
+// RetryJobRequest is the request object used by `RetryJob`.
+message RetryJobRequest {
+  // Required. Name of the Rollout. Format is
+  // projects/{project}/locations/{location}/deliveryPipelines/{deliveryPipeline}/
+  // releases/{release}/rollouts/{rollout}.
+  string rollout = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "clouddeploy.googleapis.com/Rollout"
+    }
+  ];
+
+  // Required. The phase ID the Job to retry belongs to.
+  string phase_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The job ID for the Job to retry.
+  string job_id = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The response object from 'RetryJob'.
+message RetryJobResponse {
+
+}
+
+// The request object used by `AbandonRelease`.
+message AbandonReleaseRequest {
+  // Required. Name of the Release. Format is
+  // projects/{project}/locations/{location}/deliveryPipelines/{deliveryPipeline}/
+  // releases/{release}.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "clouddeploy.googleapis.com/Release"
+    }
+  ];
+}
+
+// The response object for `AbandonRelease`.
+message AbandonReleaseResponse {
+
+}
+
+// A `JobRun` resource in the Google Cloud Deploy API.
+//
+// A `JobRun` contains information of a single `Rollout` job evaluation.
+message JobRun {
+  option (google.api.resource) = {
+    type: "clouddeploy.googleapis.com/JobRun"
+    pattern: "projects/{project}/locations/{location}/deliveryPipelines/{delivery_pipeline}/releases/{release}/rollouts/{rollout}/jobRuns/{job_run}"
+  };
+
+  // Valid states of a `JobRun`.
+  enum State {
+    // The `JobRun` has an unspecified state.
+    STATE_UNSPECIFIED = 0;
+
+    // The `JobRun` is in progress.
+    IN_PROGRESS = 1;
+
+    // The `JobRun` has succeeded.
+    SUCCEEDED = 2;
+
+    // The `JobRun` has failed.
+    FAILED = 3;
+  }
+
+  // Optional. Name of the `JobRun`. Format is projects/{project}/locations/{location}/
+  // deliveryPipelines/{deliveryPipeline}/releases/{releases}/rollouts/
+  // {rollouts}/jobRuns/{uuid}.
+  string name = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Unique identifier of the `JobRun`.
+  string uid = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. ID of the `Rollout` phase this `JobRun` belongs in.
+  string phase_id = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. ID of the `Rollout` job this `JobRun` corresponds to.
+  string job_id = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Time at which the `JobRun` was created.
+  google.protobuf.Timestamp create_time = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Time at which the `JobRun` was started.
+  google.protobuf.Timestamp start_time = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Time at which the `JobRun` ended.
+  google.protobuf.Timestamp end_time = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The current state of the `JobRun`.
+  State state = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The `JobRun` type and the information for that type.
+  oneof job_run {
+    // Output only. Information specific to a deploy `JobRun`.
+    DeployJobRun deploy_job_run = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Information specific to a verify `JobRun`.
+    VerifyJobRun verify_job_run = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Output only. This checksum is computed by the server based on the value of other
+  // fields, and may be sent on update and delete requests to ensure the
+  // client has an up-to-date value before proceeding.
+  string etag = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// DeployJobRun contains information specific to a deploy `JobRun`.
+message DeployJobRun {
+  // Well-known deploy failures.
+  enum FailureCause {
+    // No reason for failure is specified.
+    FAILURE_CAUSE_UNSPECIFIED = 0;
+
+    // Cloud Build is not available, either because it is not enabled or because
+    // Google Cloud Deploy has insufficient permissions. See [Required
+    // permission](/deploy/docs/cloud-deploy-service-account#required_permissions).
+    CLOUD_BUILD_UNAVAILABLE = 1;
+
+    // The deploy operation did not complete successfully; check Cloud Build
+    // logs.
+    EXECUTION_FAILED = 2;
+
+    // The deploy build did not complete within the alloted time.
+    DEADLINE_EXCEEDED = 3;
+  }
+
+  // Output only. The resource name of the Cloud Build `Build` object that is used to deploy.
+  // Format is projects/{project}/locations/{location}/builds/{build}.
+  string build = 1 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "cloudbuild.googleapis.com/Build"
+    }
+  ];
+
+  // Output only. The reason the deploy failed. This will always be unspecified while the
+  // deploy is in progress or if it succeeded.
+  FailureCause failure_cause = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Additional information about the deploy failure, if available.
+  string failure_message = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Metadata containing information about the deploy job run.
+  DeployJobRunMetadata metadata = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// VerifyJobRun contains information specific to a verify `JobRun`.
+message VerifyJobRun {
+  // Well-known verify failures.
+  enum FailureCause {
+    // No reason for failure is specified.
+    FAILURE_CAUSE_UNSPECIFIED = 0;
+
+    // Cloud Build is not available, either because it is not enabled or because
+    // Google Cloud Deploy has insufficient permissions. See [required
+    // permission](/deploy/docs/cloud-deploy-service-account#required_permissions).
+    CLOUD_BUILD_UNAVAILABLE = 1;
+
+    // The verify operation did not complete successfully; check Cloud Build
+    // logs.
+    EXECUTION_FAILED = 2;
+
+    // The verify build did not complete within the alloted time.
+    DEADLINE_EXCEEDED = 3;
+
+    // No Skaffold verify configuration was found.
+    VERIFICATION_CONFIG_NOT_FOUND = 4;
+  }
+
+  // Output only. The resource name of the Cloud Build `Build` object that is used to verify.
+  // Format is projects/{project}/locations/{location}/builds/{build}.
+  string build = 1 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "cloudbuild.googleapis.com/Build"
+    }
+  ];
+
+  // Output only. URI of a directory containing the verify artifacts. This contains the
+  // Skaffold event log.
+  string artifact_uri = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. File path of the Skaffold event log relative to the artifact URI.
+  string event_log_path = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The reason the verify failed. This will always be unspecified while the
+  // verify is in progress or if it succeeded.
+  FailureCause failure_cause = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Additional information about the verify failure, if available.
+  string failure_message = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// ListJobRunsRequest is the request object used by `ListJobRuns`.
+message ListJobRunsRequest {
+  // Required. The `Rollout` which owns this collection of `JobRun` objects.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "clouddeploy.googleapis.com/Rollout"
+    }
+  ];
+
+  // Optional. The maximum number of `JobRun` objects to return. The service may return
+  // fewer than this value. If unspecified, at most 50 `JobRun` objects will be
+  // returned. The maximum value is 1000; values above 1000 will be set to 1000.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A page token, received from a previous `ListJobRuns` call. Provide this
+  // to retrieve the subsequent page.
+  //
+  // When paginating, all other provided parameters match the call that provided
+  // the page token.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Filter results to be returned. See https://google.aip.dev/160 for more
+  // details.
+  string filter = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Field to sort by. See https://google.aip.dev/132#ordering for more details.
+  string order_by = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// ListJobRunsResponse is the response object returned by `ListJobRuns`.
+message ListJobRunsResponse {
+  // The `JobRun` objects.
+  repeated JobRun job_runs = 1;
+
+  // A token, which can be sent as `page_token` to retrieve the next page. If
+  // this field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
+
+  // Locations that could not be reached
+  repeated string unreachable = 3;
+}
+
+// GetJobRunRequest is the request object used by `GetJobRun`.
+message GetJobRunRequest {
+  // Required. Name of the `JobRun`. Format must be
+  // projects/{project_id}/locations/{location_name}/deliveryPipelines/{pipeline_name}/releases/{release_name}/rollouts/{rollout_name}/jobRuns/{job_run_name}.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "clouddeploy.googleapis.com/JobRun"
+    }
+  ];
 }
 
 // Service-wide configuration.

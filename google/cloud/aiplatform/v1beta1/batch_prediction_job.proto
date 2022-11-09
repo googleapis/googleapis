@@ -16,7 +16,6 @@ syntax = "proto3";
 
 package google.cloud.aiplatform.v1beta1;
 
-import "google/api/annotations.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/aiplatform/v1beta1/completion_stats.proto";
@@ -26,6 +25,7 @@ import "google/cloud/aiplatform/v1beta1/io.proto";
 import "google/cloud/aiplatform/v1beta1/job_state.proto";
 import "google/cloud/aiplatform/v1beta1/machine_resources.proto";
 import "google/cloud/aiplatform/v1beta1/manual_batch_tuning_parameters.proto";
+import "google/cloud/aiplatform/v1beta1/model_deployment_monitoring_job.proto";
 import "google/cloud/aiplatform/v1beta1/model_monitoring.proto";
 import "google/cloud/aiplatform/v1beta1/unmanaged_container_model.proto";
 import "google/protobuf/struct.proto";
@@ -71,6 +71,91 @@ message BatchPredictionJob {
     // [Model's][google.cloud.aiplatform.v1beta1.BatchPredictionJob.model]
     // [supported_input_storage_formats][google.cloud.aiplatform.v1beta1.Model.supported_input_storage_formats].
     string instances_format = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Configuration defining how to transform batch prediction input instances to
+  // the instances that the Model accepts.
+  message InstanceConfig {
+    // The format of the instance that the Model accepts. Vertex AI will
+    // convert compatible
+    // [batch prediction input instance formats][google.cloud.aiplatform.v1beta1.BatchPredictionJob.InputConfig.instances_format]
+    // to the specified format.
+    //
+    // Supported values are:
+    //
+    // * `object`: Each input is converted to JSON object format.
+    //     * For `bigquery`, each row is converted to an object.
+    //     * For `jsonl`, each line of the JSONL input must be an object.
+    //     * Does not apply to `csv`, `file-list`, `tf-record`, or
+    //       `tf-record-gzip`.
+    //
+    // * `array`: Each input is converted to JSON array format.
+    //     * For `bigquery`, each row is converted to an array. The order
+    //       of columns is determined by the BigQuery column order, unless
+    //       [included_fields][google.cloud.aiplatform.v1beta1.BatchPredictionJob.InstanceConfig.included_fields] is populated.
+    //       [included_fields][google.cloud.aiplatform.v1beta1.BatchPredictionJob.InstanceConfig.included_fields] must be populated for specifying field orders.
+    //     * For `jsonl`, if each line of the JSONL input is an object,
+    //       [included_fields][google.cloud.aiplatform.v1beta1.BatchPredictionJob.InstanceConfig.included_fields] must be populated for specifying field orders.
+    //     * Does not apply to `csv`, `file-list`, `tf-record`, or
+    //       `tf-record-gzip`.
+    //
+    // If not specified, Vertex AI converts the batch prediction input as
+    // follows:
+    //
+    //  * For `bigquery` and `csv`, the behavior is the same as `array`. The
+    //    order of columns is the same as defined in the file or table, unless
+    //    [included_fields][google.cloud.aiplatform.v1beta1.BatchPredictionJob.InstanceConfig.included_fields] is populated.
+    //  * For `jsonl`, the prediction instance format is determined by
+    //    each line of the input.
+    //  * For `tf-record`/`tf-record-gzip`, each record will be converted to
+    //    an object in the format of `{"b64": <value>}`, where `<value>` is
+    //    the Base64-encoded string of the content of the record.
+    //  * For `file-list`, each file in the list will be converted to an
+    //    object in the format of `{"b64": <value>}`, where `<value>` is
+    //    the Base64-encoded string of the content of the file.
+    string instance_type = 1;
+
+    // The name of the field that is considered as a key.
+    //
+    // The values identified by the key field is not included in the transformed
+    // instances that is sent to the Model. This is similar to
+    // specifying this name of the field in [excluded_fields][google.cloud.aiplatform.v1beta1.BatchPredictionJob.InstanceConfig.excluded_fields]. In addition,
+    // the batch prediction output will not include the instances. Instead the
+    // output will only include the value of the key field, in a field named
+    // `key` in the output:
+    //
+    //  * For `jsonl` output format, the output will have a `key` field
+    //    instead of the `instance` field.
+    //  * For `csv`/`bigquery` output format, the output will have have a `key`
+    //    column instead of the instance feature columns.
+    //
+    // The input must be JSONL with objects at each line, CSV, BigQuery
+    // or TfRecord.
+    string key_field = 2;
+
+    // Fields that will be included in the prediction instance that is
+    // sent to the Model.
+    //
+    // If [instance_type][google.cloud.aiplatform.v1beta1.BatchPredictionJob.InstanceConfig.instance_type] is `array`, the order of field names in
+    // included_fields also determines the order of the values in the array.
+    //
+    // When included_fields is populated, [excluded_fields][google.cloud.aiplatform.v1beta1.BatchPredictionJob.InstanceConfig.excluded_fields] must be empty.
+    //
+    // The input must be JSONL with objects at each line, CSV, BigQuery
+    // or TfRecord.
+    repeated string included_fields = 3;
+
+    // Fields that will be excluded in the prediction instance that is
+    // sent to the Model.
+    //
+    // Excluded will be attached to the batch prediction output if [key_field][google.cloud.aiplatform.v1beta1.BatchPredictionJob.InstanceConfig.key_field]
+    // is not specified.
+    //
+    // When excluded_fields is populated, [included_fields][google.cloud.aiplatform.v1beta1.BatchPredictionJob.InstanceConfig.included_fields] must be empty.
+    //
+    // The input must be JSONL with objects at each line, CSV, BigQuery
+    // or TfRecord.
+    repeated string excluded_fields = 4;
   }
 
   // Configures the output of [BatchPredictionJob][google.cloud.aiplatform.v1beta1.BatchPredictionJob].
@@ -156,14 +241,20 @@ message BatchPredictionJob {
   // Required. The user-defined name of this BatchPredictionJob.
   string display_name = 2 [(google.api.field_behavior) = REQUIRED];
 
-  // The name of the Model resoure that produces the predictions via this job,
+  // The name of the Model resource that produces the predictions via this job,
   // must share the same ancestor Location.
   // Starting this job has no impact on any existing deployments of the Model
   // and their resources.
   // Exactly one of model and unmanaged_container_model must be set.
+  //
+  // The model resource name may contain version id or version alias to specify
+  // the version, if no version is specified, the default version will be used.
   string model = 3 [(google.api.resource_reference) = {
                       type: "aiplatform.googleapis.com/Model"
                     }];
+
+  // Output only. The version ID of the Model that produces the predictions via this job.
+  string model_version_id = 30 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Contains model information necessary to perform batch prediction without
   // requiring uploading to model registry.
@@ -176,6 +267,10 @@ message BatchPredictionJob {
   // [PredictSchemata's][google.cloud.aiplatform.v1beta1.Model.predict_schemata]
   // [instance_schema_uri][google.cloud.aiplatform.v1beta1.PredictSchemata.instance_schema_uri].
   InputConfig input_config = 4 [(google.api.field_behavior) = REQUIRED];
+
+  // Configuration for how to convert batch prediction input instances to the
+  // prediction instances that are sent to the Model.
+  InstanceConfig instance_config = 27;
 
   // The parameters that govern the predictions. The schema of the parameters
   // may be specified via the [Model's][google.cloud.aiplatform.v1beta1.BatchPredictionJob.model]
@@ -199,6 +294,15 @@ message BatchPredictionJob {
   // resources), if the Model doesn't support AUTOMATIC_RESOURCES, this config
   // must be provided.
   BatchDedicatedResources dedicated_resources = 7;
+
+  // The service account that the DeployedModel's container runs as. If not
+  // specified, a system generated one will be used, which
+  // has minimal permissions and the custom container, if used, may not have
+  // enough permission to access other GCP resources.
+  //
+  // Users deploying the Model must have the `iam.serviceAccounts.actAs`
+  // permission on this service account.
+  string service_account = 29;
 
   // Immutable. Parameters configuring the batch behavior. Currently only applicable when
   // [dedicated_resources][google.cloud.aiplatform.v1beta1.BatchPredictionJob.dedicated_resources] are used (in other cases Vertex AI does
@@ -285,4 +389,15 @@ message BatchPredictionJob {
   // is set, then all resources created by the BatchPredictionJob will be
   // encrypted with the provided encryption key.
   EncryptionSpec encryption_spec = 24;
+
+  // Model monitoring config will be used for analysis model behaviors, based on
+  // the input and output to the batch prediction job, as well as the provided
+  // training dataset.
+  ModelMonitoringConfig model_monitoring_config = 26;
+
+  // Get batch prediction job monitoring statistics.
+  repeated ModelMonitoringStatsAnomalies model_monitoring_stats_anomalies = 31;
+
+  // Output only. The running status of the model monitoring pipeline.
+  google.rpc.Status model_monitoring_status = 32 [(google.api.field_behavior) = OUTPUT_ONLY];
 }

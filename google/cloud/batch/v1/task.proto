@@ -1,0 +1,297 @@
+// Copyright 2022 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.batch.v1;
+
+import "google/api/resource.proto";
+import "google/cloud/batch/v1/volume.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Google.Cloud.Batch.V1";
+option go_package = "google.golang.org/genproto/googleapis/cloud/batch/v1;batch";
+option java_multiple_files = true;
+option java_outer_classname = "TaskProto";
+option java_package = "com.google.cloud.batch.v1";
+option objc_class_prefix = "GCB";
+option php_namespace = "Google\\Cloud\\Batch\\V1";
+option ruby_package = "Google::Cloud::Batch::V1";
+
+// Compute resource requirements
+message ComputeResource {
+  // The milliCPU count.
+  int64 cpu_milli = 1;
+
+  // Memory in MiB.
+  int64 memory_mib = 2;
+
+  // Extra boot disk size in MiB for each task.
+  int64 boot_disk_mib = 4;
+}
+
+// Status event
+message StatusEvent {
+  // Type of the event.
+  string type = 3;
+
+  // Description of the event.
+  string description = 1;
+
+  // The time this event occurred.
+  google.protobuf.Timestamp event_time = 2;
+
+  // Task Execution
+  TaskExecution task_execution = 4;
+}
+
+// This Task Execution field includes detail information for
+// task execution procedures, based on StatusEvent types.
+message TaskExecution {
+  // When task is completed as the status of FAILED or SUCCEEDED,
+  // exit code is for one task execution result, default is 0 as success.
+  int32 exit_code = 1;
+}
+
+// Status of a task
+message TaskStatus {
+  // Task states.
+  enum State {
+    // unknown state
+    STATE_UNSPECIFIED = 0;
+
+    // The Task is created and waiting for resources.
+    PENDING = 1;
+
+    // The Task is assigned to at least one VM.
+    ASSIGNED = 2;
+
+    // The Task is running.
+    RUNNING = 3;
+
+    // The Task has failed.
+    FAILED = 4;
+
+    // The Task has succeeded.
+    SUCCEEDED = 5;
+  }
+
+  // Task state
+  State state = 1;
+
+  // Detailed info about why the state is reached.
+  repeated StatusEvent status_events = 2;
+}
+
+// Runnable describes instructions for executing a specific script or container
+// as part of a Task.
+message Runnable {
+  // Container runnable.
+  message Container {
+    // The URI to pull the container image from.
+    string image_uri = 1;
+
+    // Overrides the `CMD` specified in the container. If there is an ENTRYPOINT
+    // (either in the container image or with the entrypoint field below) then
+    // commands are appended as arguments to the ENTRYPOINT.
+    repeated string commands = 2;
+
+    // Overrides the `ENTRYPOINT` specified in the container.
+    string entrypoint = 3;
+
+    // Volumes to mount (bind mount) from the host machine files or directories
+    // into the container, formatted to match docker run's --volume option,
+    // e.g. /foo:/bar, or /foo:/bar:ro
+    repeated string volumes = 7;
+
+    // Arbitrary additional options to include in the "docker run" command when
+    // running this container, e.g. "--network host".
+    string options = 8;
+
+    // If set to true, external network access to and from container will be
+    // blocked. The container will use the default internal network
+    // 'goog-internal'.
+    bool block_external_network = 9;
+
+    // Optional username for logging in to a docker registry. If username
+    // matches "projects/*/secrets/*/versions/*" then Batch will read the
+    // username from the Secret Manager.
+    string username = 10;
+
+    // Optional password for logging in to a docker registry. If password
+    // matches "projects/*/secrets/*/versions/*" then Batch will read the
+    // password from the Secret Manager;
+    string password = 11;
+  }
+
+  // Script runnable.
+  message Script {
+    oneof command {
+      // Script file path on the host VM.
+      string path = 1;
+
+      // Shell script text.
+      string text = 2;
+    }
+  }
+
+  // Barrier runnable blocks until all tasks in a taskgroup reach it.
+  message Barrier {
+    // Barriers are identified by their index in runnable list.
+    // Names are not required, but if present should be an identifier.
+    string name = 1;
+  }
+
+  // The script or container to run.
+  oneof executable {
+    // Container runnable.
+    Container container = 1;
+
+    // Script runnable.
+    Script script = 2;
+
+    // Barrier runnable.
+    Barrier barrier = 6;
+  }
+
+  // Normally, a non-zero exit status causes the Task to fail. This flag allows
+  // execution of other Runnables to continue instead.
+  bool ignore_exit_status = 3;
+
+  // This flag allows a Runnable to continue running in the background while the
+  // Task executes subsequent Runnables. This is useful to provide services to
+  // other Runnables (or to provide debugging support tools like SSH servers).
+  bool background = 4;
+
+  // By default, after a Runnable fails, no further Runnable are executed. This
+  // flag indicates that this Runnable must be run even if the Task has already
+  // failed. This is useful for Runnables that copy output files off of the VM
+  // or for debugging.
+  //
+  // The always_run flag does not override the Task's overall max_run_duration.
+  // If the max_run_duration has expired then no further Runnables will execute,
+  // not even always_run Runnables.
+  bool always_run = 5;
+
+  // Environment variables for this Runnable (overrides variables set for the
+  // whole Task or TaskGroup).
+  Environment environment = 7;
+
+  // Timeout for this Runnable.
+  google.protobuf.Duration timeout = 8;
+}
+
+// Spec of a task
+message TaskSpec {
+  // The sequence of scripts or containers to run for this Task. Each Task using
+  // this TaskSpec executes its list of runnables in order. The Task succeeds if
+  // all of its runnables either exit with a zero status or any that exit with a
+  // non-zero status have the ignore_exit_status flag.
+  //
+  // Background runnables are killed automatically (if they have not already
+  // exited) a short time after all foreground runnables have completed. Even
+  // though this is likely to result in a non-zero exit status for the
+  // background runnable, these automatic kills are not treated as Task
+  // failures.
+  repeated Runnable runnables = 8;
+
+  // ComputeResource requirements.
+  ComputeResource compute_resource = 3;
+
+  // Maximum duration the task should run.
+  // The task will be killed and marked as FAILED if over this limit.
+  google.protobuf.Duration max_run_duration = 4;
+
+  // Maximum number of retries on failures.
+  // The default, 0, which means never retry.
+  // The valid value range is [0, 10].
+  int32 max_retry_count = 5;
+
+  // Lifecycle management schema when any task in a task group is failed.
+  // The valid size of lifecycle policies are [0, 10].
+  // For each lifecycle policy, when the condition is met,
+  // the action in that policy will execute.
+  // If there are multiple policies that the task execution result matches,
+  // we use the action from the first matched policy. If task execution result
+  // does not meet with any of the defined lifecycle policy, we consider it as
+  // the default policy. Default policy means if the exit code is 0, exit task.
+  // If task ends with non-zero exit code, retry the task with max_retry_count.
+  repeated LifecyclePolicy lifecycle_policies = 9;
+
+  // Environment variables to set before running the Task.
+  // You can set up to 100 environments.
+  map<string, string> environments = 6 [deprecated = true];
+
+  // Volumes to mount before running Tasks using this TaskSpec.
+  repeated Volume volumes = 7;
+
+  // Environment variables to set before running the Task.
+  Environment environment = 10;
+}
+
+// LifecyclePolicy describes how to deal with task failures
+// based on different conditions.
+message LifecyclePolicy {
+  // Conditions for actions to deal with task failures.
+  message ActionCondition {
+    // Exit codes of a task execution.
+    // If there are more than 1 exit codes,
+    // when task executes with any of the exit code in the list,
+    // the condition is met and the action will be executed.
+    repeated int32 exit_codes = 1;
+  }
+
+  // Action on task failures based on different conditions.
+  enum Action {
+    // Action unspecified.
+    ACTION_UNSPECIFIED = 0;
+
+    // Action that tasks in the group will be scheduled to re-execute.
+    RETRY_TASK = 1;
+
+    // Action that tasks in the group will be stopped immediately.
+    FAIL_TASK = 2;
+  }
+
+  // Action to execute when ActionCondition is true.
+  Action action = 1;
+
+  // Conditions that decide why a task failure is dealt with a specific action.
+  ActionCondition action_condition = 2;
+}
+
+// A Cloud Batch task.
+message Task {
+  option (google.api.resource) = {
+    type: "batch.googleapis.com/Task"
+    pattern: "projects/{project}/locations/{location}/jobs/{job}/taskGroups/{task_group}/tasks/{task}"
+  };
+
+  // Task name.
+  // The name is generated from the parent TaskGroup name and 'id' field.
+  // For example:
+  // "projects/123456/locations/us-west1/jobs/job01/taskGroups/group01/tasks/task01".
+  string name = 1;
+
+  // Task Status.
+  TaskStatus status = 2;
+}
+
+// An Environment describes a collection of environment variables to set when
+// executing Tasks.
+message Environment {
+  // A map of environment variable names to values.
+  map<string, string> variables = 1;
+}

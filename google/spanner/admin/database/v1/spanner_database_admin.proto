@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import "google/iam/v1/iam_policy.proto";
 import "google/iam/v1/policy.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/empty.proto";
-import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 import "google/spanner/admin/database/v1/backup.proto";
 import "google/spanner/admin/database/v1/common.proto";
@@ -188,6 +187,10 @@ service DatabaseAdmin {
         post: "/v1/{resource=projects/*/instances/*/backups/*}:testIamPermissions"
         body: "*"
       }
+      additional_bindings {
+        post: "/v1/{resource=projects/*/instances/*/databases/*/databaseRoles/*}:testIamPermissions"
+        body: "*"
+      }
     };
     option (google.api.method_signature) = "resource,permissions";
   }
@@ -213,6 +216,30 @@ service DatabaseAdmin {
     option (google.longrunning.operation_info) = {
       response_type: "google.spanner.admin.database.v1.Backup"
       metadata_type: "google.spanner.admin.database.v1.CreateBackupMetadata"
+    };
+  }
+
+  // Starts copying a Cloud Spanner Backup.
+  // The returned backup [long-running operation][google.longrunning.Operation]
+  // will have a name of the format
+  // `projects/<project>/instances/<instance>/backups/<backup>/operations/<operation_id>`
+  // and can be used to track copying of the backup. The operation is associated
+  // with the destination backup.
+  // The [metadata][google.longrunning.Operation.metadata] field type is
+  // [CopyBackupMetadata][google.spanner.admin.database.v1.CopyBackupMetadata].
+  // The [response][google.longrunning.Operation.response] field type is
+  // [Backup][google.spanner.admin.database.v1.Backup], if successful. Cancelling the returned operation will stop the
+  // copying and delete the backup.
+  // Concurrent CopyBackup requests can run on the same source backup.
+  rpc CopyBackup(CopyBackupRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/instances/*}/backups:copy"
+      body: "*"
+    };
+    option (google.api.method_signature) = "parent,backup_id,source_backup,expire_time";
+    option (google.longrunning.operation_info) = {
+      response_type: "google.spanner.admin.database.v1.Backup"
+      metadata_type: "google.spanner.admin.database.v1.CopyBackupMetadata"
     };
   }
 
@@ -308,6 +335,14 @@ service DatabaseAdmin {
   rpc ListBackupOperations(ListBackupOperationsRequest) returns (ListBackupOperationsResponse) {
     option (google.api.http) = {
       get: "/v1/{parent=projects/*/instances/*}/backupOperations"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Lists Cloud Spanner database roles.
+  rpc ListDatabaseRoles(ListDatabaseRolesRequest) returns (ListDatabaseRolesResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*/instances/*/databases/*}/databaseRoles"
     };
     option (google.api.method_signature) = "parent";
   }
@@ -645,6 +680,8 @@ message ListDatabaseOperationsRequest {
   //      for [RestoreDatabaseMetadata][google.spanner.admin.database.v1.RestoreDatabaseMetadata] is
   //      `type.googleapis.com/google.spanner.admin.database.v1.RestoreDatabaseMetadata`.
   //   * `metadata.<field_name>` - any field in metadata.value.
+  //      `metadata.@type` must be specified first, if filtering on metadata
+  //      fields.
   //   * `error` - Error associated with the long-running operation.
   //   * `response.@type` - the type of response.
   //   * `response.<field_name>` - any field in response.value.
@@ -842,4 +879,52 @@ enum RestoreSourceType {
 
   // A backup was used as the source of the restore.
   BACKUP = 1;
+}
+
+// A Cloud Spanner database role.
+message DatabaseRole {
+  option (google.api.resource) = {
+    type: "spanner.googleapis.com/DatabaseRole"
+    pattern: "projects/{project}/instances/{instance}/databases/{database}/databaseRoles/{role}"
+  };
+
+  // Required. The name of the database role. Values are of the form
+  // `projects/<project>/instances/<instance>/databases/<database>/databaseRoles/
+  // {role}`, where `<role>` is as specified in the `CREATE ROLE`
+  // DDL statement. This name can be passed to Get/Set IAMPolicy methods to
+  // identify the database role.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The request for [ListDatabaseRoles][google.spanner.admin.database.v1.DatabaseAdmin.ListDatabaseRoles].
+message ListDatabaseRolesRequest {
+  // Required. The database whose roles should be listed.
+  // Values are of the form
+  // `projects/<project>/instances/<instance>/databases/<database>/databaseRoles`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "spanner.googleapis.com/Database"
+    }
+  ];
+
+  // Number of database roles to be returned in the response. If 0 or less,
+  // defaults to the server's maximum allowed page size.
+  int32 page_size = 2;
+
+  // If non-empty, `page_token` should contain a
+  // [next_page_token][google.spanner.admin.database.v1.ListDatabaseRolesResponse.next_page_token] from a
+  // previous [ListDatabaseRolesResponse][google.spanner.admin.database.v1.ListDatabaseRolesResponse].
+  string page_token = 3;
+}
+
+// The response for [ListDatabaseRoles][google.spanner.admin.database.v1.DatabaseAdmin.ListDatabaseRoles].
+message ListDatabaseRolesResponse {
+  // Database roles that matched the request.
+  repeated DatabaseRole database_roles = 1;
+
+  // `next_page_token` can be sent in a subsequent
+  // [ListDatabaseRoles][google.spanner.admin.database.v1.DatabaseAdmin.ListDatabaseRoles]
+  // call to fetch more of the matching roles.
+  string next_page_token = 2;
 }

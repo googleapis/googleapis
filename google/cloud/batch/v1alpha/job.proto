@@ -1,0 +1,564 @@
+// Copyright 2022 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.batch.v1alpha;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/batch/v1alpha/task.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Google.Cloud.Batch.V1Alpha";
+option go_package = "google.golang.org/genproto/googleapis/cloud/batch/v1alpha;batch";
+option java_multiple_files = true;
+option java_outer_classname = "JobProto";
+option java_package = "com.google.cloud.batch.v1alpha";
+option objc_class_prefix = "GCB";
+option php_namespace = "Google\\Cloud\\Batch\\V1alpha";
+option ruby_package = "Google::Cloud::Batch::V1alpha";
+
+// The Cloud Batch Job description.
+message Job {
+  option (google.api.resource) = {
+    type: "batch.googleapis.com/Job"
+    pattern: "projects/{project}/locations/{location}/jobs/{job}"
+  };
+
+  // The order that TaskGroups are scheduled relative to each other.
+  //
+  // Not yet implemented.
+  enum SchedulingPolicy {
+    // Unspecified.
+    SCHEDULING_POLICY_UNSPECIFIED = 0;
+
+    // Run all TaskGroups as soon as possible.
+    AS_SOON_AS_POSSIBLE = 1;
+  }
+
+  // Output only. Job name.
+  // For example: "projects/123456/locations/us-central1/jobs/job01".
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. A system generated unique ID (in UUID4 format) for the Job.
+  string uid = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Priority of the Job.
+  // The valid value range is [0, 100).
+  // A job with higher priority value is more likely to run earlier if all other
+  // requirements are satisfied.
+  int64 priority = 3;
+
+  // Required. TaskGroups in the Job. Only one TaskGroup is supported now.
+  repeated TaskGroup task_groups = 4 [(google.api.field_behavior) = REQUIRED];
+
+  // Scheduling policy for TaskGroups in the job.
+  SchedulingPolicy scheduling_policy = 5;
+
+  // At least one of the dependencies must be satisfied before the Job is
+  // scheduled to run.
+  // Only one JobDependency is supported now.
+  // Not yet implemented.
+  repeated JobDependency dependencies = 6;
+
+  // Compute resource allocation for all TaskGroups in the Job.
+  AllocationPolicy allocation_policy = 7;
+
+  // Labels for the Job. Labels could be user provided or system generated.
+  // For example,
+  // "labels": {
+  //    "department": "finance",
+  //    "environment": "test"
+  //  }
+  // You can assign up to 64 labels.  [Google Compute Engine label
+  // restrictions](https://cloud.google.com/compute/docs/labeling-resources#restrictions)
+  // apply.
+  // Label names that start with "goog-" or "google-" are reserved.
+  map<string, string> labels = 8;
+
+  // Output only. Job status. It is read only for users.
+  JobStatus status = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Deprecated: please use notifications instead.
+  JobNotification notification = 10 [deprecated = true];
+
+  // Output only. When the Job was created.
+  google.protobuf.Timestamp create_time = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The last time the Job was updated.
+  google.protobuf.Timestamp update_time = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Log preservation policy for the Job.
+  LogsPolicy logs_policy = 13;
+
+  // Notification configurations.
+  repeated JobNotification notifications = 14;
+}
+
+// LogsPolicy describes how outputs from a Job's Tasks (stdout/stderr) will be
+// preserved.
+message LogsPolicy {
+  // The destination (if any) for logs.
+  enum Destination {
+    // Logs are not preserved.
+    DESTINATION_UNSPECIFIED = 0;
+
+    // Logs are streamed to Cloud Logging.
+    CLOUD_LOGGING = 1;
+
+    // Logs are saved to a file path.
+    PATH = 2;
+  }
+
+  // Where logs should be saved.
+  Destination destination = 1;
+
+  // The path to which logs are saved when the destination = PATH. This can be a
+  // local file path on the VM, or under the mount point of a Persistent Disk or
+  // Filestore, or a Cloud Storage path.
+  string logs_path = 2;
+}
+
+// JobDependency describes the state of other Jobs that the start of this Job
+// depends on.
+// All dependent Jobs must have been submitted in the same region.
+message JobDependency {
+  // Dependency type.
+  enum Type {
+    // Unspecified.
+    TYPE_UNSPECIFIED = 0;
+
+    // The dependent Job has succeeded.
+    SUCCEEDED = 1;
+
+    // The dependent Job has failed.
+    FAILED = 2;
+
+    // SUCCEEDED or FAILED.
+    FINISHED = 3;
+  }
+
+  // Each item maps a Job name to a Type.
+  // All items must be satisfied for the JobDependency to be satisfied (the AND
+  // operation).
+  // Once a condition for one item becomes true, it won't go back to false
+  // even the dependent Job state changes again.
+  map<string, Type> items = 1;
+}
+
+// Job status.
+message JobStatus {
+  // VM instance status.
+  message InstanceStatus {
+    // The Compute Engine machine type.
+    string machine_type = 1;
+
+    // The VM instance provisioning model.
+    AllocationPolicy.ProvisioningModel provisioning_model = 2;
+
+    // The max number of tasks can be assigned to this instance type.
+    int64 task_pack = 3;
+  }
+
+  // Aggregated task status for a TaskGroup.
+  message TaskGroupStatus {
+    // Count of task in each state in the TaskGroup.
+    // The map key is task state name.
+    map<string, int64> counts = 1;
+
+    // Status of instances allocated for the TaskGroup.
+    repeated InstanceStatus instances = 2;
+  }
+
+  // Valid Job states.
+  enum State {
+    STATE_UNSPECIFIED = 0;
+
+    // Job is admitted (validated and persisted) and waiting for resources.
+    QUEUED = 1;
+
+    // Job is scheduled to run as soon as resource allocation is ready.
+    // The resource allocation may happen at a later time but with a high
+    // chance to succeed.
+    SCHEDULED = 2;
+
+    // Resource allocation has been successful. At least one Task in the Job is
+    // RUNNING.
+    RUNNING = 3;
+
+    // All Tasks in the Job have finished successfully.
+    SUCCEEDED = 4;
+
+    // At least one Task in the Job has failed.
+    FAILED = 5;
+
+    // The Job will be deleted, but has not been deleted yet. Typically this is
+    // because resources used by the Job are still being cleaned up.
+    DELETION_IN_PROGRESS = 6;
+  }
+
+  // Job state
+  State state = 1;
+
+  // Job status events
+  repeated StatusEvent status_events = 2;
+
+  // Aggregated task status for each TaskGroup in the Job.
+  // The map key is TaskGroup ID.
+  map<string, TaskGroupStatus> task_groups = 4;
+
+  // The duration of time that the Job spent in status RUNNING.
+  google.protobuf.Duration run_duration = 5;
+}
+
+// Notification configurations.
+message JobNotification {
+  // Message details.
+  // Describe the attribute that a message should have.
+  // Without specified message attributes, no message will be sent by default.
+  message Message {
+    // The message type.
+    Type type = 1;
+
+    // The new job state.
+    JobStatus.State new_job_state = 2;
+
+    // The new task state.
+    TaskStatus.State new_task_state = 3;
+  }
+
+  // The message type.
+  enum Type {
+    // Unspecified.
+    TYPE_UNSPECIFIED = 0;
+
+    // Notify users that the job state has changed.
+    JOB_STATE_CHANGED = 1;
+
+    // Notify users that the task state has changed.
+    TASK_STATE_CHANGED = 2;
+  }
+
+  // The Pub/Sub topic where notifications like the job state changes
+  // will be published. This topic exist in the same project as the job
+  // and billings will be charged to this project.
+  // If not specified, no Pub/Sub messages will be sent.
+  // Topic format: `projects/{project}/topics/{topic}`.
+  string pubsub_topic = 1;
+
+  // The attribute requirements of messages to be sent to this Pub/Sub topic.
+  // Without this field, no message will be sent.
+  Message message = 2;
+}
+
+// A Job's resource allocation policy describes when, where, and how compute
+// resources should be allocated for the Job.
+message AllocationPolicy {
+  message LocationPolicy {
+    // A list of allowed location names represented by internal URLs.
+    // Each location can be a region or a zone.
+    // Only one region or multiple zones in one region is supported now.
+    // For example,
+    // ["regions/us-central1"] allow VMs in any zones in region us-central1.
+    // ["zones/us-central1-a", "zones/us-central1-c"] only allow VMs
+    // in zones us-central1-a and us-central1-c.
+    // All locations end up in different regions would cause errors.
+    // For example,
+    // ["regions/us-central1", "zones/us-central1-a", "zones/us-central1-b",
+    // "zones/us-west1-a"] contains 2 regions "us-central1" and
+    // "us-west1". An error is expected in this case.
+    repeated string allowed_locations = 1;
+
+    // A list of denied location names.
+    //
+    // Not yet implemented.
+    repeated string denied_locations = 2;
+  }
+
+  // A new persistent disk or a local ssd.
+  // A VM can only have one local SSD setting but multiple local SSD partitions.
+  // https://cloud.google.com/compute/docs/disks#pdspecs.
+  // https://cloud.google.com/compute/docs/disks#localssds.
+  message Disk {
+    // A data source from which a PD will be created.
+    oneof data_source {
+      // Name of a public or custom image used as the data source.
+      string image = 4;
+
+      // Name of a snapshot used as the data source.
+      string snapshot = 5;
+    }
+
+    // Disk type as shown in `gcloud compute disk-types list`
+    // For example, "pd-ssd", "pd-standard", "pd-balanced", "local-ssd".
+    string type = 1;
+
+    // Disk size in GB.
+    // This field is ignored if `data_source` is `disk` or `image`.
+    // If `type` is `local-ssd`, size_gb should be a multiple of 375GB,
+    // otherwise, the final size will be the next greater multiple of 375 GB.
+    int64 size_gb = 2;
+
+    // Local SSDs are available through both "SCSI" and "NVMe" interfaces.
+    // If not indicated, "NVMe" will be the default one for local ssds.
+    // We only support "SCSI" for persistent disks now.
+    string disk_interface = 6;
+  }
+
+  // A new or an existing persistent disk or a local ssd attached to a VM
+  // instance.
+  message AttachedDisk {
+    oneof attached {
+      Disk new_disk = 1;
+
+      // Name of an existing PD.
+      string existing_disk = 2;
+    }
+
+    // Device name that the guest operating system will see.
+    // It is used by Runnable.volumes field to mount disks. So please specify
+    // the device_name if you want Batch to help mount the disk, and it should
+    // match the device_name field in volumes.
+    string device_name = 3;
+  }
+
+  // Accelerator describes Compute Engine accelerators to be attached to VMs.
+  message Accelerator {
+    // The accelerator type. For example, "nvidia-tesla-t4".
+    // See `gcloud compute accelerator-types list`.
+    string type = 1;
+
+    // The number of accelerators of this type.
+    int64 count = 2;
+
+    // Deprecated: please use instances[0].install_gpu_drivers instead.
+    bool install_gpu_drivers = 3 [deprecated = true];
+  }
+
+  // InstancePolicy describes an instance type and resources attached to each VM
+  // created by this InstancePolicy.
+  message InstancePolicy {
+    // Deprecated: please use machine_type instead.
+    repeated string allowed_machine_types = 1 [deprecated = true];
+
+    // The Compute Engine machine type.
+    string machine_type = 2;
+
+    // The minimum CPU platform.
+    // See
+    // `https://cloud.google.com/compute/docs/instances/specify-min-cpu-platform`.
+    // Not yet implemented.
+    string min_cpu_platform = 3;
+
+    // The provisioning model.
+    ProvisioningModel provisioning_model = 4;
+
+    // The accelerators attached to each VM instance.
+    // Not yet implemented.
+    repeated Accelerator accelerators = 5;
+
+    // Non-boot disks to be attached for each VM created by this InstancePolicy.
+    // New disks will be deleted when the attached VM is deleted.
+    repeated AttachedDisk disks = 6;
+  }
+
+  // Either an InstancePolicy or an instance template.
+  message InstancePolicyOrTemplate {
+    oneof policy_template {
+      // InstancePolicy.
+      InstancePolicy policy = 1;
+
+      // Name of an instance template used to create VMs.
+      // Named the field as 'instance_template' instead of 'template' to avoid
+      // c++ keyword conflict.
+      string instance_template = 2;
+    }
+
+    // Set this field true if users want Batch to help fetch drivers from a
+    // third party location and install them for GPUs specified in
+    // policy.accelerators or instance_template on their behalf. Default is
+    // false.
+    bool install_gpu_drivers = 3;
+  }
+
+  // A network interface.
+  message NetworkInterface {
+    // The URL of the network resource.
+    string network = 1;
+
+    // The URL of the Subnetwork resource.
+    string subnetwork = 2;
+
+    // Default is false (with an external IP address). Required if
+    // no external public IP address is attached to the VM. If no external
+    // public IP address, additional configuration is required to allow the VM
+    // to access Google Services. See
+    // https://cloud.google.com/vpc/docs/configure-private-google-access and
+    // https://cloud.google.com/nat/docs/gce-example#create-nat for more
+    // information.
+    bool no_external_ip_address = 3;
+  }
+
+  // NetworkPolicy describes VM instance network configurations.
+  message NetworkPolicy {
+    // Network configurations.
+    repeated NetworkInterface network_interfaces = 1;
+  }
+
+  // Compute Engine VM instance provisioning model.
+  enum ProvisioningModel {
+    // Unspecified.
+    PROVISIONING_MODEL_UNSPECIFIED = 0;
+
+    // Standard VM.
+    STANDARD = 1;
+
+    // SPOT VM.
+    SPOT = 2;
+
+    // Preemptible VM (PVM).
+    //
+    // Above SPOT VM is the preferable model for preemptible VM instances: the
+    // old preemptible VM model (indicated by this field) is the older model,
+    // and has been migrated to use the SPOT model as the underlying technology.
+    // This old model will still be supported.
+    PREEMPTIBLE = 3;
+  }
+
+  // Location where compute resources should be allocated for the Job.
+  LocationPolicy location = 1;
+
+  // Deprecated: please use instances[0].policy instead.
+  InstancePolicy instance = 2 [deprecated = true];
+
+  // Describe instances that can be created by this AllocationPolicy.
+  // Only instances[0] is supported now.
+  repeated InstancePolicyOrTemplate instances = 8;
+
+  // Deprecated: please use instances[0].template instead.
+  repeated string instance_templates = 3 [deprecated = true];
+
+  // Deprecated: please use instances[i].policy.provisioning_model instead.
+  repeated ProvisioningModel provisioning_models = 4 [deprecated = true];
+
+  // Deprecated: please use service_account instead.
+  string service_account_email = 5 [deprecated = true];
+
+  // Service account that VMs will run as.
+  ServiceAccount service_account = 9;
+
+  // Labels applied to all VM instances and other resources
+  // created by AllocationPolicy.
+  // Labels could be user provided or system generated.
+  // You can assign up to 64 labels. [Google Compute Engine label
+  // restrictions](https://cloud.google.com/compute/docs/labeling-resources#restrictions)
+  // apply.
+  // Label names that start with "goog-" or "google-" are reserved.
+  map<string, string> labels = 6;
+
+  // The network policy.
+  NetworkPolicy network = 7;
+}
+
+// A TaskGroup contains one or multiple Tasks that share the same
+// Runnable but with different runtime parameters.
+message TaskGroup {
+  option (google.api.resource) = {
+    type: "batch.googleapis.com/TaskGroup"
+    pattern: "projects/{project}/locations/{location}/jobs/{job}/taskGroups/{task_group}"
+  };
+
+  // How Tasks in the TaskGroup should be scheduled relative to each other.
+  enum SchedulingPolicy {
+    // Unspecified.
+    SCHEDULING_POLICY_UNSPECIFIED = 0;
+
+    // Run Tasks as soon as resources are available.
+    AS_SOON_AS_POSSIBLE = 1;
+  }
+
+  // Output only. TaskGroup name.
+  // The system generates this field based on parent Job name.
+  // For example:
+  // "projects/123456/locations/us-west1/jobs/job01/taskGroups/group01".
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Required. Tasks in the group share the same task spec.
+  TaskSpec task_spec = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Number of Tasks in the TaskGroup.
+  // default is 1
+  int64 task_count = 4;
+
+  // Max number of tasks that can run in parallel.
+  // Default to min(task_count, 1000).
+  int64 parallelism = 5;
+
+  // Scheduling policy for Tasks in the TaskGroup.
+  SchedulingPolicy scheduling_policy = 6;
+
+  // Compute resource allocation for the TaskGroup.
+  // If specified, it overrides resources in Job.
+  AllocationPolicy allocation_policy = 7;
+
+  // Labels for the TaskGroup.
+  // Labels could be user provided or system generated.
+  // You can assign up to 64 labels.  [Google Compute Engine label
+  // restrictions](https://cloud.google.com/compute/docs/labeling-resources#restrictions)
+  // apply.
+  // Label names that start with "goog-" or "google-" are reserved.
+  map<string, string> labels = 8;
+
+  // An array of environment variable mappings, which are passed to Tasks with
+  // matching indices. If task_environments is used then task_count should
+  // not be specified in the request (and will be ignored). Task count will be
+  // the length of task_environments.
+  //
+  // Tasks get a BATCH_TASK_INDEX and BATCH_TASK_COUNT environment variable, in
+  // addition to any environment variables set in task_environments, specifying
+  // the number of Tasks in the Task's parent TaskGroup, and the specific Task's
+  // index in the TaskGroup (0 through BATCH_TASK_COUNT - 1).
+  //
+  // task_environments supports up to 200 entries.
+  repeated Environment task_environments = 9;
+
+  // Max number of tasks that can be run on a VM at the same time.
+  // If not specified, the system will decide a value based on available
+  // compute resources on a VM and task requirements.
+  int64 task_count_per_node = 10;
+
+  // When true, Batch will populate a file with a list of all VMs assigned to
+  // the TaskGroup and set the BATCH_HOSTS_FILE environment variable to the path
+  // of that file. Defaults to false.
+  bool require_hosts_file = 11;
+
+  // When true, Batch will configure SSH to allow passwordless login between
+  // VMs running the Batch tasks in the same TaskGroup.
+  bool permissive_ssh = 12;
+}
+
+// Carries information about a Google Cloud service account.
+message ServiceAccount {
+  // Email address of the service account. If not specified, the default
+  // Compute Engine service account for the project will be used. If instance
+  // template is being used, the service account has to be specified in the
+  // instance template and it has to match the email field here.
+  string email = 1;
+
+  // List of scopes to be enabled for this service account on the VM, in
+  // addition to the cloud-platform API scope that will be added by default.
+  repeated string scopes = 2 [deprecated = true];
+}

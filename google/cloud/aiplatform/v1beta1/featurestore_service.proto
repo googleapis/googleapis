@@ -22,15 +22,14 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/aiplatform/v1beta1/entity_type.proto";
 import "google/cloud/aiplatform/v1beta1/feature.proto";
-import "google/cloud/aiplatform/v1beta1/feature_monitoring_stats.proto";
 import "google/cloud/aiplatform/v1beta1/feature_selector.proto";
 import "google/cloud/aiplatform/v1beta1/featurestore.proto";
-import "google/cloud/aiplatform/v1beta1/featurestore_online_service.proto";
 import "google/cloud/aiplatform/v1beta1/io.proto";
 import "google/cloud/aiplatform/v1beta1/operation.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
+import "google/type/interval.proto";
 
 option csharp_namespace = "Google.Cloud.AIPlatform.V1Beta1";
 option go_package = "google.golang.org/genproto/googleapis/cloud/aiplatform/v1beta1;aiplatform";
@@ -282,6 +281,28 @@ service FeaturestoreService {
     };
   }
 
+  // Delete Feature values from Featurestore.
+  //
+  // The progress of the deletion is tracked by the returned operation. The
+  // deleted feature values are guaranteed to be invisible to subsequent read
+  // operations after the operation is marked as successfully done.
+  //
+  // If a delete feature values operation fails, the feature values
+  // returned from reads and exports may be inconsistent. If consistency is
+  // required, the caller must retry the same delete request again and wait till
+  // the new operation returned is marked as successfully done.
+  rpc DeleteFeatureValues(DeleteFeatureValuesRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1beta1/{entity_type=projects/*/locations/*/featurestores/*/entityTypes/*}:deleteFeatureValues"
+      body: "*"
+    };
+    option (google.api.method_signature) = "entity_type";
+    option (google.longrunning.operation_info) = {
+      response_type: "DeleteFeatureValuesResponse"
+      metadata_type: "DeleteFeatureValuesOperationMetadata"
+    };
+  }
+
   // Searches Features matching a query in a given project.
   rpc SearchFeatures(SearchFeaturesRequest) returns (SearchFeaturesResponse) {
     option (google.api.http) = {
@@ -420,6 +441,7 @@ message UpdateFeaturestoreRequest {
   //
   //   * `labels`
   //   * `online_serving_config.fixed_node_count`
+  //   * `online_serving_config.scaling`
   google.protobuf.FieldMask update_mask = 2;
 }
 
@@ -526,6 +548,10 @@ message ImportFeatureValuesResponse {
   // * Having a null timestamp.
   // * Not being parsable (applicable for CSV sources).
   int64 invalid_row_count = 6;
+
+  // The number rows that weren't ingested due to having feature timestamps
+  // outside the retention boundary.
+  int64 timestamp_outside_retention_rows_count = 4;
 }
 
 // Request message for [FeaturestoreService.BatchReadFeatureValues][google.cloud.aiplatform.v1beta1.FeaturestoreService.BatchReadFeatureValues].
@@ -611,6 +637,11 @@ message BatchReadFeatureValuesRequest {
   // specifying entity IDs in the EntityType in
   // [BatchReadFeatureValuesRequest.request][] .
   repeated EntityTypeSpec entity_type_specs = 7 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Excludes Feature values with feature generation timestamp before this
+  // timestamp. If not set, retrieve oldest values kept in Feature Store.
+  // Timestamp, if present, must not have higher than millisecond precision.
+  google.protobuf.Timestamp start_time = 11 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request message for [FeaturestoreService.ExportFeatureValues][google.cloud.aiplatform.v1beta1.FeaturestoreService.ExportFeatureValues].
@@ -895,7 +926,7 @@ message CreateFeatureRequest {
   // Required. The ID to use for the Feature, which will become the final component of
   // the Feature's resource name.
   //
-  // This value may be up to 60 characters, and valid characters are
+  // This value may be up to 128 characters, and valid characters are
   // `[a-z0-9_]`. The first character cannot be a number.
   //
   // The value must be unique within an EntityType.
@@ -1194,6 +1225,10 @@ message ImportFeatureValuesOperationMetadata {
   // * Having a null timestamp.
   // * Not being parsable (applicable for CSV sources).
   int64 invalid_row_count = 6;
+
+  // The number rows that weren't ingested due to having timestamps outside the
+  // retention boundary.
+  int64 timestamp_outside_retention_rows_count = 7;
 }
 
 // Details of operations that exports Features values.
@@ -1205,6 +1240,12 @@ message ExportFeatureValuesOperationMetadata {
 // Details of operations that batch reads Feature values.
 message BatchReadFeatureValuesOperationMetadata {
   // Operation metadata for Featurestore batch read Features values.
+  GenericOperationMetadata generic_metadata = 1;
+}
+
+// Details of operations that delete Feature values.
+message DeleteFeatureValuesOperationMetadata {
+  // Operation metadata for Featurestore delete Features values.
   GenericOperationMetadata generic_metadata = 1;
 }
 
@@ -1224,4 +1265,76 @@ message CreateFeatureOperationMetadata {
 message BatchCreateFeaturesOperationMetadata {
   // Operation metadata for Feature.
   GenericOperationMetadata generic_metadata = 1;
+}
+
+// Request message for [FeaturestoreService.DeleteFeatureValues][google.cloud.aiplatform.v1beta1.FeaturestoreService.DeleteFeatureValues].
+message DeleteFeatureValuesRequest {
+  // Message to select entity.
+  // If an entity id is selected, all the feature values corresponding to the
+  // entity id will be deleted, including the entityId.
+  message SelectEntity {
+    // Required. Selectors choosing feature values of which entity id to be deleted from
+    // the EntityType.
+    EntityIdSelector entity_id_selector = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Message to select time range and feature.
+  // Values of the selected feature generated within an inclusive time range
+  // will be deleted. Using this option permanently deletes the feature values
+  // from the specified feature IDs within the specified time range.
+  // This might include data from the online storage. If you want to retain
+  // any deleted historical data in the online storage, you must re-ingest it.
+  message SelectTimeRangeAndFeature {
+    // Required. Select feature generated within a half-inclusive time range.
+    // The time range is lower inclusive and upper exclusive.
+    google.type.Interval time_range = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. Selectors choosing which feature values to be deleted from the
+    // EntityType.
+    FeatureSelector feature_selector = 2 [(google.api.field_behavior) = REQUIRED];
+
+    // If set, data will not be deleted from online storage.
+    // When time range is older than the data in online storage, setting this to
+    // be true will make the deletion have no impact on online serving.
+    bool skip_online_storage_delete = 3;
+  }
+
+  // Defines options to select feature values to be deleted.
+  oneof DeleteOption {
+    // Select feature values to be deleted by specifying entities.
+    SelectEntity select_entity = 2;
+
+    // Select feature values to be deleted by specifying time range and
+    // features.
+    SelectTimeRangeAndFeature select_time_range_and_feature = 3;
+  }
+
+  // Required. The resource name of the EntityType grouping the Features for which values
+  // are being deleted from. Format:
+  // `projects/{project}/locations/{location}/featurestores/{featurestore}/entityTypes/{entityType}`
+  string entity_type = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/EntityType"
+    }
+  ];
+}
+
+// Response message for [FeaturestoreService.DeleteFeatureValues][google.cloud.aiplatform.v1beta1.FeaturestoreService.DeleteFeatureValues].
+message DeleteFeatureValuesResponse {
+
+}
+
+// Selector for entityId. Getting ids from the given source.
+message EntityIdSelector {
+  // Details about the source data, including the location of the storage and
+  // the format.
+  oneof EntityIdsSource {
+    // Source of Csv
+    CsvSource csv_source = 3;
+  }
+
+  // Source column that holds entity IDs. If not provided, entity IDs are
+  // extracted from the column named `entity_id`.
+  string entity_id_field = 5;
 }

@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ syntax = "proto3";
 package google.streetview.publish.v1;
 
 import "google/api/field_behavior.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/type/latlng.proto";
 
@@ -86,6 +87,9 @@ message Pose {
   // NaN indicates an unmeasured quantity.
   double roll = 5;
 
+  // Time of the GPS record since UTC epoch.
+  google.protobuf.Timestamp gps_record_timestamp_unix_epoch = 6;
+
   // Level (the floor in a building) used to configure vertical navigation.
   Level level = 7;
 
@@ -96,6 +100,36 @@ message Pose {
   // Other platforms have different methods of obtaining similar accuracy
   // estimations.
   float accuracy_meters = 9;
+}
+
+// IMU data from the device sensors.
+message Imu {
+  // A Generic 3d measurement sample.
+  message Measurement3d {
+    // The timestamp of the IMU measurement.
+    google.protobuf.Timestamp capture_time = 1;
+
+    // The sensor measurement in the x axis.
+    float x = 2;
+
+    // The sensor measurement in the y axis.
+    float y = 3;
+
+    // The sensor measurement in the z axis.
+    float z = 4;
+  }
+
+  // The accelerometer measurements in meters/sec^2 with increasing timestamps
+  // from devices.
+  repeated Measurement3d accel_mpsps = 1;
+
+  // The gyroscope measurements in radians/sec with increasing timestamps from
+  // devices.
+  repeated Measurement3d gyro_rps = 2;
+
+  // The magnetometer measurements of the magnetic field in microtesla (uT) with
+  // increasing timestamps from devices.
+  repeated Measurement3d mag_ut = 3;
 }
 
 // Place metadata for an entity.
@@ -213,4 +247,260 @@ message Photo {
 
   // Output only. Status in Google Maps, whether this photo was published or rejected.
   MapsPublishStatus maps_publish_status = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A sequence of 360 photos along with metadata.
+message PhotoSequence {
+  // Primary source of GPS measurements.
+  enum GpsSource {
+    // GPS in raw_gps_timeline takes precedence if it exists.
+    PHOTO_SEQUENCE = 0;
+
+    // GPS in Camera Motion Metadata Track (CAMM) takes precedence if it exists.
+    CAMERA_MOTION_METADATA_TRACK = 1;
+  }
+
+  // Output only. Unique identifier for the photo sequence.
+  // This also acts as a long running operation ID if uploading is performed
+  // asynchronously.
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Photos with increasing timestamps.
+  repeated Photo photos = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Input only. Required when creating photo sequence. The resource name
+  // where the bytes of the photo sequence (in the form of video) are uploaded.
+  UploadRef upload_reference = 3 [(google.api.field_behavior) = INPUT_ONLY];
+
+  // Optional. Absolute time when the photo sequence starts to be captured.
+  // If the photo sequence is a video, this is the start time of the video.
+  // If this field is populated in input, it overrides the capture time in the
+  // video or XDM file.
+  google.protobuf.Timestamp capture_time_override = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The time this photo sequence was created in uSV Store service.
+  google.protobuf.Timestamp upload_time = 18 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Input only. Raw GPS measurements with increasing timestamps from the device that
+  // aren't time synced with each photo.
+  // These raw measurements will be used to infer the pose of each frame.
+  // Required in input when InputType is VIDEO and raw GPS measurements are not
+  // in Camera Motion Metadata Track (CAMM).
+  // User can indicate which takes precedence using gps_source if raw GPS
+  // measurements are provided in both raw_gps_timeline and
+  // Camera Motion Metadata Track (CAMM).
+  repeated Pose raw_gps_timeline = 7 [(google.api.field_behavior) = INPUT_ONLY];
+
+  // Input only. If both raw_gps_timeline and
+  // the Camera Motion Metadata Track (CAMM) contain GPS measurements,
+  // indicate which takes precedence.
+  GpsSource gps_source = 8 [(google.api.field_behavior) = INPUT_ONLY];
+
+  // Input only. Three axis IMU data for the collection.
+  // If this data is too large to put in the request, then it should be put in
+  // the CAMM track for the video. This data always takes precedence over the
+  // equivalent CAMM data, if it exists.
+  Imu imu = 11 [(google.api.field_behavior) = INPUT_ONLY];
+
+  // Output only. The processing state of this sequence.
+  ProcessingState processing_state = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. If this sequence has processing_state = FAILED, this will contain the
+  // reason why it failed. If the processing_state is any other value, this
+  // field will be unset.
+  ProcessingFailureReason failure_reason = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. If this sequence has `failure_reason` set, this may contain additional
+  // details about the failure.
+  ProcessingFailureDetails failure_details = 23 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The computed distance of the photo sequence in meters.
+  double distance_meters = 16 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. A rectangular box that encapsulates every image in this photo sequence.
+  LatLngBounds sequence_bounds = 20 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The total number of views that all the published images in this
+  // PhotoSequence have received.
+  int64 view_count = 21 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The filename of the upload. Does not include the directory path. Only
+  // available if the sequence was uploaded on a platform that provides the
+  // filename.
+  string filename = 22 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A rectangle in geographical coordinates.
+message LatLngBounds {
+  // The southwest corner of these bounds.
+  google.type.LatLng southwest = 1;
+
+  // The northeast corner of these bounds.
+  google.type.LatLng northeast = 2;
+}
+
+// The processing state of the sequence. The states move as follows:
+//
+// ```
+//      +-------------------------+
+//      |                         |
+//  +---v---+  +----------+  +----+----+
+//  |PENDING+-->PROCESSING+-->PROCESSED|
+//  +---+---+  +----+-----+  +----+----+
+//      |           |             |
+//      |        +--v---+         |
+//      +-------->FAILED<---------+
+//               +------+
+// ```
+//
+// The sequence may move to FAILED from any state. Additionally, a processed
+// sequence may be re-processed at any time.
+enum ProcessingState {
+  // The state is unspecified, this is the default value.
+  PROCESSING_STATE_UNSPECIFIED = 0;
+
+  // The sequence has not yet started processing.
+  PENDING = 1;
+
+  // The sequence is currently in processing.
+  PROCESSING = 2;
+
+  // The sequence has finished processing including refining position.
+  PROCESSED = 3;
+
+  // The sequence failed processing. See FailureReason for more details.
+  FAILED = 4;
+}
+
+// The possible reasons this [PhotoSequence]
+// [google.streetview.publish.v1.PhotoSequence] failed to process.
+enum ProcessingFailureReason {
+  // The failure reason is unspecified, this is the default value.
+  PROCESSING_FAILURE_REASON_UNSPECIFIED = 0;
+
+  // Video frame's resolution is too small.
+  LOW_RESOLUTION = 1;
+
+  // This video has been uploaded before.
+  DUPLICATE = 2;
+
+  // Too few GPS points.
+  INSUFFICIENT_GPS = 3;
+
+  // No overlap between the time frame of GPS track and the time frame of
+  // video.
+  NO_OVERLAP_GPS = 4;
+
+  // GPS is invalid (e.x. all GPS points are at (0,0))
+  INVALID_GPS = 5;
+
+  // The sequence of photos could not be accurately located in the world.
+  FAILED_TO_REFINE_POSITIONS = 6;
+
+  // The sequence was taken down for policy reasons.
+  TAKEDOWN = 7;
+
+  // The video file was corrupt or could not be decoded.
+  CORRUPT_VIDEO = 8;
+
+  // A permanent failure in the underlying system occurred.
+  INTERNAL = 9;
+
+  // The video format is invalid or unsupported.
+  INVALID_VIDEO_FORMAT = 10;
+
+  // Invalid image aspect ratio found.
+  INVALID_VIDEO_DIMENSIONS = 11;
+
+  // Invalid capture time. Timestamps were from the future.
+  INVALID_CAPTURE_TIME = 12;
+
+  // GPS data contains a gap greater than 5 seconds in duration.
+  GPS_DATA_GAP = 13;
+
+  // GPS data is too erratic to be processed.
+  JUMPY_GPS = 14;
+
+  // IMU (Accelerometer, Gyroscope, etc.) data are not valid. They may be
+  // missing required fields (x, y, z or time), may not be formatted correctly,
+  // or any other issue that prevents our systems from parsing it.
+  INVALID_IMU = 15;
+
+  // Too few IMU points.
+  INSUFFICIENT_IMU = 21;
+
+  // Insufficient overlap in the time frame between GPS, IMU, and other time
+  // series data.
+  INSUFFICIENT_OVERLAP_TIME_SERIES = 22;
+
+  // IMU (Accelerometer, Gyroscope, etc.) data contain gaps greater than 0.1
+  // seconds in duration.
+  IMU_DATA_GAP = 16;
+
+  // The camera is not supported.
+  UNSUPPORTED_CAMERA = 17;
+
+  // Some frames were indoors, which is unsupported.
+  NOT_OUTDOORS = 18;
+
+  // Not enough video frames.
+  INSUFFICIENT_VIDEO_FRAMES = 19;
+}
+
+// Additional details to accompany the ProcessingFailureReason enum.
+// This message is always expected to be used in conjunction with
+// ProcessingFailureReason, and the oneof value set in this message should match
+// the FailureReason.
+message ProcessingFailureDetails {
+  // Only one set of details will be set, and must match the corresponding enum
+  // in ProcessingFailureReason.
+  oneof details {
+    // See InsufficientGpsFailureDetails.
+    InsufficientGpsFailureDetails insufficient_gps_details = 1;
+
+    // See GpsDataGapFailureDetails.
+    GpsDataGapFailureDetails gps_data_gap_details = 2;
+
+    // See ImuDataGapFailureDetails.
+    ImuDataGapFailureDetails imu_data_gap_details = 3;
+
+    // See NotOutdoorsFailureDetails.
+    NotOutdoorsFailureDetails not_outdoors_details = 4;
+  }
+}
+
+// Details related to ProcessingFailureReason#INSUFFICIENT_GPS.
+message InsufficientGpsFailureDetails {
+  // The number of GPS points that were found in the video.
+  optional int32 gps_points_found = 1;
+}
+
+// Details related to ProcessingFailureReason#GPS_DATA_GAP.
+// If there are multiple GPS data gaps, only the one with the largest duration
+// is reported here.
+message GpsDataGapFailureDetails {
+  // The duration of the gap in GPS data that was found.
+  optional google.protobuf.Duration gap_duration = 1;
+
+  // Relative time (from the start of the video stream) when the gap started.
+  optional google.protobuf.Duration gap_start_time = 2;
+}
+
+// Details related to ProcessingFailureReason#IMU_DATA_GAP.
+// If there are multiple IMU data gaps, only the one with the largest duration
+// is reported here.
+message ImuDataGapFailureDetails {
+  // The duration of the gap in IMU data that was found.
+  optional google.protobuf.Duration gap_duration = 1;
+
+  // Relative time (from the start of the video stream) when the gap started.
+  optional google.protobuf.Duration gap_start_time = 2;
+}
+
+// Details related to ProcessingFailureReason#NOT_OUTDOORS.
+// If there are multiple indoor frames found, the first frame is recorded here.
+message NotOutdoorsFailureDetails {
+  // Relative time (from the start of the video stream) when an indoor frame was
+  // found.
+  optional google.protobuf.Duration start_time = 1;
 }

@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,8 +15,6 @@
 syntax = "proto3";
 
 package google.cloud.networkmanagement.v1beta1;
-
-import "google/api/annotations.proto";
 
 option csharp_namespace = "Google.Cloud.NetworkManagement.V1Beta1";
 option go_package = "google.golang.org/genproto/googleapis/cloud/networkmanagement/v1beta1;networkmanagement";
@@ -84,6 +82,10 @@ message Step {
     // A CloudSQLInstanceInfo is populated with starting instance information.
     START_FROM_CLOUD_SQL_INSTANCE = 22;
 
+    // Initial state: packet originating from a Cloud function.
+    // A CloudFunctionInfo is populated with starting function information.
+    START_FROM_CLOUD_FUNCTION = 23;
+
     // Config checking state: verify ingress firewall rule.
     APPLY_INGRESS_FIREWALL_RULE = 4;
 
@@ -114,6 +116,9 @@ message Step {
 
     // Forwarding state: arriving at a Cloud VPN tunnel.
     ARRIVE_AT_VPN_TUNNEL = 13;
+
+    // Forwarding state: arriving at a VPC connector.
+    ARRIVE_AT_VPC_CONNECTOR = 24;
 
     // Transition state: packet header translated.
     NAT = 14;
@@ -182,6 +187,9 @@ message Step {
     // Display information of a Compute Engine VPN tunnel.
     VpnTunnelInfo vpn_tunnel = 11;
 
+    // Display information of a VPC connector.
+    VpcConnectorInfo vpc_connector = 21;
+
     // Display information of the final state "deliver" and reason.
     DeliverInfo deliver = 12;
 
@@ -205,6 +213,9 @@ message Step {
 
     // Display information of a Cloud SQL instance.
     CloudSQLInstanceInfo cloud_sql_instance = 19;
+
+    // Display information of a Cloud function.
+    CloudFunctionInfo cloud_function = 20;
   }
 }
 
@@ -269,6 +280,12 @@ message FirewallInfo {
     // [Implied
     // rules](https://cloud.google.com/vpc/docs/firewalls#default_firewall_rules).
     IMPLIED_VPC_FIREWALL_RULE = 3;
+
+    // Implicit firewall rules that are managed by serverless VPC access to
+    // allow ingress access. They are not visible in the Google Cloud console.
+    // For details, see [VPC connector's implicit
+    // rules](https://cloud.google.com/functions/docs/networking/connecting-vpc#restrict-access).
+    SERVERLESS_VPC_ACCESS_MANAGED_FIREWALL_RULE = 4;
   }
 
   // The display name of the VPC firewall rule. This field is not applicable
@@ -372,6 +389,11 @@ message RouteInfo {
 
     // Next hop is the forwarding rule of an Internal Load Balancer.
     NEXT_HOP_ILB = 10;
+
+    // Next hop is a
+    // [router appliance
+    // instance](https://cloud.google.com/network-connectivity/docs/network-connectivity-center/concepts/ra-overview).
+    NEXT_HOP_ROUTER_APPLIANCE = 11;
   }
 
   // Type of route.
@@ -608,6 +630,9 @@ message EndpointInfo {
 
   // URI of the network where this packet is sent to.
   string destination_network_uri = 7;
+
+  // URI of the source telemetry agent this packet originates from.
+  string source_agent_uri = 8;
 }
 
 // Details of the final state "deliver" and associated resource.
@@ -631,6 +656,18 @@ message DeliverInfo {
 
     // Target is a Cloud SQL instance.
     CLOUD_SQL_INSTANCE = 5;
+
+    // Target is a published service using [Private Service
+    // Connect](https://cloud.google.com/vpc/docs/configure-private-service-connect-services).
+    PSC_PUBLISHED_SERVICE = 6;
+
+    // Target is all Google APIs using [Private Service
+    // Connect](https://cloud.google.com/vpc/docs/configure-private-service-connect-apis).
+    PSC_GOOGLE_API = 7;
+
+    // Target is VPC-SC using [Private Service
+    // Connect](https://cloud.google.com/vpc/docs/configure-private-service-connect-apis).
+    PSC_VPC_SC = 8;
   }
 
   // Target type where the packet is delivered to.
@@ -736,6 +773,9 @@ message AbortInfo {
     // Aborted because the destination network does not match the destination
     // endpoint.
     MISMATCHED_DESTINATION_NETWORK = 14;
+
+    // Aborted because the test scenario is not supported.
+    UNSUPPORTED = 15;
   }
 
   // Causes that the analysis is aborted.
@@ -743,6 +783,11 @@ message AbortInfo {
 
   // URI of the resource that caused the abort.
   string resource_uri = 2;
+
+  // List of project IDs that the user has specified in the request but does
+  // not have permission to access network configs. Analysis is aborted in this
+  // case with the PERMISSION_DENIED cause.
+  repeated string projects_missing_permission = 3;
 }
 
 // Details of the final state "drop" and associated resource.
@@ -757,7 +802,7 @@ message DropInfo {
     // as test input.
     UNKNOWN_EXTERNAL_ADDRESS = 1;
 
-    // a Compute Engine instance can only send or receive a packet with a
+    // A Compute Engine instance can only send or receive a packet with a
     // foreign IP address if ip_forward is enabled.
     FOREIGN_IP_DISALLOWED = 2;
 
@@ -785,9 +830,7 @@ message DropInfo {
 
     // Instance with only an internal IP address tries to access external hosts,
     // but Cloud NAT is not enabled in the subnet, unless special configurations
-    // on a VM allow this connection. For more details, see [Special
-    // configurations for VM
-    // instances](https://cloud.google.com/vpc/docs/special-configurations).
+    // on a VM allow this connection.
     NO_EXTERNAL_ADDRESS = 9;
 
     // Destination internal address cannot be resolved to a known target. If
@@ -843,6 +886,24 @@ message DropInfo {
     // Packet was dropped because the Cloud SQL instance has neither a private
     // nor a public IP address.
     CLOUD_SQL_INSTANCE_NO_IP_ADDRESS = 21;
+
+    // Packet could be dropped because the Cloud function is not in an active
+    // status.
+    CLOUD_FUNCTION_NOT_ACTIVE = 22;
+
+    // Packet could be dropped because no VPC connector is set.
+    VPC_CONNECTOR_NOT_SET = 23;
+
+    // Packet could be dropped because the VPC connector is not in a running
+    // state.
+    VPC_CONNECTOR_NOT_RUNNING = 24;
+
+    // Packet could be dropped because it was sent from a different region
+    // to a regional forwarding without global access.
+    FORWARDING_RULE_REGION_MISMATCH = 25;
+
+    // Privte Service Connect (PSC) connection is not in accepted state.
+    PSC_CONNECTION_NOT_ACCEPTED = 26;
   }
 
   // Cause that the packet is dropped.
@@ -888,4 +949,31 @@ message CloudSQLInstanceInfo {
 
   // Region in which the Cloud SQL instance is running.
   string region = 7;
+}
+
+// For display only. Metadata associated with a Cloud function.
+message CloudFunctionInfo {
+  // Name of a Cloud function.
+  string display_name = 1;
+
+  // URI of a Cloud function.
+  string uri = 2;
+
+  // Location in which the Cloud function is deployed.
+  string location = 3;
+
+  // Latest successfully deployed version id of the Cloud function.
+  int64 version_id = 4;
+}
+
+// For display only. Metadata associated with a VPC connector.
+message VpcConnectorInfo {
+  // Name of a VPC connector.
+  string display_name = 1;
+
+  // URI of a VPC connector.
+  string uri = 2;
+
+  // Location in which the VPC connector is deployed.
+  string location = 3;
 }

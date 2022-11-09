@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -72,6 +72,16 @@ service RecaptchaEnterpriseService {
     };
   }
 
+  // Returns the secret key related to the specified public key.
+  // You must use the legacy secret key only in a 3rd party integration with
+  // legacy reCAPTCHA.
+  rpc RetrieveLegacySecretKey(RetrieveLegacySecretKeyRequest) returns (RetrieveLegacySecretKeyResponse) {
+    option (google.api.http) = {
+      get: "/v1/{key=projects/*/keys/*}:retrieveLegacySecretKey"
+    };
+    option (google.api.method_signature) = "key";
+  }
+
   // Returns the specified key.
   rpc GetKey(GetKeyRequest) returns (Key) {
     option (google.api.http) = {
@@ -124,7 +134,7 @@ service RecaptchaEnterpriseService {
     option (google.api.method_signature) = "parent";
   }
 
-  // Get the memberships in a group of related accounts.
+  // Get memberships in a group of related accounts.
   rpc ListRelatedAccountGroupMemberships(ListRelatedAccountGroupMembershipsRequest) returns (ListRelatedAccountGroupMembershipsResponse) {
     option (google.api.http) = {
       get: "/v1/{parent=projects/*/relatedaccountgroups/*}/memberships"
@@ -135,10 +145,10 @@ service RecaptchaEnterpriseService {
   // Search group memberships related to a given account.
   rpc SearchRelatedAccountGroupMemberships(SearchRelatedAccountGroupMembershipsRequest) returns (SearchRelatedAccountGroupMembershipsResponse) {
     option (google.api.http) = {
-      post: "/v1/{parent=projects/*}/relatedaccountgroupmemberships:search"
+      post: "/v1/{project=projects/*}/relatedaccountgroupmemberships:search"
       body: "*"
     };
-    option (google.api.method_signature) = "parent,hashed_account_id";
+    option (google.api.method_signature) = "project,hashed_account_id";
   }
 }
 
@@ -186,20 +196,37 @@ message AnnotateAssessmentRequest {
     // Default unspecified reason.
     REASON_UNSPECIFIED = 0;
 
-    // Indicates a chargeback was issued for the transaction associated with the
-    // assessment, with no other details. When possible, specify the type by
-    // using CHARGEBACK_FRAUD or CHARGEBACK_DISPUTE instead.
+    // Indicates that the transaction had a chargeback issued with no other
+    // details. When possible, specify the type by using CHARGEBACK_FRAUD or
+    // CHARGEBACK_DISPUTE instead.
     CHARGEBACK = 1;
 
-    // Indicates a chargeback related to an alleged unauthorized transaction
-    // from the perspective of the cardholder (for example, the card number was
-    // stolen).
+    // Indicates that the transaction had a chargeback issued related to an
+    // alleged unauthorized transaction from the cardholder's perspective (for
+    // example, the card number was stolen).
     CHARGEBACK_FRAUD = 8;
 
-    // Indicates a chargeback related to the cardholder having provided their
-    // card but allegedly not being satisfied with the purchase
-    // (for example, misrepresentation, attempted cancellation).
+    // Indicates that the transaction had a chargeback issued related to the
+    // cardholder having provided their card details but allegedly not being
+    // satisfied with the purchase (for example, misrepresentation, attempted
+    // cancellation).
     CHARGEBACK_DISPUTE = 9;
+
+    // Indicates that the completed payment transaction was refunded by the
+    // seller.
+    REFUND = 10;
+
+    // Indicates that the completed payment transaction was determined to be
+    // fraudulent by the seller, and was cancelled and refunded as a result.
+    REFUND_FRAUD = 11;
+
+    // Indicates that the payment transaction was accepted, and the user was
+    // charged.
+    TRANSACTION_ACCEPTED = 12;
+
+    // Indicates that the payment transaction was declined, for example due to
+    // invalid card details.
+    TRANSACTION_DECLINED = 13;
 
     // Indicates the transaction associated with the assessment is suspected of
     // being fraudulent based on the payment method, billing details, shipping
@@ -223,6 +250,10 @@ message AnnotateAssessmentRequest {
 
     // Indicates the user provided an incorrect password.
     INCORRECT_PASSWORD = 6;
+
+    // Indicates that the user sent unwanted and abusive messages to other users
+    // of the platform, such as spam, scams, phishing, or social engineering.
+    SOCIAL_SPAM = 14;
   }
 
   // Required. The resource name of the Assessment, in the format
@@ -242,7 +273,7 @@ message AnnotateAssessmentRequest {
   // Optional. Optional reasons for the annotation that will be assigned to the Event.
   repeated Reason reasons = 3 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Optional unique stable hashed user identifier to apply to the assessment.
+  // Optional. Unique stable hashed user identifier to apply to the assessment.
   // This is an alternative to setting the hashed_account_id in
   // CreateAssessment, for example when the account identifier is not yet known
   // in the initial request. It is recommended that the identifier is hashed
@@ -253,6 +284,28 @@ message AnnotateAssessmentRequest {
 // Empty response for AnnotateAssessment.
 message AnnotateAssessmentResponse {
 
+}
+
+// Private password leak verification info.
+message PrivatePasswordLeakVerification {
+  // Optional. Exactly 26-bit prefix of the SHA-256 hash of the canonicalized username. It
+  // is used to look up password leaks associated with that hash prefix.
+  bytes lookup_hash_prefix = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Encrypted Scrypt hash of the canonicalized username+password. It is
+  // re-encrypted by the server and returned through
+  // `reencrypted_user_credentials_hash`.
+  bytes encrypted_user_credentials_hash = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. List of prefixes of the encrypted potential password leaks that matched the
+  // given parameters. They must be compared with the client-side decryption
+  // prefix of `reencrypted_user_credentials_hash`
+  repeated bytes encrypted_leak_match_prefixes = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Corresponds to the re-encryption of the `encrypted_user_credentials_hash`
+  // field. It is used to match potential password leaks within
+  // `encrypted_leak_match_prefixes`.
+  bytes reencrypted_user_credentials_hash = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A recaptcha assessment resource.
@@ -275,9 +328,13 @@ message Assessment {
   // Output only. Properties of the provided event token.
   TokenProperties token_properties = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Assessment returned by Account Defender when a hashed_account_id is
+  // Assessment returned by account defender when a hashed_account_id is
   // provided.
   AccountDefenderAssessment account_defender_assessment = 6;
+
+  // The private password leak verification field contains the parameters that
+  // are used to to check for leaks privately without sharing user credentials.
+  PrivatePasswordLeakVerification private_password_leak_verification = 8;
 }
 
 message Event {
@@ -301,8 +358,8 @@ message Event {
   // integrated with recaptcha enterprise.
   string expected_action = 5 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Optional unique stable hashed user identifier for the request. The
-  // identifier should ideally be hashed using sha256 with stable secret.
+  // Optional. Unique stable hashed user identifier for the request. The identifier must
+  // be hashed using hmac-sha256 with stable secret.
   bytes hashed_account_id = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -379,16 +436,16 @@ message TokenProperties {
   // The timestamp corresponding to the generation of the token.
   google.protobuf.Timestamp create_time = 3;
 
-  // The hostname of the page on which the token was generated.
+  // The hostname of the page on which the token was generated (Web keys only).
   string hostname = 4;
 
   // Action name provided at token generation.
   string action = 5;
 }
 
-// Account Defender risk assessment.
+// Account defender risk assessment.
 message AccountDefenderAssessment {
-  // Labels returned by Account Defender for this request.
+  // Labels returned by account defender for this request.
   enum AccountDefenderLabel {
     // Default unspecified type.
     ACCOUNT_DEFENDER_LABEL_UNSPECIFIED = 0;
@@ -396,17 +453,17 @@ message AccountDefenderAssessment {
     // The request matches a known good profile for the user.
     PROFILE_MATCH = 1;
 
-    // The request is potentially a suspicious login event and should be further
-    // verified either via multi-factor authentication or another system.
+    // The request is potentially a suspicious login event and must be further
+    // verified either through multi-factor authentication or another system.
     SUSPICIOUS_LOGIN_ACTIVITY = 2;
 
     // The request matched a profile that previously had suspicious account
-    // creation behavior. This could mean this is a fake account.
+    // creation behavior. This can mean that this is a fake account.
     SUSPICIOUS_ACCOUNT_CREATION = 3;
 
     // The account in the request has a high number of related accounts. It does
-    // not necessarily imply that the account is bad but could require
-    // investigating.
+    // not necessarily imply that the account is bad but can require further
+    // investigation.
     RELATED_ACCOUNTS_NUMBER_HIGH = 4;
   }
 
@@ -457,6 +514,18 @@ message ListKeysResponse {
   // Token to retrieve the next page of results. It is set to empty if no keys
   // remain in results.
   string next_page_token = 2;
+}
+
+// The retrieve legacy secret key request message.
+message RetrieveLegacySecretKeyRequest {
+  // Required. The public key name linked to the requested secret key in the format
+  // "projects/{project}/keys/{key}".
+  string key = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "recaptchaenterprise.googleapis.com/Key"
+    }
+  ];
 }
 
 // The get key request message.
@@ -541,6 +610,16 @@ message Metrics {
   repeated ChallengeMetrics challenge_metrics = 3;
 }
 
+// Secret key is used only in legacy reCAPTCHA. It must be used in a 3rd party
+// integration with legacy reCAPTCHA.
+message RetrieveLegacySecretKeyResponse {
+  // The secret key (also known as shared secret) authorizes communication
+  // between your application backend and the reCAPTCHA Enterprise server to
+  // create an assessment.
+  // The secret key needs to be kept safe for security purposes.
+  string legacy_secret_key = 1;
+}
+
 // A key used to identify and configure applications (web and/or mobile) that
 // use reCAPTCHA Enterprise.
 message Key {
@@ -556,8 +635,8 @@ message Key {
   // Human-readable display name of this key. Modifiable by user.
   string display_name = 2;
 
-  // Platform specific settings for this key. The key can only be used on one
-  // platform, the one it has settings for.
+  // Platform specific settings for this key. The key can only be used on a
+  // platform for which the settings are enabled.
   oneof platform_settings {
     // Settings for keys that can be used by websites.
     WebKeySettings web_settings = 3;
@@ -578,6 +657,9 @@ message Key {
 
   // Options for user acceptance testing.
   TestingOptions testing_options = 9;
+
+  // Settings for WAF
+  WafSettings waf_settings = 10;
 }
 
 // Options for user acceptance testing.
@@ -737,10 +819,10 @@ message ListRelatedAccountGroupMembershipsRequest {
     }
   ];
 
-  // Optional. The maximum number of accounts to return. The service may return fewer than
-  // this value.
-  // If unspecified, at most 50 accounts will be returned.
-  // The maximum value is 1000; values above 1000 will be coerced to 1000.
+  // Optional. The maximum number of accounts to return. The service might return fewer
+  // than this value.
+  // If unspecified, at most 50 accounts are returned.
+  // The maximum value is 1000; values above 1000 are coerced to 1000.
   int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. A page token, received from a previous `ListRelatedAccountGroupMemberships`
@@ -773,10 +855,10 @@ message ListRelatedAccountGroupsRequest {
     }
   ];
 
-  // Optional. The maximum number of groups to return. The service may return fewer than
+  // Optional. The maximum number of groups to return. The service might return fewer than
   // this value.
-  // If unspecified, at most 50 groups will be returned.
-  // The maximum value is 1000; values above 1000 will be coerced to 1000.
+  // If unspecified, at most 50 groups are returned.
+  // The maximum value is 1000; values above 1000 are coerced to 1000.
   int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. A page token, received from a previous `ListRelatedAccountGroups` call.
@@ -800,9 +882,9 @@ message ListRelatedAccountGroupsResponse {
 
 // The request message to search related account group memberships.
 message SearchRelatedAccountGroupMembershipsRequest {
-  // Required. The name of the project to search related account group memberships from,
-  // in the format "projects/{project}".
-  string parent = 1 [
+  // Required. The name of the project to search related account group memberships from.
+  // Specify the project name in the following format: "projects/{project}".
+  string project = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
       child_type: "recaptchaenterprise.googleapis.com/RelatedAccountGroupMembership"
@@ -811,13 +893,13 @@ message SearchRelatedAccountGroupMembershipsRequest {
 
   // Optional. The unique stable hashed user identifier we should search connections to.
   // The identifier should correspond to a `hashed_account_id` provided in a
-  // previous CreateAssessment or AnnotateAssessment call.
+  // previous `CreateAssessment` or `AnnotateAssessment` call.
   bytes hashed_account_id = 2 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The maximum number of groups to return. The service may return fewer than
+  // Optional. The maximum number of groups to return. The service might return fewer than
   // this value.
-  // If unspecified, at most 50 groups will be returned.
-  // The maximum value is 1000; values above 1000 will be coerced to 1000.
+  // If unspecified, at most 50 groups are returned.
+  // The maximum value is 1000; values above 1000 are coerced to 1000.
   int32 page_size = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. A page token, received from a previous
@@ -858,7 +940,7 @@ message RelatedAccountGroupMembership {
 
   // The unique stable hashed user identifier of the member. The identifier
   // corresponds to a `hashed_account_id` provided in a previous
-  // CreateAssessment or AnnotateAssessment call.
+  // `CreateAssessment` or `AnnotateAssessment` call.
   bytes hashed_account_id = 2;
 }
 
@@ -877,4 +959,40 @@ message RelatedAccountGroup {
       type: "recaptchaenterprise.googleapis.com/RelatedAccountGroup"
     }
   ];
+}
+
+// Settings specific to keys that can be used for WAF (Web Application
+// Firewall).
+message WafSettings {
+  // Supported WAF features. For more information, see
+  // https://cloud.google.com/recaptcha-enterprise/docs/usecase#comparison_of_features.
+  enum WafFeature {
+    // Undefined feature.
+    WAF_FEATURE_UNSPECIFIED = 0;
+
+    // Redirects suspicious traffic to reCAPTCHA.
+    CHALLENGE_PAGE = 1;
+
+    // Use reCAPTCHA session-tokens to protect the whole user session on the
+    // site's domain.
+    SESSION_TOKEN = 2;
+
+    // Use reCAPTCHA action-tokens to protect user actions.
+    ACTION_TOKEN = 3;
+  }
+
+  // Web Application Firewalls supported by reCAPTCHA Enterprise.
+  enum WafService {
+    // Undefined WAF
+    WAF_SERVICE_UNSPECIFIED = 0;
+
+    // Cloud Armor
+    CA = 1;
+  }
+
+  // Required. The WAF service that uses this key.
+  WafService waf_service = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The WAF feature for which this key is enabled.
+  WafFeature waf_feature = 2 [(google.api.field_behavior) = REQUIRED];
 }

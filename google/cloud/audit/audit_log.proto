@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ syntax = "proto3";
 
 package google.cloud.audit;
 
+import "google/api/field_behavior.proto";
 import "google/protobuf/any.proto";
 import "google/protobuf/struct.proto";
 import "google/rpc/context/attribute_context.proto";
@@ -76,6 +77,11 @@ message AuditLog {
   // one AuthorizationInfo element for each {resource, permission} tuple.
   repeated AuthorizationInfo authorization_info = 9;
 
+  // Indicates the policy violations for this request. If the request
+  // is denied by the policy, violation information will be logged
+  // here.
+  PolicyViolationInfo policy_violation_info = 25;
+
   // Metadata about the operation.
   RequestMetadata request_metadata = 4;
 
@@ -111,8 +117,8 @@ message AuthenticationInfo {
   // of third party principal) making the request. For third party identity
   // callers, the `principal_subject` field is populated instead of this field.
   // For privacy reasons, the principal email address is sometimes redacted.
-  // For more information, see
-  // https://cloud.google.com/logging/docs/audit#user-id.
+  // For more information, see [Caller identities in audit
+  // logs](https://cloud.google.com/logging/docs/audit#user-id).
   string principal_email = 1;
 
   // The authority selector specified by the requestor, if any.
@@ -173,14 +179,16 @@ message AuthorizationInfo {
 // Metadata about the request.
 message RequestMetadata {
   // The IP address of the caller.
-  // For caller from internet, this will be public IPv4 or IPv6 address.
-  // For caller from a Compute Engine VM with external IP address, this
-  // will be the VM's external IP address. For caller from a Compute
-  // Engine VM without external IP address, if the VM is in the same
-  // organization (or project) as the accessed resource, `caller_ip` will
-  // be the VM's internal IPv4 address, otherwise the `caller_ip` will be
-  // redacted to "gce-internal-ip".
-  // See https://cloud.google.com/compute/docs/vpc/ for more information.
+  // For a caller from the internet, this will be the public IPv4 or IPv6
+  // address. For calls made from inside Google's internal production network
+  // from one GCP service to another, `caller_ip` will be redacted to "private".
+  // For a caller from a Compute Engine VM with a external IP address,
+  // `caller_ip` will be the VM's external IP address. For a caller from a
+  // Compute Engine VM without a external IP address, if the VM is in the same
+  // organization (or project) as the accessed resource, `caller_ip` will be the
+  // VM's internal IPv4 address, otherwise `caller_ip` will be redacted to
+  // "gce-internal-ip". See https://cloud.google.com/compute/docs/vpc/ for more
+  // information.
   string caller_ip = 1;
 
   // The user agent of the caller.
@@ -280,4 +288,66 @@ message ServiceAccountDelegationInfo {
     // Third party identity as the real authority.
     ThirdPartyPrincipal third_party_principal = 2;
   }
+}
+
+// Information related to policy violations for this request.
+message PolicyViolationInfo {
+  // Indicates the orgpolicy violations for this resource.
+  OrgPolicyViolationInfo org_policy_violation_info = 1;
+}
+
+// Represents OrgPolicy Violation information.
+message OrgPolicyViolationInfo {
+  // Optional. Resource payload that is currently in scope and is subjected to orgpolicy
+  // conditions. This payload may be the subset of the actual Resource that may
+  // come in the request. This payload should not contain any core content.
+  google.protobuf.Struct payload = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Resource type that the orgpolicy is checked against.
+  // Example: compute.googleapis.com/Instance, store.googleapis.com/bucket
+  string resource_type = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Tags referenced on the resource at the time of evaluation. These also
+  // include the federated tags, if they are supplied in the CheckOrgPolicy
+  // or CheckCustomConstraints Requests.
+  //
+  // Optional field as of now. These tags are the Cloud tags that are
+  // available on the resource during the policy evaluation and will
+  // be available as part of the OrgPolicy check response for logging purposes.
+  map<string, string> resource_tags = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Policy violations
+  repeated ViolationInfo violation_info = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Provides information about the Policy violation info for this request.
+message ViolationInfo {
+  // Policy Type enum
+  enum PolicyType {
+    // Default value. This value should not be used.
+    POLICY_TYPE_UNSPECIFIED = 0;
+
+    // Indicates boolean policy constraint
+    BOOLEAN_CONSTRAINT = 1;
+
+    // Indicates list policy constraint
+    LIST_CONSTRAINT = 2;
+
+    // Indicates custom policy constraint
+    CUSTOM_CONSTRAINT = 3;
+  }
+
+  // Optional. Constraint name
+  string constraint = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Error message that policy is indicating.
+  string error_message = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Value that is being checked for the policy.
+  // This could be in encrypted form (if pii sensitive).
+  // This field will only be emitted in LIST_POLICY types
+  string checked_value = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Indicates the type of the policy.
+  PolicyType policy_type = 4 [(google.api.field_behavior) = OPTIONAL];
 }

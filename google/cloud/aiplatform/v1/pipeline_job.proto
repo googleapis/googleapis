@@ -22,6 +22,7 @@ import "google/cloud/aiplatform/v1/artifact.proto";
 import "google/cloud/aiplatform/v1/context.proto";
 import "google/cloud/aiplatform/v1/encryption_spec.proto";
 import "google/cloud/aiplatform/v1/execution.proto";
+import "google/cloud/aiplatform/v1/pipeline_failure_policy.proto";
 import "google/cloud/aiplatform/v1/pipeline_state.proto";
 import "google/cloud/aiplatform/v1/value.proto";
 import "google/protobuf/struct.proto";
@@ -49,6 +50,18 @@ message PipelineJob {
 
   // The runtime config of a PipelineJob.
   message RuntimeConfig {
+    // The type of an input artifact.
+    message InputArtifact {
+      oneof kind {
+        // Artifact resource id from MLMD. Which is the last portion of an
+        // artifact resource name:
+        // `projects/{project}/locations/{location}/metadataStores/default/artifacts/{artifact_id}`.
+        // The artifact must stay within the same project, location and default
+        // metadatastore as the pipeline.
+        string artifact_id = 1;
+      }
+    }
+
     // Deprecated. Use [RuntimeConfig.parameter_values][google.cloud.aiplatform.v1.PipelineJob.RuntimeConfig.parameter_values] instead. The runtime
     // parameters of the PipelineJob. The parameters will be passed into
     // [PipelineJob.pipeline_spec][google.cloud.aiplatform.v1.PipelineJob.pipeline_spec] to replace the placeholders at runtime.
@@ -72,6 +85,18 @@ message PipelineJob {
     // `PipelineJob.pipeline_spec.schema_version` 2.1.0, such as pipelines built
     // using Kubeflow Pipelines SDK 1.9 or higher and the v2 DSL.
     map<string, google.protobuf.Value> parameter_values = 3;
+
+    // Represents the failure policy of a pipeline. Currently, the default of a
+    // pipeline is that the pipeline will continue to run until no more tasks
+    // can be executed, also known as PIPELINE_FAILURE_POLICY_FAIL_SLOW.
+    // However, if a pipeline is set to PIPELINE_FAILURE_POLICY_FAIL_FAST, it
+    // will stop scheduling any new tasks when a task has failed. Any scheduled
+    // tasks will continue to completion.
+    PipelineFailurePolicy failure_policy = 4;
+
+    // The runtime artifacts of the PipelineJob. The key will be the input
+    // artifact name and the value would be one of the InputArtifact.
+    map<string, InputArtifact> input_artifacts = 5;
   }
 
   // Output only. The resource name of the PipelineJob.
@@ -94,8 +119,8 @@ message PipelineJob {
   // Output only. Timestamp when this PipelineJob was most recently updated.
   google.protobuf.Timestamp update_time = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Required. The spec of the pipeline.
-  google.protobuf.Struct pipeline_spec = 7 [(google.api.field_behavior) = REQUIRED];
+  // The spec of the pipeline.
+  google.protobuf.Struct pipeline_spec = 7;
 
   // Output only. The detailed state of the job.
   PipelineState state = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -150,6 +175,27 @@ message PipelineJob {
   string network = 18 [(google.api.resource_reference) = {
                          type: "compute.googleapis.com/Network"
                        }];
+
+  // A template uri from where the [PipelineJob.pipeline_spec][google.cloud.aiplatform.v1.PipelineJob.pipeline_spec], if empty, will
+  // be downloaded.
+  string template_uri = 19;
+
+  // Output only. Pipeline template metadata. Will fill up fields if
+  // [PipelineJob.template_uri][google.cloud.aiplatform.v1.PipelineJob.template_uri] is from supported template registry.
+  PipelineTemplateMetadata template_metadata = 20 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Pipeline template metadata if [PipelineJob.template_uri][google.cloud.aiplatform.v1.PipelineJob.template_uri] is from supported
+// template registry. Currently, the only supported registry is Artifact
+// Registry.
+message PipelineTemplateMetadata {
+  // The version_name in artifact registry.
+  //
+  // Will always be presented in output if the [PipelineJob.template_uri][google.cloud.aiplatform.v1.PipelineJob.template_uri] is
+  // from supported template registry.
+  //
+  // Format is "sha256:abcdef123456...".
+  string version = 3;
 }
 
 // The runtime detail of PipelineJob.
@@ -291,6 +337,17 @@ message PipelineTaskExecutorDetail {
         type: "aiplatform.googleapis.com/CustomJob"
       }
     ];
+
+    // Output only. The names of the previously failed [CustomJob][google.cloud.aiplatform.v1.CustomJob] for the main container
+    // executions. The list includes the all attempts in chronological order.
+    repeated string failed_main_jobs = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The names of the previously failed [CustomJob][google.cloud.aiplatform.v1.CustomJob] for the
+    // pre-caching-check container executions. This job will be available if the
+    // [PipelineJob.pipeline_spec][google.cloud.aiplatform.v1.PipelineJob.pipeline_spec] specifies the `pre_caching_check` hook in
+    // the lifecycle events.
+    // The list includes the all attempts in chronological order.
+    repeated string failed_pre_caching_check_jobs = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
   // The detailed info for a custom job executor.

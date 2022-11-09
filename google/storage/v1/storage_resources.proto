@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -78,7 +78,25 @@ message Bucket {
       google.protobuf.Timestamp locked_time = 2;
     }
 
+    // Public Access Prevention configuration values.
+    enum PublicAccessPrevention {
+      // No specified PublicAccessPrevention.
+      PUBLIC_ACCESS_PREVENTION_UNSPECIFIED = 0;
+
+      // Prevents access from being granted to public members 'allUsers' and
+      // 'allAuthenticatedUsers'. Prevents attempts to grant new access to
+      // public members.
+      ENFORCED = 1;
+
+      // This setting is inherited from Org Policy. Does not prevent access from
+      // being granted to public members 'allUsers' or 'allAuthenticatedUsers'.
+      INHERITED = 2;
+    }
+
     UniformBucketLevelAccess uniform_bucket_level_access = 1;
+
+    // Whether IAM will enforce public access prevention.
+    PublicAccessPrevention public_access_prevention = 2;
   }
 
   // Lifecycle properties of a bucket.
@@ -89,8 +107,8 @@ message Bucket {
     message Rule {
       // An action to take on an object.
       message Action {
-        // Type of the action. Currently, only `Delete` and
-        // `SetStorageClass` are supported.
+        // Type of the action. Currently, only `Delete`, `SetStorageClass`, and
+        // `AbortIncompleteMultipartUpload` are supported.
         string type = 1;
 
         // Target storage class. Required iff the type of the action is
@@ -129,10 +147,38 @@ message Bucket {
         // A regular expression that satisfies the RE2 syntax. This condition is
         // satisfied when the name of the object matches the RE2 pattern.  Note:
         // This feature is currently in the "Early Access" launch stage and is
-        // only available to a whitelisted set of users; that means that this
+        // only available to an allowlisted set of users; that means that this
         // feature may be changed in backward-incompatible ways and that it is
         // not guaranteed to be released.
         string matches_pattern = 6;
+
+        // Number of days that has elapsed since the custom timestamp set on an
+        // object.
+        int32 days_since_custom_time = 7;
+
+        // An object matches this condition if the custom timestamp set on the
+        // object is before this timestamp.
+        google.protobuf.Timestamp custom_time_before = 8;
+
+        // This condition is relevant only for versioned objects. An object
+        // version satisfies this condition only if these many days have been
+        // passed since it became noncurrent. The value of the field must be a
+        // nonnegative integer. If it's zero, the object version will become
+        // eligible for Lifecycle action as soon as it becomes noncurrent.
+        int32 days_since_noncurrent_time = 9;
+
+        // This condition is relevant only for versioned objects. An object
+        // version satisfies this condition only if it became noncurrent before
+        // the specified timestamp.
+        google.protobuf.Timestamp noncurrent_time_before = 10;
+
+        // List of object name prefixes. If any prefix exactly matches the
+        // beginning of the object name, the condition evaluates to true.
+        repeated string matches_prefix = 11;
+
+        // List of object name suffixes. If any suffix exactly matches the
+        // end of the object name, the condition evaluates to true.
+        repeated string matches_suffix = 12;
       }
 
       // The action to take.
@@ -199,6 +245,15 @@ message Bucket {
     string not_found_page = 2;
   }
 
+  // Configuration for a bucket's Autoclass feature.
+  message Autoclass {
+    // Enables Autoclass.
+    bool enabled = 1;
+
+    // Latest instant at which the `enabled` bit was flipped.
+    google.protobuf.Timestamp toggle_time = 2;
+  }
+
   // Access controls on the bucket.
   repeated BucketAccessControl acl = 1;
 
@@ -212,13 +267,14 @@ message Bucket {
 
   // The creation time of the bucket in
   // [https://tools.ietf.org/html/rfc3339][RFC 3339] format.
-  // Attempting to set this field will result in an error.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
   google.protobuf.Timestamp time_created = 4;
 
   // The ID of the bucket. For buckets, the `id` and `name` properties are the
   // same.
   // Attempting to update this field after the bucket is created will result in
-  // an error.
+  // a [FieldViolation][google.rpc.BadRequest.FieldViolation].
   string id = 5;
 
   // The name of the bucket.
@@ -227,11 +283,13 @@ message Bucket {
   string name = 6;
 
   // The project number of the project the bucket belongs to.
-  // Attempting to set this field will result in an error.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
   int64 project_number = 7;
 
   // The metadata generation of this bucket.
-  // Attempting to set this field will result in an error.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
   int64 metageneration = 8;
 
   // The bucket's [https://www.w3.org/TR/cors/][Cross-Origin Resource Sharing]
@@ -255,11 +313,13 @@ message Bucket {
 
   // HTTP 1.1 [https://tools.ietf.org/html/rfc7232#section-2.3"]Entity tag]
   // for the bucket.
-  // Attempting to set this field will result in an error.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
   string etag = 12;
 
   // The modification time of the bucket.
-  // Attempting to set this field will result in an error.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
   google.protobuf.Timestamp updated = 13;
 
   // The default value for event-based hold on newly created objects in this
@@ -321,10 +381,17 @@ message Bucket {
 
   // The zone or zones from which the bucket is intended to use zonal quota.
   // Requests for data from outside the specified affinities are still allowed
-  // but won’t be able to use zonal quota. The values are case-insensitive.
+  // but won't be able to use zonal quota. The values are case-insensitive.
   // Attempting to update this field after bucket is created will result in an
   // error.
-  repeated string zone_affinity = 25;
+  repeated string zone_affinity = 25 [deprecated = true];
+
+  // Reserved for future use.
+  bool satisfies_pzs = 26;
+
+  // The bucket's autoclass configuration. If there is no configuration, the
+  // Autoclass feature will be disabled and have no effect on the bucket.
+  Autoclass autoclass = 28;
 }
 
 // An access-control entry.
@@ -646,12 +713,14 @@ message Object {
   // preconditions and for detecting changes in metadata. A metageneration
   // number is only meaningful in the context of a particular generation of a
   // particular object.
-  // Attempting to set this field will result in an error.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
   int64 metageneration = 6;
 
   // The deletion time of the object. Will be returned if and only if this
   // version of the object has been deleted.
-  // Attempting to set this field will result in an error.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
   google.protobuf.Timestamp time_deleted = 7;
 
   // Content-Type of the object data, matching
@@ -662,16 +731,18 @@ message Object {
 
   // Content-Length of the object data in bytes, matching
   // [https://tools.ietf.org/html/rfc7230#section-3.3.2][RFC 7230 §3.3.2].
-  // Attempting to set this field will result in an error.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
   int64 size = 9;
 
   // The creation time of the object.
-  // Attempting to set this field will result in an error.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
   google.protobuf.Timestamp time_created = 10;
 
   // CRC32c checksum. For more information about using the CRC32c
   // checksum, see
-  // [https://cloud.google.com/storage/docs/hashes-etags#_JSONAPI][Hashes and
+  // [https://cloud.google.com/storage/docs/hashes-etags#json-api][Hashes and
   // ETags: Best Practices]. This is a server determined value and should not be
   // supplied by the user when sending an Object. The server will ignore any
   // value provided. Users should instead use the object_checksums field on the
@@ -680,13 +751,14 @@ message Object {
 
   // Number of underlying components that make up this object. Components are
   // accumulated by compose operations.
-  // Attempting to set this field will result in an error.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
   int32 component_count = 12;
 
   // MD5 hash of the data; encoded using base64 as per
   // [https://tools.ietf.org/html/rfc4648#section-4][RFC 4648 §4]. For more
   // information about using the MD5 hash, see
-  // [https://cloud.google.com/storage/docs/hashes-etags#_JSONAPI][Hashes and
+  // [https://cloud.google.com/storage/docs/hashes-etags#json-api][Hashes and
   // ETags: Best Practices]. This is a server determined value and should not be
   // supplied by the user when sending an Object. The server will ignore any
   // value provided. Users should instead use the object_checksums field on the
@@ -695,11 +767,13 @@ message Object {
 
   // HTTP 1.1 Entity tag for the object. See
   // [https://tools.ietf.org/html/rfc7232#section-2.3][RFC 7232 §2.3].
-  // Attempting to set this field will result in an error.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
   string etag = 14;
 
   // The modification time of the object metadata.
-  // Attempting to set this field will result in an error.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
   google.protobuf.Timestamp updated = 15;
 
   // Storage class of the object.
@@ -711,7 +785,8 @@ message Object {
 
   // The time at which the object's storage class was last changed. When the
   // object is initially created, it will be set to time_created.
-  // Attempting to set this field will result in an error.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
   google.protobuf.Timestamp time_storage_class_updated = 18;
 
   // Whether an object is under temporary hold. While this flag is set to true,
@@ -764,16 +839,21 @@ message Object {
   string bucket = 25;
 
   // The content generation of this object. Used for object versioning.
-  // Attempting to set this field will result in an error.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
   int64 generation = 26;
 
   // The owner of the object. This will always be the uploader of the object.
-  // Attempting to set this field will result in an error.
+  // Attempting to set or update this field will result in a
+  // [FieldViolation][google.rpc.BadRequest.FieldViolation].
   Owner owner = 27;
 
   // Metadata of customer-supplied encryption key, if the object is encrypted by
   // such a key.
   CustomerEncryption customer_encryption = 28;
+
+  // A user-specified timestamp set on an object.
+  google.protobuf.Timestamp custom_time = 30;
 }
 
 // An access-control entry.
