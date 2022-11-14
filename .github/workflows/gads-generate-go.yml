@@ -1,0 +1,98 @@
+name: GADS Generate GO
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "target commit (commit hash, branch name, tag)"
+        required: false
+        default: ""
+        type: string
+
+jobs:
+  gads-generate-go:
+    name: "GADS Generate GO"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Setup GO
+        uses: actions/setup-go@v3
+        with:
+          go-version: "^1.19"
+
+      - name: Setup Directories
+        run: |
+          mkdir -p /tmp/protoc
+          mkdir -p /tmp/src/cloud.google.com/go
+          go version
+          go env
+
+      - name: Setup Protoc
+        working-directory: "/tmp/protoc"
+        run: |
+          # https://grpc.io/docs/protoc-installation/
+          VERSION=21.9
+          PB_REL="https://github.com/protocolbuffers/protobuf/releases"
+          PROTOC_ZIP=protoc-$VERSION-linux-x86_64.zip
+          curl -LO $PB_REL/download/v$VERSION/$PROTOC_ZIP
+          unzip $PROTOC_ZIP -d $HOME/.local
+          rm -f $PROTOC_ZIP
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          $HOME/.local/bin/protoc --version
+
+      - name: Setup Genbot (Modified)
+        working-directory: "/tmp/src/cloud.google.com/go"
+        run: |
+          # https://pkg.go.dev/cloud.google.com/go/internal/gapicgen/cmd/genbot
+          git clone https://github.com/googleapis/google-cloud-go.git .
+          # rename google's gads bypass to bypass the bypass
+          # https://github.com/googleapis/google-cloud-go/blob/feb6b0a8b771875a55c75fa959e19f6f12079030/internal/gapicgen/generator/genproto.go#L80
+          grep -rl 'google.golang.org/genproto/googleapis/ads' ./internal/gapicgen/generator | xargs sed --in-place=backup 's,google.golang.org/genproto/googleapis/ads,google.golang.org/genproto/googleapis/ads_disabled,g'
+
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Fix ARM Filenames in GoogleAPIs
+        run: |
+          # fixing golang _arm.proto filename conflicts https://groups.google.com/g/adwords-api/c/Tti9vvDPdK4/m/6a86kM18AAAJ
+          cd google
+          find . -name '*_arm.proto' -exec sh -c 'mv "$0" "${0%_arm.proto}_arm0.proto" && grep -rl "$(basename $0)" . | xargs sed --in-place=backup "s,_arm.proto,_arm0.proto,g"' {} \;
+
+      - name: Setup GO Tools
+        run: |
+          # https://github.com/googleapis/google-cloud-go/blob/main/internal/gapicgen/cmd/genbot/Dockerfile#LL29C5-L33C88
+          go install github.com/golang/protobuf/protoc-gen-go@v1.5.2
+          go install golang.org/x/lint/golint@latest
+          go install golang.org/x/tools/cmd/goimports@latest
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          go install github.com/googleapis/gapic-generator-go/cmd/protoc-gen-go_gapic@v0.33.1
+
+      - name: Generate GO
+        working-directory: "/tmp/src/cloud.google.com/go/internal/gapicgen"
+        run: |
+          # https://pkg.go.dev/cloud.google.com/go/internal/gapicgen/cmd/genbot
+          go run cloud.google.com/go/internal/gapicgen/cmd/genbot \
+            -local \
+            -forceAll \
+            -gocloud-dir=/tmp/src \
+            -googleapis-dir=$GITHUB_WORKSPACE \
+            -gapic="google.golang.org/google/ads/googleads"
+          # outputs to /tmp/update-genproto
+
+      - name: Zip Results
+        run: |
+          tree /tmp/update-genproto
+          mkdir -p /tmp/artifacts
+          mv /tmp/update-genproto* /tmp/update-genproto
+          zip -r /tmp/artifacts/artifacts.zip /tmp/update-genproto/genproto/*
+
+      - name: Store Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: "artifacts.zip"
+          path: "/tmp/artifacts/artifacts.zip"
