@@ -23,6 +23,7 @@ import "google/api/resource.proto";
 import "google/cloud/documentai/v1beta3/document.proto";
 import "google/cloud/documentai/v1beta3/document_io.proto";
 import "google/cloud/documentai/v1beta3/document_schema.proto";
+import "google/cloud/documentai/v1beta3/evaluation.proto";
 import "google/cloud/documentai/v1beta3/operation_metadata.proto";
 import "google/cloud/documentai/v1beta3/processor.proto";
 import "google/cloud/documentai/v1beta3/processor_type.proto";
@@ -117,6 +118,21 @@ service DocumentProcessorService {
       get: "/v1beta3/{name=projects/*/locations/*/processors/*}"
     };
     option (google.api.method_signature) = "name";
+  }
+
+  // Trains a new processor version.
+  // Operation metadata is returned as
+  // cloud_documentai_core.TrainProcessorVersionMetadata.
+  rpc TrainProcessorVersion(TrainProcessorVersionRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1beta3/{parent=projects/*/locations/*/processors/*}/processorVersions:train"
+      body: "*"
+    };
+    option (google.api.method_signature) = "parent,processor_version";
+    option (google.longrunning.operation_info) = {
+      response_type: "TrainProcessorVersionResponse"
+      metadata_type: "TrainProcessorVersionMetadata"
+    };
   }
 
   // Gets a processor version detail.
@@ -248,6 +264,36 @@ service DocumentProcessorService {
       metadata_type: "ReviewDocumentOperationMetadata"
     };
   }
+
+  // Evaluates a ProcessorVersion against annotated documents, producing an
+  // Evaluation.
+  rpc EvaluateProcessorVersion(EvaluateProcessorVersionRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1beta3/{processor_version=projects/*/locations/*/processors/*/processorVersions/*}:evaluateProcessorVersion"
+      body: "*"
+    };
+    option (google.api.method_signature) = "processor_version";
+    option (google.longrunning.operation_info) = {
+      response_type: "EvaluateProcessorVersionResponse"
+      metadata_type: "EvaluateProcessorVersionMetadata"
+    };
+  }
+
+  // Retrieves a specific evaluation.
+  rpc GetEvaluation(GetEvaluationRequest) returns (Evaluation) {
+    option (google.api.http) = {
+      get: "/v1beta3/{name=projects/*/locations/*/processors/*/processorVersions/*/evaluations/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Retrieves a set of evaluations for a given processor version.
+  rpc ListEvaluations(ListEvaluationsRequest) returns (ListEvaluationsResponse) {
+    option (google.api.http) = {
+      get: "/v1beta3/{parent=projects/*/locations/*/processors/*/processorVersions/*}/evaluations"
+    };
+    option (google.api.method_signature) = "parent";
+  }
 }
 
 // Request message for the process document method.
@@ -282,6 +328,8 @@ message ProcessRequest {
   bool skip_human_review = 3;
 
   // Specifies which fields to include in ProcessResponse's document.
+  // Only supports top level document and pages field so it must be in the form
+  // of `{document_field_name}` or `pages.{page_field_name}`.
   google.protobuf.FieldMask field_mask = 6;
 }
 
@@ -769,6 +817,79 @@ message SetDefaultProcessorVersionMetadata {
   CommonOperationMetadata common_metadata = 1;
 }
 
+// Request message for the create processor version method.
+message TrainProcessorVersionRequest {
+  // The input data used to train a new `ProcessorVersion`.
+  message InputData {
+    // The documents used for training the new version.
+    BatchDocumentsInputConfig training_documents = 3;
+
+    // The documents used for testing the trained version.
+    BatchDocumentsInputConfig test_documents = 4;
+  }
+
+  // Required. The parent (project, location and processor) to create the new version for.
+  // Format: `projects/{project}/locations/{location}/processors/{processor}`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "documentai.googleapis.com/ProcessorVersion"
+    }
+  ];
+
+  // Required. The processor version to be created.
+  ProcessorVersion processor_version = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The schema the processor version will be trained with.
+  DocumentSchema document_schema = 10 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The input data used to train the `ProcessorVersion`.
+  InputData input_data = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The processor version to use as a base for training. This processor version
+  // must be a child of `parent`. Format:
+  // `projects/{project}/locations/{location}/processors/{processor}/processorVersions/{processorVersion}`.
+  string base_processor_version = 8 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The response for the TrainProcessorVersion method.
+message TrainProcessorVersionResponse {
+  // The resource name of the processor version produced by training.
+  string processor_version = 1;
+}
+
+// The metadata that represents a processor version being created.
+message TrainProcessorVersionMetadata {
+  // The dataset validation information.
+  // This includes any and all errors with documents and the dataset.
+  message DatasetValidation {
+    // The total number of document errors.
+    int32 document_error_count = 3;
+
+    // The total number of dataset errors.
+    int32 dataset_error_count = 4;
+
+    // Error information pertaining to specific documents. A maximum of 10
+    // document errors will be returned.
+    // Any document with errors will not be used throughout training.
+    repeated google.rpc.Status document_errors = 1;
+
+    // Error information for the dataset as a whole. A maximum of 10 dataset
+    // errors will be returned.
+    // A single dataset error is terminal for training.
+    repeated google.rpc.Status dataset_errors = 2;
+  }
+
+  // The basic metadata of the long running operation.
+  CommonOperationMetadata common_metadata = 1;
+
+  // The training dataset validation information.
+  DatasetValidation training_dataset_validation = 2;
+
+  // The test dataset validation information.
+  DatasetValidation test_dataset_validation = 3;
+}
+
 // Request message for review document method.
 message ReviewDocumentRequest {
   // The priority level of the human review task.
@@ -875,4 +996,75 @@ message ReviewDocumentOperationMetadata {
 
   // The Crowd Compute question ID.
   string question_id = 6;
+}
+
+// Evaluates the given ProcessorVersion against the supplied documents.
+message EvaluateProcessorVersionRequest {
+  // Required. The resource name of the [ProcessorVersion][google.cloud.documentai.v1beta3.ProcessorVersion] to evaluate.
+  // `projects/{project}/locations/{location}/processors/{processor}/processorVersions/{processorVersion}`
+  string processor_version = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "documentai.googleapis.com/ProcessorVersion"
+    }
+  ];
+
+  // Optional. The documents used in the evaluation. If unspecified, use the processor's
+  // dataset as evaluation input.
+  BatchDocumentsInputConfig evaluation_documents = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Metadata of the EvaluateProcessorVersion method.
+message EvaluateProcessorVersionMetadata {
+  // The basic metadata of the long running operation.
+  CommonOperationMetadata common_metadata = 1;
+}
+
+// Metadata of the EvaluateProcessorVersion method.
+message EvaluateProcessorVersionResponse {
+  // The resource name of the created evaluation.
+  string evaluation = 2;
+}
+
+// Retrieves a specific Evaluation.
+message GetEvaluationRequest {
+  // Required. The resource name of the [Evaluation][google.cloud.documentai.v1beta3.Evaluation] to get.
+  // `projects/{project}/locations/{location}/processors/{processor}/processorVersions/{processorVersion}/evaluations/{evaluation}`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "documentai.googleapis.com/Evaluation"
+    }
+  ];
+}
+
+// Retrieves a list of evaluations for a given ProcessorVersion.
+message ListEvaluationsRequest {
+  // Required. The resource name of the [ProcessorVersion][google.cloud.documentai.v1beta3.ProcessorVersion] to list evaluations for.
+  // `projects/{project}/locations/{location}/processors/{processor}/processorVersions/{processorVersion}`
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "documentai.googleapis.com/ProcessorVersion"
+    }
+  ];
+
+  // The standard list page size.
+  // If unspecified, at most 5 evaluations will be returned.
+  // The maximum value is 100; values above 100 will be coerced to 100.
+  int32 page_size = 2;
+
+  // A page token, received from a previous `ListEvaluations` call.
+  // Provide this to retrieve the subsequent page.
+  string page_token = 3;
+}
+
+// The response from ListEvaluations.
+message ListEvaluationsResponse {
+  // The evaluations requested.
+  repeated Evaluation evaluations = 1;
+
+  // A token, which can be sent as `page_token` to retrieve the next page.
+  // If this field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
 }
