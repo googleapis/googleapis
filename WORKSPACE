@@ -292,7 +292,7 @@ load("@rules_python//python:pip.bzl", "pip_install")
 
 pip_install()
 
-_gapic_generator_python_version = "1.6.2"
+_gapic_generator_python_version = "1.7.0"
 
 http_archive(
     name = "gapic_generator_python",
