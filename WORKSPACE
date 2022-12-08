@@ -111,9 +111,9 @@ go_register_toolchains(version = "1.16")
 # rules_gapic also depends on rules_go, so it must come after our own dependency on rules_go.
 # It must also come before gapic-generator-go so as to ensure that it does not bring in an old
 # version of rules_gapic.
-_rules_gapic_version = "0.19.1"
+_rules_gapic_version = "0.19.2"
 
-_rules_gapic_sha256 = "86a915d7924acc3d2a11a214af4fd84a73fc8ff6131decca753d29af066f2ade"
+_rules_gapic_sha256 = "8eff349ac8c3e306db603c8e00ac6d30c59138bb65cabf0f69bf79d23905eec4"
 
 http_archive(
     name = "rules_gapic",
@@ -138,7 +138,18 @@ http_archive(
     ],
 )
 
-_gapic_generator_go_version = "0.33.3"
+# Until this project is migrated to consume the new subdirectory of generated
+# types e.g. longrunningpb, we must define our own version of longrunning here.
+load("@bazel_gazelle//:deps.bzl", "go_repository")
+
+go_repository(
+  name = "com_google_cloud_go_longrunning",
+  importpath = "cloud.google.com/go/longrunning",
+  sum = "h1:y50CXG4j0+qvEukslYFBCrzaXX0qpFbBzc3PchSu/LE=",
+  version = "v0.1.1",
+)
+
+_gapic_generator_go_version = "0.33.5"
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
