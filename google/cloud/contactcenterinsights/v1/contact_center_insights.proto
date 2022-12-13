@@ -121,6 +121,33 @@ service ContactCenterInsights {
     option (google.api.method_signature) = "name";
   }
 
+  // Analyzes multiple conversations in a single request.
+  rpc BulkAnalyzeConversations(BulkAnalyzeConversationsRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/locations/*}/conversations:bulkAnalyze"
+      body: "*"
+    };
+    option (google.api.method_signature) = "parent,filter,analysis_percentage";
+    option (google.longrunning.operation_info) = {
+      response_type: "BulkAnalyzeConversationsResponse"
+      metadata_type: "BulkAnalyzeConversationsMetadata"
+    };
+  }
+
+  // Imports conversations and processes them according to the user's
+  // configuration.
+  rpc IngestConversations(IngestConversationsRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/locations/*}/conversations:ingest"
+      body: "*"
+    };
+    option (google.api.method_signature) = "parent";
+    option (google.longrunning.operation_info) = {
+      response_type: "IngestConversationsResponse"
+      metadata_type: "IngestConversationsMetadata"
+    };
+  }
+
   // Export insights data to a destination defined in the request body.
   rpc ExportInsightsData(ExportInsightsDataRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
@@ -235,6 +262,14 @@ service ContactCenterInsights {
       body: "issue"
     };
     option (google.api.method_signature) = "issue,update_mask";
+  }
+
+  // Deletes an issue.
+  rpc DeleteIssue(DeleteIssueRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/v1/{name=projects/*/locations/*/issueModels/*/issues/*}"
+    };
+    option (google.api.method_signature) = "name";
   }
 
   // Gets an issue model's statistics.
@@ -456,6 +491,9 @@ message CreateAnalysisOperationMetadata {
       type: "contactcenterinsights.googleapis.com/Conversation"
     }
   ];
+
+  // Output only. The annotator selector used for the analysis (if any).
+  AnnotatorSelector annotator_selector = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Request to create a conversation.
@@ -559,6 +597,73 @@ message DeleteConversationRequest {
   bool force = 2;
 }
 
+// The request to ingest conversations.
+message IngestConversationsRequest {
+  // Configuration for Cloud Storage bucket sources.
+  message GcsSource {
+    // Required. The Cloud Storage bucket containing source objects.
+    string bucket_uri = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Configuration for processing transcript objects.
+  message TranscriptObjectConfig {
+    // Required. The medium transcript objects represent.
+    Conversation.Medium medium = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Configuration that applies to all conversations.
+  message ConversationConfig {
+    // An opaque, user-specified string representing the human agent who handled
+    // the conversations.
+    string agent_id = 1;
+  }
+
+  // Configuration for an external data store containing objects that will
+  // be converted to conversations.
+  oneof source {
+    // A cloud storage bucket source.
+    GcsSource gcs_source = 2;
+  }
+
+  // Configuration for converting individual `source` objects to conversations.
+  oneof object_config {
+    // Configuration for when `source` contains conversation transcripts.
+    TranscriptObjectConfig transcript_object_config = 3;
+  }
+
+  // Required. The parent resource for new conversations.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
+
+  // Configuration that applies to all conversations.
+  ConversationConfig conversation_config = 4;
+}
+
+// The metadata for an IngestConversations operation.
+message IngestConversationsMetadata {
+  // Output only. The time the operation was created.
+  google.protobuf.Timestamp create_time = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time the operation finished running.
+  google.protobuf.Timestamp end_time = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The original request for ingest.
+  IngestConversationsRequest request = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Partial errors during ingest operation that might cause the operation
+  // output to be incomplete.
+  repeated google.rpc.Status partial_errors = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The response to an IngestConversations operation.
+message IngestConversationsResponse {
+
+}
+
 // The request to create an analysis.
 message CreateAnalysisRequest {
   // Required. The parent resource of the analysis.
@@ -629,6 +734,59 @@ message DeleteAnalysisRequest {
       type: "contactcenterinsights.googleapis.com/Analysis"
     }
   ];
+}
+
+// The request to analyze conversations in bulk.
+message BulkAnalyzeConversationsRequest {
+  // Required. The parent resource to create analyses in.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
+
+  // Required. Filter used to select the subset of conversations to analyze.
+  string filter = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Percentage of selected conversation to analyze, between
+  // [0, 100].
+  float analysis_percentage = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // To select the annotators to run and the phrase matchers to use
+  // (if any). If not specified, all annotators will be run.
+  AnnotatorSelector annotator_selector = 8;
+}
+
+// The metadata for a bulk analyze conversations operation.
+message BulkAnalyzeConversationsMetadata {
+  // The time the operation was created.
+  google.protobuf.Timestamp create_time = 1;
+
+  // The time the operation finished running.
+  google.protobuf.Timestamp end_time = 2;
+
+  // The original request for bulk analyze.
+  BulkAnalyzeConversationsRequest request = 3;
+
+  // The number of requested analyses that have completed successfully so far.
+  int32 completed_analyses_count = 4;
+
+  // The number of requested analyses that have failed so far.
+  int32 failed_analyses_count = 5;
+
+  // Total number of analyses requested. Computed by the number of conversations
+  // returned by `filter` multiplied by `analysis_percentage` in the request.
+  int32 total_requested_analyses_count = 6;
+}
+
+// The response for a bulk analyze conversations operation.
+message BulkAnalyzeConversationsResponse {
+  // Count of successful analyses.
+  int32 successful_analysis_count = 1;
+
+  // Count of failed analyses.
+  int32 failed_analysis_count = 2;
 }
 
 // The request to export insights.
@@ -889,6 +1047,17 @@ message UpdateIssueRequest {
 
   // The list of fields to be updated.
   google.protobuf.FieldMask update_mask = 2;
+}
+
+// The request to delete an issue.
+message DeleteIssueRequest {
+  // Required. The name of the issue to delete.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "contactcenterinsights.googleapis.com/Issue"
+    }
+  ];
 }
 
 // Request to get statistics of an issue model.
