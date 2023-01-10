@@ -171,7 +171,7 @@ go_repository(
   version = "v0.1.1",
 )
 
-_gapic_generator_go_version = "0.33.5"
+_gapic_generator_go_version = "0.33.6"
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
