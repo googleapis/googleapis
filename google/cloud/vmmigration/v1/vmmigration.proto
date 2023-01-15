@@ -579,6 +579,24 @@ service VmMigration {
       metadata_type: "OperationMetadata"
     };
   }
+
+  // Lists ReplicationCycles in a given MigratingVM.
+  rpc ListReplicationCycles(ListReplicationCyclesRequest)
+      returns (ListReplicationCyclesResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*/locations/*/sources/*/migratingVms/*}/replicationCycles"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Gets details of a single ReplicationCycle.
+  rpc GetReplicationCycle(GetReplicationCycleRequest)
+      returns (ReplicationCycle) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/locations/*/sources/*/migratingVms/*/replicationCycles/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
 }
 
 // Controls the level of details of a Utilization Report.
@@ -653,12 +671,102 @@ enum ComputeEngineBootOption {
 // ReplicationCycle contains information about the current replication cycle
 // status.
 message ReplicationCycle {
+  option (google.api.resource) = {
+    type: "vmmigration.googleapis.com/ReplicationCycle"
+    pattern: "projects/{project}/locations/{location}/sources/{source}/migratingVms/{migrating_vm}/replicationCycles/{replication_cycle}"
+  };
+
+  // Possible states of a replication cycle.
+  enum State {
+    // The state is unknown. This is used for API compatibility only and is not
+    // used by the system.
+    STATE_UNSPECIFIED = 0;
+
+    // The replication cycle is running.
+    RUNNING = 1;
+
+    // The replication cycle is paused.
+    PAUSED = 2;
+
+    // The replication cycle finished with errors.
+    FAILED = 3;
+
+    // The replication cycle finished successfully.
+    SUCCEEDED = 4;
+  }
+
+  // The identifier of the ReplicationCycle.
+  string name = 13;
+
+  // The cycle's ordinal number.
+  int32 cycle_number = 10;
+
   // The time the replication cycle has started.
   google.protobuf.Timestamp start_time = 1;
 
+  // The time the replication cycle has ended.
+  google.protobuf.Timestamp end_time = 6;
+
+  // The accumulated duration the replication cycle was paused.
+  google.protobuf.Duration total_pause_duration = 7;
+
   // The current progress in percentage of this cycle.
-  int32 progress_percent = 5;
+  // Was replaced by 'steps' field, which breaks down the cycle progression more
+  // accurately.
+  int32 progress_percent = 5 [deprecated = true];
+
+  // The cycle's steps list representing its progress.
+  repeated CycleStep steps = 9;
+
+  // State of the ReplicationCycle.
+  State state = 11;
+
+  // Provides details on the state of the cycle in case of an error.
+  google.rpc.Status error = 12;
 }
+
+// CycleStep holds information about a step progress.
+message CycleStep {
+  oneof step {
+    // Initializing replication step.
+    InitializingReplicationStep initializing_replication = 3;
+
+    // Replicating step.
+    ReplicatingStep replicating = 4;
+
+    // Post processing step.
+    PostProcessingStep post_processing = 5;
+  }
+
+  // The time the cycle step has started.
+  google.protobuf.Timestamp start_time = 1;
+
+  // The time the cycle step has ended.
+  google.protobuf.Timestamp end_time = 2;
+}
+
+// InitializingReplicationStep contains specific step details.
+message InitializingReplicationStep {}
+
+// ReplicatingStep contains specific step details.
+message ReplicatingStep {
+  // Total bytes to be handled in the step.
+  int64 total_bytes = 1;
+
+  // Replicated bytes in the step.
+  int64 replicated_bytes = 2;
+
+  // The source disks replication rate for the last 2 minutes in bytes per
+  // second.
+  int64 last_two_minutes_average_bytes_per_second = 3;
+
+  // The source disks replication rate for the last 30 minutes in bytes per
+  // second.
+  int64 last_thirty_minutes_average_bytes_per_second = 4;
+}
+
+// PostProcessingStep contains specific step details.
+message PostProcessingStep {}
 
 // ReplicationSync contain information about the last replica sync to the cloud.
 message ReplicationSync {
@@ -720,11 +828,18 @@ message MigratingVm {
     ERROR = 13;
   }
 
-  // The default configuration of the target VM that will be created in GCP as a
-  // result of the migration.
+  // The default configuration of the target VM that will be created in Google
+  // Cloud as a result of the migration.
   oneof target_vm_defaults {
     // Details of the target VM in Compute Engine.
     ComputeEngineTargetDefaults compute_engine_target_defaults = 26;
+  }
+
+  // Details about the source VM.
+  oneof source_vm_details {
+    // Output only. Details of the VM from an AWS source.
+    AwsSourceVmDetails aws_source_vm_details = 29
+        [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
   // Output only. The identifier of the MigratingVm.
@@ -876,7 +991,39 @@ message CloneJob {
   // Output only. Provides details for the errors that led to the Clone Job's
   // state.
   google.rpc.Status error = 17 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The clone steps list representing its progress.
+  repeated CloneStep steps = 23 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
+
+// CloneStep holds information about the clone step progress.
+message CloneStep {
+  oneof step {
+    // Adapting OS step.
+    AdaptingOSStep adapting_os = 3;
+
+    // Preparing VM disks step.
+    PreparingVMDisksStep preparing_vm_disks = 4;
+
+    // Instantiating migrated VM step.
+    InstantiatingMigratedVMStep instantiating_migrated_vm = 5;
+  }
+
+  // The time the step has started.
+  google.protobuf.Timestamp start_time = 1;
+
+  // The time the step has ended.
+  google.protobuf.Timestamp end_time = 2;
+}
+
+// AdaptingOSStep contains specific step details.
+message AdaptingOSStep {}
+
+// PreparingVMDisksStep contains specific step details.
+message PreparingVMDisksStep {}
+
+// InstantiatingMigratedVMStep contains specific step details.
+message InstantiatingMigratedVMStep {}
 
 // CutoverJob message describes a cutover of a migrating VM. The CutoverJob is
 // the operation of shutting down the VM, creating a snapshot and
@@ -951,7 +1098,39 @@ message CutoverJob {
   // Output only. A message providing possible extra details about the current
   // state.
   string state_message = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The cutover steps list representing its progress.
+  repeated CutoverStep steps = 17 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
+
+// CutoverStep holds information about the cutover step progress.
+message CutoverStep {
+  oneof step {
+    // A replication cycle prior cutover step.
+    ReplicationCycle previous_replication_cycle = 3;
+
+    // Shutting down VM step.
+    ShuttingDownSourceVMStep shutting_down_source_vm = 4;
+
+    // Final sync step.
+    ReplicationCycle final_sync = 5;
+
+    // Preparing VM disks step.
+    PreparingVMDisksStep preparing_vm_disks = 6;
+
+    // Instantiating migrated VM step.
+    InstantiatingMigratedVMStep instantiating_migrated_vm = 7;
+  }
+
+  // The time the step has started.
+  google.protobuf.Timestamp start_time = 1;
+
+  // The time the step has ended.
+  google.protobuf.Timestamp end_time = 2;
+}
+
+// ShuttingDownSourceVMStep contains specific step details.
+message ShuttingDownSourceVMStep {}
 
 // Request message for 'CreateCloneJob' request.
 message CreateCloneJobRequest {
@@ -1064,6 +1243,9 @@ message Source {
   oneof source_details {
     // Vmware type source details.
     VmwareSourceDetails vmware = 10;
+
+    // AWS type source details.
+    AwsSourceDetails aws = 12;
   }
 
   // Output only. The Source name.
@@ -1101,9 +1283,82 @@ message VmwareSourceDetails {
   string thumbprint = 4;
 }
 
-// DatacenterConnector message describes a connector between the Source and GCP,
-// which is installed on a vmware datacenter (an OVA vm installed by the user)
-// to connect the Datacenter to GCP and support vm migration data transfer.
+// AwsSourceDetails message describes a specific source details for the
+// AWS source type.
+message AwsSourceDetails {
+  // Message describing AWS Credentials using access key id and secret.
+  message AccessKeyCredentials {
+    // AWS access key ID.
+    string access_key_id = 1;
+
+    // Input only. AWS secret access key.
+    string secret_access_key = 2 [(google.api.field_behavior) = INPUT_ONLY];
+  }
+
+  // Tag is an AWS tag representation.
+  message Tag {
+    // Key of tag.
+    string key = 1;
+
+    // Value of tag.
+    string value = 2;
+  }
+
+  // The possible values of the state.
+  enum State {
+    // The state is unknown. This is used for API compatibility only and is not
+    // used by the system.
+    STATE_UNSPECIFIED = 0;
+
+    // The state was not sampled by the health checks yet.
+    PENDING = 1;
+
+    // The source is available but might not be usable yet due to invalid
+    // credentials or another reason.
+    // The error message will contain further details.
+    FAILED = 2;
+
+    // The source exists and its credentials were verified.
+    ACTIVE = 3;
+  }
+
+  oneof credentials_type {
+    // AWS Credentials using access key id and secret.
+    AccessKeyCredentials access_key_creds = 11;
+  }
+
+  // Immutable. The AWS region that the source VMs will be migrated from.
+  string aws_region = 3 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Output only. State of the source as determined by the health check.
+  State state = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Provides details on the state of the Source in case of an
+  // error.
+  google.rpc.Status error = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // AWS resource tags to limit the scope of the source inventory.
+  repeated Tag inventory_tag_list = 10;
+
+  // AWS security group names to limit the scope of the source
+  // inventory.
+  repeated string inventory_security_group_names = 7;
+
+  // User specified tags to add to every M2VM generated resource in AWS.
+  // These tags will be set in addition to the default tags that are set as part
+  // of the migration process. The tags must not begin with the reserved prefix
+  // `m2vm`.
+  map<string, string> migration_resources_user_tags = 8;
+
+  // Output only. The source's public IP. All communication initiated by this
+  // source will originate from this IP.
+  string public_ip = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// DatacenterConnector message describes a connector between the Source and
+// Google Cloud, which is installed on a vmware datacenter (an OVA vm installed
+// by the user) to connect the Datacenter to Google Cloud and support vm
+// migration data transfer.
 message DatacenterConnector {
   option (google.api.resource) = {
     type: "vmmigration.googleapis.com/DatacenterConnector"
@@ -1157,7 +1412,7 @@ message DatacenterConnector {
   string version = 6;
 
   // Output only. The communication channel between the datacenter connector and
-  // GCP.
+  // Google Cloud.
   string bucket = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. State of the DatacenterConnector, as determined by the health
@@ -1478,10 +1733,143 @@ message VmwareVmDetails {
   BootOption boot_option = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
+// AwsVmDetails describes a VM in AWS.
+message AwsVmDetails {
+  // Possible values for the power state of the VM.
+  enum PowerState {
+    // Power state is not specified.
+    POWER_STATE_UNSPECIFIED = 0;
+
+    // The VM is turned on.
+    ON = 1;
+
+    // The VM is turned off.
+    OFF = 2;
+
+    // The VM is suspended. This is similar to hibernation or sleep
+    // mode.
+    SUSPENDED = 3;
+
+    // The VM is starting.
+    PENDING = 4;
+  }
+
+  // The possible values for the vm boot option.
+  enum BootOption {
+    // The boot option is unknown.
+    BOOT_OPTION_UNSPECIFIED = 0;
+
+    // The boot option is UEFI.
+    EFI = 1;
+
+    // The boot option is LEGACY-BIOS.
+    BIOS = 2;
+  }
+
+  // Possible values for the virtualization types of the VM.
+  enum VmVirtualizationType {
+    // The virtualization type is unknown.
+    VM_VIRTUALIZATION_TYPE_UNSPECIFIED = 0;
+
+    // The virtualziation type is HVM.
+    HVM = 1;
+
+    // The virtualziation type is PARAVIRTUAL.
+    PARAVIRTUAL = 2;
+  }
+
+  // Possible values for the architectures of the VM.
+  enum VmArchitecture {
+    // The architecture is unknown.
+    VM_ARCHITECTURE_UNSPECIFIED = 0;
+
+    // The architecture is I386.
+    I386 = 1;
+
+    // The architecture is X86_64.
+    X86_64 = 2;
+
+    // The architecture is ARM64.
+    ARM64 = 3;
+
+    // The architecture is X86_64_MAC.
+    X86_64_MAC = 4;
+  }
+
+  // The VM ID in AWS.
+  string vm_id = 1;
+
+  // The display name of the VM. Note that this value is not necessarily unique.
+  string display_name = 2;
+
+  // The id of the AWS's source this VM is connected to.
+  string source_id = 3;
+
+  // The descriptive name of the AWS's source this VM is connected to.
+  string source_description = 4;
+
+  // Output only. The power state of the VM at the moment list was taken.
+  PowerState power_state = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The number of cpus the VM has.
+  int32 cpu_count = 6;
+
+  // The memory size of the VM in MB.
+  int32 memory_mb = 7;
+
+  // The number of disks the VM has.
+  int32 disk_count = 8;
+
+  // The total size of the storage allocated to the VM in MB.
+  int64 committed_storage_mb = 9;
+
+  // The VM's OS.
+  string os_description = 10;
+
+  // The VM Boot Option.
+  BootOption boot_option = 11;
+
+  // The instance type of the VM.
+  string instance_type = 12;
+
+  // The VPC ID the VM belongs to.
+  string vpc_id = 13;
+
+  // The security groups the VM belongs to.
+  repeated AwsSecurityGroup security_groups = 14;
+
+  // The tags of the VM.
+  map<string, string> tags = 15;
+
+  // The AWS zone of the VM.
+  string zone = 16;
+
+  // The virtualization type.
+  VmVirtualizationType virtualization_type = 17;
+
+  // The CPU architecture.
+  VmArchitecture architecture = 18;
+}
+
+// AwsSecurityGroup describes a security group of an AWS VM.
+message AwsSecurityGroup {
+  // The AWS security group id.
+  string id = 1;
+
+  // The AWS security group name.
+  string name = 2;
+}
+
 // VmwareVmsDetails describes VMs in vCenter.
 message VmwareVmsDetails {
   // The details of the vmware VMs.
   repeated VmwareVmDetails details = 1;
+}
+
+// AWSVmsDetails describes VMs in AWS.
+message AwsVmsDetails {
+  // The details of the AWS VMs.
+  repeated AwsVmDetails details = 1;
 }
 
 // Response message for
@@ -1490,6 +1878,9 @@ message FetchInventoryResponse {
   oneof SourceVms {
     // The description of the VMs in a Source of type Vmware.
     VmwareVmsDetails vmware_vms = 1;
+
+    // The description of the VMs in a Source of type AWS.
+    AwsVmsDetails aws_vms = 3;
   }
 
   // Output only. The timestamp when the source was last queried (if the result
@@ -1965,7 +2356,7 @@ message ComputeEngineTargetDetails {
   // The name of the VM to create.
   string vm_name = 1;
 
-  // The GCP target project ID or project name.
+  // The Google Cloud target project ID or project name.
   string project = 2;
 
   // The zone in which to create the VM.
@@ -2048,7 +2439,7 @@ message AppliedLicense {
     // The license type is Pay As You Go license type.
     PAYG = 2;
 
-    // The license type is is Bring Your Own License type.
+    // The license type is Bring Your Own License type.
     BYOL = 3;
   }
 
@@ -2898,4 +3289,80 @@ message MigrationError {
   // Output only. The time the error occurred.
   google.protobuf.Timestamp error_time = 5
       [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Represent the source AWS VM details.
+message AwsSourceVmDetails {
+  // Possible values for AWS VM firmware.
+  enum Firmware {
+    // The firmware is unknown.
+    FIRMWARE_UNSPECIFIED = 0;
+
+    // The firmware is EFI.
+    EFI = 1;
+
+    // The firmware is BIOS.
+    BIOS = 2;
+  }
+
+  // The firmware type of the source VM.
+  Firmware firmware = 1;
+
+  // The total size of the disks being migrated in bytes.
+  int64 committed_storage_bytes = 2;
+}
+
+// Request message for 'LisReplicationCyclesRequest' request.
+message ListReplicationCyclesRequest {
+  // Required. The parent, which owns this collection of ReplicationCycles.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "vmmigration.googleapis.com/ReplicationCycle"
+    }
+  ];
+
+  // Optional. The maximum number of replication cycles to return. The service
+  // may return fewer than this value. If unspecified, at most 100 migrating VMs
+  // will be returned. The maximum value is 100; values above 100 will be
+  // coerced to 100.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. A page token, received from a previous `ListReplicationCycles`
+  // call. Provide this to retrieve the subsequent page.
+  //
+  // When paginating, all other parameters provided to `ListReplicationCycles`
+  // must match the call that provided the page token.
+  string page_token = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The filter request.
+  string filter = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. the order by fields for the result.
+  string order_by = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message for 'ListReplicationCycles' request.
+message ListReplicationCyclesResponse {
+  // Output only. The list of replication cycles response.
+  repeated ReplicationCycle replication_cycles = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. A token, which can be sent as `page_token` to retrieve the
+  // next page. If this field is omitted, there are no subsequent pages.
+  string next_page_token = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Locations that could not be reached.
+  repeated string unreachable = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Request message for 'GetReplicationCycle' request.
+message GetReplicationCycleRequest {
+  // Required. The name of the ReplicationCycle.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "vmmigration.googleapis.com/ReplicationCycle"
+    }
+  ];
 }

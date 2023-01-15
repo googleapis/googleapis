@@ -37,6 +37,28 @@ http_archive(
     urls = ["https://github.com/bazelbuild/bazel-skylib/releases/download/0.9.0/bazel_skylib-0.9.0.tar.gz"],
 )
 
+# Protobuf depends on very old version of rules_jvm_external.
+# Importing older version of rules_jvm_external first (this is one of the things that protobuf_deps() call
+# below will do) breaks the Java client library generation process, so importing the proper version explicitly before calling protobuf_deps().
+RULES_JVM_EXTERNAL_TAG = "4.5"
+
+RULES_JVM_EXTERNAL_SHA = "b17d7388feb9bfa7f2fa09031b32707df529f26c91ab9e5d909eb1676badd9a6"
+
+http_archive(
+    name = "rules_jvm_external",
+    sha256 = RULES_JVM_EXTERNAL_SHA,
+    strip_prefix = "rules_jvm_external-%s" % RULES_JVM_EXTERNAL_TAG,
+    url = "https://github.com/bazelbuild/rules_jvm_external/archive/%s.zip" % RULES_JVM_EXTERNAL_TAG,
+)
+
+load("@rules_jvm_external//:repositories.bzl", "rules_jvm_external_deps")
+
+rules_jvm_external_deps()
+
+load("@rules_jvm_external//:setup.bzl", "rules_jvm_external_setup")
+
+rules_jvm_external_setup()
+
 # Python rules should go early in the dependencies list, otherwise a wrong
 # version of the library will be selected as a transitive dependency of gRPC.
 http_archive(
@@ -111,9 +133,9 @@ go_register_toolchains(version = "1.16")
 # rules_gapic also depends on rules_go, so it must come after our own dependency on rules_go.
 # It must also come before gapic-generator-go so as to ensure that it does not bring in an old
 # version of rules_gapic.
-_rules_gapic_version = "0.19.2"
+_rules_gapic_version = "0.20.0"
 
-_rules_gapic_sha256 = "8eff349ac8c3e306db603c8e00ac6d30c59138bb65cabf0f69bf79d23905eec4"
+_rules_gapic_sha256 = "f5037df1d2e5268657a471b82569735f734d4ceb41dd21b7de93be088cf5ff15"
 
 http_archive(
     name = "rules_gapic",
@@ -149,7 +171,7 @@ go_repository(
   version = "v0.1.1",
 )
 
-_gapic_generator_go_version = "0.33.5"
+_gapic_generator_go_version = "0.33.6"
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
@@ -234,16 +256,6 @@ load("@com_google_protobuf//:protobuf_deps.bzl", "PROTOBUF_MAVEN_ARTIFACTS")
 # PROTOBUF_MAVEN_ARTIFACTS variable so that Bazel users can resolve their
 # dependencies through maven_install.
 # https://github.com/protocolbuffers/protobuf/issues/9132
-RULES_JVM_EXTERNAL_TAG = "4.2"
-
-RULES_JVM_EXTERNAL_SHA = "cd1a77b7b02e8e008439ca76fd34f5b07aecb8c752961f9640dea15e9e5ba1ca"
-
-http_archive(
-    name = "rules_jvm_external",
-    sha256 = RULES_JVM_EXTERNAL_SHA,
-    strip_prefix = "rules_jvm_external-%s" % RULES_JVM_EXTERNAL_TAG,
-    url = "https://github.com/bazelbuild/rules_jvm_external/archive/%s.zip" % RULES_JVM_EXTERNAL_TAG,
-)
 
 load("@rules_jvm_external//:defs.bzl", "maven_install")
 
@@ -255,8 +267,29 @@ maven_install(
     ],
 )
 
+_gapic_generator_java_version = "2.13.0"
+
+maven_install(
+    artifacts = [
+        "com.google.api:gapic-generator-java:" + _gapic_generator_java_version,
+    ],
+    #Update this False for local development
+    fail_on_missing_checksum = True,
+    repositories = [
+        "m2Local",
+        "https://repo.maven.apache.org/maven2/",
+    ]
+)
+
+http_archive(
+    name = "gapic_generator_java",
+    strip_prefix = "gapic-generator-java-%s" % _gapic_generator_java_version,
+    urls = ["https://github.com/googleapis/gapic-generator-java/archive/v%s.zip" % _gapic_generator_java_version],
+)
+
 _gax_java_version = "2.19.4"
 
+# TODO: Update all gax-java references to the gapic-generator-java monorepo
 http_archive(
     name = "com_google_api_gax_java",
     strip_prefix = "gax-java-%s" % _gax_java_version,
@@ -278,20 +311,6 @@ load("@io_grpc_grpc_java//:repositories.bzl", "grpc_java_repositories")
 
 grpc_java_repositories()
 
-# Java microgenerator.
-# Must go AFTER java-gax, since both java gax and gapic-generator are written in java and may conflict.
-_gapic_generator_java_version = "2.11.0"
-
-http_archive(
-    name = "gapic_generator_java",
-    strip_prefix = "gapic-generator-java-%s" % _gapic_generator_java_version,
-    urls = ["https://github.com/googleapis/gapic-generator-java/archive/v%s.zip" % _gapic_generator_java_version],
-)
-
-load("@gapic_generator_java//:repositories.bzl", "gapic_generator_java_repositories")
-
-gapic_generator_java_repositories()
-
 ##############################################################################
 # Python
 ##############################################################################
@@ -303,7 +322,7 @@ load("@rules_python//python:pip.bzl", "pip_install")
 
 pip_install()
 
-_gapic_generator_python_version = "1.7.1"
+_gapic_generator_python_version = "1.8.0"
 
 http_archive(
     name = "gapic_generator_python",
@@ -358,7 +377,7 @@ yarn_install(
 ##############################################################################
 
 # PHP micro-generator
-_gapic_generator_php_version = "1.6.3"
+_gapic_generator_php_version = "1.6.4"
 
 http_archive(
     name = "gapic_generator_php",
