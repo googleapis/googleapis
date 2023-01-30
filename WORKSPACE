@@ -42,11 +42,9 @@ http_archive(
 # below will do) breaks the Java client library generation process, so importing the proper version explicitly before calling protobuf_deps().
 RULES_JVM_EXTERNAL_TAG = "4.5"
 
-RULES_JVM_EXTERNAL_SHA = "b17d7388feb9bfa7f2fa09031b32707df529f26c91ab9e5d909eb1676badd9a6"
 
 http_archive(
     name = "rules_jvm_external",
-    sha256 = RULES_JVM_EXTERNAL_SHA,
     strip_prefix = "rules_jvm_external-%s" % RULES_JVM_EXTERNAL_TAG,
     url = "https://github.com/bazelbuild/rules_jvm_external/archive/%s.zip" % RULES_JVM_EXTERNAL_TAG,
 )
@@ -69,7 +67,6 @@ http_archive(
 
 http_archive(
     name = "rules_pkg",
-    sha256 = "8a298e832762eda1830597d64fe7db58178aa84cd5926d76d5b744d6558941c2",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/rules_pkg/releases/download/0.7.0/rules_pkg-0.7.0.tar.gz",
         "https://github.com/bazelbuild/rules_pkg/releases/download/0.7.0/rules_pkg-0.7.0.tar.gz",
@@ -82,7 +79,6 @@ rules_pkg_dependencies()
 
 http_archive(
     name = "com_google_protobuf",
-    sha256 = "930c2c3b5ecc6c9c12615cf5ad93f1cd6e12d0aba862b572e076259970ac3a53",
     strip_prefix = "protobuf-3.21.12",
     urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.21.12.tar.gz"],
 )
@@ -93,7 +89,6 @@ protobuf_deps()
 
 http_archive(
     name = "rules_proto",
-    sha256 = "602e7161d9195e50246177e7c55b2f39950a9cf7366f74ed5f22fd45750cd208",
     strip_prefix = "rules_proto-97d8af4dc474595af3900dd85cb3a29ad28cc313",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/rules_proto/archive/97d8af4dc474595af3900dd85cb3a29ad28cc313.tar.gz",
@@ -117,7 +112,6 @@ _io_bazel_rules_go_version = "0.33.0"
 
 http_archive(
     name = "io_bazel_rules_go",
-    sha256 = "685052b498b6ddfe562ca7a97736741d87916fe536623afb7da2824c0211c369",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v{0}/rules_go-v{0}.zip".format(_io_bazel_rules_go_version),
         "https://github.com/bazelbuild/rules_go/releases/download/v{0}/rules_go-v{0}.zip".format(_io_bazel_rules_go_version),
@@ -135,11 +129,9 @@ go_register_toolchains(version = "1.16")
 # version of rules_gapic.
 _rules_gapic_version = "0.20.1"
 
-_rules_gapic_sha256 = "a5a2ecbe282f73a969f10bfe1946e7169eadad4fd7341777ca0aa18fff902188"
 
 http_archive(
     name = "rules_gapic",
-    sha256 = _rules_gapic_sha256,
     strip_prefix = "rules_gapic-%s" % _rules_gapic_version,
     urls = ["https://github.com/googleapis/rules_gapic/archive/v%s.tar.gz" % _rules_gapic_version],
 )
@@ -153,7 +145,6 @@ _bazel_gazelle_version = "0.24.0"
 
 http_archive(
     name = "bazel_gazelle",
-    sha256 = "de69a09dc70417580aabf20a28619bb3ef60d038470c7cf8442fafcf627c21cb",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v{0}/bazel-gazelle-v{0}.tar.gz".format(_bazel_gazelle_version),
         "https://github.com/bazelbuild/bazel-gazelle/releases/download/v{0}/bazel-gazelle-v{0}.tar.gz".format(_bazel_gazelle_version),
@@ -213,7 +204,6 @@ gazelle_dependencies()
 # by gRPC. Remove this import once gRPC depends on a newer version.
 http_archive(
     name = "boringssl",
-    sha256 = "b460f8673f3393e58ce506e9cdde7f2c3b2575b075f214cb819fb57d809f052b",
     strip_prefix = "boringssl-bb41bc007079982da419c0ec3186e510cbcf09d0",
     urls = [
         "https://github.com/google/boringssl/archive/bb41bc007079982da419c0ec3186e510cbcf09d0.zip",
@@ -222,11 +212,9 @@ http_archive(
 
 _grpc_version = "1.47.0"
 
-_grpc_sha256 = "edf25f4db6c841853b7a29d61b0980b516dc31a1b6cdc399bcf24c1446a4a249"
 
 http_archive(
     name = "com_github_grpc_grpc",
-    sha256 = _grpc_sha256,
     strip_prefix = "grpc-%s" % _grpc_version,
     urls = ["https://github.com/grpc/grpc/archive/v%s.zip" % _grpc_version],
 )
@@ -344,12 +332,10 @@ gapic_generator_register_toolchains()
 
 _gapic_generator_typescript_version = "2.18.2"
 
-_gapic_generator_typescript_sha256 = "45dfd7f059f45f83352a2d9438c1ed021817d9c894220cbd9578b1580194b937"
 
 ### TypeScript generator
 http_archive(
     name = "gapic_generator_typescript",
-    sha256 = _gapic_generator_typescript_sha256,
     strip_prefix = "gapic-generator-typescript-%s" % _gapic_generator_typescript_version,
     urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v%s.tar.gz" % _gapic_generator_typescript_version],
 )
@@ -405,23 +391,19 @@ gapic_generator_php_repositories()
 # Required to access the C#-specific common resources config.
 _gax_dotnet_version = "Google.Api.Gax-3.3.0"
 
-_gax_dotnet_sha256 = "c4d31345a226987e8551cb81afa685c9322d3f806077d9f02011676cf00c15d9"
 
 http_archive(
     name = "gax_dotnet",
     build_file_content = "exports_files([\"Google.Api.Gax/ResourceNames/CommonResourcesConfig.json\"])",
-    sha256 = _gax_dotnet_sha256,
     strip_prefix = "gax-dotnet-%s" % _gax_dotnet_version,
     urls = ["https://github.com/googleapis/gax-dotnet/archive/refs/tags/%s.tar.gz" % _gax_dotnet_version],
 )
 
 _gapic_generator_csharp_version = "1.4.9"
 
-_gapic_generator_csharp_sha256 = "b3641de24520ca9efa34146c447f89055fc4f803275501947d0fb7b1fa7aad49"
 
 http_archive(
     name = "gapic_generator_csharp",
-    sha256 = _gapic_generator_csharp_sha256,
     strip_prefix = "gapic-generator-csharp-%s" % _gapic_generator_csharp_version,
     urls = ["https://github.com/googleapis/gapic-generator-csharp/archive/refs/tags/v%s.tar.gz" % _gapic_generator_csharp_version],
 )
@@ -436,11 +418,9 @@ gapic_generator_csharp_repositories()
 
 _gapic_generator_ruby_version = "v0.19.0"
 
-_gapic_generator_ruby_sha256 = "ebfa63d6c6fc1e10a2c3ff2e1e0c29a730fa00f68dbd584ffee4527fafe3fbc3"
 
 http_archive(
     name = "gapic_generator_ruby",
-    sha256 = _gapic_generator_ruby_sha256,
     strip_prefix = "gapic-generator-ruby-gapic-generator-%s" % _gapic_generator_ruby_version,
     urls = ["https://github.com/googleapis/gapic-generator-ruby/archive/refs/tags/gapic-generator/%s.tar.gz" % _gapic_generator_ruby_version],
 )
