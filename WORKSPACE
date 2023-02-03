@@ -1,9 +1,5 @@
 workspace(
     name = "com_google_googleapis",
-    # This tells Bazel that the node_modules directory is special and
-    # is managed by the package manager.
-    # https://bazelbuild.github.io/rules_nodejs/install.html
-    managed_directories = {"@npm": ["@gapic_generator_typescript//:node_modules"]},
 )
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
@@ -342,9 +338,9 @@ gapic_generator_register_toolchains()
 # TypeScript
 ##############################################################################
 
-_gapic_generator_typescript_version = "2.18.2"
+_gapic_generator_typescript_version = "3.0.0"
 
-_gapic_generator_typescript_sha256 = "45dfd7f059f45f83352a2d9438c1ed021817d9c894220cbd9578b1580194b937"
+_gapic_generator_typescript_sha256 = "c0a7067dc0424ffe809cf7e6c3346c047b107feb214f5f37a9a9d470c46a593d"
 
 ### TypeScript generator
 http_archive(
@@ -354,21 +350,33 @@ http_archive(
     urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v%s.tar.gz" % _gapic_generator_typescript_version],
 )
 
-load("@gapic_generator_typescript//:repositories.bzl", "gapic_generator_typescript_repositories")
-
+load("@gapic_generator_typescript//:repositories.bzl", "gapic_generator_typescript_repositories", "NODE_VERSION")
 gapic_generator_typescript_repositories()
 
-load("@build_bazel_rules_nodejs//:index.bzl", "node_repositories", "yarn_install")
+load("@aspect_rules_js//js:repositories.bzl", "rules_js_dependencies")
+rules_js_dependencies()
 
-node_repositories(
-    package_json = ["@gapic_generator_typescript//:package.json"],
+load("@aspect_rules_ts//ts:repositories.bzl", "rules_ts_dependencies")
+rules_ts_dependencies(
+    ts_version_from = "@gapic_generator_typescript//:package.json",
 )
 
-yarn_install(
-    name = "npm",
-    package_json = "@gapic_generator_typescript//:package.json",
-    yarn_lock = "@gapic_generator_typescript//:yarn.lock",
+load("@rules_nodejs//nodejs:repositories.bzl", "nodejs_register_toolchains")
+nodejs_register_toolchains(
+  name = "nodejs",
+  node_version = NODE_VERSION,
 )
+
+load("@aspect_rules_js//npm:npm_import.bzl", "npm_translate_lock", "pnpm_repository")
+npm_translate_lock(
+  name = "npm",
+  pnpm_lock = "@gapic_generator_typescript//:pnpm-lock.yaml",
+  data = ["@gapic_generator_typescript//:package.json"],
+)
+
+load("@npm//:repositories.bzl", "npm_repositories")
+npm_repositories()
+pnpm_repository(name = "pnpm")
 
 ##############################################################################
 # PHP
