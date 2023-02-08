@@ -161,10 +161,10 @@ http_archive(
 load("@bazel_gazelle//:deps.bzl", "go_repository")
 
 go_repository(
-  name = "com_google_cloud_go_longrunning",
-  importpath = "cloud.google.com/go/longrunning",
-  sum = "h1:y50CXG4j0+qvEukslYFBCrzaXX0qpFbBzc3PchSu/LE=",
-  version = "v0.1.1",
+    name = "com_google_cloud_go_longrunning",
+    importpath = "cloud.google.com/go/longrunning",
+    sum = "h1:y50CXG4j0+qvEukslYFBCrzaXX0qpFbBzc3PchSu/LE=",
+    version = "v0.1.1",
 )
 
 _gapic_generator_go_version = "0.33.6"
@@ -274,7 +274,7 @@ maven_install(
     repositories = [
         "m2Local",
         "https://repo.maven.apache.org/maven2/",
-    ]
+    ],
 )
 
 http_archive(
@@ -350,32 +350,39 @@ http_archive(
     urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v%s.tar.gz" % _gapic_generator_typescript_version],
 )
 
-load("@gapic_generator_typescript//:repositories.bzl", "gapic_generator_typescript_repositories", "NODE_VERSION")
+load("@gapic_generator_typescript//:repositories.bzl", "NODE_VERSION", "gapic_generator_typescript_repositories")
+
 gapic_generator_typescript_repositories()
 
 load("@aspect_rules_js//js:repositories.bzl", "rules_js_dependencies")
+
 rules_js_dependencies()
 
 load("@aspect_rules_ts//ts:repositories.bzl", "rules_ts_dependencies")
+
 rules_ts_dependencies(
     ts_version_from = "@gapic_generator_typescript//:package.json",
 )
 
 load("@rules_nodejs//nodejs:repositories.bzl", "nodejs_register_toolchains")
+
 nodejs_register_toolchains(
-  name = "nodejs",
-  node_version = NODE_VERSION,
+    name = "nodejs",
+    node_version = NODE_VERSION,
 )
 
 load("@aspect_rules_js//npm:npm_import.bzl", "npm_translate_lock", "pnpm_repository")
+
 npm_translate_lock(
-  name = "npm",
-  pnpm_lock = "@gapic_generator_typescript//:pnpm-lock.yaml",
-  data = ["@gapic_generator_typescript//:package.json"],
+    name = "npm",
+    data = ["@gapic_generator_typescript//:package.json"],
+    pnpm_lock = "@gapic_generator_typescript//:pnpm-lock.yaml",
 )
 
 load("@npm//:repositories.bzl", "npm_repositories")
+
 npm_repositories()
+
 pnpm_repository(name = "pnpm")
 
 ##############################################################################
@@ -462,7 +469,7 @@ gapic_generator_ruby_repositories()
 # Discovery
 ##############################################################################
 
-_disco_to_proto3_converter_version = "c47a76dd3d591478dd1a902413636c06da1153b8"
+_disco_to_proto3_converter_version = "96e1e63d3c1ddc546a57ac78b28893ee1013266a"
 
 http_archive(
     name = "com_google_disco_to_proto3_converter",
