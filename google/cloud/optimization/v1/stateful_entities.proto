@@ -1,0 +1,223 @@
+// Copyright 2022 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.optimization.v1;
+
+import "google/api/resource.proto";
+import "google/cloud/optimization/v1/fleet_routing.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "cloud.google.com/go/optimization/apiv1/optimizationpb;optimizationpb";
+option java_multiple_files = true;
+option java_outer_classname = "StatefulEntitiesProto";
+option java_package = "com.google.cloud.optimization.v1";
+
+// A workspace represents a container for users to organize their resources,
+// such as vehicles, shipments, and optimizers, etc.
+message Workspace {
+  option (google.api.resource) = {
+    type: "cloudoptimization.googleapis.com/Workspace"
+    pattern: "projects/{project}/locations/{location}/workspaces/{workspace}"
+  };
+
+  // The resource name of the workspace. This is a unique identifier.
+  // Format:
+  // `projects/{project}/locations/{location}/workspaces/{workspace}`
+  string name = 1;
+
+  // The user-defined display name of the Workspace.
+  // It can be up to 63 characters long and may use UTF-8 characters.
+  string display_name = 2;
+}
+
+// Spec that is used for providing global and relational costs and constraints
+// for all optimizations conducted by this optimizer.
+// The fields match their corresponding fields in `ShipmentModel`.
+message ModelSpec {
+  // Global start and end time of the model: no times outside of this range
+  // can be considered valid.
+  //
+  // The model's time span must be less than a year, i.e. the
+  // `global_end_time` and the `global_start_time` must be within 31536000
+  // seconds of each other.
+  //
+  // When using `cost_per_*hour` fields, you might want to set this window to
+  // a smaller interval to increase performance (eg. if you model a single
+  // day, you should set the global time limits to that day). If unset,
+  // 00:00:00 UTC, January 1, 1970 (i.e. seconds: 0, nanos: 0) is used as
+  // default.
+  google.protobuf.Timestamp global_start_time = 1;
+
+  // If unset, 00:00:00 UTC, January 1, 1971 (i.e. seconds: 31536000, nanos:
+  // 0) is used as default.
+  google.protobuf.Timestamp global_end_time = 2;
+
+  // The "global duration" of the overall plan is the difference between the
+  // earliest effective start time and the latest effective end time of
+  // all vehicles. Users can assign a cost per hour to be used during the
+  // global duration period to try and optimize for earliest job completion,
+  // for example. This cost must be in the same unit as
+  // [Shipment.penalty_cost][google.cloud.optimization.v1.Shipment.penalty_cost].
+  double global_duration_cost_per_hour = 3;
+
+  // Constrains the maximum number of active vehicles. A vehicle is active if
+  // its route performs at least one shipment. This can be used to limit the
+  // number of routes in the case where there are fewer drivers than
+  // vehicles and that the fleet of vehicles is heterogeneous. The
+  // optimization will then select the best subset of vehicles to use. Must be
+  // strictly positive.
+  optional int32 max_active_vehicles = 4;
+
+  // Transition attributes added to the model.
+  repeated TransitionAttributes transition_attributes = 5;
+
+  // Sets of incompatible shipment_types (see `ShipmentTypeIncompatibility`).
+  repeated ShipmentTypeIncompatibility shipment_type_incompatibilities = 6;
+
+  // Sets of `shipment_type` requirements (see `ShipmentTypeRequirement`).
+  repeated ShipmentTypeRequirement shipment_type_requirements = 7;
+
+  // Set of precedence rules which must be enforced in the model.
+  repeated ShipmentModel.PrecedenceRule precedence_rules = 8;
+}
+
+// The optimizer that will run optimizations based on all vehicles and shipments
+// within the workspace. Each optimization is triggered by a client call.
+// When the optimizer runs an optimization, it will construct an
+// `OptimizeToursRequest` behind the scenes with the most up-to-date entity
+// information and other constraints, and generate a solution. The corresponding
+// `OptimizeToursRequest` for each solution can be retrieved.
+message Optimizer {
+  option (google.api.resource) = {
+    type: "cloudoptimization.googleapis.com/Optimizer"
+    pattern: "projects/{project}/locations/{location}/workspaces/{workspace}/optimizers/{optimizer}"
+  };
+
+  // Spec used to configure the `OptimizeToursRequest` by the optimizer every
+  // time it runs an optimization. The fields matches their corresponding fields
+  // in `OptimizeToursRequest`.
+  message OptimizeToursSpec {
+    // If this timeout is set, the server will generate a solution (if
+    // possible) before the timeout has elapsed.
+    google.protobuf.Duration timeout = 1;
+
+    // Search mode used to solve the request.
+    OptimizeToursRequest.SearchMode search_mode = 2;
+
+    // Consider traffic estimation in calculating `ShipmentRoute` fields
+    // [Transition.travel_duration][google.cloud.optimization.v1.ShipmentRoute.Transition.travel_duration],
+    // [Visit.start_time][google.cloud.optimization.v1.ShipmentRoute.Visit.start_time],
+    // and `vehicle_end_time`; in setting the
+    // [ShipmentRoute.has_traffic_infeasibilities][google.cloud.optimization.v1.ShipmentRoute.has_traffic_infeasibilities] field, and in calculating
+    // the [OptimizeToursResponse.total_cost][google.cloud.optimization.v1.OptimizeToursResponse.total_cost] field.
+    bool consider_road_traffic = 3;
+
+    // If true, polylines will be populated in response `ShipmentRoute`s.
+    bool populate_polylines = 4;
+
+    // If true, polylines will be populated in response
+    // [ShipmentRoute.transitions][google.cloud.optimization.v1.ShipmentRoute.transitions].
+    // Note that in this case, the polylines will also be populated in the
+    // deprecated `travel_steps`.
+    bool populate_transition_polylines = 5;
+
+    // If this is set, then the request can have a deadline
+    // (see https://grpc.io/blog/deadlines) of up to 60 minutes.
+    // Otherwise, the maximum deadline is only 30 minutes.
+    // Note that long-lived requests have a significantly larger (but still
+    // small) risk of interruption.
+    bool allow_large_deadline_despite_interruption_risk = 6;
+
+    // If true, travel distances will be computed using geodesic distances
+    // instead of Google Maps distances, and travel times will be computed using
+    // geodesic distances with a speed defined by `geodesic_meters_per_second`.
+    bool use_geodesic_distances = 7;
+
+    // When `use_geodesic_distances` is true, this field must be set and defines
+    // the speed applied to compute travel times. Its value must be at least 1.0
+    // meters/seconds.
+    optional double geodesic_meters_per_second = 8;
+  }
+
+  // Filter expressions that match a subset of the entities to optimize.
+  // For more information about filter syntax, see https://google.aip.dev/160.
+  message Filters {
+    // Filter expression that matches a subset of the shipments to optimize.
+    string shipment_filter = 1;
+
+    // Filter expression that matches a subset of the vehicles to optimize.
+    string vehicle_filter = 2;
+  }
+
+  // The resource name of the optimizer. Format:
+  // `projects/{project}/locations/{location}/workspaces/{workspace}/Optimizers/{optimizer}`
+  string name = 1;
+
+  // The display name of the optimizer.
+  // It can be up to 63 characters long and use UTF-8 characters.
+  string display_name = 2;
+
+  // The model spec that is used to formulate all `ShipmentModel`s in the
+  // optimizations run by this optimizer.
+  ModelSpec model_spec = 3;
+
+  // Spec used to configure the `OptimizeToursRequest` constructed by this
+  // optimizer.
+  OptimizeToursSpec optimize_tours_spec = 5;
+
+  // Filters applied to an optimizer which are used as conditions to select
+  // a subset of entities to run the optimization.
+  Filters filters = 9;
+}
+
+// The solution contains planned routes and related metadata resulted from
+// an optimization run.
+message Solution {
+  option (google.api.resource) = {
+    type: "cloudoptimization.googleapis.com/Solution"
+    pattern: "projects/{project}/locations/{location}/workspaces/{workspace}/solutions/{solution}"
+  };
+
+  // Metadata for solutions.
+  message SolutionMetadata {
+    // The name of the optimizer that generated this solution.
+    string optimizer = 1 [(google.api.resource_reference) = {
+                            type: "cloudoptimization.googleapis.com/Optimizer"
+                          }];
+
+    // The timestamp that this run of optimization started. The changes of
+    // entities (e.g. shipments and vehicles) after this are not captured in
+    // generating this solution.
+    google.protobuf.Timestamp optimization_start_time = 2;
+  }
+
+  // The resource name of the solution. Format:
+  // `projects/{project}/locations/{location}/workspaces/{workspace}/solutions/{solution}`
+  string name = 1;
+
+  // The display name of the solution.
+  string display_name = 2;
+
+  // The core solution in the form of an  `OptimizeToursResponse`, where:
+  //  * `routes` refers to vehicles by their resource names;
+  //  * `request_label` is ignored;
+  //  * Deprecated fields are ignored.
+  OptimizeToursResponse optimization_response = 3;
+
+  // The metadata for this solution.
+  SolutionMetadata metadata = 7;
+}
