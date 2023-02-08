@@ -24,13 +24,14 @@ switched_rules_by_language(
     ruby = True,
 )
 
-# Protobuf depends on very old version of bazel_skylib (forward compatible with the new one).
-# Importing older version of bazel_skylib first (this is one of the things that protobuf_deps() call
-# below will do) breaks the grpc repositories, so importing the proper version explicitly before
-# everything else.
+_bazel_skylib_version = "1.4.0"
+
+_bazel_skylib_sha256 = "f24ab666394232f834f74d19e2ff142b0af17466ea0c69a3f4c276ee75f6efce"
+
 http_archive(
     name = "bazel_skylib",
-    urls = ["https://github.com/bazelbuild/bazel-skylib/releases/download/0.9.0/bazel_skylib-0.9.0.tar.gz"],
+    sha256 = _bazel_skylib_sha256,
+    urls = ["https://github.com/bazelbuild/bazel-skylib/releases/download/{0}/bazel-skylib-{0}.tar.gz".format(_bazel_skylib_version)],
 )
 
 # Protobuf depends on very old version of rules_jvm_external.
