@@ -130,9 +130,9 @@ go_register_toolchains(version = "1.16")
 # rules_gapic also depends on rules_go, so it must come after our own dependency on rules_go.
 # It must also come before gapic-generator-go so as to ensure that it does not bring in an old
 # version of rules_gapic.
-_rules_gapic_version = "0.20.1"
+_rules_gapic_version = "0.21.0"
 
-_rules_gapic_sha256 = "a5a2ecbe282f73a969f10bfe1946e7169eadad4fd7341777ca0aa18fff902188"
+_rules_gapic_sha256 = "b3bbe804d0e2af4b80b31b6df07db52cba99ddc1e68adfacb7e0058f6cd0f7f1"
 
 http_archive(
     name = "rules_gapic",
@@ -339,9 +339,9 @@ gapic_generator_register_toolchains()
 # TypeScript
 ##############################################################################
 
-_gapic_generator_typescript_version = "3.0.2"
+_gapic_generator_typescript_version = "3.0.3"
 
-_gapic_generator_typescript_sha256 = "328d7c3cd9f936115759b30b246feca6ab9caa639650334722358073a2c7f58b"
+_gapic_generator_typescript_sha256 = "f79b4517873f69ea09621b511aade2e039bcfc37f19342a135bf45eaa6f60595"
 
 ### TypeScript generator
 http_archive(
