@@ -108,25 +108,6 @@ rules_proto_toolchains()
 # Go
 ##############################################################################
 
-# This must be above the download of gRPC (in C++ section) and rules_gapic because both repositories depend on rules_go
-# and we would rather manage our version of rules_go explicitly rather than depend on the version those bring in transitively.
-_io_bazel_rules_go_version = "0.33.0"
-
-http_archive(
-    name = "io_bazel_rules_go",
-    sha256 = "685052b498b6ddfe562ca7a97736741d87916fe536623afb7da2824c0211c369",
-    urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v{0}/rules_go-v{0}.zip".format(_io_bazel_rules_go_version),
-        "https://github.com/bazelbuild/rules_go/releases/download/v{0}/rules_go-v{0}.zip".format(_io_bazel_rules_go_version),
-    ],
-)
-
-load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
-
-go_rules_dependencies()
-
-go_register_toolchains(version = "1.16")
-
 # rules_gapic also depends on rules_go, so it must come after our own dependency on rules_go.
 # It must also come before gapic-generator-go so as to ensure that it does not bring in an old
 # version of rules_gapic.
@@ -141,9 +122,20 @@ http_archive(
     urls = ["https://github.com/googleapis/rules_gapic/archive/v%s.tar.gz" % _rules_gapic_version],
 )
 
-load("@rules_gapic//:repositories.bzl", "rules_gapic_repositories")
+# This must be above the download of gRPC (in C++ section) and 
+# rules_gapic_repositories because both depend on rules_go and we need to manage
+# our version of rules_go explicitly rather than depend on the version those
+# bring in transitively.
+_io_bazel_rules_go_version = "0.34.0"
 
-rules_gapic_repositories()
+http_archive(
+    name = "io_bazel_rules_go",
+    sha256 = "16e9fca53ed6bd4ff4ad76facc9b7b651a89db1689a2877d6fd7b82aa824e366",
+    urls = [
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v{0}/rules_go-v{0}.zip".format(_io_bazel_rules_go_version),
+        "https://github.com/bazelbuild/rules_go/releases/download/v{0}/rules_go-v{0}.zip".format(_io_bazel_rules_go_version),
+    ],
+)
 
 # Gazelle dependency version should match gazelle dependency expected by gRPC
 _bazel_gazelle_version = "0.24.0"
@@ -157,6 +149,16 @@ http_archive(
     ],
 )
 
+# This overrides the package name @go_googleapis to point at this package,
+# @com_google_googleapis, which has the latest versions of all protos and is the
+# source of truth for those protos. This prevents rules_go from loading its own,
+# conflicting copy of googleapis under this package name, which would create
+# package collisions during compilation.
+local_repository(
+    name = "go_googleapis",
+    path = ".",
+)
+
 # Until this project is migrated to consume the new subdirectory of generated
 # types e.g. longrunningpb, we must define our own version of longrunning here.
 load("@bazel_gazelle//:deps.bzl", "go_repository")
@@ -168,13 +170,10 @@ go_repository(
   version = "v0.1.1",
 )
 
-_gapic_generator_go_version = "0.33.6"
+_gapic_generator_go_version = "0.34.0"
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
-    repo_mapping = {
-        "@go_googleapis": "@com_google_googleapis",
-    },
     strip_prefix = "gapic-generator-go-%s" % _gapic_generator_go_version,
     urls = ["https://github.com/googleapis/gapic-generator-go/archive/v%s.tar.gz" % _gapic_generator_go_version],
 )
@@ -183,13 +182,22 @@ load("@com_googleapis_gapic_generator_go//:repositories.bzl", "com_googleapis_ga
 
 com_googleapis_gapic_generator_go_repositories()
 
-# Gazelle dependencies should go after gapic-generator-go dependencies to make sure that
-# gazelle does not override some of the critical dependencies of the gapic-generator-go.
-# At the same time gazelle repository itself must be imported before gapic-generator-go,
-# because gapic-generator-go depends on go_repository rule, which is defined in gazelle repo.
+# rules_go and gazelle dependencies are loaded after gapic-generator-go
+# dependencies to ensure that they do not override any of the go_repository
+# dependencies of gapic-generator-go.
+load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
+
+go_register_toolchains(version = "1.18.6")
+
+go_rules_dependencies()
+
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
 
 gazelle_dependencies()
+
+load("@rules_gapic//:repositories.bzl", "rules_gapic_repositories")
+
+rules_gapic_repositories()
 
 ##############################################################################
 # C++
