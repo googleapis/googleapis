@@ -27,8 +27,10 @@ import "google/cloud/aiplatform/v1/featurestore.proto";
 import "google/cloud/aiplatform/v1/io.proto";
 import "google/cloud/aiplatform/v1/operation.proto";
 import "google/longrunning/operations.proto";
+import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
+import "google/type/interval.proto";
 
 option csharp_namespace = "Google.Cloud.AIPlatform.V1";
 option go_package = "cloud.google.com/go/aiplatform/apiv1/aiplatformpb;aiplatformpb";
@@ -292,6 +294,29 @@ service FeaturestoreService {
     option (google.longrunning.operation_info) = {
       response_type: "ExportFeatureValuesResponse"
       metadata_type: "ExportFeatureValuesOperationMetadata"
+    };
+  }
+
+  // Delete Feature values from Featurestore.
+  //
+  // The progress of the deletion is tracked by the returned operation. The
+  // deleted feature values are guaranteed to be invisible to subsequent read
+  // operations after the operation is marked as successfully done.
+  //
+  // If a delete feature values operation fails, the feature values
+  // returned from reads and exports may be inconsistent. If consistency is
+  // required, the caller must retry the same delete request again and wait till
+  // the new operation returned is marked as successfully done.
+  rpc DeleteFeatureValues(DeleteFeatureValuesRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{entity_type=projects/*/locations/*/featurestores/*/entityTypes/*}:deleteFeatureValues"
+      body: "*"
+    };
+    option (google.api.method_signature) = "entity_type";
+    option (google.longrunning.operation_info) = {
+      response_type: "DeleteFeatureValuesResponse"
+      metadata_type: "DeleteFeatureValuesOperationMetadata"
     };
   }
 
@@ -1280,6 +1305,12 @@ message BatchReadFeatureValuesOperationMetadata {
   GenericOperationMetadata generic_metadata = 1;
 }
 
+// Details of operations that delete Feature values.
+message DeleteFeatureValuesOperationMetadata {
+  // Operation metadata for Featurestore delete Features values.
+  GenericOperationMetadata generic_metadata = 1;
+}
+
 // Details of operations that perform create EntityType.
 message CreateEntityTypeOperationMetadata {
   // Operation metadata for EntityType.
@@ -1296,4 +1327,121 @@ message CreateFeatureOperationMetadata {
 message BatchCreateFeaturesOperationMetadata {
   // Operation metadata for Feature.
   GenericOperationMetadata generic_metadata = 1;
+}
+
+// Request message for
+// [FeaturestoreService.DeleteFeatureValues][google.cloud.aiplatform.v1.FeaturestoreService.DeleteFeatureValues].
+message DeleteFeatureValuesRequest {
+  // Message to select entity.
+  // If an entity id is selected, all the feature values corresponding to the
+  // entity id will be deleted, including the entityId.
+  message SelectEntity {
+    // Required. Selectors choosing feature values of which entity id to be
+    // deleted from the EntityType.
+    EntityIdSelector entity_id_selector = 1
+        [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Message to select time range and feature.
+  // Values of the selected feature generated within an inclusive time range
+  // will be deleted. Using this option permanently deletes the feature values
+  // from the specified feature IDs within the specified time range.
+  // This might include data from the online storage. If you want to retain
+  // any deleted historical data in the online storage, you must re-ingest it.
+  message SelectTimeRangeAndFeature {
+    // Required. Select feature generated within a half-inclusive time range.
+    // The time range is lower inclusive and upper exclusive.
+    google.type.Interval time_range = 1
+        [(google.api.field_behavior) = REQUIRED];
+
+    // Required. Selectors choosing which feature values to be deleted from the
+    // EntityType.
+    FeatureSelector feature_selector = 2
+        [(google.api.field_behavior) = REQUIRED];
+
+    // If set, data will not be deleted from online storage.
+    // When time range is older than the data in online storage, setting this to
+    // be true will make the deletion have no impact on online serving.
+    bool skip_online_storage_delete = 3;
+  }
+
+  // Defines options to select feature values to be deleted.
+  oneof DeleteOption {
+    // Select feature values to be deleted by specifying entities.
+    SelectEntity select_entity = 2;
+
+    // Select feature values to be deleted by specifying time range and
+    // features.
+    SelectTimeRangeAndFeature select_time_range_and_feature = 3;
+  }
+
+  // Required. The resource name of the EntityType grouping the Features for
+  // which values are being deleted from. Format:
+  // `projects/{project}/locations/{location}/featurestores/{featurestore}/entityTypes/{entityType}`
+  string entity_type = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/EntityType"
+    }
+  ];
+}
+
+// Response message for
+// [FeaturestoreService.DeleteFeatureValues][google.cloud.aiplatform.v1.FeaturestoreService.DeleteFeatureValues].
+message DeleteFeatureValuesResponse {
+  // Response message if the request uses the SelectEntity option.
+  message SelectEntity {
+    // The count of deleted entity rows in the offline storage.
+    // Each row corresponds to the combination of an entity ID and a timestamp.
+    // One entity ID can have multiple rows in the offline storage.
+    int64 offline_storage_deleted_entity_row_count = 1;
+
+    // The count of deleted entities in the online storage.
+    // Each entity ID corresponds to one entity.
+    int64 online_storage_deleted_entity_count = 2;
+  }
+
+  // Response message if the request uses the SelectTimeRangeAndFeature option.
+  message SelectTimeRangeAndFeature {
+    // The count of the features or columns impacted.
+    // This is the same as the feature count in the request.
+    int64 impacted_feature_count = 1;
+
+    // The count of modified entity rows in the offline storage.
+    // Each row corresponds to the combination of an entity ID and a timestamp.
+    // One entity ID can have multiple rows in the offline storage.
+    // Within each row, only the features specified in the request are
+    // deleted.
+    int64 offline_storage_modified_entity_row_count = 2;
+
+    // The count of modified entities in the online storage.
+    // Each entity ID corresponds to one entity.
+    // Within each entity, only the features specified in the request are
+    // deleted.
+    int64 online_storage_modified_entity_count = 3;
+  }
+
+  // Response based on which delete option is specified in the
+  // request
+  oneof response {
+    // Response for request specifying the entities to delete
+    SelectEntity select_entity = 1;
+
+    // Response for request specifying time range and feature
+    SelectTimeRangeAndFeature select_time_range_and_feature = 2;
+  }
+}
+
+// Selector for entityId. Getting ids from the given source.
+message EntityIdSelector {
+  // Details about the source data, including the location of the storage and
+  // the format.
+  oneof EntityIdsSource {
+    // Source of Csv
+    CsvSource csv_source = 3;
+  }
+
+  // Source column that holds entity IDs. If not provided, entity IDs are
+  // extracted from the column named `entity_id`.
+  string entity_id_field = 5;
 }
