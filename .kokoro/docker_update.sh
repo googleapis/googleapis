@@ -9,12 +9,11 @@
 # Usage:
 # $ mkdir workdir
 # $ cd workdir
-# $ sh /google/src/head/depot/google3/third_party/googleapis/stable/.kokoro/docker_update.sh
+# $ sh /path/to/.kokoro/docker_update.sh
 #
 # After the script completes, it should print out commands to push the new
 # Docker image and to create pull requests against Ruby and PHP generators.
-# Whenever the image is published, tag it here:
-# https://pantheon.corp.google.com/gcr/images/gapic-images/global/googleapis?project=gapic-images
+# Whenever the image is published, tag it in Google Cloud Console,
 # then release new versions of the generators and update the image tag in
 # start.sh scripts in Kokoro folders in all googleapis workspaces.
 
