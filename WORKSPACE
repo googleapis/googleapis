@@ -111,9 +111,9 @@ rules_proto_toolchains()
 # rules_gapic also depends on rules_go, so it must come after our own dependency on rules_go.
 # It must also come before gapic-generator-go so as to ensure that it does not bring in an old
 # version of rules_gapic.
-_rules_gapic_version = "0.23.0"
+_rules_gapic_version = "0.23.1"
 
-_rules_gapic_sha256 = "6ee061acd6de5eeeeea484f88770760eb74f09095e953d283b4494d76492610e"
+_rules_gapic_sha256 = "cda71a5e50daa31bdf7c1bbc9196cea21adb3daea97e2a28dc9569f03c2a4f52"
 
 http_archive(
     name = "rules_gapic",
