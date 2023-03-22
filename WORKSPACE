@@ -111,9 +111,9 @@ rules_proto_toolchains()
 # rules_gapic also depends on rules_go, so it must come after our own dependency on rules_go.
 # It must also come before gapic-generator-go so as to ensure that it does not bring in an old
 # version of rules_gapic.
-_rules_gapic_version = "0.23.0"
+_rules_gapic_version = "0.23.1"
 
-_rules_gapic_sha256 = "6ee061acd6de5eeeeea484f88770760eb74f09095e953d283b4494d76492610e"
+_rules_gapic_sha256 = "cda71a5e50daa31bdf7c1bbc9196cea21adb3daea97e2a28dc9569f03c2a4f52"
 
 http_archive(
     name = "rules_gapic",
@@ -163,14 +163,7 @@ local_repository(
 # types e.g. longrunningpb, we must define our own version of longrunning here.
 load("@bazel_gazelle//:deps.bzl", "go_repository")
 
-go_repository(
-  name = "com_google_cloud_go_longrunning",
-  importpath = "cloud.google.com/go/longrunning",
-  sum = "h1:y50CXG4j0+qvEukslYFBCrzaXX0qpFbBzc3PchSu/LE=",
-  version = "v0.1.1",
-)
-
-_gapic_generator_go_version = "0.34.0"
+_gapic_generator_go_version = "0.35.2"
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
@@ -272,7 +265,7 @@ maven_install(
     ],
 )
 
-_gapic_generator_java_version = "2.15.2"
+_gapic_generator_java_version = "2.15.3"
 
 maven_install(
     artifacts = [
@@ -325,7 +318,7 @@ load("@rules_python//python:pip.bzl", "pip_install")
 
 pip_install()
 
-_gapic_generator_python_version = "1.8.5"
+_gapic_generator_python_version = "1.9.1"
 
 http_archive(
     name = "gapic_generator_python",
