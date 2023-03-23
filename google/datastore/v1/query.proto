@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -99,6 +99,11 @@ message Query {
   // The properties to make distinct. The query results will contain the first
   // result for each distinct combination of values for the given properties
   // (if empty, all results are returned).
+  //
+  // Requires:
+  //
+  // * If `order` is specified, the set of distinct on properties must appear
+  // before the non-distinct on properties in `order`.
   repeated PropertyReference distinct_on = 6;
 
   // A starting point for the query results. Query cursors are
@@ -127,7 +132,7 @@ message Query {
 // Datastore query for running an aggregation over a
 // [Query][google.datastore.v1.Query].
 message AggregationQuery {
-  // Defines a aggregation that produces a single result.
+  // Defines an aggregation that produces a single result.
   message Aggregation {
     // Count of entities that match the query.
     //
@@ -138,7 +143,7 @@ message AggregationQuery {
       // count.
       //
       // This provides a way to set an upper bound on the number of entities
-      // to scan, limiting latency and cost.
+      // to scan, limiting latency, and cost.
       //
       // Unspecified is interpreted as no bound.
       //
@@ -158,10 +163,56 @@ message AggregationQuery {
           [(google.api.field_behavior) = OPTIONAL];
     }
 
+    // Sum of the values of the requested property.
+    //
+    // * Only numeric values will be aggregated. All non-numeric values
+    // including `NULL` are skipped.
+    //
+    // * If the aggregated values contain `NaN`, returns `NaN`.
+    //
+    // * If the aggregated value set is empty, returns 0.
+    //
+    // * Returns a 64-bit integer if the sum result is an integer value and does
+    // not overflow. Otherwise, the result is returned as a double. Note that
+    // even if all the aggregated values are integers, the result is returned
+    // as a double if it cannot fit within a 64-bit signed integer. When this
+    // occurs, the returned value will lose precision.
+    //
+    // * When underflow occurs, floating-point aggregation is non-deterministic.
+    // This means that running the same query repeatedly without any changes to
+    // the underlying values could produce slightly different results each
+    // time. In those cases, values should be stored as integers over
+    // floating-point numbers.
+    message Sum {
+      // The property to aggregate on.
+      PropertyReference property = 1;
+    }
+
+    // Average of the values of the requested property.
+    //
+    // * Only numeric values will be aggregated. All non-numeric values
+    // including `NULL` are skipped.
+    //
+    // * If the aggregated values contain `NaN`, returns `NaN`.
+    //
+    // * If the aggregated value set is empty, returns `NULL`.
+    //
+    // * Always returns the result as a double.
+    message Avg {
+      // The property to aggregate on.
+      PropertyReference property = 1;
+    }
+
     // The type of aggregation to perform, required.
     oneof operator {
       // Count aggregator.
       Count count = 1;
+
+      // Sum aggregator.
+      Sum sum = 2;
+
+      // Average aggregator.
+      Avg avg = 3;
     }
 
     // Optional. Optional name of the property to store the result of the
@@ -175,7 +226,7 @@ message AggregationQuery {
     //   COUNT_UP_TO(1) AS count_up_to_1,
     //   COUNT_UP_TO(2),
     //   COUNT_UP_TO(3) AS count_up_to_3,
-    //   COUNT_UP_TO(4)
+    //   COUNT(*)
     // OVER (
     //   ...
     // );
@@ -188,7 +239,7 @@ message AggregationQuery {
     //   COUNT_UP_TO(1) AS count_up_to_1,
     //   COUNT_UP_TO(2) AS property_1,
     //   COUNT_UP_TO(3) AS count_up_to_3,
-    //   COUNT_UP_TO(4) AS property_2
+    //   COUNT(*) AS property_2
     // OVER (
     //   ...
     // );
