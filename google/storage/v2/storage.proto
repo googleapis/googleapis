@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -225,8 +225,12 @@ service Storage {
     };
   }
 
-  // Deletes an object and its metadata. Deletions are permanent if versioning
-  // is not enabled for the bucket, or if the `generation` parameter is used.
+  // Deletes an object and its metadata.
+  //
+  // Deletions are normally permanent when versioning is disabled or whenever
+  // the generation parameter is used. However, if soft delete is enabled for
+  // the bucket, deleted objects can be restored using RestoreObject until the
+  // soft delete retention period has passed.
   rpc DeleteObject(DeleteObjectRequest) returns (google.protobuf.Empty) {
     option (google.api.routing) = {
       routing_parameters { field: "bucket" path_template: "{bucket=**}" }
@@ -482,14 +486,17 @@ message CreateBucketRequest {
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
-      type: "cloudresourcemanager.googleapis.com/Project"
+      child_type: "storage.googleapis.com/Bucket"
     }
   ];
 
   // Properties of the new bucket being inserted.
-  // The project and name of the bucket are specified in the parent and
-  // bucket_id fields, respectively. Populating those fields in `bucket` will
-  // result in an error.
+  // The name of the bucket is specified in the `bucket_id` field. Populating
+  // `bucket.name` field will result in an error.
+  // The project of the bucket must be specified in the `bucket.project` field.
+  // This field must be in `projects/{projectIdentifier}` format,
+  // {projectIdentifier} can be the project ID or project number. The `parent`
+  // field must be either empty or `projects/_`.
   Bucket bucket = 2;
 
   // Required. The ID to use for this bucket, which will become the final
@@ -514,7 +521,7 @@ message ListBucketsRequest {
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
-      type: "cloudresourcemanager.googleapis.com/Project"
+      child_type: "storage.googleapis.com/Bucket"
     }
   ];
 
@@ -593,8 +600,6 @@ message UpdateBucketRequest {
   // may accidentally reset the new field's value.
   //
   // Not specifying any fields is an error.
-  // Not specifying a field while setting that field to a non-default value is
-  // an error.
   google.protobuf.FieldMask update_mask = 6
       [(google.api.field_behavior) = REQUIRED];
 }
@@ -617,7 +622,9 @@ message GetNotificationConfigRequest {
   // `projects/{project}/buckets/{bucket}/notificationConfigs/{notificationConfig}`
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = { type: "storage.googleapis.com/Bucket" }
+    (google.api.resource_reference) = {
+      type: "storage.googleapis.com/NotificationConfig"
+    }
   ];
 }
 
@@ -627,7 +634,7 @@ message CreateNotificationConfigRequest {
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
-      child_type: "storage.googleapis.com/Bucket"
+      child_type: "storage.googleapis.com/NotificationConfig"
     }
   ];
 
@@ -642,7 +649,7 @@ message ListNotificationConfigsRequest {
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
-      child_type: "storage.googleapis.com/Bucket"
+      child_type: "storage.googleapis.com/NotificationConfig"
     }
   ];
 
@@ -732,7 +739,10 @@ message ComposeObjectRequest {
 // `bucket` and `object` **must** be set.
 message DeleteObjectRequest {
   // Required. Name of the bucket in which the object resides.
-  string bucket = 1 [(google.api.field_behavior) = REQUIRED];
+  string bucket = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "storage.googleapis.com/Bucket" }
+  ];
 
   // Required. The name of the finalized object to delete.
   // Note: If you want to delete an unfinalized resumable upload please use
@@ -781,7 +791,10 @@ message CancelResumableWriteResponse {}
 // Request message for ReadObject.
 message ReadObjectRequest {
   // Required. The name of the bucket containing the object to read.
-  string bucket = 1 [(google.api.field_behavior) = REQUIRED];
+  string bucket = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "storage.googleapis.com/Bucket" }
+  ];
 
   // Required. The name of the object to read.
   string object = 2 [(google.api.field_behavior) = REQUIRED];
@@ -843,7 +856,10 @@ message ReadObjectRequest {
 // Request message for GetObject.
 message GetObjectRequest {
   // Required. Name of the bucket in which the object resides.
-  string bucket = 1 [(google.api.field_behavior) = REQUIRED];
+  string bucket = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "storage.googleapis.com/Bucket" }
+  ];
 
   // Required. Name of the object.
   string object = 2 [(google.api.field_behavior) = REQUIRED];
@@ -887,7 +903,7 @@ message ReadObjectResponse {
   // empty for any given `ReadResponse`. This enables the service to inform the
   // client that the request is still live while it is running an operation to
   // generate more data.
-  ChecksummedData checksummed_data = 1;
+  ChecksummedData checksummed_data = 1 [ctype = CORD];
 
   // The checksums of the complete object. The client should compute one of
   // these checksums over the downloaded object and compare it against the value
@@ -1017,9 +1033,7 @@ message ListObjectsRequest {
   // Required. Name of the bucket in which to look for objects.
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = {
-      child_type: "storage.googleapis.com/Bucket"
-    }
+    (google.api.resource_reference) = { type: "storage.googleapis.com/Bucket" }
   ];
 
   // Maximum number of `items` plus `prefixes` to return
@@ -1147,7 +1161,10 @@ message RewriteObjectRequest {
   Object destination = 1;
 
   // Required. Name of the bucket in which to find the source object.
-  string source_bucket = 2 [(google.api.field_behavior) = REQUIRED];
+  string source_bucket = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "storage.googleapis.com/Bucket" }
+  ];
 
   // Required. Name of the source object.
   string source_object = 3 [(google.api.field_behavior) = REQUIRED];
@@ -1323,8 +1340,6 @@ message UpdateObjectRequest {
   // may accidentally reset the new field's value.
   //
   // Not specifying any fields is an error.
-  // Not specifying a field while setting that field to a non-default value is
-  // an error.
   google.protobuf.FieldMask update_mask = 7
       [(google.api.field_behavior) = REQUIRED];
 
@@ -1334,8 +1349,8 @@ message UpdateObjectRequest {
 
 // Request message for GetServiceAccount.
 message GetServiceAccountRequest {
-  // Required. Project ID, in the format of "projects/<projectIdentifier>".
-  // <projectIdentifier> can be the project ID or project number.
+  // Required. Project ID, in the format of "projects/{projectIdentifier}".
+  // {projectIdentifier} can be the project ID or project number.
   string project = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1347,7 +1362,7 @@ message GetServiceAccountRequest {
 // Request message for CreateHmacKey.
 message CreateHmacKeyRequest {
   // Required. The project that the HMAC-owning service account lives in, in the
-  // format of "projects/<projectIdentifier>". <projectIdentifier> can be the
+  // format of "projects/{projectIdentifier}". {projectIdentifier} can be the
   // project ID or project number.
   string project = 1 [
     (google.api.field_behavior) = REQUIRED,
@@ -1376,8 +1391,8 @@ message DeleteHmacKeyRequest {
   string access_id = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. The project that owns the HMAC key, in the format of
-  // "projects/<projectIdentifier>".
-  // <projectIdentifier> can be the project ID or project number.
+  // "projects/{projectIdentifier}".
+  // {projectIdentifier} can be the project ID or project number.
   string project = 2 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1392,8 +1407,8 @@ message GetHmacKeyRequest {
   string access_id = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. The project the HMAC key lies in, in the format of
-  // "projects/<projectIdentifier>".
-  // <projectIdentifier> can be the project ID or project number.
+  // "projects/{projectIdentifier}".
+  // {projectIdentifier} can be the project ID or project number.
   string project = 2 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1405,8 +1420,8 @@ message GetHmacKeyRequest {
 // Request to fetch a list of HMAC keys under a given project.
 message ListHmacKeysRequest {
   // Required. The project to list HMAC keys for, in the format of
-  // "projects/<projectIdentifier>".
-  // <projectIdentifier> can be the project ID or project number.
+  // "projects/{projectIdentifier}".
+  // {projectIdentifier} can be the project ID or project number.
   string project = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1729,12 +1744,6 @@ message Bucket {
     // Once locked, an object retention policy cannot be modified.
     bool is_locked = 2;
 
-    // The duration in seconds that objects need to be retained. Retention
-    // duration must be greater than zero and less than 100 years. Note that
-    // enforcement of retention periods less than a day is not guaranteed. Such
-    // periods should only be used for testing purposes.
-    optional int64 retention_period = 3;
-
     // The duration that objects need to be retained. Retention duration must be
     // greater than zero and less than 100 years. Note that enforcement of
     // retention periods less than a day is not guaranteed. Such periods should
@@ -1804,8 +1813,8 @@ message Bucket {
   string etag = 29;
 
   // Immutable. The project which owns this bucket, in the format of
-  // "projects/<projectIdentifier>".
-  // <projectIdentifier> can be the project ID or project number.
+  // "projects/{projectIdentifier}".
+  // {projectIdentifier} can be the project ID or project number.
   string project = 3 [
     (google.api.field_behavior) = IMMUTABLE,
     (google.api.resource_reference) = {
@@ -2009,7 +2018,7 @@ message ChecksummedData {
 message ObjectChecksums {
   // CRC32C digest of the object data. Computed by the Cloud Storage service for
   // all written objects.
-  // If set in an WriteObjectRequest, service will validate that the stored
+  // If set in a WriteObjectRequest, service will validate that the stored
   // object matches this checksum.
   optional fixed32 crc32c = 1;
 
@@ -2026,16 +2035,16 @@ message ObjectChecksums {
 // Hmac Key Metadata, which includes all information other than the secret.
 message HmacKeyMetadata {
   // Immutable. Resource name ID of the key in the format
-  // <projectIdentifier>/<accessId>.
-  // <projectIdentifier> can be the project ID or project number.
+  // {projectIdentifier}/{accessId}.
+  // {projectIdentifier} can be the project ID or project number.
   string id = 1 [(google.api.field_behavior) = IMMUTABLE];
 
   // Immutable. Globally unique id for keys.
   string access_id = 2 [(google.api.field_behavior) = IMMUTABLE];
 
   // Immutable. Identifies the project that owns the service account of the
-  // specified HMAC key, in the format "projects/<projectIdentifier>".
-  // <projectIdentifier> can be the project ID or project number.
+  // specified HMAC key, in the format "projects/{projectIdentifier}".
+  // {projectIdentifier} can be the project ID or project number.
   string project = 3 [
     (google.api.field_behavior) = IMMUTABLE,
     (google.api.resource_reference) = {
