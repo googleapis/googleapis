@@ -33,6 +33,10 @@ option java_package = "com.google.cloud.retail.v2";
 option objc_class_prefix = "RETAIL";
 option php_namespace = "Google\\Cloud\\Retail\\V2";
 option ruby_package = "Google::Cloud::Retail::V2";
+option (google.api.resource_definition) = {
+  type: "retail.googleapis.com/Experiment"
+  pattern: "projects/{project}/locations/{location}/catalogs/{catalog}/experiments/{experiment}"
+};
 
 // Service for search.
 //
@@ -111,7 +115,16 @@ message SearchRequest {
 
       // Set only if values should be bucketized into intervals. Must be set
       // for facets with numerical values. Must not be set for facet with text
-      // values. Maximum number of intervals is 30.
+      // values. Maximum number of intervals is 40.
+      //
+      // For all numerical facet keys that appear in the list of products from
+      // the catalog, the percentiles 0, 10, 30, 50, 70, 90 and 100 are
+      // computed from their distribution weekly. If the model assigns a high
+      // score to a numerical facet key and its intervals are not specified in
+      // the search request, these percentiles will become the bounds
+      // for its intervals and will be returned in the response. If the
+      // facet key intervals are specified in the request, then the specified
+      // intervals will be returned instead.
       repeated Interval intervals = 2;
 
       // Only get facet for the given restricted values. For example, when using
@@ -572,7 +585,7 @@ message SearchRequest {
 
   // Facet specifications for faceted search. If empty, no facets are returned.
   //
-  // A maximum of 100 values are allowed. Otherwise, an INVALID_ARGUMENT error
+  // A maximum of 200 values are allowed. Otherwise, an INVALID_ARGUMENT error
   // is returned.
   repeated FacetSpec facet_specs = 12;
 
@@ -724,6 +737,14 @@ message SearchRequest {
   // The spell correction specification that specifies the mode under
   // which spell correction will take effect.
   optional SpellCorrectionSpec spell_correction_spec = 35;
+
+  // The entity for customers that may run multiple different entities, domains,
+  // sites or regions, for example, `Google US`, `Google Ads`, `Waymo`,
+  // `google.com`, `youtube.com`, etc.
+  // If this is set, it should be exactly matched with
+  // [UserEvent.entity][google.cloud.retail.v2.UserEvent.entity] to get search
+  // results boosted by entity.
+  string entity = 38;
 }
 
 // Response message for
@@ -921,4 +942,44 @@ message SearchResponse {
   // that are not applied during serving.
   repeated SearchRequest.BoostSpec.ConditionBoostSpec
       invalid_condition_boost_specs = 14;
+
+  // Metadata related to A/B testing [Experiment][] associated with this
+  // response. Only exists when an experiment is triggered.
+  repeated ExperimentInfo experiment_info = 17;
+}
+
+// Metadata for active A/B testing [Experiments][].
+message ExperimentInfo {
+  // Metadata for active serving config A/B tests.
+  message ServingConfigExperiment {
+    // The fully qualified resource name of the original
+    // [SearchRequest.placement][google.cloud.retail.v2.SearchRequest.placement]
+    // in the search request prior to reassignment by experiment API. For
+    // example: `projects/*/locations/*/catalogs/*/servingConfigs/*`.
+    string original_serving_config = 1 [(google.api.resource_reference) = {
+      type: "retail.googleapis.com/ServingConfig"
+    }];
+
+    // The fully qualified resource name of the serving config
+    // [VariantArm.serving_config_id][] responsible for generating the search
+    // response. For example:
+    // `projects/*/locations/*/catalogs/*/servingConfigs/*`.
+    string experiment_serving_config = 2 [(google.api.resource_reference) = {
+      type: "retail.googleapis.com/ServingConfig"
+    }];
+  }
+
+  // Information associated with the specific experiment entity being recorded.
+  oneof experiment_metadata {
+    // A/B test between existing Cloud Retail Search
+    // [ServingConfig][google.cloud.retail.v2.ServingConfig]s.
+    ServingConfigExperiment serving_config_experiment = 2;
+  }
+
+  // The fully qualified resource name of the experiment that provides the
+  // serving config under test, should an active experiment exist. For example:
+  // `projects/*/locations/global/catalogs/default_catalog/experiments/experiment_id`
+  string experiment = 1 [(google.api.resource_reference) = {
+    type: "retail.googleapis.com/Experiment"
+  }];
 }
