@@ -163,7 +163,7 @@ local_repository(
 # types e.g. longrunningpb, we must define our own version of longrunning here.
 load("@bazel_gazelle//:deps.bzl", "go_repository")
 
-_gapic_generator_go_version = "0.35.6"
+_gapic_generator_go_version = "0.35.7"
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
