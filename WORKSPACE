@@ -122,7 +122,7 @@ http_archive(
     urls = ["https://github.com/googleapis/rules_gapic/archive/v%s.tar.gz" % _rules_gapic_version],
 )
 
-# This must be above the download of gRPC (in C++ section) and 
+# This must be above the download of gRPC (in C++ section) and
 # rules_gapic_repositories because both depend on rules_go and we need to manage
 # our version of rules_go explicitly rather than depend on the version those
 # bring in transitively.
@@ -265,7 +265,17 @@ maven_install(
     ],
 )
 
-_gapic_generator_java_version = "2.18.0"
+load("//:lts_config.bzl", "lts_rules")
+
+lts_rules(name = "java_lts_rules")
+
+load("@java_lts_rules//:lts_config.bzl", "GAPIC_GENERATOR_JAVA_VERSION", "LTS")
+
+print("LTS = {}".format(LTS))
+
+print("GAPIC_GENERATOR_JAVA_VERSION = {}".format(GAPIC_GENERATOR_JAVA_VERSION))
+
+_gapic_generator_java_version = GAPIC_GENERATOR_JAVA_VERSION
 
 maven_install(
     artifacts = [
@@ -276,7 +286,7 @@ maven_install(
     repositories = [
         "m2Local",
         "https://repo.maven.apache.org/maven2/",
-    ]
+    ],
 )
 
 http_archive(
@@ -352,32 +362,39 @@ http_archive(
     urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v%s.tar.gz" % _gapic_generator_typescript_version],
 )
 
-load("@gapic_generator_typescript//:repositories.bzl", "gapic_generator_typescript_repositories", "NODE_VERSION")
+load("@gapic_generator_typescript//:repositories.bzl", "NODE_VERSION", "gapic_generator_typescript_repositories")
+
 gapic_generator_typescript_repositories()
 
 load("@aspect_rules_js//js:repositories.bzl", "rules_js_dependencies")
+
 rules_js_dependencies()
 
 load("@aspect_rules_ts//ts:repositories.bzl", "rules_ts_dependencies")
+
 rules_ts_dependencies(
     ts_version_from = "@gapic_generator_typescript//:package.json",
 )
 
 load("@rules_nodejs//nodejs:repositories.bzl", "nodejs_register_toolchains")
+
 nodejs_register_toolchains(
-  name = "nodejs",
-  node_version = NODE_VERSION,
+    name = "nodejs",
+    node_version = NODE_VERSION,
 )
 
 load("@aspect_rules_js//npm:npm_import.bzl", "npm_translate_lock", "pnpm_repository")
+
 npm_translate_lock(
-  name = "npm",
-  pnpm_lock = "@gapic_generator_typescript//:pnpm-lock.yaml",
-  data = ["@gapic_generator_typescript//:package.json"],
+    name = "npm",
+    data = ["@gapic_generator_typescript//:package.json"],
+    pnpm_lock = "@gapic_generator_typescript//:pnpm-lock.yaml",
 )
 
 load("@npm//:repositories.bzl", "npm_repositories")
+
 npm_repositories()
+
 pnpm_repository(name = "pnpm")
 
 ##############################################################################
