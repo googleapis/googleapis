@@ -111,9 +111,9 @@ rules_proto_toolchains()
 # rules_gapic also depends on rules_go, so it must come after our own dependency on rules_go.
 # It must also come before gapic-generator-go so as to ensure that it does not bring in an old
 # version of rules_gapic.
-_rules_gapic_version = "0.24.0"
+_rules_gapic_version = "0.25.0"
 
-_rules_gapic_sha256 = "be9b551b22b05755efddfd8ba97102d3191364c85eb8adc7cc6c466859bfa52e"
+_rules_gapic_sha256 = "bc0a4f7b582860aa5bcc206793e008aecab7844beeee61b29316f070adf94b3d"
 
 http_archive(
     name = "rules_gapic",
@@ -385,7 +385,7 @@ pnpm_repository(name = "pnpm")
 ##############################################################################
 
 # PHP micro-generator
-_gapic_generator_php_version = "1.6.8"
+_gapic_generator_php_version = "1.7.2"
 
 http_archive(
     name = "gapic_generator_php",
@@ -393,15 +393,7 @@ http_archive(
     urls = ["https://github.com/googleapis/gapic-generator-php/archive/v%s.zip" % _gapic_generator_php_version],
 )
 
-load("@rules_gapic//php:php_gapic_repositories.bzl", "php", "php_gapic_repositories")
-
-# TODO(ndietz): upgrade to PHP 8x
-php(
-    name = "php",
-    prebuilt_phps = ["@gapic_generator_php//rules_php_gapic:resources/php-7.4.15_linux_x86_64.tar.gz"],
-    strip_prefix = "php-7.4.15",
-    urls = ["https://www.php.net/distributions/php-7.4.15.tar.gz"],
-)
+load("@rules_gapic//php:php_gapic_repositories.bzl", "php_gapic_repositories")
 
 php_gapic_repositories()
 
