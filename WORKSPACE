@@ -257,6 +257,14 @@ load("@com_google_protobuf//:protobuf_deps.bzl", "PROTOBUF_MAVEN_ARTIFACTS")
 
 load("@rules_jvm_external//:defs.bzl", "maven_install")
 
+load("//:lts_config.bzl", "lts_rules")
+
+lts_rules(name = "java_lts_rules")
+
+load("@java_lts_rules//:lts_config.bzl", "GAPIC_GENERATOR_JAVA_VERSION")
+
+print("GAPIC_GENERATOR_JAVA_VERSION = {}".format(GAPIC_GENERATOR_JAVA_VERSION))
+
 maven_install(
     artifacts = PROTOBUF_MAVEN_ARTIFACTS,
     generate_compat_repositories = True,
@@ -265,41 +273,29 @@ maven_install(
     ],
 )
 
-load("//:lts_config.bzl", "lts_rules")
-
-lts_rules(name = "java_lts_rules")
-
-load("@java_lts_rules//:lts_config.bzl", "GAPIC_GENERATOR_JAVA_VERSION", "LTS")
-
-print("LTS = {}".format(LTS))
-
-print("GAPIC_GENERATOR_JAVA_VERSION = {}".format(GAPIC_GENERATOR_JAVA_VERSION))
-
-_gapic_generator_java_version = GAPIC_GENERATOR_JAVA_VERSION
-
 maven_install(
     artifacts = [
-        "com.google.api:gapic-generator-java:" + _gapic_generator_java_version,
+        "com.google.api:gapic-generator-java:" + GAPIC_GENERATOR_JAVA_VERSION,
     ],
     #Update this False for local development
     fail_on_missing_checksum = True,
     repositories = [
-        "m2Local",
+        # "m2Local",
         "https://repo.maven.apache.org/maven2/",
     ],
 )
 
 http_archive(
     name = "gapic_generator_java",
-    strip_prefix = "gapic-generator-java-%s" % _gapic_generator_java_version,
-    urls = ["https://github.com/googleapis/gapic-generator-java/archive/v%s.zip" % _gapic_generator_java_version],
+    strip_prefix = "gapic-generator-java-%s" % GAPIC_GENERATOR_JAVA_VERSION,
+    urls = ["https://github.com/googleapis/gapic-generator-java/archive/v%s.zip" % GAPIC_GENERATOR_JAVA_VERSION],
 )
 
 # gax-java is part of gapic-generator-java repository
 http_archive(
     name = "com_google_api_gax_java",
-    strip_prefix = "gapic-generator-java-%s/gax-java" % _gapic_generator_java_version,
-    urls = ["https://github.com/googleapis/gapic-generator-java/archive/v%s.zip" % _gapic_generator_java_version],
+    strip_prefix = "gapic-generator-java-%s/gax-java" % GAPIC_GENERATOR_JAVA_VERSION,
+    urls = ["https://github.com/googleapis/gapic-generator-java/archive/v%s.zip" % GAPIC_GENERATOR_JAVA_VERSION],
 )
 
 load("@com_google_api_gax_java//:repository_rules.bzl", "com_google_api_gax_java_properties")
