@@ -122,7 +122,7 @@ http_archive(
     urls = ["https://github.com/googleapis/rules_gapic/archive/v%s.tar.gz" % _rules_gapic_version],
 )
 
-# This must be above the download of gRPC (in C++ section) and 
+# This must be above the download of gRPC (in C++ section) and
 # rules_gapic_repositories because both depend on rules_go and we need to manage
 # our version of rules_go explicitly rather than depend on the version those
 # bring in transitively.
@@ -257,6 +257,14 @@ load("@com_google_protobuf//:protobuf_deps.bzl", "PROTOBUF_MAVEN_ARTIFACTS")
 
 load("@rules_jvm_external//:defs.bzl", "maven_install")
 
+load("//:lts_config.bzl", "lts_rules")
+
+lts_rules(name = "java_lts_rules")
+
+load("@java_lts_rules//:lts_config.bzl", "GAPIC_GENERATOR_JAVA_VERSION")
+
+print("GAPIC_GENERATOR_JAVA_VERSION = {}".format(GAPIC_GENERATOR_JAVA_VERSION))
+
 maven_install(
     artifacts = PROTOBUF_MAVEN_ARTIFACTS,
     generate_compat_repositories = True,
@@ -265,31 +273,29 @@ maven_install(
     ],
 )
 
-_gapic_generator_java_version = "2.18.0"
-
 maven_install(
     artifacts = [
-        "com.google.api:gapic-generator-java:" + _gapic_generator_java_version,
+        "com.google.api:gapic-generator-java:" + GAPIC_GENERATOR_JAVA_VERSION,
     ],
     #Update this False for local development
     fail_on_missing_checksum = True,
     repositories = [
-        "m2Local",
+        # "m2Local",
         "https://repo.maven.apache.org/maven2/",
-    ]
+    ],
 )
 
 http_archive(
     name = "gapic_generator_java",
-    strip_prefix = "gapic-generator-java-%s" % _gapic_generator_java_version,
-    urls = ["https://github.com/googleapis/gapic-generator-java/archive/v%s.zip" % _gapic_generator_java_version],
+    strip_prefix = "gapic-generator-java-%s" % GAPIC_GENERATOR_JAVA_VERSION,
+    urls = ["https://github.com/googleapis/gapic-generator-java/archive/v%s.zip" % GAPIC_GENERATOR_JAVA_VERSION],
 )
 
 # gax-java is part of gapic-generator-java repository
 http_archive(
     name = "com_google_api_gax_java",
-    strip_prefix = "gapic-generator-java-%s/gax-java" % _gapic_generator_java_version,
-    urls = ["https://github.com/googleapis/gapic-generator-java/archive/v%s.zip" % _gapic_generator_java_version],
+    strip_prefix = "gapic-generator-java-%s/gax-java" % GAPIC_GENERATOR_JAVA_VERSION,
+    urls = ["https://github.com/googleapis/gapic-generator-java/archive/v%s.zip" % GAPIC_GENERATOR_JAVA_VERSION],
 )
 
 load("@com_google_api_gax_java//:repository_rules.bzl", "com_google_api_gax_java_properties")
@@ -352,32 +358,39 @@ http_archive(
     urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v%s.tar.gz" % _gapic_generator_typescript_version],
 )
 
-load("@gapic_generator_typescript//:repositories.bzl", "gapic_generator_typescript_repositories", "NODE_VERSION")
+load("@gapic_generator_typescript//:repositories.bzl", "NODE_VERSION", "gapic_generator_typescript_repositories")
+
 gapic_generator_typescript_repositories()
 
 load("@aspect_rules_js//js:repositories.bzl", "rules_js_dependencies")
+
 rules_js_dependencies()
 
 load("@aspect_rules_ts//ts:repositories.bzl", "rules_ts_dependencies")
+
 rules_ts_dependencies(
     ts_version_from = "@gapic_generator_typescript//:package.json",
 )
 
 load("@rules_nodejs//nodejs:repositories.bzl", "nodejs_register_toolchains")
+
 nodejs_register_toolchains(
-  name = "nodejs",
-  node_version = NODE_VERSION,
+    name = "nodejs",
+    node_version = NODE_VERSION,
 )
 
 load("@aspect_rules_js//npm:npm_import.bzl", "npm_translate_lock", "pnpm_repository")
+
 npm_translate_lock(
-  name = "npm",
-  pnpm_lock = "@gapic_generator_typescript//:pnpm-lock.yaml",
-  data = ["@gapic_generator_typescript//:package.json"],
+    name = "npm",
+    data = ["@gapic_generator_typescript//:package.json"],
+    pnpm_lock = "@gapic_generator_typescript//:pnpm-lock.yaml",
 )
 
 load("@npm//:repositories.bzl", "npm_repositories")
+
 npm_repositories()
+
 pnpm_repository(name = "pnpm")
 
 ##############################################################################
