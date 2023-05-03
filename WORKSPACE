@@ -3,6 +3,11 @@ workspace(
 )
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("//:lts_config.bzl", "lts_rules")
+
+lts_rules(name = "java_lts_rules")
+
+load("@java_lts_rules//:lts_config.bzl", "GAPIC_GENERATOR_JAVA_VERSION", "PROTOBUF_SHA256", "PROTOBUF_VERSION")
 
 ##############################################################################
 # Common
@@ -77,11 +82,13 @@ load("@rules_pkg//:deps.bzl", "rules_pkg_dependencies")
 
 rules_pkg_dependencies()
 
+print("protobuf version: {}".format(PROTOBUF_VERSION))
+
 http_archive(
     name = "com_google_protobuf",
-    sha256 = "930c2c3b5ecc6c9c12615cf5ad93f1cd6e12d0aba862b572e076259970ac3a53",
-    strip_prefix = "protobuf-3.21.12",
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.21.12.tar.gz"],
+    sha256 = PROTOBUF_SHA256,
+    strip_prefix = "protobuf-{}".format(PROTOBUF_VERSION),
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/v{}.tar.gz".format(PROTOBUF_VERSION)],
 )
 
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
@@ -256,12 +263,6 @@ load("@com_google_protobuf//:protobuf_deps.bzl", "PROTOBUF_MAVEN_ARTIFACTS")
 # https://github.com/protocolbuffers/protobuf/issues/9132
 
 load("@rules_jvm_external//:defs.bzl", "maven_install")
-
-load("//:lts_config.bzl", "lts_rules")
-
-lts_rules(name = "java_lts_rules")
-
-load("@java_lts_rules//:lts_config.bzl", "GAPIC_GENERATOR_JAVA_VERSION")
 
 print("GAPIC_GENERATOR_JAVA_VERSION = {}".format(GAPIC_GENERATOR_JAVA_VERSION))
 
