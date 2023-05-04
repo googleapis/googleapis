@@ -385,7 +385,7 @@ pnpm_repository(name = "pnpm")
 ##############################################################################
 
 # PHP micro-generator
-_gapic_generator_php_version = "1.7.2"
+_gapic_generator_php_version = "1.7.3"
 
 http_archive(
     name = "gapic_generator_php",
