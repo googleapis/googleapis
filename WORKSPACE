@@ -82,13 +82,11 @@ load("@rules_pkg//:deps.bzl", "rules_pkg_dependencies")
 
 rules_pkg_dependencies()
 
-print("protobuf version: {}".format(PROTOBUF_VERSION))
-
 http_archive(
     name = "com_google_protobuf",
-    sha256 = PROTOBUF_SHA256,
-    strip_prefix = "protobuf-{}".format(PROTOBUF_VERSION),
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/v{}.tar.gz".format(PROTOBUF_VERSION)],
+    sha256 = "930c2c3b5ecc6c9c12615cf5ad93f1cd6e12d0aba862b572e076259970ac3a53",
+    strip_prefix = "protobuf-3.21.12",
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.21.12.tar.gz"],
 )
 
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
@@ -255,6 +253,19 @@ apple_support_dependencies()
 ##############################################################################
 # Java
 ##############################################################################
+# Build Java client library with a specific version of protobuf.
+print("PROTOBUF_VERSION is {}".format(PROTOBUF_VERSION))
+http_archive(
+    name = "com_google_protobuf",
+    sha256 = PROTOBUF_SHA256,
+    strip_prefix = "protobuf-{}".format(PROTOBUF_VERSION),
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/v{}.tar.gz".format(PROTOBUF_VERSION)],
+)
+
+load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
+
+protobuf_deps()
+
 load("@com_google_protobuf//:protobuf_deps.bzl", "PROTOBUF_MAVEN_ARTIFACTS")
 
 # Starting in protobuf 3.19, protobuf project started to provide
