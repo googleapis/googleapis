@@ -225,12 +225,14 @@ message JobNotification {
 message AllocationPolicy {
   message LocationPolicy {
     // A list of allowed location names represented by internal URLs.
+    //
     // Each location can be a region or a zone.
     // Only one region or multiple zones in one region is supported now.
     // For example,
     // ["regions/us-central1"] allow VMs in any zones in region us-central1.
     // ["zones/us-central1-a", "zones/us-central1-c"] only allow VMs
     // in zones us-central1-a and us-central1-c.
+    //
     // All locations end up in different regions would cause errors.
     // For example,
     // ["regions/us-central1", "zones/us-central1-a", "zones/us-central1-b",
@@ -241,25 +243,29 @@ message AllocationPolicy {
 
   // A new persistent disk or a local ssd.
   // A VM can only have one local SSD setting but multiple local SSD partitions.
-  // https://cloud.google.com/compute/docs/disks#pdspecs.
+  // See https://cloud.google.com/compute/docs/disks#pdspecs and
   // https://cloud.google.com/compute/docs/disks#localssds.
   message Disk {
     // A data source from which a PD will be created.
     oneof data_source {
       // Name of a public or custom image used as the data source.
       // For example, the following are all valid URLs:
-      // (1) Specify the image by its family name:
+      //
+      // * Specify the image by its family name:
       // projects/{project}/global/images/family/{image_family}
-      // (2) Specify the image version:
+      // * Specify the image version:
       // projects/{project}/global/images/{image_version}
+      //
       // You can also use Batch customized image in short names.
       // The following image values are supported for a boot disk:
-      // "batch-debian": use Batch Debian images.
-      // "batch-centos": use Batch CentOS images.
-      // "batch-cos": use Batch Container-Optimized images.
+      //
+      // * "batch-debian": use Batch Debian images.
+      // * "batch-centos": use Batch CentOS images.
+      // * "batch-cos": use Batch Container-Optimized images.
       string image = 4;
 
       // Name of a snapshot used as the data source.
+      // Snapshot is not supported as boot disk now.
       string snapshot = 5;
     }
 
@@ -270,6 +276,7 @@ message AllocationPolicy {
     string type = 1;
 
     // Disk size in GB.
+    //
     // For persistent disk, this field is ignored if `data_source` is `image` or
     // `snapshot`.
     // For local SSD, size_gb should be a multiple of 375GB,
@@ -324,7 +331,7 @@ message AllocationPolicy {
 
     // The minimum CPU platform.
     // See
-    // `https://cloud.google.com/compute/docs/instances/specify-min-cpu-platform`.
+    // https://cloud.google.com/compute/docs/instances/specify-min-cpu-platform.
     // Not yet implemented.
     string min_cpu_platform = 3;
 
@@ -334,8 +341,9 @@ message AllocationPolicy {
     // The accelerators attached to each VM instance.
     repeated Accelerator accelerators = 5;
 
-    // Book disk to be created and attached to each VM by this InstancePolicy.
+    // Boot disk to be created and attached to each VM by this InstancePolicy.
     // Boot disk will be deleted when the VM is deleted.
+    // Batch API now only supports booting from image.
     Disk boot_disk = 8;
 
     // Non-boot disks to be attached for each VM created by this InstancePolicy.
@@ -366,18 +374,22 @@ message AllocationPolicy {
   message NetworkInterface {
     // The URL of an existing network resource.
     // You can specify the network as a full or partial URL.
+    //
     // For example, the following are all valid URLs:
-    // https://www.googleapis.com/compute/v1/projects/{project}/global/networks/{network}
-    // projects/{project}/global/networks/{network}
-    // global/networks/{network}
+    //
+    // * https://www.googleapis.com/compute/v1/projects/{project}/global/networks/{network}
+    // * projects/{project}/global/networks/{network}
+    // * global/networks/{network}
     string network = 1;
 
     // The URL of an existing subnetwork resource in the network.
     // You can specify the subnetwork as a full or partial URL.
+    //
     // For example, the following are all valid URLs:
-    // https://www.googleapis.com/compute/v1/projects/{project}/regions/{region}/subnetworks/{subnetwork}
-    // projects/{project}/regions/{region}/subnetworks/{subnetwork}
-    // regions/{region}/subnetworks/{subnetwork}
+    //
+    // * https://www.googleapis.com/compute/v1/projects/{project}/regions/{region}/subnetworks/{subnetwork}
+    // * projects/{project}/regions/{region}/subnetworks/{subnetwork}
+    // * regions/{region}/subnetworks/{subnetwork}
     string subnetwork = 2;
 
     // Default is false (with an external IP address). Required if
@@ -394,6 +406,23 @@ message AllocationPolicy {
   message NetworkPolicy {
     // Network configurations.
     repeated NetworkInterface network_interfaces = 1;
+  }
+
+  // PlacementPolicy describes a group placement policy for the VMs controlled
+  // by this AllocationPolicy.
+  message PlacementPolicy {
+    // UNSPECIFIED vs. COLLOCATED (default UNSPECIFIED). Use COLLOCATED when you
+    // want VMs to be located close to each other for low network latency
+    // between the VMs. No placement policy will be generated when collocation
+    // is UNSPECIFIED.
+    string collocation = 1;
+
+    // When specified, causes the job to fail if more than max_distance logical
+    // switches are required between VMs. Batch uses the most compact possible
+    // placement of VMs even when max_distance is not specified. An explicit
+    // max_distance makes that level of compactness a strict requirement.
+    // Not yet implemented
+    int64 max_distance = 2;
   }
 
   // Compute Engine VM instance provisioning model.
@@ -437,6 +466,9 @@ message AllocationPolicy {
 
   // The network policy.
   NetworkPolicy network = 7;
+
+  // The placement policy.
+  PlacementPolicy placement = 10;
 }
 
 // A TaskGroup contains one or multiple Tasks that share the same
@@ -457,11 +489,12 @@ message TaskGroup {
   TaskSpec task_spec = 3 [(google.api.field_behavior) = REQUIRED];
 
   // Number of Tasks in the TaskGroup.
-  // default is 1
+  // Default is 1.
   int64 task_count = 4;
 
   // Max number of tasks that can run in parallel.
   // Default to min(task_count, 1000).
+  // Field parallelism must be 1 if the scheduling_policy is IN_ORDER.
   int64 parallelism = 5;
 
   // An array of environment variable mappings, which are passed to Tasks with
