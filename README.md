@@ -36,7 +36,7 @@ bazel build //google/example/library/v1/...
 To build the Java package for one library:
 
 ```
-bazel build //google/example/library/v1:google-cloud-library-v1-java
+bazel build //google/example/library/v1:google-cloud-example-library-v1-java
 ```
 
 Bazel packages exist in all the libraries for Java, Go, Python, Ruby, Node.js, PHP and C#.
