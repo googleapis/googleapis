@@ -20,6 +20,7 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/longrunning/operations.proto";
 import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "Google.Cloud.WebRisk.V1";
@@ -35,7 +36,8 @@ option ruby_package = "Google::Cloud::WebRisk::V1";
 // website and in client applications.
 service WebRiskService {
   option (google.api.default_host) = "webrisk.googleapis.com";
-  option (google.api.oauth_scopes) = "https://www.googleapis.com/auth/cloud-platform";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform";
 
   // Gets the most recent threat list diffs. These diffs should be applied to
   // a local database of hashes to keep it up-to-date. If the local database is
@@ -43,11 +45,13 @@ service WebRiskService {
   // be returned. This Method only updates a single ThreatList at a time. To
   // update multiple ThreatList databases, this method needs to be called once
   // for each list.
-  rpc ComputeThreatListDiff(ComputeThreatListDiffRequest) returns (ComputeThreatListDiffResponse) {
+  rpc ComputeThreatListDiff(ComputeThreatListDiffRequest)
+      returns (ComputeThreatListDiffResponse) {
     option (google.api.http) = {
       get: "/v1/threatLists:computeDiff"
     };
-    option (google.api.method_signature) = "threat_type,version_token,constraints";
+    option (google.api.method_signature) =
+        "threat_type,version_token,constraints";
   }
 
   // This method is used to check whether a URI is on a given threatList.
@@ -88,6 +92,27 @@ service WebRiskService {
     };
     option (google.api.method_signature) = "parent,submission";
   }
+
+  // Submits a URI suspected of containing malicious content to be reviewed.
+  // Returns a google.longrunning.Operation which, once the review is complete,
+  // is updated with its result. You can use the [Pub/Sub API]
+  // (https://cloud.google.com/pubsub) to receive notifications for the returned
+  // Operation. If the result verifies the existence of malicious content, the
+  // site will be added to the [Google's Social Engineering lists]
+  // (https://support.google.com/webmasters/answer/6350487/) in order to
+  // protect users that could get exposed to this threat in the future. Only
+  // allowlisted projects can use this method during Early Access. Please reach
+  // out to Sales or your customer engineer to obtain access.
+  rpc SubmitUri(SubmitUriRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*}/uris:submit"
+      body: "*"
+    };
+    option (google.longrunning.operation_info) = {
+      response_type: "Submission"
+      metadata_type: "SubmitUriMetadata"
+    };
+  }
 }
 
 // Describes an API diff request.
@@ -108,9 +133,9 @@ message ComputeThreatListDiffRequest {
     repeated CompressionType supported_compressions = 3;
   }
 
-  // Required. The threat list to update. Only a single ThreatType should be specified
-  // per request. If you want to handle multiple ThreatTypes, you must make one
-  // request per ThreatType.
+  // Required. The threat list to update. Only a single ThreatType should be
+  // specified per request. If you want to handle multiple ThreatTypes, you must
+  // make one request per ThreatType.
   ThreatType threat_type = 1 [(google.api.field_behavior) = REQUIRED];
 
   // The current version token of the client for the requested list (the
@@ -180,7 +205,8 @@ message SearchUrisRequest {
   // Required. The URI to be checked for matches.
   string uri = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // Required. The ThreatLists to search in. Multiple ThreatLists may be specified.
+  // Required. The ThreatLists to search in. Multiple ThreatLists may be
+  // specified.
   repeated ThreatType threat_types = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
@@ -207,7 +233,8 @@ message SearchHashesRequest {
   // the web safe base64 variant (RFC 4648).
   bytes hash_prefix = 1;
 
-  // Required. The ThreatLists to search in. Multiple ThreatLists may be specified.
+  // Required. The ThreatLists to search in. Multiple ThreatLists may be
+  // specified.
   repeated ThreatType threat_types = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
@@ -342,14 +369,130 @@ message RiceDeltaEncoding {
 
 // Wraps a URI that might be displaying malicious content.
 message Submission {
-  // Required. The URI that is being reported for malicious content to be analyzed.
+  // Required. The URI that is being reported for malicious content to be
+  // analyzed.
   string uri = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Output only. ThreatTypes found to be associated with the submitted URI
+  // after reviewing it. This might be empty if the URI was not added to any
+  // list.
+  repeated ThreatType threat_types = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Context about the submission including the type of abuse found on the URI and
+// supporting details.
+// option (google.api.message_visibility).restriction = "TRUSTED_TESTER";
+message ThreatInfo {
+  // The abuse type found on the URI.
+  enum AbuseType {
+    // Default.
+    ABUSE_TYPE_UNSPECIFIED = 0;
+
+    // The URI contains malware.
+    MALWARE = 1;
+
+    // The URI contains social engineering.
+    SOCIAL_ENGINEERING = 2;
+
+    // The URI contains unwanted software.
+    UNWANTED_SOFTWARE = 3;
+  }
+
+  // Confidence that a URI is unsafe.
+  message Confidence {
+    // Enum representation of confidence.
+    enum ConfidenceLevel {
+      // Default.
+      CONFIDENCE_LEVEL_UNSPECIFIED = 0;
+
+      // Less than 60% confidence that the URI is unsafe.
+      LOW = 1;
+
+      // Between 60% and 80% confidence that the URI is unsafe.
+      MEDIUM = 2;
+
+      // Greater than 80% confidence that the URI is unsafe.
+      HIGH = 3;
+    }
+
+    oneof value {
+      // A decimal representation of confidence in the range of 0
+      // to 1 where 0 indicates no confidence and 1 indicates
+      // complete confidence.
+      float score = 1;
+
+      // Enum representation of confidence.
+      ConfidenceLevel level = 2;
+    }
+  }
+
+  // Context about why the URI is unsafe.
+  message ThreatJustification {
+    // Labels that explain how the URI was classified.
+    enum JustificationLabel {
+      // Default.
+      JUSTIFICATION_LABEL_UNSPECIFIED = 0;
+
+      // The submitter manually verified that the submission is unsafe.
+      MANUAL_VERIFICATION = 1;
+
+      // The submitter received the submission from an end user.
+      USER_REPORT = 2;
+
+      // The submitter received the submission from an automated system.
+      AUTOMATED_REPORT = 3;
+    }
+
+    // Labels associated with this URI that explain how it was classified.
+    repeated JustificationLabel labels = 1;
+
+    // Free-form context on why this URI is unsafe.
+    repeated string comments = 2;
+  }
+
+  // The type of abuse.
+  AbuseType abuse_type = 1;
+
+  // Confidence that the URI is unsafe.
+  Confidence threat_confidence = 2;
+
+  // Context about why the URI is unsafe.
+  ThreatJustification threat_justification = 3;
+}
+
+// Details about how the threat was discovered.
+message ThreatDiscovery {
+  // Platform types.
+  enum Platform {
+    // Default.
+    PLATFORM_UNSPECIFIED = 0;
+
+    // General Android platform.
+    ANDROID = 1;
+
+    // General iOS platform.
+    IOS = 2;
+
+    // General macOS platform.
+    MACOS = 3;
+
+    // General Windows platform.
+    WINDOWS = 4;
+  }
+
+  // Platform on which the threat was discovered.
+  Platform platform = 1;
+
+  // CLDR region code of the countries/regions the URI poses a threat ordered
+  // from most impact to least impact. Example: "US" for United States.
+  repeated string region_codes = 2;
 }
 
 // Request to send a potentially phishy URI to WebRisk.
 message CreateSubmissionRequest {
-  // Required. The name of the project that is making the submission. This string is in
-  // the format "projects/{project_number}".
+  // Required. The name of the project that is making the submission. This
+  // string is in the format "projects/{project_number}".
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -359,4 +502,59 @@ message CreateSubmissionRequest {
 
   // Required. The submission that contains the content of the phishing report.
   Submission submission = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request to send a potentially malicious URI to WebRisk.
+message SubmitUriRequest {
+  // Required. The name of the project that is making the submission. This
+  // string is in the format "projects/{project_number}".
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudresourcemanager.googleapis.com/Project"
+    }
+  ];
+
+  // Required. The submission that contains the URI to be scanned.
+  Submission submission = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Provides additional information about the submission.
+  ThreatInfo threat_info = 3;
+
+  // Provides additional information about how the submission was discovered.
+  ThreatDiscovery threat_discovery = 4;
+}
+
+// Metadata for the Submit URI long-running operation.
+// option (google.api.message_visibility).restriction = "TRUSTED_TESTER";
+message SubmitUriMetadata {
+  // Enum that represents the state of the long-running operation.
+  enum State {
+    // Default unspecified state.
+    STATE_UNSPECIFIED = 0;
+
+    // The operation is currently running.
+    RUNNING = 1;
+
+    // The operation finished with a success status.
+    SUCCEEDED = 2;
+
+    // The operation was cancelled.
+    CANCELLED = 3;
+
+    // The operation finished with a failure status.
+    FAILED = 4;
+
+    // The operation was closed with no action taken.
+    CLOSED = 5;
+  }
+
+  // The state of the operation.
+  State state = 1;
+
+  // Creation time of the operation.
+  google.protobuf.Timestamp create_time = 2;
+
+  // Latest update time of the operation.
+  google.protobuf.Timestamp update_time = 3;
 }
