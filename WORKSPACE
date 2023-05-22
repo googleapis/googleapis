@@ -123,9 +123,9 @@ http_archive(
     ],
 )
 
-_grpc_version = "1.54.1"
+_grpc_version = "1.55.0"
 
-_grpc_sha256 = "8f01dac5a32104acbb76db1e6b447dc5b3dc738cb9bceeee01843d9d01d1d788"
+_grpc_sha256 = "c1f26622796e975a50f314e54c8bc558021ab1dabac308b9d97390c863aade9d"
 
 http_archive(
     name = "com_github_grpc_grpc",
@@ -155,12 +155,12 @@ apple_support_dependencies()
 # End of C++ section
 
 # Explicitly declaring Protobuf version, while Protobuf dependency is already
-# instantiated in grpc_deps(). 
+# instantiated in grpc_deps().
 http_archive(
     name = "com_google_protobuf",
-    sha256 = "930c2c3b5ecc6c9c12615cf5ad93f1cd6e12d0aba862b572e076259970ac3a53",
-    strip_prefix = "protobuf-3.21.12",
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.21.12.tar.gz"],
+    sha256 = "dc167b7d23ec0d6e4a3d4eae1798de6c8d162e69fa136d39753aaeb7a6e1289d",
+    strip_prefix = "protobuf-23.1",
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/v23.1.tar.gz"],
 )
 
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps", "PROTOBUF_MAVEN_ARTIFACTS")
