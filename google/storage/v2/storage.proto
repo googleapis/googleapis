@@ -327,6 +327,8 @@ service Storage {
   //     persisted offset. Even though the data isn't written, it may still
   //     incur a performance cost over resuming at the correct write offset.
   //     This behavior can make client-side handling simpler in some cases.
+  //   - Clients must only send data that is a multiple of 256 KiB per message,
+  //     unless the object is being finished with `finish_write` set to `true`.
   //
   // The service will not view the object as complete until the client has
   // sent a `WriteObjectRequest` with `finish_write` set to `true`. Sending any
@@ -338,6 +340,7 @@ service Storage {
   // Attempting to resume an already finalized object will result in an OK
   // status, with a WriteObjectResponse containing the finalized object's
   // metadata.
+  //
   rpc WriteObject(stream WriteObjectRequest) returns (WriteObjectResponse) {}
 
   // Retrieves a list of objects matching the criteria.
@@ -912,9 +915,9 @@ message ReadObjectResponse {
   // generate more data.
   ChecksummedData checksummed_data = 1;
 
-  // The checksums of the complete object. The client should compute one of
-  // these checksums over the downloaded object and compare it against the value
-  // provided here.
+  // The checksums of the complete object. If the object is downloaded in full,
+  // the client should compute one of these checksums over the downloaded object
+  // and compare it against the value provided here.
   ObjectChecksums object_checksums = 2;
 
   // If read_offset and or read_limit was specified on the
@@ -1002,7 +1005,7 @@ message WriteObjectRequest {
   }
 
   // Checksums for the complete object. If the checksums computed by the service
-  // don't match the specifified checksums the call will fail. May only be
+  // don't match the specified checksums the call will fail. May only be
   // provided in the first or last request (either with first_message, or
   // finish_write set).
   ObjectChecksums object_checksums = 6;
@@ -1805,6 +1808,7 @@ message Bucket {
   }
 
   // Immutable. The name of the bucket.
+  // Format: `projects/{project}/buckets/{bucket}`
   string name = 1 [(google.api.field_behavior) = IMMUTABLE];
 
   // Output only. The user-chosen part of the bucket name. The `{bucket}`
@@ -2013,7 +2017,7 @@ message BucketAccessControl {
 // checksum.
 message ChecksummedData {
   // The data.
-  bytes content = 1;
+  bytes content = 1 [ctype = CORD];
 
   // If set, the CRC32C digest of the content field.
   optional fixed32 crc32c = 2;
@@ -2193,9 +2197,8 @@ message Object {
   // [https://tools.ietf.org/html/rfc7231#section-3.1.3.2][RFC 7231 §3.1.3.2].
   string content_language = 11;
 
-  // Output only. The deletion time of the object. Will be returned if and only
-  // if this version of the object has been deleted. Attempting to set or update
-  // this field will result in a
+  // Output only. If this object is noncurrent, this is the time when the object
+  // became noncurrent. Attempting to set or update this field will result in a
   // [FieldViolation][google.rpc.BadRequest.FieldViolation].
   google.protobuf.Timestamp delete_time = 12
       [(google.api.field_behavior) = OUTPUT_ONLY];
