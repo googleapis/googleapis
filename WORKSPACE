@@ -134,10 +134,22 @@ http_archive(
     urls = ["https://github.com/grpc/grpc/archive/v%s.zip" % _grpc_version],
 )
 
+# Explicitly declaring Protobuf version, while Protobuf dependency is already
+# instantiated in grpc_deps().
+http_archive(
+    name = "com_google_protobuf",
+    sha256 = "0b0395d34e000f1229679e10d984ed7913078f3dd7f26cf0476467f5e65716f4",
+    strip_prefix = "protobuf-23.2",
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/v23.2.tar.gz"],
+)
+
 load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
 
-# This declares com_google_protobuf repository
 grpc_deps()
+
+load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps", "PROTOBUF_MAVEN_ARTIFACTS")
+# This is actually already done within grpc_deps but calling this for Bazel convention.
+protobuf_deps()
 
 # gRPC enforces a specific version of Go toolchain which conflicts with our build.
 # All the relevant parts of grpc_extra_deps() are imported in this  WORKSPACE file
@@ -153,20 +165,6 @@ load("@build_bazel_apple_support//lib:repositories.bzl", "apple_support_dependen
 apple_support_dependencies()
 
 # End of C++ section
-
-# Explicitly declaring Protobuf version, while Protobuf dependency is already
-# instantiated in grpc_deps().
-http_archive(
-    name = "com_google_protobuf",
-    sha256 = "0b0395d34e000f1229679e10d984ed7913078f3dd7f26cf0476467f5e65716f4",
-    strip_prefix = "protobuf-23.2",
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/v23.2.tar.gz"],
-)
-
-load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps", "PROTOBUF_MAVEN_ARTIFACTS")
-
-# This is actually already done within grpc_deps but calling this for Bazel convention.
-protobuf_deps()
 
 http_archive(
     name = "rules_proto",
