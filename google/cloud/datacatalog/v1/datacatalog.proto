@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -735,6 +735,9 @@ message SearchCatalogResponse {
   // Search results.
   repeated SearchCatalogResult results = 1;
 
+  // The approximate total number of entries matched by the query.
+  int32 total_size = 2;
+
   // Pagination token that can be used in subsequent calls to retrieve the next
   // page of results.
   string next_page_token = 3;
@@ -971,7 +974,9 @@ message LookupEntryRequest {
     // (https://cloud.google.com/bigquery/docs/reference/standard-sql/lexical).
     string sql_resource = 3;
 
-    // Fully qualified name (FQN) of the resource.
+    // [Fully Qualified Name
+    // (FQN)](https://cloud.google.com//data-catalog/docs/fully-qualified-names)
+    // of the resource.
     //
     // FQNs take two forms:
     //
@@ -988,6 +993,16 @@ message LookupEntryRequest {
     // `dataproc_metastore:{PROJECT_ID}.{LOCATION_ID}.{INSTANCE_ID}.{DATABASE_ID}.{TABLE_ID}`
     string fully_qualified_name = 5;
   }
+
+  // Project where the lookup should be performed. Required to lookup
+  // entry that is not a part of `DPMS` or `DATAPLEX` `integrated_system`
+  // using its `fully_qualified_name`. Ignored in other cases.
+  string project = 6;
+
+  // Location where the lookup should be performed. Required to lookup
+  // entry that is not a part of `DPMS` or `DATAPLEX` `integrated_system`
+  // using its `fully_qualified_name`. Ignored in other cases.
+  string location = 7;
 }
 
 // Entry metadata.
@@ -1037,25 +1052,12 @@ message Entry {
   // The maximum size is 200 bytes when encoded in UTF-8.
   string linked_resource = 9;
 
-  // Fully qualified name (FQN) of the resource. Set automatically for entries
-  // representing resources from synced systems. Settable only during creation
-  // and read-only afterwards. Can be used for search and lookup of the entries.
+  // [Fully Qualified Name
+  // (FQN)](https://cloud.google.com//data-catalog/docs/fully-qualified-names)
+  // of the resource. Set automatically for entries representing resources from
+  // synced systems. Settable only during creation, and read-only later. Can
+  // be used for search and lookup of the entries.
   //
-  //
-  //
-  // FQNs take two forms:
-  //
-  // * For non-regionalized resources:
-  //
-  //   `{SYSTEM}:{PROJECT}.{PATH_TO_RESOURCE_SEPARATED_WITH_DOTS}`
-  //
-  // * For regionalized resources:
-  //
-  //   `{SYSTEM}:{PROJECT}.{LOCATION_ID}.{PATH_TO_RESOURCE_SEPARATED_WITH_DOTS}`
-  //
-  // Example for a DPMS table:
-  //
-  // `dataproc_metastore:{PROJECT_ID}.{LOCATION_ID}.{INSTANCE_ID}.{DATABASE_ID}.{TABLE_ID}`
   string fully_qualified_name = 29;
 
   // Required. Entry type.
@@ -1113,6 +1115,10 @@ message Entry {
     // Specification that applies to Looker sysstem. Only settable when
     // `user_specified_system` is equal to `LOOKER`
     LookerSystemSpec looker_system_spec = 40;
+
+    // Specification that applies to Cloud Bigtable system. Only settable when
+    // `integrated_system` is equal to `CLOUD_BIGTABLE`
+    CloudBigtableSystemSpec cloud_bigtable_system_spec = 41;
   }
 
   // Type specification.
@@ -1157,6 +1163,9 @@ message Entry {
     // Specification that applies to a fileset resource. Valid only
     // for entries with the `FILESET` type.
     FilesetSpec fileset_spec = 33;
+
+    // Specification that applies to a Service resource.
+    ServiceSpec service_spec = 42;
   }
 
   // Display name of an entry.
@@ -1402,6 +1411,49 @@ message LookerSystemSpec {
 
   // Name of the parent View. Empty if it does not exist.
   string parent_view_display_name = 6;
+}
+
+// Specification that applies to
+// all entries that are part of `CLOUD_BIGTABLE` system
+// (user_specified_type)
+message CloudBigtableSystemSpec {
+  // Display name of the Instance. This is user specified and different from
+  // the resource name.
+  string instance_display_name = 1;
+}
+
+// Specification that applies to Instance
+// entries that are part of `CLOUD_BIGTABLE` system.
+// (user_specified_type)
+message CloudBigtableInstanceSpec {
+  // Spec that applies to clusters of an Instance of Cloud Bigtable.
+  message CloudBigtableClusterSpec {
+    // Name of the cluster.
+    string display_name = 1;
+
+    // Location of the cluster, typically a Cloud zone.
+    string location = 2;
+
+    // Type of the resource. For a cluster this would be "CLUSTER".
+    string type = 3;
+
+    // A link back to the parent resource, in this case Instance.
+    string linked_resource = 4;
+  }
+
+  // The list of clusters for the Instance.
+  repeated CloudBigtableClusterSpec cloud_bigtable_cluster_specs = 1;
+}
+
+// Specification that applies to a Service resource. Valid only
+// for entries with the `SERVICE` type.
+message ServiceSpec {
+  // System spec
+  oneof system_spec {
+    // Specification that applies to Instance entries of `CLOUD_BIGTABLE`
+    // system.
+    CloudBigtableInstanceSpec cloud_bigtable_instance_spec = 1;
+  }
 }
 
 // Business Context of the entry.
@@ -1898,6 +1950,10 @@ message ImportEntriesRequest {
     // Path to a Cloud Storage bucket that contains a dump ready for ingestion.
     string gcs_bucket_path = 2;
   }
+
+  // Optional. (Optional) Dataplex task job id, if specified will be used as
+  // part of ImportEntries LRO ID
+  string job_id = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Response message for [long-running operation][google.longrunning.Operation]
