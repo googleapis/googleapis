@@ -123,9 +123,9 @@ http_archive(
     ],
 )
 
-_grpc_version = "1.55.0"
+_grpc_version = "1.55.1"
 
-_grpc_sha256 = "c1f26622796e975a50f314e54c8bc558021ab1dabac308b9d97390c863aade9d"
+_grpc_sha256 = "17c0685da231917a7b3be2671a7b13b550a85fdda5e475313264c5f51c4da3f8"
 
 http_archive(
     name = "com_github_grpc_grpc",
