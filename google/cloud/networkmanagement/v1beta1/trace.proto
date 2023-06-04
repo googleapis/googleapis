@@ -1,0 +1,979 @@
+// Copyright 2022 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.networkmanagement.v1beta1;
+
+option csharp_namespace = "Google.Cloud.NetworkManagement.V1Beta1";
+option go_package = "cloud.google.com/go/networkmanagement/apiv1beta1/networkmanagementpb;networkmanagementpb";
+option java_multiple_files = true;
+option java_outer_classname = "TraceProto";
+option java_package = "com.google.cloud.networkmanagement.v1beta1";
+option php_namespace = "Google\\Cloud\\NetworkManagement\\V1beta1";
+option ruby_package = "Google::Cloud::NetworkManagement::V1beta1";
+
+// Trace represents one simulated packet forwarding path.
+//
+//   * Each trace contains multiple ordered steps.
+//   * Each step is in a particular state with associated configuration.
+//   * State is categorized as final or non-final states.
+//   * Each final state has a reason associated.
+//   * Each trace must end with a final state (the last step).
+// ```
+//   |---------------------Trace----------------------|
+//   Step1(State) Step2(State) ---  StepN(State(final))
+// ```
+message Trace {
+  // Derived from the source and destination endpoints definition specified by
+  // user request, and validated by the data plane model.
+  // If there are multiple traces starting from different source locations, then
+  // the endpoint_info may be different between traces.
+  EndpointInfo endpoint_info = 1;
+
+  // A trace of a test contains multiple steps from the initial state to the
+  // final state (delivered, dropped, forwarded, or aborted).
+  //
+  // The steps are ordered by the processing sequence within the simulated
+  // network state machine. It is critical to preserve the order of the steps
+  // and avoid reordering or sorting them.
+  repeated Step steps = 2;
+}
+
+// A simulated forwarding path is composed of multiple steps.
+// Each step has a well-defined state and an associated configuration.
+message Step {
+  // Type of states that are defined in the network state machine.
+  // Each step in the packet trace is in a specific state.
+  enum State {
+    // Unspecified state.
+    STATE_UNSPECIFIED = 0;
+
+    // Initial state: packet originating from a Compute Engine instance.
+    // An InstanceInfo is populated with starting instance information.
+    START_FROM_INSTANCE = 1;
+
+    // Initial state: packet originating from the internet.
+    // The endpoint information is populated.
+    START_FROM_INTERNET = 2;
+
+    // Initial state: packet originating from a VPC or on-premises network
+    // with internal source IP.
+    // If the source is a VPC network visible to the user, a NetworkInfo
+    // is populated with details of the network.
+    START_FROM_PRIVATE_NETWORK = 3;
+
+    // Initial state: packet originating from a Google Kubernetes Engine cluster
+    // master. A GKEMasterInfo is populated with starting instance information.
+    START_FROM_GKE_MASTER = 21;
+
+    // Initial state: packet originating from a Cloud SQL instance.
+    // A CloudSQLInstanceInfo is populated with starting instance information.
+    START_FROM_CLOUD_SQL_INSTANCE = 22;
+
+    // Initial state: packet originating from a Cloud function.
+    // A CloudFunctionInfo is populated with starting function information.
+    START_FROM_CLOUD_FUNCTION = 23;
+
+    // Config checking state: verify ingress firewall rule.
+    APPLY_INGRESS_FIREWALL_RULE = 4;
+
+    // Config checking state: verify egress firewall rule.
+    APPLY_EGRESS_FIREWALL_RULE = 5;
+
+    // Config checking state: verify route.
+    APPLY_ROUTE = 6;
+
+    // Config checking state: match forwarding rule.
+    APPLY_FORWARDING_RULE = 7;
+
+    // Config checking state: packet sent or received under foreign IP
+    // address and allowed.
+    SPOOFING_APPROVED = 8;
+
+    // Forwarding state: arriving at a Compute Engine instance.
+    ARRIVE_AT_INSTANCE = 9;
+
+    // Forwarding state: arriving at a Compute Engine internal load balancer.
+    ARRIVE_AT_INTERNAL_LOAD_BALANCER = 10;
+
+    // Forwarding state: arriving at a Compute Engine external load balancer.
+    ARRIVE_AT_EXTERNAL_LOAD_BALANCER = 11;
+
+    // Forwarding state: arriving at a Cloud VPN gateway.
+    ARRIVE_AT_VPN_GATEWAY = 12;
+
+    // Forwarding state: arriving at a Cloud VPN tunnel.
+    ARRIVE_AT_VPN_TUNNEL = 13;
+
+    // Forwarding state: arriving at a VPC connector.
+    ARRIVE_AT_VPC_CONNECTOR = 24;
+
+    // Transition state: packet header translated.
+    NAT = 14;
+
+    // Transition state: original connection is terminated and a new proxied
+    // connection is initiated.
+    PROXY_CONNECTION = 15;
+
+    // Final state: packet could be delivered.
+    DELIVER = 16;
+
+    // Final state: packet could be dropped.
+    DROP = 17;
+
+    // Final state: packet could be forwarded to a network with an unknown
+    // configuration.
+    FORWARD = 18;
+
+    // Final state: analysis is aborted.
+    ABORT = 19;
+
+    // Special state: viewer of the test result does not have permission to
+    // see the configuration in this step.
+    VIEWER_PERMISSION_MISSING = 20;
+  }
+
+  // A description of the step. Usually this is a summary of the state.
+  string description = 1;
+
+  // Each step is in one of the pre-defined states.
+  State state = 2;
+
+  // This is a step that leads to the final state Drop.
+  bool causes_drop = 3;
+
+  // Project ID that contains the configuration this step is validating.
+  string project_id = 4;
+
+  // Configuration or metadata associated with each step.
+  // The configuration is filtered based on viewer's permission. If a viewer
+  // has no permission to view the configuration in this step, for non-final
+  // states a special state is populated (VIEWER_PERMISSION_MISSING), and for
+  // final state the configuration is cleared.
+  oneof step_info {
+    // Display information of a Compute Engine instance.
+    InstanceInfo instance = 5;
+
+    // Display information of a Compute Engine firewall rule.
+    FirewallInfo firewall = 6;
+
+    // Display information of a Compute Engine route.
+    RouteInfo route = 7;
+
+    // Display information of the source and destination under analysis.
+    // The endpoint information in an intermediate state may differ with the
+    // initial input, as it might be modified by state like NAT,
+    // or Connection Proxy.
+    EndpointInfo endpoint = 8;
+
+    // Display information of a Compute Engine forwarding rule.
+    ForwardingRuleInfo forwarding_rule = 9;
+
+    // Display information of a Compute Engine VPN gateway.
+    VpnGatewayInfo vpn_gateway = 10;
+
+    // Display information of a Compute Engine VPN tunnel.
+    VpnTunnelInfo vpn_tunnel = 11;
+
+    // Display information of a VPC connector.
+    VpcConnectorInfo vpc_connector = 21;
+
+    // Display information of the final state "deliver" and reason.
+    DeliverInfo deliver = 12;
+
+    // Display information of the final state "forward" and reason.
+    ForwardInfo forward = 13;
+
+    // Display information of the final state "abort" and reason.
+    AbortInfo abort = 14;
+
+    // Display information of the final state "drop" and reason.
+    DropInfo drop = 15;
+
+    // Display information of the load balancers.
+    LoadBalancerInfo load_balancer = 16;
+
+    // Display information of a Google Cloud network.
+    NetworkInfo network = 17;
+
+    // Display information of a Google Kubernetes Engine cluster master.
+    GKEMasterInfo gke_master = 18;
+
+    // Display information of a Cloud SQL instance.
+    CloudSQLInstanceInfo cloud_sql_instance = 19;
+
+    // Display information of a Cloud function.
+    CloudFunctionInfo cloud_function = 20;
+  }
+}
+
+// For display only. Metadata associated with a Compute Engine instance.
+message InstanceInfo {
+  // Name of a Compute Engine instance.
+  string display_name = 1;
+
+  // URI of a Compute Engine instance.
+  string uri = 2;
+
+  // Name of the network interface of a Compute Engine instance.
+  string interface = 3;
+
+  // URI of a Compute Engine network.
+  string network_uri = 4;
+
+  // Internal IP address of the network interface.
+  string internal_ip = 5;
+
+  // External IP address of the network interface.
+  string external_ip = 6;
+
+  // Network tags configured on the instance.
+  repeated string network_tags = 7;
+
+  // Service account authorized for the instance.
+  string service_account = 8 [deprecated = true];
+}
+
+// For display only. Metadata associated with a Compute Engine network.
+message NetworkInfo {
+  // Name of a Compute Engine network.
+  string display_name = 1;
+
+  // URI of a Compute Engine network.
+  string uri = 2;
+
+  // The IP range that matches the test.
+  string matched_ip_range = 4;
+}
+
+// For display only. Metadata associated with a VPC firewall rule, an implied
+// VPC firewall rule, or a hierarchical firewall policy rule.
+message FirewallInfo {
+  // The firewall rule's type.
+  enum FirewallRuleType {
+    // Unspecified type.
+    FIREWALL_RULE_TYPE_UNSPECIFIED = 0;
+
+    // Hierarchical firewall policy rule. For details, see
+    // [Hierarchical firewall policies
+    // overview](https://cloud.google.com/vpc/docs/firewall-policies).
+    HIERARCHICAL_FIREWALL_POLICY_RULE = 1;
+
+    // VPC firewall rule. For details, see
+    // [VPC firewall rules
+    // overview](https://cloud.google.com/vpc/docs/firewalls).
+    VPC_FIREWALL_RULE = 2;
+
+    // Implied VPC firewall rule. For details, see
+    // [Implied
+    // rules](https://cloud.google.com/vpc/docs/firewalls#default_firewall_rules).
+    IMPLIED_VPC_FIREWALL_RULE = 3;
+
+    // Implicit firewall rules that are managed by serverless VPC access to
+    // allow ingress access. They are not visible in the Google Cloud console.
+    // For details, see [VPC connector's implicit
+    // rules](https://cloud.google.com/functions/docs/networking/connecting-vpc#restrict-access).
+    SERVERLESS_VPC_ACCESS_MANAGED_FIREWALL_RULE = 4;
+  }
+
+  // The display name of the VPC firewall rule. This field is not applicable
+  // to hierarchical firewall policy rules.
+  string display_name = 1;
+
+  // The URI of the VPC firewall rule. This field is not applicable to
+  // implied firewall rules or hierarchical firewall policy rules.
+  string uri = 2;
+
+  // Possible values: INGRESS, EGRESS
+  string direction = 3;
+
+  // Possible values: ALLOW, DENY
+  string action = 4;
+
+  // The priority of the firewall rule.
+  int32 priority = 5;
+
+  // The URI of the VPC network that the firewall rule is associated with.
+  // This field is not applicable to hierarchical firewall policy rules.
+  string network_uri = 6;
+
+  // The target tags defined by the VPC firewall rule. This field is not
+  // applicable to hierarchical firewall policy rules.
+  repeated string target_tags = 7;
+
+  // The target service accounts specified by the firewall rule.
+  repeated string target_service_accounts = 8;
+
+  // The hierarchical firewall policy that this rule is associated with.
+  // This field is not applicable to VPC firewall rules.
+  string policy = 9;
+
+  // The firewall rule's type.
+  FirewallRuleType firewall_rule_type = 10;
+}
+
+// For display only. Metadata associated with a Compute Engine route.
+message RouteInfo {
+  // Type of route:
+  enum RouteType {
+    // Unspecified type. Default value.
+    ROUTE_TYPE_UNSPECIFIED = 0;
+
+    // Route is a subnet route automatically created by the system.
+    SUBNET = 1;
+
+    // Static route created by the user, including the default route to the
+    // internet.
+    STATIC = 2;
+
+    // Dynamic route exchanged between BGP peers.
+    DYNAMIC = 3;
+
+    // A subnet route received from peering network.
+    PEERING_SUBNET = 4;
+
+    // A static route received from peering network.
+    PEERING_STATIC = 5;
+
+    // A dynamic route received from peering network.
+    PEERING_DYNAMIC = 6;
+  }
+
+  // Type of next hop:
+  enum NextHopType {
+    // Unspecified type. Default value.
+    NEXT_HOP_TYPE_UNSPECIFIED = 0;
+
+    // Next hop is an IP address.
+    NEXT_HOP_IP = 1;
+
+    // Next hop is a Compute Engine instance.
+    NEXT_HOP_INSTANCE = 2;
+
+    // Next hop is a VPC network gateway.
+    NEXT_HOP_NETWORK = 3;
+
+    // Next hop is a peering VPC.
+    NEXT_HOP_PEERING = 4;
+
+    // Next hop is an interconnect.
+    NEXT_HOP_INTERCONNECT = 5;
+
+    // Next hop is a VPN tunnel.
+    NEXT_HOP_VPN_TUNNEL = 6;
+
+    // Next hop is a VPN gateway. This scenario only happens when tracing
+    // connectivity from an on-premises network to Google Cloud through a VPN.
+    // The analysis simulates a packet departing from the on-premises network
+    // through a VPN tunnel and arriving at a Cloud VPN gateway.
+    NEXT_HOP_VPN_GATEWAY = 7;
+
+    // Next hop is an internet gateway.
+    NEXT_HOP_INTERNET_GATEWAY = 8;
+
+    // Next hop is blackhole; that is, the next hop either does not exist or is
+    // not running.
+    NEXT_HOP_BLACKHOLE = 9;
+
+    // Next hop is the forwarding rule of an Internal Load Balancer.
+    NEXT_HOP_ILB = 10;
+
+    // Next hop is a
+    // [router appliance
+    // instance](https://cloud.google.com/network-connectivity/docs/network-connectivity-center/concepts/ra-overview).
+    NEXT_HOP_ROUTER_APPLIANCE = 11;
+  }
+
+  // Type of route.
+  RouteType route_type = 8;
+
+  // Type of next hop.
+  NextHopType next_hop_type = 9;
+
+  // Name of a Compute Engine route.
+  string display_name = 1;
+
+  // URI of a Compute Engine route.
+  // Dynamic route from cloud router does not have a URI.
+  // Advertised route from Google Cloud VPC to on-premises network also does
+  // not have a URI.
+  string uri = 2;
+
+  // Destination IP range of the route.
+  string dest_ip_range = 3;
+
+  // Next hop of the route.
+  string next_hop = 4;
+
+  // URI of a Compute Engine network.
+  string network_uri = 5;
+
+  // Priority of the route.
+  int32 priority = 6;
+
+  // Instance tags of the route.
+  repeated string instance_tags = 7;
+}
+
+// For display only. Metadata associated with a Compute Engine forwarding rule.
+message ForwardingRuleInfo {
+  // Name of a Compute Engine forwarding rule.
+  string display_name = 1;
+
+  // URI of a Compute Engine forwarding rule.
+  string uri = 2;
+
+  // Protocol defined in the forwarding rule that matches the test.
+  string matched_protocol = 3;
+
+  // Port range defined in the forwarding rule that matches the test.
+  string matched_port_range = 6;
+
+  // VIP of the forwarding rule.
+  string vip = 4;
+
+  // Target type of the forwarding rule.
+  string target = 5;
+
+  // Network URI. Only valid for Internal Load Balancer.
+  string network_uri = 7;
+}
+
+// For display only. Metadata associated with a load balancer.
+message LoadBalancerInfo {
+  // The type definition for a load balancer:
+  enum LoadBalancerType {
+    // Type is unspecified.
+    LOAD_BALANCER_TYPE_UNSPECIFIED = 0;
+
+    // Internal TCP/UDP load balancer.
+    INTERNAL_TCP_UDP = 1;
+
+    // Network TCP/UDP load balancer.
+    NETWORK_TCP_UDP = 2;
+
+    // HTTP(S) proxy load balancer.
+    HTTP_PROXY = 3;
+
+    // TCP proxy load balancer.
+    TCP_PROXY = 4;
+
+    // SSL proxy load balancer.
+    SSL_PROXY = 5;
+  }
+
+  // The type definition for a load balancer backend configuration:
+  enum BackendType {
+    // Type is unspecified.
+    BACKEND_TYPE_UNSPECIFIED = 0;
+
+    // Backend Service as the load balancer's backend.
+    BACKEND_SERVICE = 1;
+
+    // Target Pool as the load balancer's backend.
+    TARGET_POOL = 2;
+  }
+
+  // Type of the load balancer.
+  LoadBalancerType load_balancer_type = 1;
+
+  // URI of the health check for the load balancer.
+  string health_check_uri = 2;
+
+  // Information for the loadbalancer backends.
+  repeated LoadBalancerBackend backends = 3;
+
+  // Type of load balancer's backend configuration.
+  BackendType backend_type = 4;
+
+  // Backend configuration URI.
+  string backend_uri = 5;
+}
+
+// For display only. Metadata associated with a specific load balancer backend.
+message LoadBalancerBackend {
+  // State of a health check firewall configuration:
+  enum HealthCheckFirewallState {
+    // State is unspecified. Default state if not populated.
+    HEALTH_CHECK_FIREWALL_STATE_UNSPECIFIED = 0;
+
+    // There are configured firewall rules to allow health check probes to the
+    // backend.
+    CONFIGURED = 1;
+
+    // There are firewall rules configured to allow partial health check ranges
+    // or block all health check ranges.
+    // If a health check probe is sent from denied IP ranges,
+    // the health check to the backend will fail. Then, the backend will be
+    // marked unhealthy and will not receive traffic sent to the load balancer.
+    MISCONFIGURED = 2;
+  }
+
+  // Name of a Compute Engine instance or network endpoint.
+  string display_name = 1;
+
+  // URI of a Compute Engine instance or network endpoint.
+  string uri = 2;
+
+  // State of the health check firewall configuration.
+  HealthCheckFirewallState health_check_firewall_state = 3;
+
+  // A list of firewall rule URIs allowing probes from health check IP ranges.
+  repeated string health_check_allowing_firewall_rules = 4;
+
+  // A list of firewall rule URIs blocking probes from health check IP ranges.
+  repeated string health_check_blocking_firewall_rules = 5;
+}
+
+// For display only. Metadata associated with a Compute Engine VPN gateway.
+message VpnGatewayInfo {
+  // Name of a VPN gateway.
+  string display_name = 1;
+
+  // URI of a VPN gateway.
+  string uri = 2;
+
+  // URI of a Compute Engine network where the VPN gateway is configured.
+  string network_uri = 3;
+
+  // IP address of the VPN gateway.
+  string ip_address = 4;
+
+  // A VPN tunnel that is associated with this VPN gateway.
+  // There may be multiple VPN tunnels configured on a VPN gateway, and only
+  // the one relevant to the test is displayed.
+  string vpn_tunnel_uri = 5;
+
+  // Name of a Google Cloud region where this VPN gateway is configured.
+  string region = 6;
+}
+
+// For display only. Metadata associated with a Compute Engine VPN tunnel.
+message VpnTunnelInfo {
+  // Types of VPN routing policy. For details, refer to [Networks and Tunnel
+  // routing](https://cloud.google.com/network-connectivity/docs/vpn/concepts/choosing-networks-routing/).
+  enum RoutingType {
+    // Unspecified type. Default value.
+    ROUTING_TYPE_UNSPECIFIED = 0;
+
+    // Route based VPN.
+    ROUTE_BASED = 1;
+
+    // Policy based routing.
+    POLICY_BASED = 2;
+
+    // Dynamic (BGP) routing.
+    DYNAMIC = 3;
+  }
+
+  // Name of a VPN tunnel.
+  string display_name = 1;
+
+  // URI of a VPN tunnel.
+  string uri = 2;
+
+  // URI of the VPN gateway at local end of the tunnel.
+  string source_gateway = 3;
+
+  // URI of a VPN gateway at remote end of the tunnel.
+  string remote_gateway = 4;
+
+  // Remote VPN gateway's IP address.
+  string remote_gateway_ip = 5;
+
+  // Local VPN gateway's IP address.
+  string source_gateway_ip = 6;
+
+  // URI of a Compute Engine network where the VPN tunnel is configured.
+  string network_uri = 7;
+
+  // Name of a Google Cloud region where this VPN tunnel is configured.
+  string region = 8;
+
+  // Type of the routing policy.
+  RoutingType routing_type = 9;
+}
+
+// For display only. The specification of the endpoints for the test.
+// EndpointInfo is derived from source and destination Endpoint and validated
+// by the backend data plane model.
+message EndpointInfo {
+  // Source IP address.
+  string source_ip = 1;
+
+  // Destination IP address.
+  string destination_ip = 2;
+
+  // IP protocol in string format, for example: "TCP", "UDP", "ICMP".
+  string protocol = 3;
+
+  // Source port. Only valid when protocol is TCP or UDP.
+  int32 source_port = 4;
+
+  // Destination port. Only valid when protocol is TCP or UDP.
+  int32 destination_port = 5;
+
+  // URI of the network where this packet originates from.
+  string source_network_uri = 6;
+
+  // URI of the network where this packet is sent to.
+  string destination_network_uri = 7;
+
+  // URI of the source telemetry agent this packet originates from.
+  string source_agent_uri = 8;
+}
+
+// Details of the final state "deliver" and associated resource.
+message DeliverInfo {
+  // Deliver target types:
+  enum Target {
+    // Target not specified.
+    TARGET_UNSPECIFIED = 0;
+
+    // Target is a Compute Engine instance.
+    INSTANCE = 1;
+
+    // Target is the internet.
+    INTERNET = 2;
+
+    // Target is a Google API.
+    GOOGLE_API = 3;
+
+    // Target is a Google Kubernetes Engine cluster master.
+    GKE_MASTER = 4;
+
+    // Target is a Cloud SQL instance.
+    CLOUD_SQL_INSTANCE = 5;
+
+    // Target is a published service using [Private Service
+    // Connect](https://cloud.google.com/vpc/docs/configure-private-service-connect-services).
+    PSC_PUBLISHED_SERVICE = 6;
+
+    // Target is all Google APIs using [Private Service
+    // Connect](https://cloud.google.com/vpc/docs/configure-private-service-connect-apis).
+    PSC_GOOGLE_API = 7;
+
+    // Target is VPC-SC using [Private Service
+    // Connect](https://cloud.google.com/vpc/docs/configure-private-service-connect-apis).
+    PSC_VPC_SC = 8;
+  }
+
+  // Target type where the packet is delivered to.
+  Target target = 1;
+
+  // URI of the resource that the packet is delivered to.
+  string resource_uri = 2;
+}
+
+// Details of the final state "forward" and associated resource.
+message ForwardInfo {
+  // Forward target types.
+  enum Target {
+    // Target not specified.
+    TARGET_UNSPECIFIED = 0;
+
+    // Forwarded to a VPC peering network.
+    PEERING_VPC = 1;
+
+    // Forwarded to a Cloud VPN gateway.
+    VPN_GATEWAY = 2;
+
+    // Forwarded to a Cloud Interconnect connection.
+    INTERCONNECT = 3;
+
+    // Forwarded to a Google Kubernetes Engine Container cluster master.
+    GKE_MASTER = 4;
+
+    // Forwarded to the next hop of a custom route imported from a peering VPC.
+    IMPORTED_CUSTOM_ROUTE_NEXT_HOP = 5;
+
+    // Forwarded to a Cloud SQL instance.
+    CLOUD_SQL_INSTANCE = 6;
+  }
+
+  // Target type where this packet is forwarded to.
+  Target target = 1;
+
+  // URI of the resource that the packet is forwarded to.
+  string resource_uri = 2;
+}
+
+// Details of the final state "abort" and associated resource.
+message AbortInfo {
+  // Abort cause types:
+  enum Cause {
+    // Cause is unspecified.
+    CAUSE_UNSPECIFIED = 0;
+
+    // Aborted due to unknown network.
+    // The reachability analysis cannot proceed because the user does not have
+    // access to the host project's network configurations, including firewall
+    // rules and routes. This happens when the project is a service project and
+    // the endpoints being traced are in the host project's network.
+    UNKNOWN_NETWORK = 1;
+
+    // Aborted because the IP address(es) are unknown.
+    UNKNOWN_IP = 2;
+
+    // Aborted because no project information can be derived from the test
+    // input.
+    UNKNOWN_PROJECT = 3;
+
+    // Aborted because the user lacks the permission to access all or part of
+    // the network configurations required to run the test.
+    PERMISSION_DENIED = 4;
+
+    // Aborted because no valid source endpoint is derived from the input test
+    // request.
+    NO_SOURCE_LOCATION = 5;
+
+    // Aborted because the source and/or destination endpoint specified in
+    // the test are invalid. The possible reasons that an endpoint is
+    // invalid include: malformed IP address; nonexistent instance or
+    // network URI; IP address not in the range of specified network URI; and
+    // instance not owning the network interface in the specified network.
+    INVALID_ARGUMENT = 6;
+
+    // Aborted because traffic is sent from a public IP to an instance without
+    // an external IP.
+    NO_EXTERNAL_IP = 7;
+
+    // Aborted because none of the traces matches destination information
+    // specified in the input test request.
+    UNINTENDED_DESTINATION = 8;
+
+    // Aborted because the number of steps in the trace exceeding a certain
+    // limit which may be caused by routing loop.
+    TRACE_TOO_LONG = 9;
+
+    // Aborted due to internal server error.
+    INTERNAL_ERROR = 10;
+
+    // Aborted because the source endpoint could not be found.
+    SOURCE_ENDPOINT_NOT_FOUND = 11;
+
+    // Aborted because the source network does not match the source endpoint.
+    MISMATCHED_SOURCE_NETWORK = 12;
+
+    // Aborted because the destination endpoint could not be found.
+    DESTINATION_ENDPOINT_NOT_FOUND = 13;
+
+    // Aborted because the destination network does not match the destination
+    // endpoint.
+    MISMATCHED_DESTINATION_NETWORK = 14;
+
+    // Aborted because the test scenario is not supported.
+    UNSUPPORTED = 15;
+  }
+
+  // Causes that the analysis is aborted.
+  Cause cause = 1;
+
+  // URI of the resource that caused the abort.
+  string resource_uri = 2;
+
+  // List of project IDs that the user has specified in the request but does
+  // not have permission to access network configs. Analysis is aborted in this
+  // case with the PERMISSION_DENIED cause.
+  repeated string projects_missing_permission = 3;
+}
+
+// Details of the final state "drop" and associated resource.
+message DropInfo {
+  // Drop cause types:
+  enum Cause {
+    // Cause is unspecified.
+    CAUSE_UNSPECIFIED = 0;
+
+    // Destination external address cannot be resolved to a known target. If
+    // the address is used in a Google Cloud project, provide the project ID
+    // as test input.
+    UNKNOWN_EXTERNAL_ADDRESS = 1;
+
+    // A Compute Engine instance can only send or receive a packet with a
+    // foreign IP address if ip_forward is enabled.
+    FOREIGN_IP_DISALLOWED = 2;
+
+    // Dropped due to a firewall rule, unless allowed due to connection
+    // tracking.
+    FIREWALL_RULE = 3;
+
+    // Dropped due to no routes.
+    NO_ROUTE = 4;
+
+    // Dropped due to invalid route. Route's next hop is a blackhole.
+    ROUTE_BLACKHOLE = 5;
+
+    // Packet is sent to a wrong (unintended) network. Example: you trace a
+    // packet from VM1:Network1 to VM2:Network2, however, the route configured
+    // in Network1 sends the packet destined for VM2's IP addresss to Network3.
+    ROUTE_WRONG_NETWORK = 6;
+
+    // Packet with internal destination address sent to the internet gateway.
+    PRIVATE_TRAFFIC_TO_INTERNET = 7;
+
+    // Instance with only an internal IP address tries to access Google API and
+    // services, but private Google access is not enabled.
+    PRIVATE_GOOGLE_ACCESS_DISALLOWED = 8;
+
+    // Instance with only an internal IP address tries to access external hosts,
+    // but Cloud NAT is not enabled in the subnet, unless special configurations
+    // on a VM allow this connection.
+    NO_EXTERNAL_ADDRESS = 9;
+
+    // Destination internal address cannot be resolved to a known target. If
+    // this is a shared VPC scenario, verify if the service project ID is
+    // provided as test input. Otherwise, verify if the IP address is being
+    // used in the project.
+    UNKNOWN_INTERNAL_ADDRESS = 10;
+
+    // Forwarding rule's protocol and ports do not match the packet header.
+    FORWARDING_RULE_MISMATCH = 11;
+
+    // Forwarding rule does not have backends configured.
+    FORWARDING_RULE_NO_INSTANCES = 12;
+
+    // Firewalls block the health check probes to the backends and cause
+    // the backends to be unavailable for traffic from the load balancer.
+    // For more details, see [Health check firewall
+    // rules](https://cloud.google.com/load-balancing/docs/health-checks#firewall_rules).
+    FIREWALL_BLOCKING_LOAD_BALANCER_BACKEND_HEALTH_CHECK = 13;
+
+    // Packet is sent from or to a Compute Engine instance that is not in a
+    // running state.
+    INSTANCE_NOT_RUNNING = 14;
+
+    // The type of traffic is blocked and the user cannot configure a firewall
+    // rule to enable it. See [Always blocked
+    // traffic](https://cloud.google.com/vpc/docs/firewalls#blockedtraffic) for
+    // more details.
+    TRAFFIC_TYPE_BLOCKED = 15;
+
+    // Access to Google Kubernetes Engine cluster master's endpoint is not
+    // authorized. See [Access to the cluster
+    // endpoints](https://cloud.google.com/kubernetes-engine/docs/how-to/private-clusters#access_to_the_cluster_endpoints)
+    // for more details.
+    GKE_MASTER_UNAUTHORIZED_ACCESS = 16;
+
+    // Access to the Cloud SQL instance endpoint is not authorized.
+    // See [Authorizing with authorized
+    // networks](https://cloud.google.com/sql/docs/mysql/authorize-networks) for
+    // more details.
+    CLOUD_SQL_INSTANCE_UNAUTHORIZED_ACCESS = 17;
+
+    // Packet was dropped inside Google Kubernetes Engine Service.
+    DROPPED_INSIDE_GKE_SERVICE = 18;
+
+    // Packet was dropped inside Cloud SQL Service.
+    DROPPED_INSIDE_CLOUD_SQL_SERVICE = 19;
+
+    // Packet was dropped because there is no peering between the originating
+    // network and the Google Managed Services Network.
+    GOOGLE_MANAGED_SERVICE_NO_PEERING = 20;
+
+    // Packet was dropped because the Cloud SQL instance has neither a private
+    // nor a public IP address.
+    CLOUD_SQL_INSTANCE_NO_IP_ADDRESS = 21;
+
+    // Packet could be dropped because the Cloud function is not in an active
+    // status.
+    CLOUD_FUNCTION_NOT_ACTIVE = 22;
+
+    // Packet could be dropped because no VPC connector is set.
+    VPC_CONNECTOR_NOT_SET = 23;
+
+    // Packet could be dropped because the VPC connector is not in a running
+    // state.
+    VPC_CONNECTOR_NOT_RUNNING = 24;
+
+    // Packet could be dropped because it was sent from a different region
+    // to a regional forwarding without global access.
+    FORWARDING_RULE_REGION_MISMATCH = 25;
+
+    // Privte Service Connect (PSC) connection is not in accepted state.
+    PSC_CONNECTION_NOT_ACCEPTED = 26;
+  }
+
+  // Cause that the packet is dropped.
+  Cause cause = 1;
+
+  // URI of the resource that caused the drop.
+  string resource_uri = 2;
+}
+
+// For display only. Metadata associated with a Google Kubernetes Engine (GKE)
+// cluster master.
+message GKEMasterInfo {
+  // URI of a GKE cluster.
+  string cluster_uri = 2;
+
+  // URI of a GKE cluster network.
+  string cluster_network_uri = 4;
+
+  // Internal IP address of a GKE cluster master.
+  string internal_ip = 5;
+
+  // External IP address of a GKE cluster master.
+  string external_ip = 6;
+}
+
+// For display only. Metadata associated with a Cloud SQL instance.
+message CloudSQLInstanceInfo {
+  // Name of a Cloud SQL instance.
+  string display_name = 1;
+
+  // URI of a Cloud SQL instance.
+  string uri = 2;
+
+  // URI of a Cloud SQL instance network or empty string if the instance does
+  // not have one.
+  string network_uri = 4;
+
+  // Internal IP address of a Cloud SQL instance.
+  string internal_ip = 5;
+
+  // External IP address of a Cloud SQL instance.
+  string external_ip = 6;
+
+  // Region in which the Cloud SQL instance is running.
+  string region = 7;
+}
+
+// For display only. Metadata associated with a Cloud function.
+message CloudFunctionInfo {
+  // Name of a Cloud function.
+  string display_name = 1;
+
+  // URI of a Cloud function.
+  string uri = 2;
+
+  // Location in which the Cloud function is deployed.
+  string location = 3;
+
+  // Latest successfully deployed version id of the Cloud function.
+  int64 version_id = 4;
+}
+
+// For display only. Metadata associated with a VPC connector.
+message VpcConnectorInfo {
+  // Name of a VPC connector.
+  string display_name = 1;
+
+  // URI of a VPC connector.
+  string uri = 2;
+
+  // Location in which the VPC connector is deployed.
+  string location = 3;
+}

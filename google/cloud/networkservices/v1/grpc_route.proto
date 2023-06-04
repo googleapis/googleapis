@@ -1,0 +1,413 @@
+// Copyright 2022 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.networkservices.v1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Google.Cloud.NetworkServices.V1";
+option go_package = "cloud.google.com/go/networkservices/apiv1/networkservicespb;networkservicespb";
+option java_multiple_files = true;
+option java_outer_classname = "GrpcRouteProto";
+option java_package = "com.google.cloud.networkservices.v1";
+option php_namespace = "Google\\Cloud\\NetworkServices\\V1";
+option ruby_package = "Google::Cloud::NetworkServices::V1";
+
+// GrpcRoute is the resource defining how gRPC traffic routed by a Mesh
+// or Gateway resource is routed.
+message GrpcRoute {
+  option (google.api.resource) = {
+    type: "networkservices.googleapis.com/GrpcRoute"
+    pattern: "projects/{project}/locations/{location}/grpcRoutes/{grpc_route}"
+  };
+
+  // Specifies a match against a method.
+  message MethodMatch {
+    // The type of the match.
+    enum Type {
+      // Unspecified.
+      TYPE_UNSPECIFIED = 0;
+
+      // Will only match the exact name provided.
+      EXACT = 1;
+
+      // Will interpret grpc_method and grpc_service as regexes. RE2 syntax is
+      // supported.
+      REGULAR_EXPRESSION = 2;
+    }
+
+    // Optional. Specifies how to match against the name. If not specified, a default
+    // value of "EXACT" is used.
+    Type type = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Required. Name of the service to match against. If unspecified, will match all
+    // services.
+    string grpc_service = 2 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. Name of the method to match against. If unspecified, will match all
+    // methods.
+    string grpc_method = 3 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. Specifies that matches are case sensitive.  The default value is true.
+    // case_sensitive must not be used with a type of REGULAR_EXPRESSION.
+    optional bool case_sensitive = 4 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // A match against a collection of headers.
+  message HeaderMatch {
+    // The type of match.
+    enum Type {
+      // Unspecified.
+      TYPE_UNSPECIFIED = 0;
+
+      // Will only match the exact value provided.
+      EXACT = 1;
+
+      // Will match paths conforming to the prefix specified by value. RE2
+      // syntax is supported.
+      REGULAR_EXPRESSION = 2;
+    }
+
+    // Optional. Specifies how to match against the value of the header. If not
+    // specified, a default value of EXACT is used.
+    Type type = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Required. The key of the header.
+    string key = 2 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The value of the header.
+    string value = 3 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Criteria for matching traffic. A RouteMatch will be considered to match
+  // when all supplied fields match.
+  message RouteMatch {
+    // Optional. A gRPC method to match against. If this field is empty or omitted, will
+    // match all methods.
+    optional MethodMatch method = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Specifies a collection of headers to match.
+    repeated HeaderMatch headers = 2 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // The destination to which traffic will be routed.
+  message Destination {
+    // Specifies the kind of destination to which traffic will be routed.
+    oneof destination_type {
+      // Required. The URL of a destination service to which to route traffic. Must refer
+      // to either a BackendService or ServiceDirectoryService.
+      string service_name = 1 [
+        (google.api.field_behavior) = REQUIRED,
+        (google.api.resource_reference) = {
+          type: "compute.googleapis.com/BackendService"
+        }
+      ];
+    }
+
+    // Optional. Specifies the proportion of requests forwarded to the backend referenced
+    // by the serviceName field. This is computed as:
+    //         weight/Sum(weights in this destination list).
+    // For non-zero values, there may be some epsilon from the exact proportion
+    // defined here depending on the precision an implementation supports.
+    //
+    // If only one serviceName is specified and it has a weight greater than 0,
+    // 100% of the traffic is forwarded to that backend.
+    //
+    // If weights are specified for any one service name, they need to be
+    // specified for all of them.
+    //
+    // If weights are unspecified for all services, then, traffic is distributed
+    // in equal proportions to all of them.
+    optional int32 weight = 2 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // The specification for fault injection introduced into traffic to test the
+  // resiliency of clients to destination service failure. As part of fault
+  // injection, when clients send requests to a destination, delays can be
+  // introduced on a percentage of requests before sending those requests to the
+  // destination service. Similarly requests from clients can be aborted by for
+  // a percentage of requests.
+  message FaultInjectionPolicy {
+    // Specification of how client requests are delayed as part of fault
+    // injection before being sent to a destination.
+    message Delay {
+      // Specify a fixed delay before forwarding the request.
+      optional google.protobuf.Duration fixed_delay = 1;
+
+      // The percentage of traffic on which delay will be injected.
+      //
+      // The value must be between [0, 100]
+      optional int32 percentage = 2;
+    }
+
+    // Specification of how client requests are aborted as part of fault
+    // injection before being sent to a destination.
+    message Abort {
+      // The HTTP status code used to abort the request.
+      //
+      // The value must be between 200 and 599 inclusive.
+      optional int32 http_status = 1;
+
+      // The percentage of traffic which will be aborted.
+      //
+      // The value must be between [0, 100]
+      optional int32 percentage = 2;
+    }
+
+    // The specification for injecting delay to client requests.
+    optional Delay delay = 1;
+
+    // The specification for aborting to client requests.
+    optional Abort abort = 2;
+  }
+
+  // The specifications for retries.
+  message RetryPolicy {
+    // - connect-failure: Router will retry on failures connecting to Backend
+    //    Services, for example due to connection timeouts.
+    // - refused-stream: Router will retry if the backend service resets the
+    // stream
+    //    with a REFUSED_STREAM error code. This reset type indicates that it is
+    //    safe to retry.
+    // - cancelled: Router will retry if the gRPC status code in the response
+    // header
+    //    is set to cancelled
+    // - deadline-exceeded: Router will retry if the gRPC status code in the
+    // response
+    //    header is set to deadline-exceeded
+    // - resource-exhausted: Router will retry if the gRPC status code in the
+    //    response header is set to resource-exhausted
+    // - unavailable: Router will retry if the gRPC status code in the response
+    //    header is set to unavailable
+    repeated string retry_conditions = 1;
+
+    // Specifies the allowed number of retries. This number must be > 0. If not
+    // specified, default to 1.
+    uint32 num_retries = 2;
+  }
+
+  // Specifies how to route matched traffic.
+  message RouteAction {
+    // Optional. The destination services to which traffic should be forwarded. If
+    // multiple destinations are specified, traffic will be split between
+    // Backend Service(s) according to the weight field of these destinations.
+    repeated Destination destinations = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The specification for fault injection introduced into traffic to test the
+    // resiliency of clients to destination service failure. As part of fault
+    // injection, when clients send requests to a destination, delays can be
+    // introduced on a percentage of requests before sending those requests to
+    // the destination service. Similarly requests from clients can be aborted
+    // by for a percentage of requests.
+    //
+    // timeout and retry_policy will be ignored by clients that are configured
+    // with a fault_injection_policy
+    FaultInjectionPolicy fault_injection_policy = 3 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Specifies the timeout for selected route. Timeout is computed from the
+    // time the request has been fully processed (i.e. end of stream) up until
+    // the response has been completely processed. Timeout includes all retries.
+    google.protobuf.Duration timeout = 7 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Specifies the retry policy associated with this route.
+    RetryPolicy retry_policy = 8 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Describes how to route traffic.
+  message RouteRule {
+    // Optional. Matches define conditions used for matching the rule against incoming
+    // gRPC requests. Each match is independent, i.e. this rule will be matched
+    // if ANY one of the matches is satisfied.  If no matches field is
+    // specified, this rule will unconditionally match traffic.
+    repeated RouteMatch matches = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Required. A detailed rule defining how to route traffic. This field is required.
+    RouteAction action = 2 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Required. Name of the GrpcRoute resource. It matches pattern
+  // `projects/*/locations/global/grpcRoutes/<grpc_route_name>`
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Output only. Server-defined URL of this resource
+  string self_link = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The timestamp when the resource was created.
+  google.protobuf.Timestamp create_time = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The timestamp when the resource was updated.
+  google.protobuf.Timestamp update_time = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Set of label tags associated with the GrpcRoute resource.
+  map<string, string> labels = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A free-text description of the resource. Max length 1024 characters.
+  string description = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. Service hostnames with an optional port for which this route describes
+  // traffic.
+  //
+  // Format: <hostname>[:<port>]
+  //
+  // Hostname is the fully qualified domain name of a network host. This matches
+  // the RFC 1123 definition of a hostname with 2 notable exceptions:
+  //  - IPs are not allowed.
+  //  - A hostname may be prefixed with a wildcard label (*.). The wildcard
+  //    label must appear by itself as the first label.
+  //
+  // Hostname can be "precise" which is a domain name without the terminating
+  // dot of a network host (e.g. "foo.example.com") or "wildcard", which is a
+  // domain name prefixed with a single wildcard label (e.g. *.example.com).
+  //
+  // Note that as per RFC1035 and RFC1123, a label must consist of lower case
+  // alphanumeric characters or '-', and must start and end with an alphanumeric
+  // character. No other punctuation is allowed.
+  //
+  // The routes associated with a Mesh or Gateway must have unique hostnames. If
+  // you attempt to attach multiple routes with conflicting hostnames, the
+  // configuration will be rejected.
+  //
+  // For example, while it is acceptable for routes for the hostnames
+  // "*.foo.bar.com" and "*.bar.com" to be associated with the same route, it is
+  // not possible to associate two routes both with "*.bar.com" or both with
+  // "bar.com".
+  //
+  // If a port is specified, then gRPC clients must use the channel URI with the
+  // port to match this rule (i.e. "xds:///service:123"), otherwise they must
+  // supply the URI without a port (i.e. "xds:///service").
+  repeated string hostnames = 6 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Meshes defines a list of meshes this GrpcRoute is attached to, as one of
+  // the routing rules to route the requests served by the mesh.
+  //
+  // Each mesh reference should match the pattern:
+  // `projects/*/locations/global/meshes/<mesh_name>`
+  repeated string meshes = 9 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "networkservices.googleapis.com/Mesh"
+    }
+  ];
+
+  // Optional. Gateways defines a list of gateways this GrpcRoute is attached to, as one
+  // of the routing rules to route the requests served by the gateway.
+  //
+  // Each gateway reference should match the pattern:
+  // `projects/*/locations/global/gateways/<gateway_name>`
+  repeated string gateways = 10 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "networkservices.googleapis.com/Gateway"
+    }
+  ];
+
+  // Required. A list of detailed rules defining how to route traffic.
+  //
+  // Within a single GrpcRoute, the GrpcRoute.RouteAction associated with the
+  // first matching GrpcRoute.RouteRule will be executed. At least one rule
+  // must be supplied.
+  repeated RouteRule rules = 7 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request used with the ListGrpcRoutes method.
+message ListGrpcRoutesRequest {
+  // Required. The project and location from which the GrpcRoutes should be
+  // listed, specified in the format `projects/*/locations/global`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "networkservices.googleapis.com/GrpcRoute"
+    }
+  ];
+
+  // Maximum number of GrpcRoutes to return per call.
+  int32 page_size = 2;
+
+  // The value returned by the last `ListGrpcRoutesResponse`
+  // Indicates that this is a continuation of a prior `ListGrpcRoutes` call,
+  // and that the system should return the next page of data.
+  string page_token = 3;
+}
+
+// Response returned by the ListGrpcRoutes method.
+message ListGrpcRoutesResponse {
+  // List of GrpcRoute resources.
+  repeated GrpcRoute grpc_routes = 1;
+
+  // If there might be more results than those appearing in this response, then
+  // `next_page_token` is included. To get the next set of results, call this
+  // method again using the value of `next_page_token` as `page_token`.
+  string next_page_token = 2;
+}
+
+// Request used by the GetGrpcRoute method.
+message GetGrpcRouteRequest {
+  // Required. A name of the GrpcRoute to get. Must be in the format
+  // `projects/*/locations/global/grpcRoutes/*`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkservices.googleapis.com/GrpcRoute"
+    }
+  ];
+}
+
+// Request used by the CreateGrpcRoute method.
+message CreateGrpcRouteRequest {
+  // Required. The parent resource of the GrpcRoute. Must be in the
+  // format `projects/*/locations/global`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "networkservices.googleapis.com/GrpcRoute"
+    }
+  ];
+
+  // Required. Short name of the GrpcRoute resource to be created.
+  string grpc_route_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. GrpcRoute resource to be created.
+  GrpcRoute grpc_route = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request used by the UpdateGrpcRoute method.
+message UpdateGrpcRouteRequest {
+  // Optional. Field mask is used to specify the fields to be overwritten in the
+  // GrpcRoute resource by the update.
+  // The fields specified in the update_mask are relative to the resource, not
+  // the full request. A field will be overwritten if it is in the mask. If the
+  // user does not provide a mask then all fields will be overwritten.
+  google.protobuf.FieldMask update_mask = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. Updated GrpcRoute resource.
+  GrpcRoute grpc_route = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request used by the DeleteGrpcRoute method.
+message DeleteGrpcRouteRequest {
+  // Required. A name of the GrpcRoute to delete. Must be in the format
+  // `projects/*/locations/global/grpcRoutes/*`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkservices.googleapis.com/GrpcRoute"
+    }
+  ];
+}

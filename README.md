@@ -11,7 +11,7 @@ libraries, documentation, and other artifacts.
 ### Bazel
 
 The recommended way to build the API client libraries is through
-[Bazel](https://bazel.build/) >= 2.0.0.
+[Bazel](https://bazel.build/) >= 4.2.2.
 
 First, [install bazel](https://docs.bazel.build/versions/master/install.html).
 
@@ -40,24 +40,6 @@ bazel build //google/example/library/v1:google-cloud-library-v1-java
 ```
 
 Bazel packages exist in all the libraries for Java, Go, Python, Ruby, Node.js, PHP and C#.
-
-### Artman
-
-API client libraries can be built directly from files in this repo using
-[Artman](https://github.com/googleapis/artman). The latest generation status can
-be tracked [here](https://circleci.com/gh/googleapis/googleapis) which currently
-has status [![CircleCI](https://circleci.com/gh/googleapis/googleapis.svg?style=svg)](https://circleci.com/gh/googleapis/googleapis).
-
-To build the Java package for one library:
-
-```
-artman --config google/example/library/artman_library_example_v1.yaml generate java_gapic
-```
-
-Artman can only build one library in one language at a time.
-
-For more details on all Google APIs and developer tools, see the [Google
-Developers](https://developers.google.com/products/) site.
 
 ## Overview
 

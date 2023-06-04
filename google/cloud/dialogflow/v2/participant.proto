@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/dialogflow/v2/audio_config.proto";
 import "google/cloud/dialogflow/v2/session.proto";
-import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
@@ -30,7 +29,7 @@ import "google/rpc/status.proto";
 
 option cc_enable_arenas = true;
 option csharp_namespace = "Google.Cloud.Dialogflow.V2";
-option go_package = "google.golang.org/genproto/googleapis/cloud/dialogflow/v2;dialogflow";
+option go_package = "cloud.google.com/go/dialogflow/apiv2/dialogflowpb;dialogflowpb";
 option java_multiple_files = true;
 option java_outer_classname = "ParticipantProto";
 option java_package = "com.google.cloud.dialogflow.v2";
@@ -68,7 +67,8 @@ service Participants {
   }
 
   // Returns the list of all participants in the specified conversation.
-  rpc ListParticipants(ListParticipantsRequest) returns (ListParticipantsResponse) {
+  rpc ListParticipants(ListParticipantsRequest)
+      returns (ListParticipantsResponse) {
     option (google.api.http) = {
       get: "/v2/{parent=projects/*/conversations/*}/participants"
       additional_bindings {
@@ -110,9 +110,28 @@ service Participants {
     option (google.api.method_signature) = "participant,event_input";
   }
 
+  // Adds a text (chat, for example), or audio (phone recording, for example)
+  // message from a participant into the conversation.
+  // Note: This method is only available through the gRPC API (not REST).
+  //
+  // The top-level message sent to the client by the server is
+  // `StreamingAnalyzeContentResponse`. Multiple response messages can be
+  // returned in order. The first one or more messages contain the
+  // `recognition_result` field. Each result represents a more complete
+  // transcript of what the user said. The next message contains the
+  // `reply_text` field and potentially the `reply_audio` field. The message can
+  // also contain the `automated_agent_reply` field.
+  //
+  // Note: Always use agent versions for production traffic
+  // sent to virtual agents. See [Versions and
+  // environments](https://cloud.google.com/dialogflow/es/docs/agents-versions).
+  rpc StreamingAnalyzeContent(stream StreamingAnalyzeContentRequest)
+      returns (stream StreamingAnalyzeContentResponse) {}
+
   // Gets suggested articles for a participant based on specific historical
   // messages.
-  rpc SuggestArticles(SuggestArticlesRequest) returns (SuggestArticlesResponse) {
+  rpc SuggestArticles(SuggestArticlesRequest)
+      returns (SuggestArticlesResponse) {
     option (google.api.http) = {
       post: "/v2/{parent=projects/*/conversations/*/participants/*}/suggestions:suggestArticles"
       body: "*"
@@ -126,12 +145,28 @@ service Participants {
 
   // Gets suggested faq answers for a participant based on specific historical
   // messages.
-  rpc SuggestFaqAnswers(SuggestFaqAnswersRequest) returns (SuggestFaqAnswersResponse) {
+  rpc SuggestFaqAnswers(SuggestFaqAnswersRequest)
+      returns (SuggestFaqAnswersResponse) {
     option (google.api.http) = {
       post: "/v2/{parent=projects/*/conversations/*/participants/*}/suggestions:suggestFaqAnswers"
       body: "*"
       additional_bindings {
         post: "/v2/{parent=projects/*/locations/*/conversations/*/participants/*}/suggestions:suggestFaqAnswers"
+        body: "*"
+      }
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Gets smart replies for a participant based on specific historical
+  // messages.
+  rpc SuggestSmartReplies(SuggestSmartRepliesRequest)
+      returns (SuggestSmartRepliesResponse) {
+    option (google.api.http) = {
+      post: "/v2/{parent=projects/*/conversations/*/participants/*}/suggestions:suggestSmartReplies"
+      body: "*"
+      additional_bindings {
+        post: "/v2/{parent=projects/*/locations/*/conversations/*/participants/*}/suggestions:suggestSmartReplies"
         body: "*"
       }
     };
@@ -168,14 +203,70 @@ message Participant {
   // ID>/conversations/<Conversation ID>/participants/<Participant ID>`.
   string name = 1 [(google.api.field_behavior) = OPTIONAL];
 
-  // Immutable. The role this participant plays in the conversation. This field must be set
-  // during participant creation and is then immutable.
+  // Immutable. The role this participant plays in the conversation. This field
+  // must be set during participant creation and is then immutable.
   Role role = 2 [(google.api.field_behavior) = IMMUTABLE];
 
   // Optional. Label applied to streams representing this participant in SIPREC
   // XML metadata and SDP. This is used to assign transcriptions from that
   // media stream to this participant. This field can be updated.
   string sip_recording_media_label = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Obfuscated user id that should be associated with the created
+  // participant.
+  //
+  // You can specify a user id as follows:
+  //
+  // 1. If you set this field in
+  //    [CreateParticipantRequest][google.cloud.dialogflow.v2.CreateParticipantRequest.participant]
+  //    or
+  //    [UpdateParticipantRequest][google.cloud.dialogflow.v2.UpdateParticipantRequest.participant],
+  //    Dialogflow adds the obfuscated user id with the participant.
+  //
+  // 2. If you set this field in
+  //    [AnalyzeContent][google.cloud.dialogflow.v2.AnalyzeContentRequest.obfuscated_external_user_id]
+  //    or
+  //    [StreamingAnalyzeContent][google.cloud.dialogflow.v2.StreamingAnalyzeContentRequest.obfuscated_external_user_id],
+  //    Dialogflow will update
+  //    [Participant.obfuscated_external_user_id][google.cloud.dialogflow.v2.Participant.obfuscated_external_user_id].
+  //
+  // Dialogflow returns an error if you try to add a user id for a
+  // non-[END_USER][google.cloud.dialogflow.v2.Participant.Role.END_USER]
+  // participant.
+  //
+  // Dialogflow uses this user id for billing and measurement purposes. For
+  // example, Dialogflow determines whether a user in one conversation returned
+  // in a later conversation.
+  //
+  // Note:
+  //
+  // * Please never pass raw user ids to Dialogflow. Always obfuscate your user
+  //   id first.
+  // * Dialogflow only accepts a UTF-8 encoded string, e.g., a hex digest of a
+  //   hash function like SHA-512.
+  // * The length of the user id must be <= 256 characters.
+  string obfuscated_external_user_id = 7
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Key-value filters on the metadata of documents returned by
+  // article suggestion. If specified, article suggestion only returns suggested
+  // documents that match all filters in their
+  // [Document.metadata][google.cloud.dialogflow.v2.Document.metadata]. Multiple
+  // values for a metadata key should be concatenated by comma. For example,
+  // filters to match all documents that have 'US' or 'CA' in their market
+  // metadata values and 'agent' in their user metadata values will be
+  // ```
+  // documents_metadata_filters {
+  //   key: "market"
+  //   value: "US,CA"
+  // }
+  // documents_metadata_filters {
+  //   key: "user"
+  //   value: "agent"
+  // }
+  // ```
+  map<string, string> documents_metadata_filters = 8
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Represents a message posted into a conversation.
@@ -186,10 +277,10 @@ message Message {
     pattern: "projects/{project}/locations/{location}/conversations/{conversation}/messages/{message}"
   };
 
-  // The unique identifier of the message.
+  // Optional. The unique identifier of the message.
   // Format: `projects/<Project ID>/locations/<Location
   // ID>/conversations/<Conversation ID>/messages/<Message ID>`.
-  string name = 1;
+  string name = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. The message content.
   string content = 2 [(google.api.field_behavior) = REQUIRED];
@@ -203,16 +294,28 @@ message Message {
   string participant = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The role of the participant.
-  Participant.Role participant_role = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+  Participant.Role participant_role = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. The time when the message was created.
-  google.protobuf.Timestamp create_time = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // Output only. The time when the message was created in Contact Center AI.
+  google.protobuf.Timestamp create_time = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The time when the message was sent.
+  google.protobuf.Timestamp send_time = 9
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. The annotation for the message.
-  MessageAnnotation message_annotation = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+  MessageAnnotation message_annotation = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The sentiment analysis result for the message.
+  SentimentAnalysisResult sentiment_analysis = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
-// The request message for [Participants.CreateParticipant][google.cloud.dialogflow.v2.Participants.CreateParticipant].
+// The request message for
+// [Participants.CreateParticipant][google.cloud.dialogflow.v2.Participants.CreateParticipant].
 message CreateParticipantRequest {
   // Required. Resource identifier of the conversation adding the participant.
   // Format: `projects/<Project ID>/locations/<Location
@@ -228,7 +331,8 @@ message CreateParticipantRequest {
   Participant participant = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
-// The request message for [Participants.GetParticipant][google.cloud.dialogflow.v2.Participants.GetParticipant].
+// The request message for
+// [Participants.GetParticipant][google.cloud.dialogflow.v2.Participants.GetParticipant].
 message GetParticipantRequest {
   // Required. The name of the participant. Format:
   // `projects/<Project ID>/locations/<Location ID>/conversations/<Conversation
@@ -241,7 +345,8 @@ message GetParticipantRequest {
   ];
 }
 
-// The request message for [Participants.ListParticipants][google.cloud.dialogflow.v2.Participants.ListParticipants].
+// The request message for
+// [Participants.ListParticipants][google.cloud.dialogflow.v2.Participants.ListParticipants].
 message ListParticipantsRequest {
   // Required. The conversation to list all participants from.
   // Format: `projects/<Project ID>/locations/<Location
@@ -261,7 +366,8 @@ message ListParticipantsRequest {
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// The response message for [Participants.ListParticipants][google.cloud.dialogflow.v2.Participants.ListParticipants].
+// The response message for
+// [Participants.ListParticipants][google.cloud.dialogflow.v2.Participants.ListParticipants].
 message ListParticipantsResponse {
   // The list of participants. There is a maximum number of items
   // returned based on the page_size field in the request.
@@ -272,16 +378,19 @@ message ListParticipantsResponse {
   string next_page_token = 2;
 }
 
-// The request message for [Participants.UpdateParticipant][google.cloud.dialogflow.v2.Participants.UpdateParticipant].
+// The request message for
+// [Participants.UpdateParticipant][google.cloud.dialogflow.v2.Participants.UpdateParticipant].
 message UpdateParticipantRequest {
   // Required. The participant to update.
   Participant participant = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. The mask to specify which fields to update.
-  google.protobuf.FieldMask update_mask = 2 [(google.api.field_behavior) = REQUIRED];
+  google.protobuf.FieldMask update_mask = 2
+      [(google.api.field_behavior) = REQUIRED];
 }
 
-// The request message for [Participants.AnalyzeContent][google.cloud.dialogflow.v2.Participants.AnalyzeContent].
+// The request message for
+// [Participants.AnalyzeContent][google.cloud.dialogflow.v2.Participants.AnalyzeContent].
 message AnalyzeContentRequest {
   // Required. The name of the participant this text comes from.
   // Format: `projects/<Project ID>/locations/<Location
@@ -312,6 +421,17 @@ message AnalyzeContentRequest {
   // Parameters for a Dialogflow virtual-agent query.
   QueryParameters query_params = 9;
 
+  // Parameters for a human assist query.
+  AssistQueryParameters assist_query_params = 14;
+
+  // Additional parameters to be put into Dialogflow CX session parameters. To
+  // remove a parameter from the session, clients should explicitly set the
+  // parameter value to null.
+  //
+  // Note: this field should only be used if you are connecting to a Dialogflow
+  // CX agent.
+  google.protobuf.Struct cx_parameters = 18;
+
   // A unique identifier for this request. Restricted to 36 ASCII characters.
   // A random UUID is recommended.
   // This request is only idempotent if a `request_id` is provided.
@@ -324,7 +444,8 @@ message DtmfParameters {
   bool accepts_dtmf_input = 1;
 }
 
-// The response message for [Participants.AnalyzeContent][google.cloud.dialogflow.v2.Participants.AnalyzeContent].
+// The response message for
+// [Participants.AnalyzeContent][google.cloud.dialogflow.v2.Participants.AnalyzeContent].
 message AnalyzeContentResponse {
   // The output text content.
   // This field is set if the automated agent responded with text to show to
@@ -347,27 +468,227 @@ message AnalyzeContentResponse {
   // Only set if a Dialogflow automated agent has responded.
   // Note that: [AutomatedAgentReply.detect_intent_response.output_audio][]
   // and [AutomatedAgentReply.detect_intent_response.output_audio_config][]
-  // are always empty, use [reply_audio][google.cloud.dialogflow.v2.AnalyzeContentResponse.reply_audio] instead.
+  // are always empty, use
+  // [reply_audio][google.cloud.dialogflow.v2.AnalyzeContentResponse.reply_audio]
+  // instead.
   AutomatedAgentReply automated_agent_reply = 3;
 
   // Message analyzed by CCAI.
   Message message = 5;
 
   // The suggestions for most recent human agent. The order is the same as
-  // [HumanAgentAssistantConfig.SuggestionConfig.feature_configs][google.cloud.dialogflow.v2.HumanAgentAssistantConfig.SuggestionConfig.feature_configs] of
+  // [HumanAgentAssistantConfig.SuggestionConfig.feature_configs][google.cloud.dialogflow.v2.HumanAgentAssistantConfig.SuggestionConfig.feature_configs]
+  // of
   // [HumanAgentAssistantConfig.human_agent_suggestion_config][google.cloud.dialogflow.v2.HumanAgentAssistantConfig.human_agent_suggestion_config].
+  //
+  // Note that any failure of Agent Assist features will not lead to the overall
+  // failure of an AnalyzeContent API call. Instead, the features will
+  // fail silently with the error field set in the corresponding
+  // SuggestionResult.
   repeated SuggestionResult human_agent_suggestion_results = 6;
 
   // The suggestions for end user. The order is the same as
-  // [HumanAgentAssistantConfig.SuggestionConfig.feature_configs][google.cloud.dialogflow.v2.HumanAgentAssistantConfig.SuggestionConfig.feature_configs] of
+  // [HumanAgentAssistantConfig.SuggestionConfig.feature_configs][google.cloud.dialogflow.v2.HumanAgentAssistantConfig.SuggestionConfig.feature_configs]
+  // of
   // [HumanAgentAssistantConfig.end_user_suggestion_config][google.cloud.dialogflow.v2.HumanAgentAssistantConfig.end_user_suggestion_config].
+  //
+  // Same as human_agent_suggestion_results, any failure of Agent Assist
+  // features will not lead to the overall failure of an AnalyzeContent API
+  // call. Instead, the features will fail silently with the error field set in
+  // the corresponding SuggestionResult.
   repeated SuggestionResult end_user_suggestion_results = 7;
 
   // Indicates the parameters of DTMF.
   DtmfParameters dtmf_parameters = 9;
 }
 
-// The request message for [Participants.SuggestArticles][google.cloud.dialogflow.v2.Participants.SuggestArticles].
+// The top-level message sent by the client to the
+// [Participants.StreamingAnalyzeContent][google.cloud.dialogflow.v2.Participants.StreamingAnalyzeContent]
+// method.
+//
+// Multiple request messages should be sent in order:
+//
+// 1.  The first message must contain
+//     [participant][google.cloud.dialogflow.v2.StreamingAnalyzeContentRequest.participant],
+//     [config][google.cloud.dialogflow.v2.StreamingAnalyzeContentRequest.config]
+//     and optionally
+//     [query_params][google.cloud.dialogflow.v2.StreamingAnalyzeContentRequest.query_params].
+//     If you want to receive an audio response, it should also contain
+//     [reply_audio_config][google.cloud.dialogflow.v2.StreamingAnalyzeContentRequest.reply_audio_config].
+//     The message must not contain
+//     [input][google.cloud.dialogflow.v2.StreamingAnalyzeContentRequest.input].
+//
+// 2.  If
+// [config][google.cloud.dialogflow.v2.StreamingAnalyzeContentRequest.config] in
+// the first message
+//     was set to
+//     [audio_config][google.cloud.dialogflow.v2.StreamingAnalyzeContentRequest.audio_config],
+//     all subsequent messages must contain
+//     [input_audio][google.cloud.dialogflow.v2.StreamingAnalyzeContentRequest.input_audio]
+//     to continue with Speech recognition. However, note that:
+//
+//     * Dialogflow will bill you for the audio so far.
+//     * Dialogflow discards all Speech recognition results in favor of the
+//       text input.
+//
+//  3. If
+//  [StreamingAnalyzeContentRequest.config][google.cloud.dialogflow.v2.StreamingAnalyzeContentRequest.config]
+//  in the first message was set
+//    to
+//    [StreamingAnalyzeContentRequest.text_config][google.cloud.dialogflow.v2.StreamingAnalyzeContentRequest.text_config],
+//    then the second message must contain only
+//    [input_text][google.cloud.dialogflow.v2.StreamingAnalyzeContentRequest.input_text].
+//    Moreover, you must not send more than two messages.
+//
+//  After you sent all input, you must half-close or abort the request stream.
+message StreamingAnalyzeContentRequest {
+  // Required. The name of the participant this text comes from.
+  // Format: `projects/<Project ID>/locations/<Location
+  // ID>/conversations/<Conversation ID>/participants/<Participant ID>`.
+  string participant = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dialogflow.googleapis.com/Participant"
+    }
+  ];
+
+  // The input config.
+  oneof config {
+    // Instructs the speech recognizer how to process the speech audio.
+    InputAudioConfig audio_config = 2;
+
+    // The natural language text to be processed.
+    InputTextConfig text_config = 3;
+  }
+
+  // Speech synthesis configuration.
+  // The speech synthesis settings for a virtual agent that may be configured
+  // for the associated conversation profile are not used when calling
+  // StreamingAnalyzeContent. If this configuration is not supplied, speech
+  // synthesis is disabled.
+  OutputAudioConfig reply_audio_config = 4;
+
+  // The input.
+  oneof input {
+    // The input audio content to be recognized. Must be sent if `audio_config`
+    // is set in the first message. The complete audio over all streaming
+    // messages must not exceed 1 minute.
+    bytes input_audio = 5;
+
+    // The UTF-8 encoded natural language text to be processed. Must be sent if
+    // `text_config` is set in the first message. Text length must not exceed
+    // 256 bytes for virtual agent interactions. The `input_text` field can be
+    // only sent once.
+    string input_text = 6;
+
+    // The DTMF digits used to invoke intent and fill in parameter value.
+    //
+    // This input is ignored if the previous response indicated that DTMF input
+    // is not accepted.
+    TelephonyDtmfEvents input_dtmf = 9;
+  }
+
+  // Parameters for a Dialogflow virtual-agent query.
+  QueryParameters query_params = 7;
+
+  // Parameters for a human assist query.
+  AssistQueryParameters assist_query_params = 8;
+
+  // Additional parameters to be put into Dialogflow CX session parameters. To
+  // remove a parameter from the session, clients should explicitly set the
+  // parameter value to null.
+  //
+  // Note: this field should only be used if you are connecting to a Dialogflow
+  // CX agent.
+  google.protobuf.Struct cx_parameters = 13;
+
+  // Enable partial virtual agent responses. If this flag is not enabled,
+  // response stream still contains only one final response even if some
+  // `Fulfillment`s in Dialogflow virtual agent have been configured to return
+  // partial responses.
+  bool enable_partial_automated_agent_reply = 12;
+
+  // If true, `StreamingAnalyzeContentResponse.debugging_info` will get
+  // populated.
+  bool enable_debugging_info = 19;
+}
+
+// The top-level message returned from the `StreamingAnalyzeContent` method.
+//
+// Multiple response messages can be returned in order:
+//
+// 1.  If the input was set to streaming audio, the first one or more messages
+//     contain `recognition_result`. Each `recognition_result` represents a more
+//     complete transcript of what the user said. The last `recognition_result`
+//     has `is_final` set to `true`.
+//
+// 2.  In virtual agent stage: if `enable_partial_automated_agent_reply` is
+//     true, the following N (currently 1 <= N <= 4) messages
+//     contain `automated_agent_reply` and optionally `reply_audio`
+//     returned by the virtual agent. The first (N-1)
+//     `automated_agent_reply`s will have `automated_agent_reply_type` set to
+//     `PARTIAL`. The last `automated_agent_reply` has
+//     `automated_agent_reply_type` set to `FINAL`.
+//     If `enable_partial_automated_agent_reply` is not enabled, response stream
+//     only contains the final reply.
+//
+//     In human assist stage: the following N (N >= 1) messages contain
+//     `human_agent_suggestion_results`, `end_user_suggestion_results` or
+//     `message`.
+message StreamingAnalyzeContentResponse {
+  // The result of speech recognition.
+  StreamingRecognitionResult recognition_result = 1;
+
+  // The output text content.
+  // This field is set if an automated agent responded with a text for the user.
+  string reply_text = 2;
+
+  // The audio data bytes encoded as specified in the request.
+  // This field is set if:
+  //
+  //  - The `reply_audio_config` field is specified in the request.
+  //  - The automated agent, which this output comes from, responded with audio.
+  //    In such case, the `reply_audio.config` field contains settings used to
+  //    synthesize the speech.
+  //
+  // In some scenarios, multiple output audio fields may be present in the
+  // response structure. In these cases, only the top-most-level audio output
+  // has content.
+  OutputAudio reply_audio = 3;
+
+  // Only set if a Dialogflow automated agent has responded.
+  // Note that: [AutomatedAgentReply.detect_intent_response.output_audio][]
+  // and [AutomatedAgentReply.detect_intent_response.output_audio_config][]
+  // are always empty, use
+  // [reply_audio][google.cloud.dialogflow.v2.StreamingAnalyzeContentResponse.reply_audio]
+  // instead.
+  AutomatedAgentReply automated_agent_reply = 4;
+
+  // Message analyzed by CCAI.
+  Message message = 6;
+
+  // The suggestions for most recent human agent. The order is the same as
+  // [HumanAgentAssistantConfig.SuggestionConfig.feature_configs][google.cloud.dialogflow.v2.HumanAgentAssistantConfig.SuggestionConfig.feature_configs]
+  // of
+  // [HumanAgentAssistantConfig.human_agent_suggestion_config][google.cloud.dialogflow.v2.HumanAgentAssistantConfig.human_agent_suggestion_config].
+  repeated SuggestionResult human_agent_suggestion_results = 7;
+
+  // The suggestions for end user. The order is the same as
+  // [HumanAgentAssistantConfig.SuggestionConfig.feature_configs][google.cloud.dialogflow.v2.HumanAgentAssistantConfig.SuggestionConfig.feature_configs]
+  // of
+  // [HumanAgentAssistantConfig.end_user_suggestion_config][google.cloud.dialogflow.v2.HumanAgentAssistantConfig.end_user_suggestion_config].
+  repeated SuggestionResult end_user_suggestion_results = 8;
+
+  // Indicates the parameters of DTMF.
+  DtmfParameters dtmf_parameters = 10;
+
+  // Debugging info that would get populated when
+  // `StreamingAnalyzeContentRequest.enable_debugging_info` is set to true.
+  CloudConversationDebuggingInfo debugging_info = 11;
+}
+
+// The request message for
+// [Participants.SuggestArticles][google.cloud.dialogflow.v2.Participants.SuggestArticles].
 message SuggestArticlesRequest {
   // Required. The name of the participant to fetch suggestion for.
   // Format: `projects/<Project ID>/locations/<Location
@@ -379,22 +700,30 @@ message SuggestArticlesRequest {
     }
   ];
 
-  // The name of the latest conversation message to compile suggestion
+  // Optional. The name of the latest conversation message to compile suggestion
   // for. If empty, it will be the latest message of the conversation.
   //
   // Format: `projects/<Project ID>/locations/<Location
   // ID>/conversations/<Conversation ID>/messages/<Message ID>`.
-  string latest_message = 2 [(google.api.resource_reference) = {
-                               type: "dialogflow.googleapis.com/Message"
-                             }];
+  string latest_message = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "dialogflow.googleapis.com/Message"
+    }
+  ];
 
-  // Max number of messages prior to and including
-  // [latest_message][google.cloud.dialogflow.v2.SuggestArticlesRequest.latest_message] to use as context
-  // when compiling the suggestion. By default 20 and at most 50.
-  int32 context_size = 3;
+  // Optional. Max number of messages prior to and including
+  // [latest_message][google.cloud.dialogflow.v2.SuggestArticlesRequest.latest_message]
+  // to use as context when compiling the suggestion. By default 20 and at
+  // most 50.
+  int32 context_size = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Parameters for a human assist query.
+  AssistQueryParameters assist_query_params = 4;
 }
 
-// The response message for [Participants.SuggestArticles][google.cloud.dialogflow.v2.Participants.SuggestArticles].
+// The response message for
+// [Participants.SuggestArticles][google.cloud.dialogflow.v2.Participants.SuggestArticles].
 message SuggestArticlesResponse {
   // Articles ordered by score in descending order.
   repeated ArticleAnswer article_answers = 1;
@@ -407,14 +736,16 @@ message SuggestArticlesResponse {
   string latest_message = 2;
 
   // Number of messages prior to and including
-  // [latest_message][google.cloud.dialogflow.v2.SuggestArticlesResponse.latest_message] to compile the
-  // suggestion. It may be smaller than the
-  // [SuggestArticlesRequest.context_size][google.cloud.dialogflow.v2.SuggestArticlesRequest.context_size] field in the request if there
-  // aren't that many messages in the conversation.
+  // [latest_message][google.cloud.dialogflow.v2.SuggestArticlesResponse.latest_message]
+  // to compile the suggestion. It may be smaller than the
+  // [SuggestArticlesRequest.context_size][google.cloud.dialogflow.v2.SuggestArticlesRequest.context_size]
+  // field in the request if there aren't that many messages in the
+  // conversation.
   int32 context_size = 3;
 }
 
-// The request message for [Participants.SuggestFaqAnswers][google.cloud.dialogflow.v2.Participants.SuggestFaqAnswers].
+// The request message for
+// [Participants.SuggestFaqAnswers][google.cloud.dialogflow.v2.Participants.SuggestFaqAnswers].
 message SuggestFaqAnswersRequest {
   // Required. The name of the participant to fetch suggestion for.
   // Format: `projects/<Project ID>/locations/<Location
@@ -426,22 +757,29 @@ message SuggestFaqAnswersRequest {
     }
   ];
 
-  // The name of the latest conversation message to compile suggestion
+  // Optional. The name of the latest conversation message to compile suggestion
   // for. If empty, it will be the latest message of the conversation.
   //
   // Format: `projects/<Project ID>/locations/<Location
   // ID>/conversations/<Conversation ID>/messages/<Message ID>`.
-  string latest_message = 2 [(google.api.resource_reference) = {
-                               type: "dialogflow.googleapis.com/Message"
-                             }];
+  string latest_message = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "dialogflow.googleapis.com/Message"
+    }
+  ];
 
-  // Max number of messages prior to and including
+  // Optional. Max number of messages prior to and including
   // [latest_message] to use as context when compiling the
   // suggestion. By default 20 and at most 50.
-  int32 context_size = 3;
+  int32 context_size = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Parameters for a human assist query.
+  AssistQueryParameters assist_query_params = 4;
 }
 
-// The request message for [Participants.SuggestFaqAnswers][google.cloud.dialogflow.v2.Participants.SuggestFaqAnswers].
+// The request message for
+// [Participants.SuggestFaqAnswers][google.cloud.dialogflow.v2.Participants.SuggestFaqAnswers].
 message SuggestFaqAnswersResponse {
   // Answers extracted from FAQ documents.
   repeated FaqAnswer faq_answers = 1;
@@ -454,10 +792,71 @@ message SuggestFaqAnswersResponse {
   string latest_message = 2;
 
   // Number of messages prior to and including
-  // [latest_message][google.cloud.dialogflow.v2.SuggestFaqAnswersResponse.latest_message] to compile the
-  // suggestion. It may be smaller than the
-  // [SuggestFaqAnswersRequest.context_size][google.cloud.dialogflow.v2.SuggestFaqAnswersRequest.context_size] field in the request if there
-  // aren't that many messages in the conversation.
+  // [latest_message][google.cloud.dialogflow.v2.SuggestFaqAnswersResponse.latest_message]
+  // to compile the suggestion. It may be smaller than the
+  // [SuggestFaqAnswersRequest.context_size][google.cloud.dialogflow.v2.SuggestFaqAnswersRequest.context_size]
+  // field in the request if there aren't that many messages in the
+  // conversation.
+  int32 context_size = 3;
+}
+
+// The request message for
+// [Participants.SuggestSmartReplies][google.cloud.dialogflow.v2.Participants.SuggestSmartReplies].
+message SuggestSmartRepliesRequest {
+  // Required. The name of the participant to fetch suggestion for.
+  // Format: `projects/<Project ID>/locations/<Location
+  // ID>/conversations/<Conversation ID>/participants/<Participant ID>`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dialogflow.googleapis.com/Participant"
+    }
+  ];
+
+  // The current natural language text segment to compile suggestion
+  // for. This provides a way for user to get follow up smart reply suggestion
+  // after a smart reply selection, without sending a text message.
+  TextInput current_text_input = 4;
+
+  // The name of the latest conversation message to compile suggestion
+  // for. If empty, it will be the latest message of the conversation.
+  //
+  // Format: `projects/<Project ID>/locations/<Location
+  // ID>/conversations/<Conversation ID>/messages/<Message ID>`.
+  string latest_message = 2 [(google.api.resource_reference) = {
+    type: "dialogflow.googleapis.com/Message"
+  }];
+
+  // Max number of messages prior to and including
+  // [latest_message] to use as context when compiling the
+  // suggestion. By default 20 and at most 50.
+  int32 context_size = 3;
+}
+
+// The response message for
+// [Participants.SuggestSmartReplies][google.cloud.dialogflow.v2.Participants.SuggestSmartReplies].
+message SuggestSmartRepliesResponse {
+  // Output only. Multiple reply options provided by smart reply service. The
+  // order is based on the rank of the model prediction.
+  // The maximum number of the returned replies is set in SmartReplyConfig.
+  repeated SmartReplyAnswer smart_reply_answers = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The name of the latest conversation message used to compile
+  // suggestion for.
+  //
+  // Format: `projects/<Project ID>/locations/<Location
+  // ID>/conversations/<Conversation ID>/messages/<Message ID>`.
+  string latest_message = 2 [(google.api.resource_reference) = {
+    type: "dialogflow.googleapis.com/Message"
+  }];
+
+  // Number of messages prior to and including
+  // [latest_message][google.cloud.dialogflow.v2.SuggestSmartRepliesResponse.latest_message]
+  // to compile the suggestion. It may be smaller than the
+  // [SuggestSmartRepliesRequest.context_size][google.cloud.dialogflow.v2.SuggestSmartRepliesRequest.context_size]
+  // field in the request if there aren't that many messages in the
+  // conversation.
   int32 context_size = 3;
 }
 
@@ -473,8 +872,37 @@ message OutputAudio {
 
 // Represents a response from an automated agent.
 message AutomatedAgentReply {
-  // Response of the Dialogflow [Sessions.DetectIntent][google.cloud.dialogflow.v2.Sessions.DetectIntent] call.
+  // Represents different automated agent reply types.
+  enum AutomatedAgentReplyType {
+    // Not specified. This should never happen.
+    AUTOMATED_AGENT_REPLY_TYPE_UNSPECIFIED = 0;
+
+    // Partial reply. e.g. Aggregated responses in a `Fulfillment` that enables
+    // `return_partial_response` can be returned as partial reply.
+    // WARNING: partial reply is not eligible for barge-in.
+    PARTIAL = 1;
+
+    // Final reply.
+    FINAL = 2;
+  }
+
+  // Response of the Dialogflow
+  // [Sessions.DetectIntent][google.cloud.dialogflow.v2.Sessions.DetectIntent]
+  // call.
   DetectIntentResponse detect_intent_response = 1;
+
+  // AutomatedAgentReply type.
+  AutomatedAgentReplyType automated_agent_reply_type = 7;
+
+  // Indicates whether the partial automated agent reply is interruptible when a
+  // later reply message arrives. e.g. if the agent specified some music as
+  // partial response, it can be cancelled.
+  bool allow_cancellation = 8;
+
+  // The unique identifier of the current Dialogflow CX conversation page.
+  // Format: `projects/<Project ID>/locations/<Location ID>/agents/<Agent
+  // ID>/flows/<Flow ID>/pages/<Page ID>`.
+  string cx_current_page = 11;
 }
 
 // Represents article answer.
@@ -533,9 +961,32 @@ message FaqAnswer {
   string answer_record = 6;
 }
 
+// Represents a smart reply answer.
+message SmartReplyAnswer {
+  // The content of the reply.
+  string reply = 1;
+
+  // Smart reply confidence.
+  // The system's confidence score that this reply is a good match for
+  // this conversation, as a value from 0.0 (completely uncertain) to 1.0
+  // (completely certain).
+  float confidence = 2;
+
+  // The name of answer record, in the format of
+  // "projects/<Project ID>/locations/<Location ID>/answerRecords/<Answer Record
+  // ID>"
+  string answer_record = 3 [(google.api.resource_reference) = {
+    type: "dialogflow.googleapis.com/AnswerRecord"
+  }];
+}
+
 // One response of different type of suggestion response which is used in
-// the response of [Participants.AnalyzeContent][google.cloud.dialogflow.v2.Participants.AnalyzeContent] and
-// [Participants.AnalyzeContent][google.cloud.dialogflow.v2.Participants.AnalyzeContent], as well as [HumanAgentAssistantEvent][google.cloud.dialogflow.v2.HumanAgentAssistantEvent].
+// the response of
+// [Participants.AnalyzeContent][google.cloud.dialogflow.v2.Participants.AnalyzeContent]
+// and
+// [Participants.AnalyzeContent][google.cloud.dialogflow.v2.Participants.AnalyzeContent],
+// as well as
+// [HumanAgentAssistantEvent][google.cloud.dialogflow.v2.HumanAgentAssistantEvent].
 message SuggestionResult {
   // Different type of suggestion response.
   oneof suggestion_response {
@@ -547,7 +998,18 @@ message SuggestionResult {
 
     // SuggestFaqAnswersResponse if request is for FAQ_ANSWER.
     SuggestFaqAnswersResponse suggest_faq_answers_response = 3;
+
+    // SuggestSmartRepliesResponse if request is for SMART_REPLY.
+    SuggestSmartRepliesResponse suggest_smart_replies_response = 4;
   }
+}
+
+// Defines the language used in the input text.
+message InputTextConfig {
+  // Required. The language of this conversational query. See [Language
+  // Support](https://cloud.google.com/dialogflow/docs/reference/language)
+  // for a list of the currently supported language codes.
+  string language_code = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
 // Represents a part of a message possibly annotated with an entity. The part
@@ -585,4 +1047,26 @@ message MessageAnnotation {
 
   // Indicates whether the text message contains entities.
   bool contain_entities = 2;
+}
+
+// Represents the parameters of human assist query.
+message AssistQueryParameters {
+  // Key-value filters on the metadata of documents returned by article
+  // suggestion. If specified, article suggestion only returns suggested
+  // documents that match all filters in their
+  // [Document.metadata][google.cloud.dialogflow.v2.Document.metadata]. Multiple
+  // values for a metadata key should be concatenated by comma. For example,
+  // filters to match all documents that have 'US' or 'CA' in their market
+  // metadata values and 'agent' in their user metadata values will be
+  // ```
+  // documents_metadata_filters {
+  //   key: "market"
+  //   value: "US,CA"
+  // }
+  // documents_metadata_filters {
+  //   key: "user"
+  //   value: "agent"
+  // }
+  // ```
+  map<string, string> documents_metadata_filters = 1;
 }

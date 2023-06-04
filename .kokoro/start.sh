@@ -11,4 +11,4 @@ docker container run \
   --workdir ${KOKORO_ROOT} \
   --ipc=host \
   --entrypoint ${KOKORO_ARTIFACTS_DIR}/github/googleapis/.kokoro/build.sh \
-  gcr.io/gapic-images/googleapis:20210423
+  gcr.io/gapic-images/googleapis:20230531

@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import "google/pubsub/v1/schema.proto";
 
 option cc_enable_arenas = true;
 option csharp_namespace = "Google.Cloud.PubSub.V1";
-option go_package = "google.golang.org/genproto/googleapis/pubsub/v1;pubsub";
+option go_package = "cloud.google.com/go/pubsub/apiv1/pubsubpb;pubsubpb";
 option java_multiple_files = true;
 option java_outer_classname = "PubsubProto";
 option java_package = "com.google.pubsub.v1";
@@ -60,6 +60,7 @@ service Publisher {
       patch: "/v1/{topic.name=projects/*/topics/*}"
       body: "*"
     };
+    option (google.api.method_signature) = "topic,update_mask";
   }
 
   // Adds one or more messages to the topic. Returns `NOT_FOUND` if the topic
@@ -157,6 +158,16 @@ message SchemaSettings {
 
   // The encoding of messages validated against `schema`.
   Encoding encoding = 2;
+
+  // The minimum (inclusive) revision allowed for validating messages. If empty
+  // or not present, allow any revision to be validated against last_revision or
+  // any revision created before.
+  string first_revision_id = 3;
+
+  // The maximum (inclusive) revision allowed for validating messages. If empty
+  // or not present, allow any revision to be validated against first_revision
+  // or any revision created after.
+  string last_revision_id = 4;
 }
 
 // A topic resource.
@@ -196,6 +207,16 @@ message Topic {
   // Reserved for future use. This field is set only in responses from the
   // server; it is ignored if it is set in any requests.
   bool satisfies_pzs = 7;
+
+  // Indicates the minimum duration to retain a message after it is published to
+  // the topic. If this field is set, messages published to the topic in the
+  // last `message_retention_duration` are always available to subscribers. For
+  // instance, it allows any attached subscription to [seek to a
+  // timestamp](https://cloud.google.com/pubsub/docs/replay-overview#seek_to_a_time)
+  // that is up to `message_retention_duration` in the past. If this field is
+  // not set, message retention is controlled by settings on individual
+  // subscriptions. Cannot be more than 31 days or less than 10 minutes.
+  google.protobuf.Duration message_retention_duration = 8;
 }
 
 // A message that is published by publishers and consumed by subscribers. The
@@ -233,6 +254,8 @@ message PubsubMessage {
   // delivered to subscribers in the order in which they are received by the
   // Pub/Sub system. All `PubsubMessage`s published in a given `PublishRequest`
   // must specify the same `ordering_key` value.
+  // For more information, see [ordering
+  // messages](https://cloud.google.com/pubsub/docs/ordering).
   string ordering_key = 5;
 }
 
@@ -441,6 +464,7 @@ service Subscriber {
       patch: "/v1/{subscription.name=projects/*/subscriptions/*}"
       body: "*"
     };
+    option (google.api.method_signature) = "subscription,update_mask";
   }
 
   // Lists matching subscriptions.
@@ -495,9 +519,7 @@ service Subscriber {
     option (google.api.method_signature) = "subscription,ack_ids";
   }
 
-  // Pulls messages from the server. The server may return `UNAVAILABLE` if
-  // there are too many concurrent pull requests pending for the given
-  // subscription.
+  // Pulls messages from the server.
   rpc Pull(PullRequest) returns (PullResponse) {
     option (google.api.http) = {
       post: "/v1/{subscription=projects/*/subscriptions/*}:pull"
@@ -505,6 +527,7 @@ service Subscriber {
     };
     option (google.api.method_signature) =
         "subscription,return_immediately,max_messages";
+    option (google.api.method_signature) = "subscription,max_messages";
   }
 
   // Establishes a stream with the server, which sends messages down to the
@@ -533,10 +556,10 @@ service Subscriber {
   }
 
   // Gets the configuration details of a snapshot. Snapshots are used in
-  // <a href="https://cloud.google.com/pubsub/docs/replay-overview">Seek</a>
-  // operations, which allow you to manage message acknowledgments in bulk. That
-  // is, you can set the acknowledgment state of messages in an existing
-  // subscription to the state captured by a snapshot.
+  // [Seek](https://cloud.google.com/pubsub/docs/replay-overview) operations,
+  // which allow you to manage message acknowledgments in bulk. That is, you can
+  // set the acknowledgment state of messages in an existing subscription to the
+  // state captured by a snapshot.
   rpc GetSnapshot(GetSnapshotRequest) returns (Snapshot) {
     option (google.api.http) = {
       get: "/v1/{snapshot=projects/*/snapshots/*}"
@@ -581,16 +604,16 @@ service Subscriber {
   }
 
   // Updates an existing snapshot. Snapshots are used in
-  // <a href="https://cloud.google.com/pubsub/docs/replay-overview">Seek</a>
-  // operations, which allow
-  // you to manage message acknowledgments in bulk. That is, you can set the
-  // acknowledgment state of messages in an existing subscription to the state
-  // captured by a snapshot.
+  // [Seek](https://cloud.google.com/pubsub/docs/replay-overview) operations,
+  // which allow you to manage message acknowledgments in bulk. That is, you can
+  // set the acknowledgment state of messages in an existing subscription to the
+  // state captured by a snapshot.
   rpc UpdateSnapshot(UpdateSnapshotRequest) returns (Snapshot) {
     option (google.api.http) = {
       patch: "/v1/{snapshot.name=projects/*/snapshots/*}"
       body: "*"
     };
+    option (google.api.method_signature) = "snapshot,update_mask";
   }
 
   // Removes an existing snapshot. Snapshots are used in [Seek]
@@ -624,12 +647,28 @@ service Subscriber {
   }
 }
 
-// A subscription resource.
+// A subscription resource. If none of `push_config`, `bigquery_config`, or
+// `cloud_storage_config` is set, then the subscriber will pull and ack messages
+// using API methods. At most one of these fields may be set.
 message Subscription {
   option (google.api.resource) = {
     type: "pubsub.googleapis.com/Subscription"
     pattern: "projects/{project}/subscriptions/{subscription}"
   };
+
+  // Possible states for a subscription.
+  enum State {
+    // Default value. This value is unused.
+    STATE_UNSPECIFIED = 0;
+
+    // The subscription can actively receive messages
+    ACTIVE = 1;
+
+    // The subscription cannot receive messages because of an error with the
+    // resource to which it pushes messages. See the more detailed error state
+    // in the corresponding configuration.
+    RESOURCE_ERROR = 2;
+  }
 
   // Required. The name of the subscription. It must have the format
   // `"projects/{project}/subscriptions/{subscription}"`. `{subscription}` must
@@ -648,14 +687,21 @@ message Subscription {
   ];
 
   // If push delivery is used with this subscription, this field is
-  // used to configure it. An empty `pushConfig` signifies that the subscriber
-  // will pull and ack messages using API methods.
+  // used to configure it.
   PushConfig push_config = 4;
+
+  // If delivery to BigQuery is used with this subscription, this field is
+  // used to configure it.
+  BigQueryConfig bigquery_config = 18;
+
+  // If delivery to Google Cloud Storage is used with this subscription, this
+  // field is used to configure it.
+  CloudStorageConfig cloud_storage_config = 22;
 
   // The approximate amount of time (on a best-effort basis) Pub/Sub waits for
   // the subscriber to acknowledge receipt before resending the message. In the
   // interval after the message is delivered and before it is acknowledged, it
-  // is considered to be <i>outstanding</i>. During that time period, the
+  // is considered to be _outstanding_. During that time period, the
   // message will not be redelivered (on a best-effort basis).
   //
   // For pull subscriptions, this value is used as the initial value for the ack
@@ -677,8 +723,9 @@ message Subscription {
   // Indicates whether to retain acknowledged messages. If true, then
   // messages are not expunged from the subscription's backlog, even if they are
   // acknowledged, until they fall out of the `message_retention_duration`
-  // window. This must be true if you would like to [Seek to a timestamp]
-  // (https://cloud.google.com/pubsub/docs/replay-overview#seek_to_a_time).
+  // window. This must be true if you would like to [`Seek` to a timestamp]
+  // (https://cloud.google.com/pubsub/docs/replay-overview#seek_to_a_time) in
+  // the past to replay previously-acknowledged messages.
   bool retain_acked_messages = 7;
 
   // How long to retain unacknowledged messages in the subscription's backlog,
@@ -689,8 +736,8 @@ message Subscription {
   // minutes.
   google.protobuf.Duration message_retention_duration = 8;
 
-  // See <a href="https://cloud.google.com/pubsub/docs/labels"> Creating and
-  // managing labels</a>.
+  // See [Creating and managing
+  // labels](https://cloud.google.com/pubsub/docs/labels).
   map<string, string> labels = 9;
 
   // If true, messages published with the same `ordering_key` in `PubsubMessage`
@@ -704,7 +751,8 @@ message Subscription {
   // successfully consuming messages from the subscription or is issuing
   // operations on the subscription. If `expiration_policy` is not set, a
   // *default policy* with `ttl` of 31 days will be used. The minimum allowed
-  // value for `expiration_policy.ttl` is 1 day.
+  // value for `expiration_policy.ttl` is 1 day. If `expiration_policy` is set,
+  // but `expiration_policy.ttl` is not set, the subscription never expires.
   ExpirationPolicy expiration_policy = 11;
 
   // An expression written in the Pub/Sub [filter
@@ -739,6 +787,32 @@ message Subscription {
   // FAILED_PRECONDITION. If the subscription is a push subscription, pushes to
   // the endpoint will not be made.
   bool detached = 15;
+
+  // If true, Pub/Sub provides the following guarantees for the delivery of
+  // a message with a given value of `message_id` on this subscription:
+  //
+  // * The message sent to a subscriber is guaranteed not to be resent
+  // before the message's acknowledgement deadline expires.
+  // * An acknowledged message will not be resent to a subscriber.
+  //
+  // Note that subscribers may still receive multiple copies of a message
+  // when `enable_exactly_once_delivery` is true if the message was published
+  // multiple times by a publisher client. These copies are  considered distinct
+  // by Pub/Sub and have distinct `message_id` values.
+  bool enable_exactly_once_delivery = 16;
+
+  // Output only. Indicates the minimum duration for which a message is retained
+  // after it is published to the subscription's topic. If this field is set,
+  // messages published to the subscription's topic in the last
+  // `topic_message_retention_duration` are always available to subscribers. See
+  // the `message_retention_duration` field in `Topic`. This field is set only
+  // in responses from the server; it is ignored if it is set in any requests.
+  google.protobuf.Duration topic_message_retention_duration = 17
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. An output-only field indicating whether or not the
+  // subscription can receive messages.
+  State state = 19 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A policy that specifies how Cloud Pub/Sub retries message delivery.
@@ -815,9 +889,9 @@ message PushConfig {
   message OidcToken {
     // [Service account
     // email](https://cloud.google.com/iam/docs/service-accounts)
-    // to be used for generating the OIDC token. The caller (for
-    // CreateSubscription, UpdateSubscription, and ModifyPushConfig RPCs) must
-    // have the iam.serviceAccounts.actAs permission for the service account.
+    // used for generating the OIDC token. For more information
+    // on setting up authentication, see
+    // [Push subscriptions](https://cloud.google.com/pubsub/docs/push).
     string service_account_email = 1;
 
     // Audience to be used when generating OIDC token. The audience claim
@@ -827,6 +901,19 @@ message PushConfig {
     // token audience here: https://tools.ietf.org/html/rfc7519#section-4.1.3
     // Note: if not specified, the Push endpoint URL will be used.
     string audience = 2;
+  }
+
+  // The payload to the push endpoint is in the form of the JSON representation
+  // of a PubsubMessage
+  // (https://cloud.google.com/pubsub/docs/reference/rpc/google.pubsub.v1#pubsubmessage).
+  message PubsubWrapper {}
+
+  // Sets the `data` field as the HTTP body for delivery.
+  message NoWrapper {
+    // When true, writes the Pub/Sub message metadata to
+    // `x-goog-pubsub-<KEY>:<VAL>` headers of the HTTP request. Writes the
+    // Pub/Sub message attributes to `<KEY>:<VAL>` headers of the HTTP request.
+    bool write_metadata = 1;
   }
 
   // A URL locating the endpoint to which messages should be pushed.
@@ -853,7 +940,7 @@ message PushConfig {
   // * `v1` or `v1beta2`: uses the push format defined in the v1 Pub/Sub API.
   //
   // For example:
-  // <pre><code>attributes { "x-goog-version": "v1" } </code></pre>
+  // `attributes { "x-goog-version": "v1" }`
   map<string, string> attributes = 2;
 
   // An authentication method used by push endpoints to verify the source of
@@ -866,6 +953,139 @@ message PushConfig {
     // `Authorization` header in the HTTP request for every pushed message.
     OidcToken oidc_token = 3;
   }
+
+  // The format of the delivered message to the push endpoint is defined by
+  // the chosen wrapper. When unset, `PubsubWrapper` is used.
+  oneof wrapper {
+    // When set, the payload to the push endpoint is in the form of the JSON
+    // representation of a PubsubMessage
+    // (https://cloud.google.com/pubsub/docs/reference/rpc/google.pubsub.v1#pubsubmessage).
+    PubsubWrapper pubsub_wrapper = 4;
+
+    // When set, the payload to the push endpoint is not wrapped.
+    NoWrapper no_wrapper = 5;
+  }
+}
+
+// Configuration for a BigQuery subscription.
+message BigQueryConfig {
+  // Possible states for a BigQuery subscription.
+  enum State {
+    // Default value. This value is unused.
+    STATE_UNSPECIFIED = 0;
+
+    // The subscription can actively send messages to BigQuery
+    ACTIVE = 1;
+
+    // Cannot write to the BigQuery table because of permission denied errors.
+    // This can happen if
+    // - Pub/Sub SA has not been granted the [appropriate BigQuery IAM
+    // permissions](https://cloud.google.com/pubsub/docs/create-subscription#assign_bigquery_service_account)
+    // - bigquery.googleapis.com API is not enabled for the project
+    // ([instructions](https://cloud.google.com/service-usage/docs/enable-disable))
+    PERMISSION_DENIED = 2;
+
+    // Cannot write to the BigQuery table because it does not exist.
+    NOT_FOUND = 3;
+
+    // Cannot write to the BigQuery table due to a schema mismatch.
+    SCHEMA_MISMATCH = 4;
+  }
+
+  // The name of the table to which to write data, of the form
+  // {projectId}.{datasetId}.{tableId}
+  string table = 1;
+
+  // When true, use the topic's schema as the columns to write to in BigQuery,
+  // if it exists.
+  bool use_topic_schema = 2;
+
+  // When true, write the subscription name, message_id, publish_time,
+  // attributes, and ordering_key to additional columns in the table. The
+  // subscription name, message_id, and publish_time fields are put in their own
+  // columns while all other message properties (other than data) are written to
+  // a JSON object in the attributes column.
+  bool write_metadata = 3;
+
+  // When true and use_topic_schema is true, any fields that are a part of the
+  // topic schema that are not part of the BigQuery table schema are dropped
+  // when writing to BigQuery. Otherwise, the schemas must be kept in sync and
+  // any messages with extra fields are not written and remain in the
+  // subscription's backlog.
+  bool drop_unknown_fields = 4;
+
+  // Output only. An output-only field that indicates whether or not the
+  // subscription can receive messages.
+  State state = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Configuration for a Cloud Storage subscription.
+message CloudStorageConfig {
+  // Configuration for writing message data in text format.
+  // Message payloads will be written to files as raw text, separated by a
+  // newline.
+  message TextConfig {}
+
+  // Configuration for writing message data in Avro format.
+  // Message payloads and metadata will be written to files as an Avro binary.
+  message AvroConfig {
+    // When true, write the subscription name, message_id, publish_time,
+    // attributes, and ordering_key as additional fields in the output.
+    bool write_metadata = 1;
+  }
+
+  // Possible states for a Cloud Storage subscription.
+  enum State {
+    // Default value. This value is unused.
+    STATE_UNSPECIFIED = 0;
+
+    // The subscription can actively send messages to Cloud Storage.
+    ACTIVE = 1;
+
+    // Cannot write to the Cloud Storage bucket because of permission denied
+    // errors.
+    PERMISSION_DENIED = 2;
+
+    // Cannot write to the Cloud Storage bucket because it does not exist.
+    NOT_FOUND = 3;
+  }
+
+  // Required. User-provided name for the Cloud Storage bucket.
+  // The bucket must be created by the user. The bucket name must be without
+  // any prefix like "gs://". See the [bucket naming
+  // requirements] (https://cloud.google.com/storage/docs/buckets#naming).
+  string bucket = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // User-provided prefix for Cloud Storage filename. See the [object naming
+  // requirements](https://cloud.google.com/storage/docs/objects#naming).
+  string filename_prefix = 2;
+
+  // User-provided suffix for Cloud Storage filename. See the [object naming
+  // requirements](https://cloud.google.com/storage/docs/objects#naming).
+  string filename_suffix = 3;
+
+  // Defaults to text format.
+  oneof output_format {
+    // If set, message data will be written to Cloud Storage in text format.
+    TextConfig text_config = 4;
+
+    // If set, message data will be written to Cloud Storage in Avro format.
+    AvroConfig avro_config = 5;
+  }
+
+  // The maximum duration that can elapse before a new Cloud Storage file is
+  // created. Min 1 minute, max 10 minutes, default 5 minutes. May not exceed
+  // the subscription's acknowledgement deadline.
+  google.protobuf.Duration max_duration = 6;
+
+  // The maximum bytes that can be written to a Cloud Storage file before a new
+  // file is created. Min 1 KB, max 10 GiB. The max_bytes limit may be exceeded
+  // in cases where messages are larger than the limit.
+  int64 max_bytes = 7;
+
+  // Output only. An output-only field that indicates whether or not the
+  // subscription can receive messages.
+  State state = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A message and its corresponding acknowledgment ID.
@@ -1011,7 +1231,8 @@ message PullRequest {
 // Response for the `Pull` method.
 message PullResponse {
   // Received Pub/Sub messages. The list will be empty if there are no more
-  // messages available in the backlog. For JSON, the response can be entirely
+  // messages available in the backlog, or if no messages could be returned
+  // before the request timeout. For JSON, the response can be entirely
   // empty. The Pub/Sub system may return fewer than the `maxMessages` requested
   // even if there are more messages available in the backlog.
   repeated ReceivedMessage received_messages = 1;
@@ -1142,8 +1363,59 @@ message StreamingPullRequest {
 // Response for the `StreamingPull` method. This response is used to stream
 // messages from the server to the client.
 message StreamingPullResponse {
+  // Acknowledgement IDs sent in one or more previous requests to acknowledge a
+  // previously received message.
+  message AcknowledgeConfirmation {
+    // Successfully processed acknowledgement IDs.
+    repeated string ack_ids = 1;
+
+    // List of acknowledgement IDs that were malformed or whose acknowledgement
+    // deadline has expired.
+    repeated string invalid_ack_ids = 2;
+
+    // List of acknowledgement IDs that were out of order.
+    repeated string unordered_ack_ids = 3;
+
+    // List of acknowledgement IDs that failed processing with temporary issues.
+    repeated string temporary_failed_ack_ids = 4;
+  }
+
+  // Acknowledgement IDs sent in one or more previous requests to modify the
+  // deadline for a specific message.
+  message ModifyAckDeadlineConfirmation {
+    // Successfully processed acknowledgement IDs.
+    repeated string ack_ids = 1;
+
+    // List of acknowledgement IDs that were malformed or whose acknowledgement
+    // deadline has expired.
+    repeated string invalid_ack_ids = 2;
+
+    // List of acknowledgement IDs that failed processing with temporary issues.
+    repeated string temporary_failed_ack_ids = 3;
+  }
+
+  // Subscription properties sent as part of the response.
+  message SubscriptionProperties {
+    // True iff exactly once delivery is enabled for this subscription.
+    bool exactly_once_delivery_enabled = 1;
+
+    // True iff message ordering is enabled for this subscription.
+    bool message_ordering_enabled = 2;
+  }
+
   // Received Pub/Sub messages. This will not be empty.
   repeated ReceivedMessage received_messages = 1;
+
+  // This field will only be set if `enable_exactly_once_delivery` is set to
+  // `true`.
+  AcknowledgeConfirmation acknowledge_confirmation = 5;
+
+  // This field will only be set if `enable_exactly_once_delivery` is set to
+  // `true`.
+  ModifyAckDeadlineConfirmation modify_ack_deadline_confirmation = 3;
+
+  // Properties associated with this subscription.
+  SubscriptionProperties subscription_properties = 4;
 }
 
 // Request for the `CreateSnapshot` method.
@@ -1151,9 +1423,9 @@ message CreateSnapshotRequest {
   // Required. User-provided name for this snapshot. If the name is not provided
   // in the request, the server will assign a random name for this snapshot on
   // the same project as the subscription. Note that for REST API requests, you
-  // must specify a name.  See the <a
-  // href="https://cloud.google.com/pubsub/docs/admin#resource_names"> resource
-  // name rules</a>. Format is `projects/{project}/snapshots/{snap}`.
+  // must specify a name.  See the [resource name
+  // rules](https://cloud.google.com/pubsub/docs/admin#resource_names). Format
+  // is `projects/{project}/snapshots/{snap}`.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = { type: "pubsub.googleapis.com/Snapshot" }
@@ -1175,8 +1447,8 @@ message CreateSnapshotRequest {
     }
   ];
 
-  // See <a href="https://cloud.google.com/pubsub/docs/labels"> Creating and
-  // managing labels</a>.
+  // See [Creating and managing
+  // labels](https://cloud.google.com/pubsub/docs/labels).
   map<string, string> labels = 3;
 }
 

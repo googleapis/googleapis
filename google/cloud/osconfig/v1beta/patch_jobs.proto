@@ -18,15 +18,15 @@ package google.cloud.osconfig.v1beta;
 
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/cloud/osconfig/v1beta/osconfig_common.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "google.golang.org/genproto/googleapis/cloud/osconfig/v1beta;osconfig";
+option go_package = "cloud.google.com/go/osconfig/apiv1beta/osconfigpb;osconfigpb";
 option java_outer_classname = "PatchJobs";
 option java_package = "com.google.cloud.osconfig.v1beta";
 
-// A request message to initiate patching across Google Compute Engine
-// instances.
+// A request message to initiate patching across Compute Engine instances.
 message ExecutePatchJobRequest {
   // Required. The project in which to run this patch in the form `projects/*`
   string parent = 1 [(google.api.field_behavior) = REQUIRED];
@@ -53,6 +53,9 @@ message ExecutePatchJobRequest {
 
   // Display name for this patch job. This does not have to be unique.
   string display_name = 8;
+
+  // Rollout strategy of the patch job.
+  PatchRollout rollout = 9;
 }
 
 // Request to get an active or completed patch job.
@@ -91,7 +94,7 @@ message ListPatchJobInstanceDetailsResponse {
 // Patch details for a VM instance. For more information about reviewing VM
 // instance details, see
 // [Listing all VM instance details for a specific patch
-// job](/compute/docs/os-patch-management/manage-patch-jobs#list-instance-details).
+// job](https://cloud.google.com/compute/docs/os-patch-management/manage-patch-jobs#list-instance-details).
 message PatchJobInstanceDetails {
   // The instance name in the form `projects/*/zones/*/instances/*`
   string name = 1;
@@ -140,12 +143,46 @@ message ListPatchJobsResponse {
 // A high level representation of a patch job that is either in progress
 // or has completed.
 //
-// Instances details are not included in the job. To paginate through instance
-// details, use ListPatchJobInstanceDetails.
+// Instance details are not included in the job. To paginate through instance
+// details, use `ListPatchJobInstanceDetails`.
 //
 // For more information about patch jobs, see
-// [Creating patch jobs](/compute/docs/os-patch-management/create-patch-job).
+// [Creating patch
+// jobs](https://cloud.google.com/compute/docs/os-patch-management/create-patch-job).
 message PatchJob {
+  option (google.api.resource) = {
+    type: "osconfig.googleapis.com/PatchJob"
+    pattern: "projects/{project}/patchJobs/{patch_job}"
+  };
+
+  // Enumeration of the various states a patch job passes through as it
+  // executes.
+  enum State {
+    // State must be specified.
+    STATE_UNSPECIFIED = 0;
+
+    // The patch job was successfully initiated.
+    STARTED = 1;
+
+    // The patch job is looking up instances to run the patch on.
+    INSTANCE_LOOKUP = 2;
+
+    // Instances are being patched.
+    PATCHING = 3;
+
+    // Patch job completed successfully.
+    SUCCEEDED = 4;
+
+    // Patch job completed but there were errors.
+    COMPLETED_WITH_ERRORS = 5;
+
+    // The patch job was canceled.
+    CANCELED = 6;
+
+    // The patch job timed out.
+    TIMED_OUT = 7;
+  }
+
   // A summary of the current patch state across all instances that this patch
   // job affects. Contains counts of instances in different states. These states
   // map to `InstancePatchState`. List patch job instance details to see the
@@ -199,34 +236,6 @@ message PatchJob {
     int64 no_agent_detected_instance_count = 15;
   }
 
-  // Enumeration of the various states a patch job passes through as it
-  // executes.
-  enum State {
-    // State must be specified.
-    STATE_UNSPECIFIED = 0;
-
-    // The patch job was successfully initiated.
-    STARTED = 1;
-
-    // The patch job is looking up instances to run the patch on.
-    INSTANCE_LOOKUP = 2;
-
-    // Instances are being patched.
-    PATCHING = 3;
-
-    // Patch job completed successfully.
-    SUCCEEDED = 4;
-
-    // Patch job completed but there were errors.
-    COMPLETED_WITH_ERRORS = 5;
-
-    // The patch job was canceled.
-    CANCELED = 6;
-
-    // The patch job timed out.
-    TIMED_OUT = 7;
-  }
-
   // Unique identifier for this patch job in the form
   // `projects/*/patchJobs/*`
   string name = 1;
@@ -244,7 +253,7 @@ message PatchJob {
   // Last time this patch job was updated.
   google.protobuf.Timestamp update_time = 4;
 
-  // The current state of the PatchJob .
+  // The current state of the PatchJob.
   State state = 5;
 
   // Instances to patch.
@@ -274,6 +283,9 @@ message PatchJob {
 
   // Output only. Name of the patch deployment that created this patch job.
   string patch_deployment = 15 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Rollout strategy being applied.
+  PatchRollout rollout = 16;
 }
 
 // Patch configuration specifications. Contains details on how to apply the
@@ -324,6 +336,9 @@ message PatchConfig {
 
   // The `ExecStep` to run after the patch update.
   ExecStep post_step = 9;
+
+  // Allows the patch job to run on Managed instance groups (MIGs).
+  bool mig_instances_allowed = 10;
 }
 
 // Namespace for instance state enums.
@@ -608,8 +623,8 @@ message PatchInstanceFilter {
   // Represents a group of VMs that can be identified as having all these
   // labels, for example "env=prod and app=web".
   message GroupLabel {
-    // Google Compute Engine instance labels that must be present for a VM
-    // instance to be targeted by this filter.
+    // Compute Engine instance labels that must be present for a VM instance to
+    // be targeted by this filter.
     map<string, string> labels = 1;
   }
 
@@ -635,4 +650,53 @@ message PatchInstanceFilter {
   // labels, this is another way to group VMs when targeting configs, for
   // example prefix="prod-".
   repeated string instance_name_prefixes = 5;
+}
+
+// Patch rollout configuration specifications. Contains details on the
+// concurrency control when applying patch(es) to all targeted VMs.
+message PatchRollout {
+  // Type of the rollout.
+  enum Mode {
+    // Mode must be specified.
+    MODE_UNSPECIFIED = 0;
+
+    // Patches are applied one zone at a time. The patch job begins in the
+    // region with the lowest number of targeted VMs. Within the region,
+    // patching begins in the zone with the lowest number of targeted VMs. If
+    // multiple regions (or zones within a region) have the same number of
+    // targeted VMs, a tie-breaker is achieved by sorting the regions or zones
+    // in alphabetical order.
+    ZONE_BY_ZONE = 1;
+
+    // Patches are applied to VMs in all zones at the same time.
+    CONCURRENT_ZONES = 2;
+  }
+
+  // Mode of the patch rollout.
+  Mode mode = 1;
+
+  // The maximum number (or percentage) of VMs per zone to disrupt at any given
+  // moment. The number of VMs calculated from multiplying the percentage by the
+  // total number of VMs in a zone is rounded up.
+  //
+  // During patching, a VM is considered disrupted from the time the agent is
+  // notified to begin until patching has completed. This disruption time
+  // includes the time to complete reboot and any post-patch steps.
+  //
+  // A VM contributes to the disruption budget if its patching operation fails
+  // either when applying the patches, running pre or post patch steps, or if it
+  // fails to respond with a success notification before timing out. VMs that
+  // are not running or do not have an active agent do not count toward this
+  // disruption budget.
+  //
+  // For zone-by-zone rollouts, if the disruption budget in a zone is exceeded,
+  // the patch job stops, because continuing to the next zone requires
+  // completion of the patch process in the previous zone.
+  //
+  // For example, if the disruption budget has a fixed value of `10`, and 8 VMs
+  // fail to patch in the current zone, the patch job continues to patch 2 VMs
+  // at a time until the zone is completed. When that zone is completed
+  // successfully, patching begins with 10 VMs at a time in the next zone. If 10
+  // VMs in the next zone fail to patch, the patch job stops.
+  FixedOrPercent disruption_budget = 2;
 }

@@ -1,0 +1,406 @@
+// Copyright 2023 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.visionai.v1;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/cloud/visionai/v1/streaming_resources.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Google.Cloud.VisionAI.V1";
+option go_package = "cloud.google.com/go/visionai/apiv1/visionaipb;visionaipb";
+option java_multiple_files = true;
+option java_outer_classname = "StreamingServiceProto";
+option java_package = "com.google.cloud.visionai.v1";
+option php_namespace = "Google\\Cloud\\VisionAI\\V1";
+option ruby_package = "Google::Cloud::VisionAI::V1";
+
+// Streaming service for receiving and sending packets.
+service StreamingService {
+  option (google.api.default_host) = "visionai.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform";
+
+  // Send packets to the series.
+  rpc SendPackets(stream SendPacketsRequest)
+      returns (stream SendPacketsResponse) {}
+
+  // Receive packets from the series.
+  rpc ReceivePackets(stream ReceivePacketsRequest)
+      returns (stream ReceivePacketsResponse) {}
+
+  // Receive events given the stream name.
+  rpc ReceiveEvents(stream ReceiveEventsRequest)
+      returns (stream ReceiveEventsResponse) {}
+
+  // AcquireLease acquires a lease.
+  rpc AcquireLease(AcquireLeaseRequest) returns (Lease) {
+    option (google.api.http) = {
+      post: "/v1/{series=projects/*/locations/*/clusters/*/series/*}:acquireLease"
+      body: "*"
+    };
+  }
+
+  // RenewLease renews a lease.
+  rpc RenewLease(RenewLeaseRequest) returns (Lease) {
+    option (google.api.http) = {
+      post: "/v1/{series=projects/*/locations/*/clusters/*/series/*}:renewLease"
+      body: "*"
+    };
+  }
+
+  // RleaseLease releases a lease.
+  rpc ReleaseLease(ReleaseLeaseRequest) returns (ReleaseLeaseResponse) {
+    option (google.api.http) = {
+      post: "/v1/{series=projects/*/locations/*/clusters/*/series/*}:releaseLease"
+      body: "*"
+    };
+  }
+}
+
+// The lease type.
+enum LeaseType {
+  // Lease type unspecified.
+  LEASE_TYPE_UNSPECIFIED = 0;
+
+  // Lease for stream reader.
+  LEASE_TYPE_READER = 1;
+
+  // Lease for stream writer.
+  LEASE_TYPE_WRITER = 2;
+}
+
+// Request message for ReceiveEvents.
+message ReceiveEventsRequest {
+  // SetupRequest is the first message sent to the service to setup the RPC
+  // connection.
+  message SetupRequest {
+    // The cluster name.
+    string cluster = 1;
+
+    // The stream name. The service will return the events for the given stream.
+    string stream = 2;
+
+    // A name for the receiver to self-identify.
+    //
+    // This is used to keep track of a receiver's read progress.
+    string receiver = 3;
+
+    // Controller mode configuration for receiving events from the server.
+    ControlledMode controlled_mode = 4;
+
+    // The maximum duration of server silence before the client determines the
+    // server unreachable.
+    //
+    // The client must either receive an `Event` update or a heart beat message
+    // before this duration expires; otherwise, the client will automatically
+    // cancel the current connection and retry.
+    google.protobuf.Duration heartbeat_interval = 5;
+
+    // The grace period after which a `writes_done_request` is issued, that a
+    // `WritesDone` is expected from the client.
+    //
+    // The server is free to cancel the RPC should this expire.
+    //
+    // A system default will be chosen if unset.
+    google.protobuf.Duration writes_done_grace_period = 6;
+  }
+
+  oneof request {
+    // The setup request to setup the RPC connection.
+    SetupRequest setup_request = 1;
+
+    // This request checkpoints the consumer's read progress.
+    CommitRequest commit_request = 2;
+  }
+}
+
+// The event update message.
+message EventUpdate {
+  // The name of the stream that the event is attached to.
+  string stream = 1;
+
+  // The name of the event.
+  string event = 2;
+
+  // The name of the series.
+  string series = 3;
+
+  // The timestamp when the Event update happens.
+  google.protobuf.Timestamp update_time = 4;
+
+  // The offset of the message that will be used to acknowledge of the message
+  // receiving.
+  int64 offset = 5;
+}
+
+// Control message for a ReceiveEventsResponse.
+message ReceiveEventsControlResponse {
+  // Possible control messages.
+  oneof control {
+    // A server heartbeat.
+    bool heartbeat = 1;
+
+    // A request to the receiver to complete any final writes followed by a
+    // `WritesDone`; e.g. issue any final `CommitRequest`s.
+    //
+    // May be ignored if `WritesDone` has already been issued at any point
+    // prior to receiving this message.
+    //
+    // If `WritesDone` does not get issued, then the server will forcefully
+    // cancel the connection, and the receiver will likely receive an
+    // uninformative after `Read` returns `false` and `Finish` is called.
+    bool writes_done_request = 2;
+  }
+}
+
+// Response message for the ReceiveEvents.
+message ReceiveEventsResponse {
+  // Possible response types.
+  oneof response {
+    // The event update message.
+    EventUpdate event_update = 1;
+
+    // A control message from the server.
+    ReceiveEventsControlResponse control = 2;
+  }
+}
+
+// The lease message.
+message Lease {
+  // The lease id.
+  string id = 1;
+
+  // The series name.
+  string series = 2;
+
+  // The owner name.
+  string owner = 3;
+
+  // The lease expire time.
+  google.protobuf.Timestamp expire_time = 4;
+
+  // The lease type.
+  LeaseType lease_type = 5;
+}
+
+// Request message for acquiring a lease.
+message AcquireLeaseRequest {
+  // The series name.
+  string series = 1;
+
+  // The owner name.
+  string owner = 2;
+
+  // The lease term.
+  google.protobuf.Duration term = 3;
+
+  // The lease type.
+  LeaseType lease_type = 4;
+}
+
+// Request message for renewing a lease.
+message RenewLeaseRequest {
+  // Lease id.
+  string id = 1;
+
+  // Series name.
+  string series = 2;
+
+  // Lease owner.
+  string owner = 3;
+
+  // Lease term.
+  google.protobuf.Duration term = 4;
+}
+
+// Request message for releasing lease.
+message ReleaseLeaseRequest {
+  // Lease id.
+  string id = 1;
+
+  // Series name.
+  string series = 2;
+
+  // Lease owner.
+  string owner = 3;
+}
+
+// Response message for release lease.
+message ReleaseLeaseResponse {}
+
+// RequestMetadata is the metadata message for the request.
+message RequestMetadata {
+  // Stream name.
+  string stream = 1;
+
+  // Evevt name.
+  string event = 2;
+
+  // Series name.
+  string series = 3;
+
+  // Lease id.
+  string lease_id = 4;
+
+  // Owner name.
+  string owner = 5;
+
+  // Lease term specifies how long the client wants the session to be maintained
+  // by the server after the client leaves. If the lease term is not set, the
+  // server will release the session immediately and the client cannot reconnect
+  // to the same session later.
+  google.protobuf.Duration lease_term = 6;
+}
+
+// Request message for sending packets.
+message SendPacketsRequest {
+  oneof request {
+    // Packets sent over the streaming rpc.
+    Packet packet = 1;
+
+    // The first message of the streaming rpc including the request metadata.
+    RequestMetadata metadata = 2;
+  }
+}
+
+// Response message for sending packets.
+message SendPacketsResponse {}
+
+// Request message for receiving packets.
+message ReceivePacketsRequest {
+  // The message specifying the initial settings for the ReceivePackets session.
+  message SetupRequest {
+    // The mode in which the consumer reads messages.
+    oneof consumer_mode {
+      // Options for configuring eager mode.
+      EagerMode eager_receive_mode = 3;
+
+      // Options for configuring controlled mode.
+      ControlledMode controlled_receive_mode = 4;
+    }
+
+    // The configurations that specify where packets are retrieved.
+    RequestMetadata metadata = 1;
+
+    // A name for the receiver to self-identify.
+    //
+    // This is used to keep track of a receiver's read progress.
+    string receiver = 2;
+
+    // The maximum duration of server silence before the client determines the
+    // server unreachable.
+    //
+    // The client must either receive a `Packet` or a heart beat message before
+    // this duration expires; otherwise, the client will automatically cancel
+    // the current connection and retry.
+    google.protobuf.Duration heartbeat_interval = 5;
+
+    // The grace period after which a `writes_done_request` is issued, that a
+    // `WritesDone` is expected from the client.
+    //
+    // The server is free to cancel the RPC should this expire.
+    //
+    // A system default will be chosen if unset.
+    google.protobuf.Duration writes_done_grace_period = 6;
+  }
+
+  // Possible request types from the client.
+  oneof request {
+    // The request to setup the initial state of session.
+    //
+    // The client must send and only send this as the first message.
+    SetupRequest setup_request = 6;
+
+    // This request checkpoints the consumer's read progress.
+    CommitRequest commit_request = 7;
+  }
+}
+
+// Control message for a ReceivePacketsResponse.
+message ReceivePacketsControlResponse {
+  // Possible control messages.
+  oneof control {
+    // A server heartbeat.
+    bool heartbeat = 1;
+
+    // A request to the receiver to complete any final writes followed by a
+    // `WritesDone`; e.g. issue any final `CommitRequest`s.
+    //
+    // May be ignored if `WritesDone` has already been issued at any point
+    // prior to receiving this message.
+    //
+    // If `WritesDone` does not get issued, then the server will forcefully
+    // cancel the connection, and the receiver will likely receive an
+    // uninformative after `Read` returns `false` and `Finish` is called.
+    bool writes_done_request = 2;
+  }
+}
+
+// Response message from ReceivePackets.
+message ReceivePacketsResponse {
+  // Possible response types.
+  oneof response {
+    // A genuine data payload originating from the sender.
+    Packet packet = 1;
+
+    // A control message from the server.
+    ReceivePacketsControlResponse control = 3;
+  }
+}
+
+// The options for receiver under the eager mode.
+message EagerMode {}
+
+// The options for receiver under the controlled mode.
+message ControlledMode {
+  // This is the offset from which to start receiveing.
+  oneof starting_offset {
+    // This can be set to the following logical starting points:
+    //
+    // "begin": This will read from the earliest available message.
+    //
+    // "most-recent": This will read from the latest available message.
+    //
+    // "end": This will read only future messages.
+    //
+    // "stored": This will resume reads one past the last committed offset.
+    //           It is the only option that resumes progress; all others
+    //           jump unilaterally.
+    string starting_logical_offset = 1;
+  }
+
+  // This is the logical starting point to fallback upon should the
+  // specified starting offset be unavailable.
+  //
+  // This can be one of the following values:
+  //
+  // "begin": This will read from the earliest available message.
+  //
+  // "end": This will read only future messages.
+  string fallback_starting_offset = 2;
+}
+
+// The message for explicitly committing the read progress.
+//
+// This may only be used when `ReceivePacketsControlledMode` is set in the
+// initial setup request.
+message CommitRequest {
+  // The offset to commit.
+  int64 offset = 1;
+}

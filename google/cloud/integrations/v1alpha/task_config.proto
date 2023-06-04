@@ -1,0 +1,217 @@
+// Copyright 2021 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.integrations.v1alpha;
+
+import "google/api/field_behavior.proto";
+import "google/cloud/integrations/v1alpha/event_parameter.proto";
+import "google/cloud/integrations/v1alpha/json_validation.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "cloud.google.com/go/integrations/apiv1alpha/integrationspb;integrationspb";
+option java_multiple_files = true;
+option java_outer_classname = "TaskConfigProto";
+option java_package = "com.google.cloud.integrations.v1alpha";
+
+// The task configuration details. This is not the implementation of Task.
+// There might be multiple TaskConfigs for the same Task.
+// (-- Next available id: 12 --)
+message TaskConfig {
+  // Various policies for executing the next set of tasks.
+  enum NextTasksExecutionPolicy {
+    // Default.
+    NEXT_TASKS_EXECUTION_POLICY_UNSPECIFIED = 0;
+
+    // Execute all the tasks that satisfy their associated condition.
+    RUN_ALL_MATCH = 1;
+
+    // Execute the first task that satisfies the associated condition.
+    RUN_FIRST_MATCH = 2;
+  }
+
+  // Various policies to trigger the execution of this task.
+  enum TaskExecutionStrategy {
+    // Default. If the strategy is not set explicitly, it will default to
+    // `WHEN_ALL_SUCCEED`.
+    TASK_EXECUTION_STRATEGY_UNSPECIFIED = 0;
+
+    // Wait until all of its previous tasks finished execution, then verify at
+    // least one of the edge conditions is met, and execute if possible. This
+    // should be considered as WHEN_ALL_TASKS_SUCCEED.
+    WHEN_ALL_SUCCEED = 1;
+
+    // Start execution as long as any of its previous tasks finished execution
+    // and the corresponding edge condition is met (since we will execute if
+    // only that succeeding edge condition is met).
+    WHEN_ANY_SUCCEED = 2;
+
+    // Wait until all of its previous tasks finished execution, then verify
+    // the all edge conditions are met and execute if possible.
+    WHEN_ALL_TASKS_AND_CONDITIONS_SUCCEED = 3;
+  }
+
+  // Optional. The name for the task.
+  string task = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. The identifier of this task within its parent event config,
+  // specified by the client. This should be unique among all the tasks belong
+  // to the same event config. We use this field as the identifier to
+  // find next tasks (via field `next_tasks.task_id`).
+  string task_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The customized parameters the user can pass to this task.
+  map<string, EventParameter> parameters = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Determines the number of times the
+  // task will be retried on failure and with what retry strategy.
+  // This is applicable for asynchronous calls to Eventbus alone (Post To
+  // Queue, Schedule etc.).
+  FailurePolicy failure_policy = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Determines the number of times the
+  // task will be retried on failure and with what retry strategy.
+  // This is applicable for synchronous calls to Eventbus alone (Post).
+  FailurePolicy synchronous_call_failure_policy = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The set of tasks that are next in line to be executed as per the
+  // execution graph defined for the parent event, specified by
+  // `event_config_id`. Each of these next tasks are executed
+  // only if the condition associated with them evaluates to true.
+  repeated NextTask next_tasks = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The policy dictating the execution of the next set of tasks for the current
+  // task.
+  NextTasksExecutionPolicy next_tasks_execution_policy = 7 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The policy dictating the execution strategy of this task.
+  TaskExecutionStrategy task_execution_strategy = 8 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. User-provided label that is attached to this TaskConfig in the UI.
+  string display_name = 9 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Determines what action to take upon successful task completion.
+  SuccessPolicy success_policy = 10 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If set, overrides the option configured in the Task implementation class.
+  JsonValidationOption json_validation_option = 11 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Policy that dictates the behavior for the task after it completes
+// successfully.
+message SuccessPolicy {
+  // The state of execution.
+  enum FinalState {
+    // UNSPECIFIED.
+    FINAL_STATE_UNSPECIFIED = 0;
+
+    // The default behavior, where successful tasks will be marked as SUCCEEDED.
+    SUCCEEDED = 1;
+
+    // Sets the state to SUSPENDED after executing.  This is required for
+    // SuspensionTask; event execution will continue once the user calls
+    // ResolveSuspensions with the event_execution_info_id and the task number.
+    SUSPENDED = 2;
+  }
+
+  // State to which the execution snapshot status will be set if the task
+  // succeeds.
+  FinalState final_state = 1;
+}
+
+// Policy that defines the task retry logic and failure type. If no
+// FailurePolicy is defined for a task, all its dependent tasks will not be
+// executed (i.e, a `retry_strategy` of NONE will be applied).
+message FailurePolicy {
+  // The behavior when the taks failed.
+  enum RetryStrategy {
+    // UNSPECIFIED.
+    RETRY_STRATEGY_UNSPECIFIED = 0;
+
+    // Ignores the failure of this task. The rest of the integration will be
+    // executed Assuming this task succeeded.
+    IGNORE = 1;
+
+    // Causes a permanent failure of the task. However, if the last task(s)
+    // of event was successfully completed despite the failure of this task,
+    // it has no impact on the integration.
+    NONE = 2;
+
+    // Causes a permanent failure of the event. It is different from NONE
+    // because this will mark the event as FAILED by shutting down the
+    // event execution.
+    FATAL = 3;
+
+    // The task will be retried from the failed task onwards after a fixed
+    // delay. A max-retry count is required to be specified with this
+    // strategy. A jitter is added to each exponential interval so that
+    // concurrently failing tasks of the same type do not end up retrying
+    // after the exact same exponential interval. max_retries and
+    // interval_in_seconds must be specified.
+    FIXED_INTERVAL = 4;
+
+    // The task will be retried from the failed task onwards after a fixed
+    // delay that linearly increases with each retry attempt. A jitter is
+    // added to each exponential interval so that concurrently failing tasks
+    // of the same type do not end up retrying after the exact same
+    // exponential interval. A max-retry count is required to be specified
+    // with this strategy. max_retries and interval_in_seconds must be
+    // specified.
+    LINEAR_BACKOFF = 5;
+
+    // The task will be retried after an exponentially increasing period of
+    // time with each failure. A jitter is added to each exponential interval
+    // so that concurrently failing tasks of the same type do not end up
+    // retrying after the exact same exponential interval. A max-retry count
+    // is required to be specified with this strategy. `max_retries` and
+    // `interval_in_seconds` must be specified.
+    EXPONENTIAL_BACKOFF = 6;
+
+    // The entire integration will be restarted with the initial parameters that
+    // were set when the event was fired. A max-retry count is required to be
+    // specified with this strategy. `max_retries` and `interval_in_seconds`
+    // must be specified.
+    RESTART_INTEGRATION_WITH_BACKOFF = 7;
+  }
+
+  // Defines what happens to the task upon failure.
+  RetryStrategy retry_strategy = 1;
+
+  // Required if retry_strategy is FIXED_INTERVAL or
+  // LINEAR/EXPONENTIAL_BACKOFF/RESTART_INTEGRATION_WITH_BACKOFF. Defines the
+  // number of times the task will be retried if failed.
+  int32 max_retries = 2;
+
+  // Required if retry_strategy is FIXED_INTERVAL or
+  // LINEAR/EXPONENTIAL_BACKOFF/RESTART_INTEGRATION_WITH_BACKOFF. Defines the
+  // initial interval in seconds for backoff.
+  google.protobuf.Timestamp interval_time = 3;
+}
+
+// The task that is next in line to be executed, if the
+// condition specified evaluated to true.
+message NextTask {
+  // ID of the next task.
+  string task_config_id = 1;
+
+  // Task number of the next task.
+  string task_id = 2;
+
+  // Standard filter expression for this task to become an eligible next task.
+  string condition = 3;
+
+  // User-provided label that is attached to this edge in the UI.
+  string display_name = 4;
+}

@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "google.golang.org/genproto/googleapis/cloud/dataproc/v1;dataproc";
+option go_package = "cloud.google.com/go/dataproc/v2/apiv1/dataprocpb;dataprocpb";
 option java_multiple_files = true;
 option java_outer_classname = "JobsProto";
 option java_package = "com.google.cloud.dataproc.v1";
@@ -109,7 +109,7 @@ service JobController {
 // The runtime logging config of the job.
 message LoggingConfig {
   // The Log4j level for job execution. When running an
-  // [Apache Hive](http://hive.apache.org/) job, Cloud
+  // [Apache Hive](https://hive.apache.org/) job, Cloud
   // Dataproc configures the Hive client to an equivalent verbosity level.
   enum Level {
     // Level is unspecified. Use default level for log4j.
@@ -200,7 +200,7 @@ message HadoopJob {
   LoggingConfig logging_config = 8 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// A Dataproc job for running [Apache Spark](http://spark.apache.org/)
+// A Dataproc job for running [Apache Spark](https://spark.apache.org/)
 // applications on YARN.
 message SparkJob {
   // Required. The specification of the main method to call to drive the job.
@@ -341,7 +341,7 @@ message HiveJob {
 }
 
 // A Dataproc job for running [Apache Spark
-// SQL](http://spark.apache.org/sql/) queries.
+// SQL](https://spark.apache.org/sql/) queries.
 message SparkSqlJob {
   // Required. The sequence of Spark SQL queries to execute, specified as
   // either an HCFS file URI or as a list of queries.
@@ -470,6 +470,43 @@ message PrestoJob {
   // Optional. A mapping of property names to values. Used to set Presto
   // [session properties](https://prestodb.io/docs/current/sql/set-session.html)
   // Equivalent to using the --session flag in the Presto CLI
+  map<string, string> properties = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The runtime log config for job execution.
+  LoggingConfig logging_config = 7 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A Dataproc job for running [Trino](https://trino.io/) queries.
+// **IMPORTANT**: The [Dataproc Trino Optional
+// Component](https://cloud.google.com/dataproc/docs/concepts/components/trino)
+// must be enabled when the cluster is created to submit a Trino job to the
+// cluster.
+message TrinoJob {
+  // Required. The sequence of Trino queries to execute, specified as
+  // either an HCFS file URI or as a list of queries.
+  oneof queries {
+    // The HCFS URI of the script that contains SQL queries.
+    string query_file_uri = 1;
+
+    // A list of queries.
+    QueryList query_list = 2;
+  }
+
+  // Optional. Whether to continue executing queries if a query fails.
+  // The default value is `false`. Setting to `true` can be useful when
+  // executing independent parallel queries.
+  bool continue_on_failure = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The format in which query output will be displayed. See the
+  // Trino documentation for supported output formats
+  string output_format = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Trino client tags to attach to this query
+  repeated string client_tags = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A mapping of property names to values. Used to set Trino
+  // [session properties](https://trino.io/docs/current/sql/set-session.html)
+  // Equivalent to using the --session flag in the Trino CLI
   map<string, string> properties = 6 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The runtime log config for job execution.
@@ -680,6 +717,9 @@ message Job {
 
     // Optional. Job is a Presto job.
     PrestoJob presto_job = 23 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Job is a Trino job.
+    TrinoJob trino_job = 28 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Output only. The job status. Additional application-specific
@@ -731,6 +771,19 @@ message Job {
   // `status.state` field will indicate if it was successful, failed,
   // or cancelled.
   bool done = 24 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Driver scheduling configuration.
+  DriverSchedulingConfig driver_scheduling_config = 27
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Driver scheduling configuration.
+message DriverSchedulingConfig {
+  // Required. The amount of memory in MB the driver is requesting.
+  int32 memory_mb = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The number of vCPUs the driver is requesting.
+  int32 vcores = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
 // Job scheduling options.
@@ -739,15 +792,26 @@ message JobScheduling {
   // a result of driver exiting with non-zero code before job is
   // reported failed.
   //
-  // A job may be reported as thrashing if driver exits with non-zero code
-  // 4 times within 10 minute window.
+  // A job may be reported as thrashing if the driver exits with a non-zero code
+  // four times within a 10-minute window.
   //
   // Maximum value is 10.
+  //
+  // **Note:** This restartable job option is not supported in Dataproc
+  // [workflow templates]
+  // (https://cloud.google.com/dataproc/docs/concepts/workflows/using-workflows#adding_jobs_to_a_template).
   int32 max_failures_per_hour = 1 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Maximum number of times in total a driver may be restarted as a
-  // result of driver exiting with non-zero code before job is reported failed.
+  // Optional. Maximum total number of times a driver may be restarted as a
+  // result of the driver exiting with a non-zero code. After the maximum number
+  // is reached, the job will be reported as failed.
+  //
   // Maximum value is 240.
+  //
+  // **Note:** Currently, this restartable job option is
+  // not supported in Dataproc
+  // [workflow
+  // templates](https://cloud.google.com/dataproc/docs/concepts/workflows/using-workflows#adding_jobs_to_a_template).
   int32 max_failures_total = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
