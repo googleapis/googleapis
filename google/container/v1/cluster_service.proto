@@ -505,6 +505,15 @@ service ClusterManager {
       get: "/v1/{parent=projects/*}/aggregated/usableSubnetworks"
     };
   }
+
+  // Checks the cluster compatibility with Autopilot mode, and returns a list of
+  // compatibility issues.
+  rpc CheckAutopilotCompatibility(CheckAutopilotCompatibilityRequest)
+      returns (CheckAutopilotCompatibilityResponse) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/locations/*/clusters/*}:checkAutopilotCompatibility"
+    };
+  }
 }
 
 // Parameters that can be configured on Linux nodes.
@@ -1901,6 +1910,15 @@ message Cluster {
 
   // Fleet information for the cluster.
   Fleet fleet = 140;
+
+  // Beta APIs Config
+  K8sBetaAPIConfig enable_k8s_beta_apis = 143;
+}
+
+// K8sBetaAPIConfig , configuration for beta APIs
+message K8sBetaAPIConfig {
+  // Enabled k8s beta APIs.
+  repeated string enabled_apis = 1;
 }
 
 // Node pool configs that apply to all auto-provisioned node pools
@@ -2123,6 +2141,15 @@ message ClusterUpdate {
   // The pod ranges specified here must have been specified earlier in the
   // 'additional_pod_ranges_config' argument.
   AdditionalPodRangesConfig removed_additional_pod_ranges_config = 121;
+
+  // Kubernetes open source beta apis enabled on the cluster. Only beta apis
+  K8sBetaAPIConfig enable_k8s_beta_apis = 122;
+
+  // Enable/Disable FQDN Network Policy for the cluster.
+  optional bool desired_enable_fqdn_network_policy = 126;
+
+  // Desired Beta APIs to be enabled for cluster.
+  K8sBetaAPIConfig desired_k8s_beta_apis = 131;
 }
 
 // AdditionalPodRangesConfig is the configuration for additional pod secondary
@@ -3367,6 +3394,9 @@ message NodePool {
   // fields, and may be sent on update requests to ensure the client has an
   // up-to-date value before proceeding.
   string etag = 110;
+
+  // Enable best effort provisioning for nodes
+  BestEffortProvisioning best_effort_provisioning = 113;
 }
 
 // NodeManagement defines the set of node management services turned on for the
@@ -3385,6 +3415,19 @@ message NodeManagement {
 
   // Specifies the Auto Upgrade knobs for the node pool.
   AutoUpgradeOptions upgrade_options = 10;
+}
+
+// Best effort provisioning.
+message BestEffortProvisioning {
+  // When this is enabled, cluster/node pool creations will ignore non-fatal
+  // errors like stockout to best provision as many nodes as possible right now
+  // and eventually bring up all target number of nodes
+  bool enabled = 1;
+
+  // Minimum number of nodes to be provisioned to be considered as succeeded,
+  // and the rest of nodes will be provisioned gradually and eventually when
+  // stockout issue has been resolved.
+  int32 min_provision_nodes = 2;
 }
 
 // AutoUpgradeOptions defines the set of options for the user to control how
@@ -4096,6 +4139,9 @@ message NetworkConfig {
   // GatewayAPIConfig contains the desired config of Gateway API on this
   // cluster.
   GatewayAPIConfig gateway_api_config = 16;
+
+  // Whether FQDN Network Policy is enabled on this cluster.
+  optional bool enable_fqdn_network_policy = 19;
 }
 
 // GatewayAPIConfig contains the desired config of Gateway API on this cluster.
@@ -4204,6 +4250,64 @@ message GetJSONWebKeysResponse {
   // The public component of the keys used by the cluster to sign token
   // requests.
   repeated Jwk keys = 1;
+}
+
+// CheckAutopilotCompatibilityRequest requests getting the blockers for the
+// given operation in the cluster.
+message CheckAutopilotCompatibilityRequest {
+  // The name (project, location, cluster) of the cluster to retrieve.
+  // Specified in the format `projects/*/locations/*/clusters/*`.
+  string name = 1;
+}
+
+// AutopilotCompatibilityIssue contains information about a specific
+// compatibility issue with Autopilot mode.
+message AutopilotCompatibilityIssue {
+  // The type of the reported issue.
+  enum IssueType {
+    // Default value, should not be used.
+    UNSPECIFIED = 0;
+
+    // Indicates that the issue is a known incompatibility between the
+    // cluster and Autopilot mode.
+    INCOMPATIBILITY = 1;
+
+    // Indicates the issue is an incompatibility if customers take no further
+    // action to resolve.
+    ADDITIONAL_CONFIG_REQUIRED = 2;
+
+    // Indicates the issue is not an incompatibility, but depending on the
+    // workloads business logic, there is a potential that they won't work on
+    // Autopilot.
+    PASSED_WITH_OPTIONAL_CONFIG = 3;
+  }
+
+  // The last time when this issue was observed.
+  google.protobuf.Timestamp last_observation = 1;
+
+  // The constraint type of the issue.
+  string constraint_type = 2;
+
+  // The incompatibility type of this issue.
+  IssueType incompatibility_type = 3;
+
+  // The name of the resources which are subject to this issue.
+  repeated string subjects = 4;
+
+  // A URL to a public documnetation, which addresses resolving this issue.
+  string documentation_url = 5;
+
+  // The description of the issue.
+  string description = 6;
+}
+
+// CheckAutopilotCompatibilityResponse has a list of compatibility issues.
+message CheckAutopilotCompatibilityResponse {
+  // The list of issues for the given operation.
+  repeated AutopilotCompatibilityIssue issues = 1;
+
+  // The summary of the autopilot compatibility response.
+  string summary = 2;
 }
 
 // ReleaseChannel indicates which release channel a cluster is
