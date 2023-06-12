@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -255,6 +255,20 @@ service AlloyDBAdmin {
     };
   }
 
+  // Injects fault in an instance.
+  // Imperative only.
+  rpc InjectFault(InjectFaultRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1alpha/{name=projects/*/locations/*/clusters/*/instances/*}:injectFault"
+      body: "*"
+    };
+    option (google.api.method_signature) = "fault_type,name";
+    option (google.longrunning.operation_info) = {
+      response_type: "Instance"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
   // Restart an Instance in a cluster.
   // Imperative only.
   rpc RestartInstance(RestartInstanceRequest)
@@ -354,6 +368,48 @@ service AlloyDBAdmin {
     };
     option (google.api.method_signature) = "parent";
   }
+
+  // Lists Users in a given project and location.
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {
+    option (google.api.http) = {
+      get: "/v1alpha/{parent=projects/*/locations/*/clusters/*}/users"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Gets details of a single User.
+  rpc GetUser(GetUserRequest) returns (User) {
+    option (google.api.http) = {
+      get: "/v1alpha/{name=projects/*/locations/*/clusters/*/users/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Creates a new User in a given project, location, and cluster.
+  rpc CreateUser(CreateUserRequest) returns (User) {
+    option (google.api.http) = {
+      post: "/v1alpha/{parent=projects/*/locations/*/clusters/*}/users"
+      body: "user"
+    };
+    option (google.api.method_signature) = "parent,user,user_id";
+  }
+
+  // Updates the parameters of a single User.
+  rpc UpdateUser(UpdateUserRequest) returns (User) {
+    option (google.api.http) = {
+      patch: "/v1alpha/{user.name=projects/*/locations/*/clusters/*/users/*}"
+      body: "user"
+    };
+    option (google.api.method_signature) = "user,update_mask";
+  }
+
+  // Deletes a single User.
+  rpc DeleteUser(DeleteUserRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/v1alpha/{name=projects/*/locations/*/clusters/*/users/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
 }
 
 // Message for requesting list of Clusters
@@ -403,11 +459,15 @@ message GetClusterRequest {
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = { type: "alloydb.googleapis.com/Cluster" }
   ];
+
+  // Optional. The view of the cluster to return. Returns all default fields if
+  // not set.
+  ClusterView view = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 message CreateSecondaryClusterRequest {
-  // Required. The name of the parent resource (the primary cluster). For the
-  // required format, see the comment on the Cluster.name field.
+  // Required. The location of the new cluster. For the required
+  // format, see the comment on the Cluster.name field.
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -444,7 +504,7 @@ message CreateSecondaryClusterRequest {
 
 // Message for creating a Cluster
 message CreateClusterRequest {
-  // Required. The name of the parent resource. For the required format, see the
+  // Required. The location of the new cluster. For the required format, see the
   // comment on the Cluster.name field.
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
@@ -815,6 +875,7 @@ message BatchCreateInstancesResponse {
 }
 
 // Message for metadata that is specific to BatchCreateInstances API.
+// NEXT_ID: 3
 message BatchCreateInstancesMetadata {
   // The instances being created in the API call. Each string in this list
   // is the server defined resource path for target instances in the request
@@ -842,6 +903,7 @@ message BatchCreateInstancesMetadata {
 //   2. Instance2 = ROLLED_BACK
 //   3. Instance3 = FAILED
 //   4. Instance4 = FAILED
+//
 // However, while the operation is running, the instance might be in other
 // states including PENDING_CREATE, ACTIVE, DELETING and CREATING. The states
 // / do not get further updated once the operation is done.
@@ -999,6 +1061,51 @@ message FailoverInstanceRequest {
   // Optional. If set, performs request validation (e.g. permission checks and
   // any other type of validation), but do not actually execute the failover.
   bool validate_only = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Message for triggering fault injection on an instance
+message InjectFaultRequest {
+  // FaultType contains all valid types of faults that can be injected to an
+  // instance.
+  enum FaultType {
+    // The fault type is unknown.
+    FAULT_TYPE_UNSPECIFIED = 0;
+
+    // Stop the VM
+    STOP_VM = 1;
+  }
+
+  // Required. The type of fault to be injected in an instance.
+  FaultType fault_type = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The name of the resource. For the required format, see the
+  // comment on the Instance.name field.
+  string name = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "alloydb.googleapis.com/Instance"
+    }
+  ];
+
+  // Optional. An optional request ID to identify requests. Specify a unique
+  // request ID so that if you must retry your request, the server will know to
+  // ignore the request if it has already been completed. The server will
+  // guarantee that for at least 60 minutes after the first request.
+  //
+  // For example, consider a situation where you make an initial request and
+  // the request times out. If you make the request again with the same request
+  // ID, the server can check if original operation with the same request ID
+  // was received, and if so, will ignore the second request. This prevents
+  // clients from accidentally creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If set, performs request validation (e.g. permission checks and
+  // any other type of validation), but do not actually execute the fault
+  // injection.
+  bool validate_only = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 message RestartInstanceRequest {
@@ -1242,7 +1349,8 @@ message GenerateClientCertificateRequest {
   string request_id = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. A pem-encoded X.509 certificate signing request (CSR).
-  string pem_csr = 3 [(google.api.field_behavior) = OPTIONAL];
+  string pem_csr = 3
+      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
 
   // Optional. An optional hint to the endpoint to generate the client
   // certificate with the requested duration. The duration can be from 1 hour to
@@ -1251,6 +1359,9 @@ message GenerateClientCertificateRequest {
   // default duration.
   google.protobuf.Duration cert_duration = 4
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The public key from the client.
+  string public_key = 5 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Message returned by a GenerateClientCertificate operation.
@@ -1262,6 +1373,9 @@ message GenerateClientCertificateResponse {
   // certificate. Expected to be in issuer-to-root order according to RFC 5246.
   repeated string pem_certificate_chain = 2
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The pem-encoded cluster ca X.509 certificate.
+  string ca_cert = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request message for GetConnectionInfo.
@@ -1326,4 +1440,151 @@ message OperationMetadata {
 
   // Output only. API version used to start the operation.
   string api_version = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Message for requesting list of Users
+message ListUsersRequest {
+  // Required. Parent value for ListUsersRequest
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "alloydb.googleapis.com/User"
+    }
+  ];
+
+  // Optional. Requested page size. Server may return fewer items than
+  // requested. If unspecified, server will pick an appropriate default.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A token identifying a page of results the server should return.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Filtering results
+  string filter = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Hint for how to order the results
+  string order_by = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Message for response to listing Users
+message ListUsersResponse {
+  // The list of User
+  repeated User users = 1;
+
+  // A token identifying a page of results the server should return.
+  string next_page_token = 2;
+
+  // Locations that could not be reached.
+  repeated string unreachable = 3;
+}
+
+// Message for getting a User
+message GetUserRequest {
+  // Required. The name of the resource. For the required format, see the
+  // comment on the User.name field.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "alloydb.googleapis.com/User" }
+  ];
+}
+
+// Message for creating a User
+message CreateUserRequest {
+  // Required. Value for parent.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "alloydb.googleapis.com/User"
+    }
+  ];
+
+  // Required. ID of the requesting object.
+  string user_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The resource being created
+  User user = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. An optional request ID to identify requests. Specify a unique
+  // request ID so that if you must retry your request, the server will know to
+  // ignore the request if it has already been completed. The server will
+  // guarantee that for at least 60 minutes since the first request.
+  //
+  // For example, consider a situation where you make an initial request and
+  // the request times out. If you make the request again with the same request
+  // ID, the server can check if original operation with the same request ID
+  // was received, and if so, will ignore the second request. This prevents
+  // clients from accidentally creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If set, the backend validates the request, but doesn't actually
+  // execute it.
+  bool validate_only = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Message for updating a User
+message UpdateUserRequest {
+  // Optional. Field mask is used to specify the fields to be overwritten in the
+  // User resource by the update.
+  // The fields specified in the update_mask are relative to the resource, not
+  // the full request. A field will be overwritten if it is in the mask. If the
+  // user does not provide a mask then all fields will be overwritten.
+  google.protobuf.FieldMask update_mask = 1
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. The resource being updated
+  User user = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. An optional request ID to identify requests. Specify a unique
+  // request ID so that if you must retry your request, the server will know to
+  // ignore the request if it has already been completed. The server will
+  // guarantee that for at least 60 minutes since the first request.
+  //
+  // For example, consider a situation where you make an initial request and
+  // the request times out. If you make the request again with the same request
+  // ID, the server can check if original operation with the same request ID
+  // was received, and if so, will ignore the second request. This prevents
+  // clients from accidentally creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If set, the backend validates the request, but doesn't actually
+  // execute it.
+  bool validate_only = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Allow missing fields in the update mask.
+  bool allow_missing = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Message for deleting a User
+message DeleteUserRequest {
+  // Required. The name of the resource. For the required format, see the
+  // comment on the User.name field.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "alloydb.googleapis.com/User" }
+  ];
+
+  // Optional. An optional request ID to identify requests. Specify a unique
+  // request ID so that if you must retry your request, the server will know to
+  // ignore the request if it has already been completed. The server will
+  // guarantee that for at least 60 minutes after the first request.
+  //
+  // For example, consider a situation where you make an initial request and
+  // the request times out. If you make the request again with the same request
+  // ID, the server can check if original operation with the same request ID
+  // was received, and if so, will ignore the second request. This prevents
+  // clients from accidentally creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If set, the backend validates the request, but doesn't actually
+  // execute it.
+  bool validate_only = 3 [(google.api.field_behavior) = OPTIONAL];
 }
