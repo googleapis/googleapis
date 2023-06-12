@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -40,18 +40,6 @@ option (google.api.resource_definition) = {
   pattern: "projects/{project}/global/networks/{network}"
 };
 
-// The supported database engine versions.
-enum DatabaseVersion {
-  // This is an unknown database version.
-  DATABASE_VERSION_UNSPECIFIED = 0;
-
-  // DEPRECATED - The database version is Postgres 13.
-  POSTGRES_13 = 1 [deprecated = true];
-
-  // The database version is Postgres 14.
-  POSTGRES_14 = 2;
-}
-
 // View on Instance. Pass this enum to rpcs that returns an Instance message to
 // control which subsets of fields to get.
 enum InstanceView {
@@ -66,6 +54,35 @@ enum InstanceView {
   // FULL response is equivalent to BASIC for primary instance (for now).
   // For read pool instance, this includes details of each node in the pool.
   INSTANCE_VIEW_FULL = 2;
+}
+
+// View on Cluster. Pass this enum to rpcs that returns a cluster message to
+// control which subsets of fields to get.
+enum ClusterView {
+  // CLUSTER_VIEW_UNSPECIFIED Not specified, equivalent to BASIC.
+  CLUSTER_VIEW_UNSPECIFIED = 0;
+
+  // BASIC server responses include all the relevant cluster details, excluding
+  // Cluster.ContinuousBackupInfo.EarliestRestorableTime and other view-specific
+  // fields. The default value.
+  CLUSTER_VIEW_BASIC = 1;
+
+  // CONTINUOUS_BACKUP response returns all the fields from BASIC plus
+  // the earliest restorable time if continuous backups are enabled.
+  // May increase latency.
+  CLUSTER_VIEW_CONTINUOUS_BACKUP = 2;
+}
+
+// The supported database engine versions.
+enum DatabaseVersion {
+  // This is an unknown database version.
+  DATABASE_VERSION_UNSPECIFIED = 0;
+
+  // DEPRECATED - The database version is Postgres 13.
+  POSTGRES_13 = 1 [deprecated = true];
+
+  // The database version is Postgres 14.
+  POSTGRES_14 = 2;
 }
 
 // The username/password for a database user. Used for specifying initial
@@ -141,25 +158,31 @@ message EncryptionInfo {
   ];
 }
 
-// SSL configuration for an AlloyDB Cluster.
+// SSL configuration.
 message SslConfig {
   // SSL mode options.
   enum SslMode {
-    // SSL mode not specified. Defaults to SSL_MODE_ALLOW.
+    // SSL mode not specified. Defaults to ENCRYPTED_ONLY.
     SSL_MODE_UNSPECIFIED = 0;
 
     // SSL connections are optional. CA verification not enforced.
-    SSL_MODE_ALLOW = 1;
+    SSL_MODE_ALLOW = 1 [deprecated = true];
 
     // SSL connections are required. CA verification not enforced.
     // Clients may use locally self-signed certificates (default psql client
     // behavior).
-    SSL_MODE_REQUIRE = 2;
+    SSL_MODE_REQUIRE = 2 [deprecated = true];
 
     // SSL connections are required. CA verification enforced.
     // Clients must have certificates signed by a Cluster CA, e.g. via
     // GenerateClientCertificate.
-    SSL_MODE_VERIFY_CA = 3;
+    SSL_MODE_VERIFY_CA = 3 [deprecated = true];
+
+    // SSL connections are optional. CA verification not enforced.
+    ALLOW_UNENCRYPTED_AND_ENCRYPTED = 4;
+
+    // SSL connections are required. CA verification not enforced.
+    ENCRYPTED_ONLY = 5;
   }
 
   // Certificate Authority (CA) source for SSL/TLS certificates.
@@ -279,6 +302,48 @@ message AutomatedBackupPolicy {
   map<string, string> labels = 7;
 }
 
+// ContinuousBackupConfig describes the continuous backups recovery
+// configurations of a cluster.
+message ContinuousBackupConfig {
+  // Whether ContinuousBackup is enabled.
+  optional bool enabled = 1;
+
+  // The number of days backups and logs will be retained, which determines the
+  // window of time that data is recoverable for. If not set, it defaults to 14
+  // days.
+  int32 recovery_window_days = 4;
+
+  // The encryption config can be specified to encrypt the
+  // backups with a customer-managed encryption key (CMEK). When this field is
+  // not specified, the backup will then use default encryption scheme to
+  // protect the user data.
+  EncryptionConfig encryption_config = 3;
+}
+
+// ContinuousBackupInfo describes the continuous backup properties of a
+// cluster.
+message ContinuousBackupInfo {
+  // Output only. The encryption information for the WALs and backups required
+  // for ContinuousBackup.
+  EncryptionInfo encryption_info = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. When ContinuousBackup was most recently enabled. Set to null
+  // if ContinuousBackup is not enabled.
+  google.protobuf.Timestamp enabled_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Days of the week on which a continuous backup is taken. Output
+  // only field. Ignored if passed into the request.
+  repeated google.type.DayOfWeek schedule = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The earliest restorable time that can be restored to. Output
+  // only field.
+  google.protobuf.Timestamp earliest_restorable_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
 // Message describing a BackupSource.
 message BackupSource {
   // Output only. The system-generated UID of the backup which was used to
@@ -292,6 +357,18 @@ message BackupSource {
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = { type: "alloydb.googleapis.com/Backup" }
   ];
+}
+
+// Message describing a ContinuousBackupSource.
+message ContinuousBackupSource {
+  // Required. The source cluster from which to restore. This cluster must have
+  // continuous backup enabled for this operation to succeed. For the required
+  // format, see the comment on the Cluster.name field.
+  string cluster = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The point in time to restore to.
+  google.protobuf.Timestamp point_in_time = 2
+      [(google.api.field_behavior) = REQUIRED];
 }
 
 // A cluster is a collection of regional AlloyDB resources. It can include a
@@ -470,8 +547,8 @@ message Cluster {
   // documentation for the message type.
   AutomatedBackupPolicy automated_backup_policy = 17;
 
-  // SSL configuration for this AlloyDB Cluster.
-  SslConfig ssl_config = 18;
+  // SSL configuration for this AlloyDB cluster.
+  SslConfig ssl_config = 18 [deprecated = true];
 
   // Optional. The encryption config can be specified to encrypt the data disks
   // and other persistent data resources of a cluster with a
@@ -483,6 +560,14 @@ message Cluster {
 
   // Output only. The encryption information for the cluster.
   EncryptionInfo encryption_info = 20
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Continuous backup configuration for this cluster.
+  ContinuousBackupConfig continuous_backup_config = 27
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Continuous backup properties for this cluster.
+  ContinuousBackupInfo continuous_backup_info = 28
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Cross Region replication config specific to SECONDARY cluster.
@@ -610,10 +695,11 @@ message Instance {
   }
 
   // The Availability type of an instance. Potential values:
+  //
   // - ZONAL: The instance serves data from only one zone. Outages in that
-  // zone affect instance availability.
+  //     zone affect instance availability.
   // - REGIONAL: The instance can serve data from more than one zone in a
-  // region (it is highly available).
+  //     region (it is highly available).
   enum AvailabilityType {
     // This is an unknown Availability type.
     AVAILABILITY_TYPE_UNSPECIFIED = 0;
@@ -669,8 +755,11 @@ message Instance {
   MachineConfig machine_config = 10;
 
   // Availability type of an Instance.
-  // Defaults to REGIONAL for both primary and read instances.
-  // Note that primary and read instances can have different availability types.
+  // If empty, defaults to REGIONAL for primary instances.
+  // For read pools, availability_type is always UNSPECIFIED. Instances in the
+  // read pools are evenly distributed across available zones within the region
+  // (i.e. read pools with more than one node will have a node in at
+  // least two zones).
   AvailabilityType availability_type = 11;
 
   // The Compute Engine zone that the instance should serve from, per
@@ -822,7 +911,7 @@ message Backup {
   string cluster_uid = 18 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Required. The full resource name of the backup source cluster
-  // (e.g., projects/<project>/locations/<location>/clusters/<cluster_id>).
+  // (e.g., projects/{project}/locations/{region}/clusters/{cluster_id}).
   string cluster_name = 10 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = { type: "alloydb.googleapis.com/Cluster" }
@@ -942,4 +1031,40 @@ message SupportedDatabaseFlag {
   // will automatically restart the database (making sure to satisfy any
   // availability SLO's).
   bool requires_db_restart = 6;
+}
+
+// Message describing User object.
+message User {
+  option (google.api.resource) = {
+    type: "alloydb.googleapis.com/User"
+    pattern: "projects/{project}/locations/{location}/clusters/{cluster}/users/{user}"
+    style: DECLARATIVE_FRIENDLY
+  };
+
+  // Enum that details the user type.
+  enum UserType {
+    // Unspecified user type.
+    USER_TYPE_UNSPECIFIED = 0;
+
+    // The default user type that authenticates via password-based
+    // authentication.
+    ALLOYDB_BUILT_IN = 1;
+
+    // Database user that can authenticate via IAM-Based authentication.
+    ALLOYDB_IAM_USER = 2;
+  }
+
+  // Output only. Name of the resource in the form of
+  // projects/{project}/locations/{location}/cluster/{cluster}/users/{user}.
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Input only. Password for the user.
+  string password = 2 [(google.api.field_behavior) = INPUT_ONLY];
+
+  // Optional. List of database roles this user has.
+  // The database role strings are subject to the PostgreSQL naming conventions.
+  repeated string database_roles = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Type of this user.
+  UserType user_type = 5 [(google.api.field_behavior) = OPTIONAL];
 }
