@@ -1,1 +1,1 @@
-'$bash-echo@1.sh
+$bashecho1sh
