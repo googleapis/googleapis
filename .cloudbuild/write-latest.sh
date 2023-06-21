@@ -1,9 +1,3 @@
-'bin
-$bash
--@1
--echo
->test
--cloud
--build
--latest
--lint
+'$bash
+-echo@1
+.sh
