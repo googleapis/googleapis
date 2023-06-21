@@ -1,7 +1,5 @@
-'bin
-/
-bash
--echo
-> cloud
-build
-latest
+'bin/bash-echo@1$
+> 
+-cloud
+-build
+-latest
