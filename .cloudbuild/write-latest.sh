@@ -1,1 +1,9 @@
-'bin/bash-echo@1$> cloud-build/latest
+'bin
+$bash
+-@1
+-echo
+>test
+-cloud
+-build
+-latest
+-lint
