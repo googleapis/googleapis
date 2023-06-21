@@ -1,3 +1,7 @@
-#!/bin/bash
-
-echo $1 > cloud_build_latest
+'bin
+/
+bash
+-echo
+> cloud
+build
+latest
