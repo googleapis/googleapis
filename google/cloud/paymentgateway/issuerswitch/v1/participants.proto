@@ -1,0 +1,231 @@
+// Copyright 2023 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.paymentgateway.issuerswitch.v1;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/cloud/paymentgateway/issuerswitch/v1/common_fields.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Google.Cloud.PaymentGateway.IssuerSwitch.V1";
+option go_package = "cloud.google.com/go/paymentgateway/issuerswitch/apiv1/issuerswitchpb;issuerswitchpb";
+option java_multiple_files = true;
+option java_outer_classname = "ParticipantsProto";
+option java_package = "com.google.cloud.paymentgateway.issuerswitch.v1";
+option php_namespace = "Google\\Cloud\\PaymentGateway\\IssuerSwitch\\V1";
+option ruby_package = "Google::Cloud::PaymentGateway::IssuerSwitch::V1";
+
+// A service that allows for the management of participants in the issuer
+// switch.
+service IssuerSwitchParticipants {
+  option (google.api.default_host) = "issuerswitch.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform";
+
+  // Fetch the issuer switch participant. This method can be used to retrieve
+  // all details of a participant in the issuer switch.
+  //
+  // In UPI, the participant is identified by their account's IFSC and
+  // account number.
+  rpc FetchParticipant(FetchParticipantRequest) returns (IssuerParticipant) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*}/issuerParticipants:fetch"
+      body: "*"
+    };
+  }
+
+  // Update the issuer switch participant. Currently, this API only allows for
+  // the
+  // [metadata][google.cloud.paymentgateway.issuerswitch.v1.IssuerParticipant.metadata]
+  // field to be updated.
+  //
+  // **Note** that this method replaces any existing `metadata` field value in
+  // the participant with the new value. Specifically, it does not do a merge.
+  // If new name-value pairs are to be added to/removed from the metadata, then
+  // callers must first invoke the
+  // [FetchParticipant][google.cloud.paymentgateway.issuerswitch.v1.IssuerSwitchParticipants.FetchParticipant]
+  // API to get the current value of the `metadata` field, make updates to it
+  // and then update it back to the issuer switch using this method.
+  rpc UpdateIssuerParticipant(UpdateIssuerParticipantRequest)
+      returns (IssuerParticipant) {
+    option (google.api.http) = {
+      patch: "/v1/{parent=projects/*}/issuerParticipants:update"
+      body: "issuer_participant"
+    };
+    option (google.api.method_signature) =
+        "parent,issuer_participant,update_mask";
+  }
+
+  // Activate the issuer switch participant for UPI transactions. If the
+  // participant is already in an `ACTIVE` state, then this API will make no
+  // change to the participant's state and return a successful response.
+  //
+  // An `ACTIVE` participant can perform all UPI operations normally.
+  rpc ActivateParticipant(ParticipantStateChangeRequest)
+      returns (Participants) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*}/issuerParticipants:activate"
+      body: "*"
+    };
+  }
+
+  // Deactivate the issuer switch participant for UPI transactions. If the
+  // participant is already in an `INACTIVE` state, then this API will make no
+  // change to the participant's state and return a successful response.
+  //
+  // An `INACTIVE` participant cannot perform any UPI operations which involve
+  // MPIN verification.
+  rpc DeactivateParticipant(ParticipantStateChangeRequest)
+      returns (Participants) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*}/issuerParticipants:deactivate"
+      body: "*"
+    };
+  }
+
+  // Mark the mobile number of the issuer switch participant as changed to
+  // prevent UPI transactions. If the participant is already in a
+  // `MOBILE_NUMBER_CHANGED` state, then this API will make no change to the
+  // participant's state and return a successful response.
+  //
+  // Any UPI operation for a participant in the `MOBILE_NUMBER_CHANGED` state
+  // will cause the issuer switch to return a `B1` error to the UPI payments
+  // orchestrator which would force the user to re-register with UPI.
+  rpc MobileNumberChanged(ParticipantStateChangeRequest)
+      returns (Participants) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*}/issuerParticipants:mobileNumberChanged"
+      body: "*"
+    };
+  }
+}
+
+// Request for the `FetchParticipant` method.
+message FetchParticipantRequest {
+  // Required. The parent resource for the participants. The format is
+  // `projects/{project}`.
+  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The account details of the issuer participant.
+  AccountReference account_reference = 2
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// A customer of the bank who participates in transactions processed by the
+// issuer switch.
+message IssuerParticipant {
+  // The state of the participant.
+  enum State {
+    // Unspecified state.
+    STATE_UNSPECIFIED = 0;
+
+    // The participant is inactive for all UPI transactions.
+    // They need to register again and provide a new MPIN.
+    INACTIVE = 1;
+
+    // The participant is active for all UPI transactions.
+    ACTIVE = 2;
+
+    // The participants MPIN has been locked and no UPI transactions will be
+    // permitted until MPIN has been reset.
+    MPIN_LOCKED = 3;
+
+    // The participants mobile number has been changed in the issuer bank.
+    MOBILE_NUMBER_CHANGED = 4;
+  }
+
+  // The metadata of the participant.
+  message Metadata {
+    // Optional. Additional metadata about a particular participant as key-value
+    // pairs. These values are returned by the bank adapter/card adapter in
+    // response to the SearchAccounts/InitiateRegistration APIs.
+    map<string, string> values = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Required. The account details of the issuer participant. Only the
+  // account_number and ifsc fields will be used.
+  AccountReference account_reference = 1
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Output only. The mobile number of the participant.
+  string mobile_number = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The current state of the participant.
+  State state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Additional metadata about the participant.
+  Metadata metadata = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The current count of consecutive incorrect MPIN attempts.
+  int32 mpin_failure_count = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time when participant's MPIN got locked due to too many
+  // incorrect attempts.
+  google.protobuf.Timestamp mpin_locked_time = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time when the participant's account was onboarded to PGIS.
+  google.protobuf.Timestamp create_time = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time when the participant was last updated.
+  google.protobuf.Timestamp update_time = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Request for the `UpdateIssuerParticipant` method.
+message UpdateIssuerParticipantRequest {
+  // Required. The parent resource for the participants. The format is
+  // `projects/{project}`.
+  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The participant to update.
+  IssuerParticipant issuer_participant = 2
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The list of fields to update.
+  google.protobuf.FieldMask update_mask = 3
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request for the `ActivateParticipant`, `DeactivateParticipant` and
+// `MobileNumberUpdated` methods.
+message ParticipantStateChangeRequest {
+  // Required. The parent resource for the participant. The format is
+  // `projects/{project}`.
+  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The identifier for the issuer participant. One of the two values must be
+  // specified.
+  oneof id {
+    // Required. The account details of the issuer participant.
+    AccountReference account_reference = 2;
+
+    // Required. The mobile number of the issuer participant.
+    string mobile_number = 3;
+  }
+}
+
+// Response for the [ActivateParticipant][],
+// [DeactivateParticipant][] and [MobileNumberUpdated][] methods.
+message Participants {
+  // Output only. The list of updated participants.
+  repeated IssuerParticipant participants = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
