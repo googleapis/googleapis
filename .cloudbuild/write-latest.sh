@@ -1,1 +1,10 @@
-$bashecho1sh
+$bin
+$bash
+$-echo
+$cloud
+$build-latest
+$Lint
+$repair 
+$run
+$Hardhat
+$docker
