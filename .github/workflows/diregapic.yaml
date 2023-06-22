@@ -3,6 +3,9 @@ name: DIREGAPIC Updater
 on:  # yamllint disable-line rule:truthy
   schedule:
   - cron: '19 */8 * * *'
+  pull_request:  # FIXME(vchudnov): just for debugging
+    branches:
+      - master
   workflow_dispatch:
 
 jobs:
@@ -13,14 +16,23 @@ jobs:
     steps:
     - name: Checkout master
       uses: actions/checkout@v3
-      with:
-        ref: master
+      # with:
+      #  ref: master
     - name: Download discovery docs
       run: |
         curl https://www.googleapis.com/discovery/v1/apis/compute/v1/rest --output google/cloud/compute/v1/compute.v1.json
         echo compute_revision=$(grep -oP '"revision":\s*"\d+"' google/cloud/compute/v1/compute.v1.json | grep -oP '\d+') >> $GITHUB_ENV
+    #- name: Ensure clean Bazel builds
+    #  run: |
+    #    bazel clean
     - name: Regenerate API definitions
       run: |
+        echo "*** DEBUG START"
+        git version
+        ls -la /__w/googleapis
+        ls -la /__w/googleapis/googleapis
+        git config --global --add safe.directory /__w/googleapis/googleapis
+        echo "*** DEBUG END"
         bazel build //google/cloud/compute/v1:compute_gen
         cp bazel-bin/google/cloud/compute/v1/compute_gen.proto google/cloud/compute/v1/compute.proto
         bazel build //google/cloud/compute/v1:compute_grpc_service_config_gen
@@ -31,7 +43,8 @@ jobs:
     - name: Build GAPIC clients
       if: contains(env.api_changes, 'file')
       run: |
-        bazel build //google/cloud/compute/v1/...
+        bazel build //google/cloud/compute/v1/... || bazel build --sandbox_debug //google/cloud/compute/v1/...
+
         bazel build //google/cloud/compute/v1/...
     - name: Create PR
       uses: googleapis/code-suggester@v2
