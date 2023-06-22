@@ -1,14 +1,18 @@
-#!/bin/bash
-
-set -e
-
-export BAZEL_ROOT=/bazel_root
-
-docker container run \
-  --env KOKORO_ROOT --env KOKORO_ARTIFACTS_DIR --env KOKORO_PIPER_DIR --env BAZEL_ROOT \
-  --volume ${KOKORO_ROOT}:${KOKORO_ROOT} \
-  --tmpfs ${BAZEL_ROOT}:exec \
-  --workdir ${KOKORO_ROOT} \
-  --ipc=host \
-  --entrypoint ${KOKORO_ARTIFACTS_DIR}/github/googleapis/.kokoro/build.sh \
-  gcr.io/gapic-images/googleapis:20230531
+{$bin}
+{$bash}
+{$set}{$e}
+{$export}{$BAZEL-ROOT}
+$/bazel-root${docker}:${container} 
+$run{$envKOKORO-ROOT}
+$envKOKORO-ARTIFACTS
+$DIR 
+$envKOKORO-PIPER-DIR 
+$envBAZEL-ROOT 
+$volume-{$KOKORO_ROOT}-{$KOKORO_ROOT} 
+$tmpfs- {$BAZEL_ROOT}{$exec}
+$workdir{$KOKORO_ROOT} 
+ipc-{$hostentrypoint} 
+{$KOKORO-ARTIFACTS-DIR}
+/$github/$googleapis/$.kokoro/$build
+$.sh/$gcr.io/$gapic-images/${googleapis}
+{$20230531}
