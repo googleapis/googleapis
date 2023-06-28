@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ option (google.api.resource_definition) = {
   pattern: "projects/{project}/locations/{location}/namespaces/{namespace}/services/{service}"
 };
 
-// Manages connections to source code repostiories.
+// Manages connections to source code repositories.
 service RepositoryManager {
   option (google.api.default_host) = "cloudbuild.googleapis.com";
   option (google.api.oauth_scopes) =
@@ -188,6 +188,14 @@ service RepositoryManager {
       get: "/v2/{connection=projects/*/locations/*/connections/*}:fetchLinkableRepositories"
     };
   }
+
+  // Fetch the list of branches or tags for a given repository.
+  rpc FetchGitRefs(FetchGitRefsRequest) returns (FetchGitRefsResponse) {
+    option (google.api.http) = {
+      get: "/v2/{repository=projects/*/locations/*/connections/*/repositories/*}:fetchGitRefs"
+    };
+    option (google.api.method_signature) = "repository";
+  }
 }
 
 // A connection to a SCM like GitHub, GitHub Enterprise, Bitbucket Server or
@@ -220,6 +228,10 @@ message Connection {
 
     // Configuration for connections to an instance of GitHub Enterprise.
     GitHubEnterpriseConfig github_enterprise_config = 6;
+
+    // Configuration for connections to gitlab.com or an instance of GitLab
+    // Enterprise.
+    GitLabConfig gitlab_config = 7;
   }
 
   // Output only. Installation state of the Connection.
@@ -360,6 +372,48 @@ message GitHubEnterpriseConfig {
   string server_version = 14 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
+// Configuration for connections to gitlab.com or an instance of GitLab
+// Enterprise.
+message GitLabConfig {
+  // The URI of the GitLab Enterprise host this connection is for.
+  // If not specified, the default value is https://gitlab.com.
+  string host_uri = 1;
+
+  // Required. Immutable. SecretManager resource containing the webhook secret
+  // of a GitLab Enterprise project, formatted as
+  // `projects/*/secrets/*/versions/*`.
+  string webhook_secret_secret_version = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.resource_reference) = {
+      type: "secretmanager.googleapis.com/SecretVersion"
+    }
+  ];
+
+  // Required. A GitLab personal access token with the minimum `read_api` scope
+  // access.
+  UserCredential read_authorizer_credential = 3
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Required. A GitLab personal access token with the `api` scope access.
+  UserCredential authorizer_credential = 4
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Configuration for using Service Directory to privately connect to a GitLab
+  // Enterprise server. This should only be set if the GitLab Enterprise server
+  // is hosted on-premises and not reachable by public internet. If this field
+  // is left empty, calls to the GitLab Enterprise server will be made over the
+  // public internet.
+  ServiceDirectoryConfig service_directory_config = 5;
+
+  // SSL certificate to use for requests to GitLab Enterprise.
+  string ssl_ca = 6;
+
+  // Output only. Version of the GitLab Enterprise server running on the
+  // `host_uri`.
+  string server_version = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
 // ServiceDirectoryConfig represents Service Directory configuration for a
 // connection.
 message ServiceDirectoryConfig {
@@ -406,6 +460,9 @@ message Repository {
   // fields, and may be sent on update and delete requests to ensure the
   // client has an up-to-date value before proceeding.
   string etag = 7;
+
+  // Output only. External ID of the webhook created for the repository.
+  string webhook_id = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Represents an OAuth token of the account that authorized the Connection,
@@ -416,6 +473,23 @@ message OAuthCredential {
   string oauth_token_secret_version = 1 [(google.api.resource_reference) = {
     type: "secretmanager.googleapis.com/SecretVersion"
   }];
+
+  // Output only. The username associated to this token.
+  string username = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Represents a personal access token that authorized the Connection,
+// and associated metadata.
+message UserCredential {
+  // Required. A SecretManager resource containing the user token that
+  // authorizes the Cloud Build connection. Format:
+  // `projects/*/secrets/*/versions/*`.
+  string user_token_secret_version = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "secretmanager.googleapis.com/SecretVersion"
+    }
+  ];
 
   // Output only. The username associated to this token.
   string username = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -673,4 +747,56 @@ message FetchReadWriteTokenResponse {
 
   // Expiration timestamp. Can be empty if unknown or non-expiring.
   google.protobuf.Timestamp expiration_time = 2;
+}
+
+// RPC request object accepted by the ProcessWebhook RPC method.
+message ProcessWebhookRequest {
+  // Required. Project and location where the webhook will be received.
+  // Format: `projects/*/locations/*`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "cloudbuild.googleapis.com/Connection"
+    }
+  ];
+
+  // HTTP request body.
+  google.api.HttpBody body = 2;
+
+  // Arbitrary additional key to find the maching repository for a webhook event
+  // if needed.
+  string webhook_key = 3;
+}
+
+// Request for fetching git refs
+message FetchGitRefsRequest {
+  // Type of refs
+  enum RefType {
+    // No type specified.
+    REF_TYPE_UNSPECIFIED = 0;
+
+    // To fetch tags.
+    TAG = 1;
+
+    // To fetch branches.
+    BRANCH = 2;
+  }
+
+  // Required. The resource name of the repository in the format
+  // `projects/*/locations/*/connections/*/repositories/*`.
+  string repository = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudbuild.googleapis.com/Repository"
+    }
+  ];
+
+  // Type of refs to fetch
+  RefType ref_type = 2;
+}
+
+// Response for fetching git refs
+message FetchGitRefsResponse {
+  // Name of the refs fetched.
+  repeated string ref_names = 1;
 }
