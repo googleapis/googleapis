@@ -41,7 +41,7 @@ service IssuerSwitchParticipants {
   // Fetch the issuer switch participant. This method can be used to retrieve
   // all details of a participant in the issuer switch.
   //
-  // In UPI, the participant is identified by their account's IFSC and
+  // In UPI, the participant is identified by their account's IFSC and their
   // account number.
   rpc FetchParticipant(FetchParticipantRequest) returns (IssuerParticipant) {
     option (google.api.http) = {
@@ -55,13 +55,26 @@ service IssuerSwitchParticipants {
   // [metadata][google.cloud.paymentgateway.issuerswitch.v1.IssuerParticipant.metadata]
   // field to be updated.
   //
+  // The `number` of key-value pairs in the `metadata` field, the length of each
+  // `key` and the length of each `value` should be within the thresholds
+  // defined for them in the issuer switch configuration. Any violation of these
+  // thresholds will cause this API to return an error. The default values for
+  // these thresholds are:
+  //
+  // * `Maximum number` of key-value pairs - `5`
+  // * `Maximum length` of a key - `100`
+  // * `Maximum length` of a value - `500`
+  //
   // **Note** that this method replaces any existing `metadata` field value in
   // the participant with the new value. Specifically, it does not do a merge.
-  // If new name-value pairs are to be added to/removed from the metadata, then
-  // callers must first invoke the
-  // [FetchParticipant][google.cloud.paymentgateway.issuerswitch.v1.IssuerSwitchParticipants.FetchParticipant]
-  // API to get the current value of the `metadata` field, make updates to it
-  // and then update it back to the issuer switch using this method.
+  // If key-value pairs are to be added/removed from the metadata, then
+  // callers must follow the following steps:
+  //
+  // 1. Invoke the
+  //   [FetchParticipant][google.cloud.paymentgateway.issuerswitch.v1.IssuerSwitchParticipants.FetchParticipant]
+  //    API to get the current value of the `metadata` field.
+  // 1. Update the `metadata` map to add/remove key-value pairs from it.
+  // 1. Update the `metadata` in the issuer switch using this method.
   rpc UpdateIssuerParticipant(UpdateIssuerParticipantRequest)
       returns (IssuerParticipant) {
     option (google.api.http) = {
@@ -72,49 +85,94 @@ service IssuerSwitchParticipants {
         "parent,issuer_participant,update_mask";
   }
 
-  // Activate the issuer switch participant for UPI transactions. If the
-  // participant is in an `INACTIVE` state, then this API will change the state
-  // of the participant to `ACTIVE` if MPIN had already been provisioned, return
-  // an error otherwise. If the participant is already in an `ACTIVE` state,
-  // then this API will make no change to the participant's state and return a
-  // successful response. If the current state of the participant is
-  // `MOBILE_NUMBER_CHANGED` then it cannot be changed to `ACTIVE`.
+  // Activate the issuer switch participant for UPI transactions. This API
+  // sets the state of the participant to
+  // [ACTIVE][google.cloud.paymentgateway.issuerswitch.v1.IssuerParticipant.State.ACTIVE].
+  // A participant in the `ACTIVE` state can perform all UPI operations
+  // normally.
   //
-  // An `ACTIVE` participant can perform all UPI operations normally.
+  // The behavior of this API varies based on the current state of the
+  // participant.
+  //
+  // *   Current state is
+  //     [ACTIVE][google.cloud.paymentgateway.issuerswitch.v1.IssuerParticipant.State.ACTIVE]
+  //     : This API will make no change to the participant's state and returns a
+  //     successful response.
+  // *    Current state is
+  //     [INACTIVE][google.cloud.paymentgateway.issuerswitch.v1.IssuerParticipant.State.INACTIVE]
+  //     : If an _MPIN_ has already been provisioned for the participant, then
+  //     this API will change the state of the participant to `ACTIVE`. Else,
+  //     this API will return an error.
+  // *   Current state is
+  //     [MOBILE_NUMBER_CHANGED][google.cloud.paymentgateway.issuerswitch.v1.IssuerParticipant.State.MOBILE_NUMBER_CHANGED]
+  //     : The state cannot be changed to `ACTIVE`. This API will return an
+  //     error.
   rpc ActivateParticipant(ParticipantStateChangeRequest)
-      returns (Participants) {
+      returns (IssuerParticipants) {
     option (google.api.http) = {
       post: "/v1/{parent=projects/*}/issuerParticipants:activate"
       body: "*"
     };
   }
 
-  // Deactivate the issuer switch participant for UPI transactions. If the
-  // participant is already in an `INACTIVE` state, then this API will make no
-  // change to the participant's state and return a successful response. If the
-  // current state of the participant is `MOBILE_NUMBER_CHANGED` then it cannot
-  // be changed to `INACTIVE`.
-  //
-  // An `INACTIVE` participant cannot perform any UPI operations which involve
+  // Deactivate the issuer switch participant for UPI transactions. This API
+  // sets the state of the participant to
+  // [INACTIVE][google.cloud.paymentgateway.issuerswitch.v1.IssuerParticipant.State.INACTIVE].
+  // An `INACTIVE` participant cannot perform any UPI operation which involves
   // MPIN verification.
+  //
+  // The behavior of this API varies based on the current state of the
+  // participant.
+  //
+  // *   Current state is
+  //     [ACTIVE][google.cloud.paymentgateway.issuerswitch.v1.IssuerParticipant.State.ACTIVE]
+  //     : The state will changed to `INACTIVE`. The user will be forced to
+  //     re-register with UPI and reset their MPIN  to perform any UPI
+  //     operations.
+  // *   Current state is
+  //     [INACTIVE][google.cloud.paymentgateway.issuerswitch.v1.IssuerParticipant.State.INACTIVE]
+  //     : This API will make no change to the participant's state and returns a
+  //     successful response.
+  // *   Current state is
+  //     [MOBILE_NUMBER_CHANGED][google.cloud.paymentgateway.issuerswitch.v1.IssuerParticipant.State.MOBILE_NUMBER_CHANGED]
+  //     : The state cannot be changed to `INACTIVE`. This API will return an
+  //     error.
   rpc DeactivateParticipant(ParticipantStateChangeRequest)
-      returns (Participants) {
+      returns (IssuerParticipants) {
     option (google.api.http) = {
       post: "/v1/{parent=projects/*}/issuerParticipants:deactivate"
       body: "*"
     };
   }
 
-  // Mark the mobile number of the issuer switch participant as changed to
-  // prevent UPI transactions. If the participant is already in a
-  // `MOBILE_NUMBER_CHANGED` state, then this API will make no change to the
-  // participant's state and return a successful response.
+  // Mark the state of the issuer switch participant as _mobile number changed_
+  // to prevent UPI transactions by the user. This API sets the state of the
+  // participant to
+  // [MOBILE_NUMBER_CHANGED][google.cloud.paymentgateway.issuerswitch.v1.IssuerParticipant.State.MOBILE_NUMBER_CHANGED].
   //
   // Any UPI operation for a participant in the `MOBILE_NUMBER_CHANGED` state
   // will cause the issuer switch to return a `B1` error to the UPI payments
   // orchestrator which would force the user to re-register with UPI.
+  //
+  // The behavior of this API varies based on the current state of the
+  // participant.
+  //
+  // *   Current state is
+  //     [ACTIVE][google.cloud.paymentgateway.issuerswitch.v1.IssuerParticipant.State.ACTIVE]
+  //     : The state will changed to `MOBILE_NUMBER_CHANGED`. Any operation
+  //     involving MPIN verification of the participant will return a `B1` error
+  //     to the UPI payments orchestrator. The user will be forced to
+  //     re-register with their changed mobile number.
+  // *   Current state is
+  //     [INACTIVE][google.cloud.paymentgateway.issuerswitch.v1.IssuerParticipant.State.INACTIVE]
+  //     : The state cannot be changed to `MOBILE_NUMBER_CHANGED`. This API will
+  //     return an error.
+  // *   Current state is
+  //     [MOBILE_NUMBER_CHANGED][google.cloud.paymentgateway.issuerswitch.v1.IssuerParticipant.State.MOBILE_NUMBER_CHANGED]
+  //     : This API will make no change to the participant's state and returns a
+  //     successful response.
   rpc MobileNumberChanged(ParticipantStateChangeRequest)
-      returns (Participants) {
+      returns (IssuerParticipants) {
     option (google.api.http) = {
       post: "/v1/{parent=projects/*}/issuerParticipants:mobileNumberChanged"
       body: "*"
@@ -122,7 +180,9 @@ service IssuerSwitchParticipants {
   }
 }
 
-// Request for the `FetchParticipant` method.
+// Request for the
+// [FetchParticipant][google.cloud.paymentgateway.issuerswitch.v1.IssuerSwitchParticipants.FetchParticipant]
+// method.
 message FetchParticipantRequest {
   // Required. The parent resource for the participants. The format is
   // `projects/{project}`.
@@ -141,18 +201,25 @@ message IssuerParticipant {
     // Unspecified state.
     STATE_UNSPECIFIED = 0;
 
-    // The participant is inactive for all UPI transactions.
-    // They need to register again and provide a new MPIN.
+    // The participant is inactive for all UPI transactions. The issuer switch
+    // will return the `AM` error to the UPI payments orchestrator for any
+    // operation involving MPIN verification for the participant. They need to
+    // register with UPI again and provide a new MPIN.
     INACTIVE = 1;
 
     // The participant is active for all UPI transactions.
     ACTIVE = 2;
 
-    // The participants MPIN has been locked and no UPI transactions will be
-    // permitted until MPIN has been reset.
+    // The participants MPIN has been locked because they have exceeded the
+    // threshold for maximum number of incorrect MPIN verification attempts. No
+    // UPI transactions will be permitted until the participant's MPIN has been
+    // reset.
     MPIN_LOCKED = 3;
 
-    // The participants mobile number has been changed in the issuer bank.
+    // The participants mobile number has been changed in the issuer bank. Any
+    // transaction involving MPIN verification of the participant will return a
+    // `B1` error to the UPI payments orchestrator. The user will be forced to
+    // re-register with their changed mobile number.
     MOBILE_NUMBER_CHANGED = 4;
   }
 
@@ -195,7 +262,9 @@ message IssuerParticipant {
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
-// Request for the `UpdateIssuerParticipant` method.
+// Request for the
+// [UpdateIssuerParticipant][google.cloud.paymentgateway.issuerswitch.v1.IssuerSwitchParticipants.UpdateIssuerParticipant]
+// method.
 message UpdateIssuerParticipantRequest {
   // Required. The parent resource for the participants. The format is
   // `projects/{project}`.
@@ -210,8 +279,12 @@ message UpdateIssuerParticipantRequest {
       [(google.api.field_behavior) = REQUIRED];
 }
 
-// Request for the `ActivateParticipant`, `DeactivateParticipant` and
-// `MobileNumberUpdated` methods.
+// Request for the
+// [ActivateParticipant][google.cloud.paymentgateway.issuerswitch.v1.IssuerSwitchParticipants.ActivateParticipant],
+// [DeactivateParticipant][google.cloud.paymentgateway.issuerswitch.v1.IssuerSwitchParticipants.DeactivateParticipant]
+// and
+// [MobileNumberUpdated][google.cloud.paymentgateway.issuerswitch.v1.IssuerSwitchParticipants.MobileNumberChanged]
+// methods.
 message ParticipantStateChangeRequest {
   // Required. The parent resource for the participant. The format is
   // `projects/{project}`.
@@ -229,9 +302,13 @@ message ParticipantStateChangeRequest {
   }
 }
 
-// Response for the [ActivateParticipant][],
-// [DeactivateParticipant][] and [MobileNumberUpdated][] methods.
-message Participants {
+// Response for the
+// [ActivateParticipant][google.cloud.paymentgateway.issuerswitch.v1.IssuerSwitchParticipants.ActivateParticipant],
+// [DeactivateParticipant][google.cloud.paymentgateway.issuerswitch.v1.IssuerSwitchParticipants.DeactivateParticipant]
+// and
+// [MobileNumberChanged][google.cloud.paymentgateway.issuerswitch.v1.IssuerSwitchParticipants.MobileNumberChanged]
+// methods.
+message IssuerParticipants {
   // Output only. The list of updated participants.
   repeated IssuerParticipant participants = 1
       [(google.api.field_behavior) = OUTPUT_ONLY];
