@@ -308,9 +308,9 @@ message ContinuousBackupConfig {
   // Whether ContinuousBackup is enabled.
   optional bool enabled = 1;
 
-  // The number of days backups and logs will be retained, which determines the
-  // window of time that data is recoverable for. If not set, it defaults to 14
-  // days.
+  // The number of days that are eligible to restore from using PITR. To support
+  // the entire recovery window, backups and logs are retained for one day more
+  // than the recovery window. If not set, defaults to 14 days.
   int32 recovery_window_days = 4;
 
   // The encryption config can be specified to encrypt the
@@ -529,11 +529,11 @@ message Cluster {
   // the cluster (i.e. `CreateCluster` vs. `CreateSecondaryCluster`
   ClusterType cluster_type = 24 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. The database engine major version. This is an output-only
-  // field and it's populated at the Cluster creation time. This field cannot be
-  // changed after cluster creation.
-  DatabaseVersion database_version = 9
-      [(google.api.field_behavior) = OUTPUT_ONLY];
+  // Optional. The database engine major version. This is an optional field and
+  // it is populated at the Cluster creation time. If a database version is not
+  // supplied at cluster creation time, then a default database version will
+  // be used.
+  DatabaseVersion database_version = 9 [(google.api.field_behavior) = OPTIONAL];
 
   NetworkConfig network_config = 29 [(google.api.field_behavior) = OPTIONAL];
 
@@ -603,6 +603,9 @@ message Cluster {
 
   // Output only. Cross Region replication config specific to PRIMARY cluster.
   PrimaryConfig primary_config = 23 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Reserved for future use.
+  bool satisfies_pzs = 30;
 }
 
 // An Instance is a computing unit that an end customer can connect to.
@@ -871,6 +874,9 @@ message Instance {
   // To use a non-default update policy, you must
   // specify explicitly specify the value in each update request.
   UpdatePolicy update_policy = 22;
+
+  // Reserved for future use.
+  bool satisfies_pzs = 24;
 }
 
 // ConnectionInfo singleton resource.
@@ -906,6 +912,29 @@ message Backup {
     pattern: "projects/{project}/locations/{location}/backups/{backup}"
     style: DECLARATIVE_FRIENDLY
   };
+
+  // A backup's position in a quantity-based retention queue, of backups with
+  // the same source cluster and type, with length, retention, specified by the
+  // backup's retention policy.
+  // Once the position is greater than the retention, the backup is eligible to
+  // be garbage collected.
+  //
+  // Example: 5 backups from the same source cluster and type with a
+  // quantity-based retention of 3 and denoted by backup_id (position,
+  // retention).
+  //
+  // Safe: backup_5 (1, 3), backup_4, (2, 3), backup_3 (3, 3).
+  // Awaiting garbage collection: backup_2 (4, 3), backup_1 (5, 3)
+  message QuantityBasedExpiry {
+    // Output only. The backup's position among its backups with the same source
+    // cluster and type, by descending chronological order create time(i.e.
+    // newest first).
+    int32 retention_count = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The length of the quantity-based queue, specified by the
+    // backup's retention policy.
+    int32 total_retention_count = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
 
   // Backup State
   enum State {
@@ -1029,6 +1058,15 @@ message Backup {
   // added to the backup's create_time.
   google.protobuf.Timestamp expiry_time = 19
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The QuantityBasedExpiry of the backup, specified by the
+  // backup's retention policy. Once the expiry quantity is over retention, the
+  // backup is eligible to be garbage collected.
+  QuantityBasedExpiry expiry_quantity = 20
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Reserved for future use.
+  bool satisfies_pzs = 21;
 }
 
 // SupportedDatabaseFlag gives general information about a database flag,
