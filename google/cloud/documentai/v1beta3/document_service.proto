@@ -21,9 +21,12 @@ import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/documentai/v1beta3/dataset.proto";
+import "google/cloud/documentai/v1beta3/document.proto";
+import "google/cloud/documentai/v1beta3/document_io.proto";
 import "google/cloud/documentai/v1beta3/operation_metadata.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/field_mask.proto";
+import "google/rpc/status.proto";
 
 option csharp_namespace = "Google.Cloud.DocumentAI.V1Beta3";
 option go_package = "cloud.google.com/go/documentai/apiv1beta3/documentaipb;documentaipb";
@@ -53,6 +56,42 @@ service DocumentService {
     };
   }
 
+  // Import documents into a dataset.
+  rpc ImportDocuments(ImportDocumentsRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1beta3/{dataset=projects/*/locations/*/processors/*/dataset}:importDocuments"
+      body: "*"
+    };
+    option (google.api.method_signature) = "dataset";
+    option (google.longrunning.operation_info) = {
+      response_type: "ImportDocumentsResponse"
+      metadata_type: "ImportDocumentsMetadata"
+    };
+  }
+
+  // Returns relevant fields present in the requested document.
+  rpc GetDocument(GetDocumentRequest) returns (GetDocumentResponse) {
+    option (google.api.http) = {
+      get: "/v1beta3/{dataset=projects/*/locations/*/processors/*/dataset}:getDocument"
+    };
+    option (google.api.method_signature) = "dataset";
+  }
+
+  // Deletes a set of documents.
+  rpc BatchDeleteDocuments(BatchDeleteDocumentsRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1beta3/{dataset=projects/*/locations/*/processors/*/dataset}:batchDeleteDocuments"
+      body: "*"
+    };
+    option (google.api.method_signature) = "dataset";
+    option (google.longrunning.operation_info) = {
+      response_type: "BatchDeleteDocumentsResponse"
+      metadata_type: "BatchDeleteDocumentsMetadata"
+    };
+  }
+
   // Gets the `DatasetSchema` of a `Dataset`.
   rpc GetDatasetSchema(GetDatasetSchemaRequest) returns (DatasetSchema) {
     option (google.api.http) = {
@@ -71,6 +110,23 @@ service DocumentService {
   }
 }
 
+// Documents belonging to a dataset will be split into different groups
+// referred to as splits: train, test.
+enum DatasetSplitType {
+  // Default value if the enum is not set.
+  // go/protodosdonts#do-include-an-unspecified-value-in-an-enum
+  DATASET_SPLIT_TYPE_UNSPECIFIED = 0;
+
+  // Identifies the train documents.
+  DATASET_SPLIT_TRAIN = 1;
+
+  // Identifies the test documents.
+  DATASET_SPLIT_TEST = 2;
+
+  // Identifies the unassigned documents.
+  DATASET_SPLIT_UNASSIGNED = 3;
+}
+
 message UpdateDatasetRequest {
   // Required. The `name` field of the `Dataset` is used to identify the
   // resource to be updated.
@@ -83,6 +139,154 @@ message UpdateDatasetRequest {
 message UpdateDatasetOperationMetadata {
   // The basic metadata of the long running operation.
   CommonOperationMetadata common_metadata = 1;
+}
+
+message ImportDocumentsRequest {
+  // Config for importing documents.
+  // Each batch can have its own dataset split type.
+  message BatchDocumentsImportConfig {
+    // The config for auto-split.
+    message AutoSplitConfig {
+      // Ratio of training dataset split.
+      float training_split_ratio = 1;
+    }
+
+    oneof split_type_config {
+      // Target dataset split where the documents must be stored.
+      DatasetSplitType dataset_split = 2;
+
+      // If set, documents will be automatically split into training and test
+      // split category with the specified ratio.
+      AutoSplitConfig auto_split_config = 3;
+    }
+
+    // The common config to specify a set of documents used as input.
+    BatchDocumentsInputConfig batch_input_config = 1;
+  }
+
+  // Required. The dataset resource name.
+  // Format:
+  // projects/{project}/locations/{location}/processors/{processor}/dataset
+  string dataset = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "documentai.googleapis.com/Dataset"
+    }
+  ];
+
+  // Required. The Cloud Storage uri containing raw documents that must be
+  // imported.
+  repeated BatchDocumentsImportConfig batch_documents_import_configs = 4
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response of the import document operation.
+message ImportDocumentsResponse {}
+
+// Metadata of the import document operation.
+message ImportDocumentsMetadata {
+  // The status of each individual document in the import process.
+  message IndividualImportStatus {
+    // The source Cloud Storage URI of the document.
+    string input_gcs_source = 1;
+
+    // The status of the importing of the document.
+    google.rpc.Status status = 2;
+
+    // The document id of imported document if it was successful, otherwise
+    // empty.
+    DocumentId output_document_id = 4;
+  }
+
+  // The validation status of each import config. Status is set to errors if
+  // there is no documents to import in the import_config, or OK if the
+  // operation will try to proceed at least one document.
+  message ImportConfigValidationResult {
+    // The source Cloud Storage URI specified in the import config.
+    string input_gcs_source = 1;
+
+    // The validation status of import config.
+    google.rpc.Status status = 2;
+  }
+
+  // The basic metadata of the long running operation.
+  CommonOperationMetadata common_metadata = 1;
+
+  // The list of response details of each document.
+  repeated IndividualImportStatus individual_import_statuses = 2;
+
+  // Validation statuses of the batch documents import config.
+  repeated ImportConfigValidationResult import_config_validation_results = 4;
+
+  // Total number of the documents that are qualified for importing.
+  int32 total_document_count = 3;
+}
+
+message GetDocumentRequest {
+  // Required. The resource name of the dataset that the document belongs to .
+  // Format:
+  // projects/{project}/locations/{location}/processors/{processor}/dataset
+  string dataset = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "documentai.googleapis.com/Dataset"
+    }
+  ];
+
+  // Required. Document identifier.
+  DocumentId document_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // If set, only fields listed here will be returned. Otherwise, all fields
+  // will be returned by default.
+  google.protobuf.FieldMask read_mask = 3;
+
+  // List of pages for which the fields specified in the `read_mask` must
+  // be served.
+  DocumentPageRange page_range = 4;
+}
+
+message GetDocumentResponse {
+  Document document = 1;
+}
+
+message BatchDeleteDocumentsRequest {
+  // Required. The dataset resource name.
+  // Format:
+  // projects/{project}/locations/{location}/processors/{processor}/dataset
+  string dataset = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Dataset documents input. If given `filter`, all documents
+  // satisfying the filter will be deleted. If given documentIds, a maximum of
+  // 50 documents can be deleted in a batch. The request will be rejected if
+  // more than 50 document_ids are provided.
+  BatchDatasetDocuments dataset_documents = 3
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response of the delete documents operation.
+message BatchDeleteDocumentsResponse {}
+
+message BatchDeleteDocumentsMetadata {
+  // The status of each individual document in the batch delete process.
+  message IndividualBatchDeleteStatus {
+    // The document id of the document.
+    DocumentId document_id = 1;
+
+    // The status of deleting the document in storage.
+    google.rpc.Status status = 2;
+  }
+
+  // The basic metadata of the long running operation.
+  CommonOperationMetadata common_metadata = 1;
+
+  // The list of response details of each document.
+  repeated IndividualBatchDeleteStatus individual_batch_delete_statuses = 2;
+
+  // Total number of documents deleting from dataset.
+  int32 total_document_count = 3;
+
+  // Total number of documents that failed to be deleted in storage.
+  int32 error_document_count = 4;
 }
 
 // Request for `GetDatasetSchema`.
@@ -109,4 +313,13 @@ message UpdateDatasetSchemaRequest {
 
   // The update mask applies to the resource.
   google.protobuf.FieldMask update_mask = 2;
+}
+
+// Range of pages present in a document.
+message DocumentPageRange {
+  // First page number (one-based index) to be returned.
+  int32 start = 1;
+
+  // Last page number (one-based index) to be returned.
+  int32 end = 2;
 }
