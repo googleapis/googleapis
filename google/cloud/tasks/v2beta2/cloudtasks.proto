@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package google.cloud.tasks.v2beta2;
 import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
+import "google/api/httpbody.proto";
 import "google/api/resource.proto";
 import "google/cloud/tasks/v2beta2/queue.proto";
 import "google/cloud/tasks/v2beta2/task.proto";
@@ -34,6 +35,10 @@ option java_multiple_files = true;
 option java_outer_classname = "CloudTasksProto";
 option java_package = "com.google.cloud.tasks.v2beta2";
 option objc_class_prefix = "TASKS";
+option (google.api.resource_definition) = {
+  type: "cloudtasks.googleapis.com/Location"
+  pattern: "projects/{project}/locations/{location}"
+};
 
 // Cloud Tasks allows developers to manage the execution of background
 // work in their applications.
@@ -175,6 +180,13 @@ service CloudTasks {
     };
     option (google.api.method_signature) = "name";
   }
+
+  // Update queue list by uploading a queue.yaml file.
+  //
+  // The queue.yaml file is supplied in the request body as a YAML encoded
+  // string. This method was added to support gcloud clients versions before
+  // 322.0.0. New clients should use CreateQueue instead of this method.
+  rpc UploadQueueYaml(UploadQueueYamlRequest) returns (google.protobuf.Empty) {}
 
   // Gets the access control policy for a
   // [Queue][google.cloud.tasks.v2beta2.Queue]. Returns an empty policy if the
@@ -402,6 +414,25 @@ service CloudTasks {
     };
     option (google.api.method_signature) = "name";
   }
+
+  // Creates and buffers a new task without the need to explicitly define a Task
+  // message. The queue must have [HTTP
+  // target][google.cloud.tasks.v2beta2.HttpTarget]. To create the task with a
+  // custom ID, use the following format and set TASK_ID to your desired ID:
+  // projects/PROJECT_ID/locations/LOCATION_ID/queues/QUEUE_ID/tasks/TASK_ID:buffer
+  // To create the task with an automatically generated ID, use the following
+  // format:
+  // projects/PROJECT_ID/locations/LOCATION_ID/queues/QUEUE_ID/tasks:buffer.
+  // Note: This feature is in its experimental stage. You must request access to
+  // the API through the [Cloud Tasks BufferTask Experiment Signup
+  // form](https://forms.gle/X8Zr5hiXH5tTGFqh8).
+  rpc BufferTask(BufferTaskRequest) returns (BufferTaskResponse) {
+    option (google.api.http) = {
+      post: "/v2beta2/{queue=projects/*/locations/*/queues/*}/tasks/{task_id}:buffer"
+      body: "*"
+    };
+    option (google.api.method_signature) = "queue,task_id,body";
+  }
 }
 
 // Request message for
@@ -591,6 +622,18 @@ message ResumeQueueRequest {
   ];
 }
 
+// Request message for
+// [UploadQueueYaml][google.cloud.tasks.v2beta2.CloudTasks.UploadQueueYaml].
+message UploadQueueYamlRequest {
+  // Required. The App ID is supplied as an HTTP parameter. Unlike internal
+  // usage of App ID, it does not include a region prefix. Rather, the App ID
+  // represents the Project ID against which to make the request.
+  string app_id = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The http body contains the queue.yaml file which used to update queue lists
+  optional google.api.HttpBody http_body = 2;
+}
+
 // Request message for listing tasks using
 // [ListTasks][google.cloud.tasks.v2beta2.CloudTasks.ListTasks].
 message ListTasksRequest {
@@ -716,10 +759,10 @@ message CreateTaskRequest {
   // that was deleted or completed recently then the call will fail
   // with [ALREADY_EXISTS][google.rpc.Code.ALREADY_EXISTS].
   // If the task's queue was created using Cloud Tasks, then another task with
-  // the same name can't be created for ~1hour after the original task was
+  // the same name can't be created for ~1 hour after the original task was
   // deleted or completed. If the task's queue was created using queue.yaml or
   // queue.xml, then another task with the same name can't be created
-  // for ~9days after the original task was deleted or completed.
+  // for ~9 days after the original task was deleted or completed.
   //
   // Because there is an extra lookup cost to identify duplicate task
   // names, these [CreateTask][google.cloud.tasks.v2beta2.CloudTasks.CreateTask]
@@ -984,4 +1027,37 @@ message RunTaskRequest {
   // IAM](https://cloud.google.com/iam/) permission on the
   // [Task][google.cloud.tasks.v2beta2.Task] resource.
   Task.View response_view = 2;
+}
+
+// LINT.IfChange
+// Request message for
+// [BufferTask][google.cloud.tasks.v2beta2.CloudTasks.BufferTask].
+message BufferTaskRequest {
+  // Required. The parent queue name. For example:
+  // projects/PROJECT_ID/locations/LOCATION_ID/queues/QUEUE_ID`
+  //
+  // The queue must already exist.
+  string queue = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "cloudtasks.googleapis.com/Task"
+    }
+  ];
+
+  // Optional. Task ID for the task being created. If not provided, a random
+  // task ID is assigned to the task.
+  string task_id = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Body of the HTTP request.
+  //
+  // The body can take any generic value. The value is written to the
+  // [HttpRequest][payload] of the [Task].
+  google.api.HttpBody body = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message for
+// [BufferTask][google.cloud.tasks.v2beta2.CloudTasks.BufferTask].
+message BufferTaskResponse {
+  // The created task.
+  Task task = 1;
 }
