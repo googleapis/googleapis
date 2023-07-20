@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -407,6 +407,21 @@ message Event {
     google.protobuf.Duration duration = 1;
   }
 
+  // Inserts a slate.
+  message SlateTask {
+    // Optional. Duration of the slate. Must be greater than 0 if specified.
+    // Omit this field for a long running slate.
+    google.protobuf.Duration duration = 1;
+
+    // Slate asset to use for the duration. If its duration is less than the
+    // duration of the SlateTask, then it will be looped. The slate must be
+    // represented in the form of:
+    // `projects/{project}/locations/{location}/assets/{assetId}`.
+    string asset = 2 [(google.api.resource_reference) = {
+      type: "livestream.googleapis.com/Asset"
+    }];
+  }
+
   // Stops any events which are currently running. This only applies to events
   // with a duration.
   message ReturnToProgramTask {}
@@ -463,21 +478,23 @@ message Event {
 
   // Required. Operation to be executed by this event.
   oneof task {
-    // Required. Switches to another input stream.
-    InputSwitchTask input_switch = 5 [(google.api.field_behavior) = REQUIRED];
+    // Switches to another input stream.
+    InputSwitchTask input_switch = 5;
 
-    // Required. Inserts a new ad opportunity.
-    AdBreakTask ad_break = 6 [(google.api.field_behavior) = REQUIRED];
+    // Inserts a new ad opportunity.
+    AdBreakTask ad_break = 6;
 
-    // Required. Stops any running ad break.
-    ReturnToProgramTask return_to_program = 13
-        [(google.api.field_behavior) = REQUIRED];
+    // Stops any running ad break.
+    ReturnToProgramTask return_to_program = 13;
 
-    // Required. Mutes the stream.
-    MuteTask mute = 15 [(google.api.field_behavior) = REQUIRED];
+    // Inserts a slate.
+    SlateTask slate = 14;
 
-    // Required. Unmutes the stream.
-    UnmuteTask unmute = 16 [(google.api.field_behavior) = REQUIRED];
+    // Mutes the stream.
+    MuteTask mute = 15;
+
+    // Unmutes the stream.
+    UnmuteTask unmute = 16;
   }
 
   // When this field is set to true, the event will be executed at the earliest
@@ -502,6 +519,89 @@ message Event {
   // Output only. An error object that describes the reason for the failure.
   // This property is always present when `state` is `FAILED`.
   google.rpc.Status error = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// An asset represents a video or an image.
+message Asset {
+  option (google.api.resource) = {
+    type: "livestream.googleapis.com/Asset"
+    pattern: "projects/{project}/locations/{location}/assets/{asset}"
+  };
+
+  // VideoAsset represents a video. The supported formats are MP4, MPEG-TS, and
+  // FLV. The supported video codec is H264. The supported audio codecs are
+  // AAC, AC3, MP2, and MP3.
+  message VideoAsset {
+    // Cloud Storage URI of the video. The format is `gs://my-bucket/my-object`.
+    string uri = 1;
+  }
+
+  // Image represents an image. The supported format is JPEG.
+  message ImageAsset {
+    // Cloud Storage URI of the image. The format is `gs://my-bucket/my-object`.
+    string uri = 1;
+  }
+
+  // State of the asset resource.
+  enum State {
+    // State is not specified.
+    STATE_UNSPECIFIED = 0;
+
+    // The asset is being created.
+    CREATING = 1;
+
+    // The asset is ready for use.
+    ACTIVE = 2;
+
+    // The asset is being deleted.
+    DELETING = 3;
+
+    // The asset has an error.
+    ERROR = 4;
+  }
+
+  // The resource name of the asset, in the form of:
+  // `projects/{project}/locations/{location}/assets/{assetId}`.
+  string name = 1;
+
+  // Output only. The creation time.
+  google.protobuf.Timestamp create_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The update time.
+  google.protobuf.Timestamp update_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // User-defined key/value metadata.
+  map<string, string> labels = 4;
+
+  // The reference to the asset.
+  // The maximum size of the resource is 250 MB.
+  oneof resource {
+    // VideoAsset represents a video.
+    VideoAsset video = 5;
+
+    // ImageAsset represents an image.
+    ImageAsset image = 6;
+  }
+
+  // Based64-encoded CRC32c checksum of the asset file. For more information,
+  // see the crc32c checksum of the [Cloud Storage Objects
+  // resource](https://cloud.google.com/storage/docs/json_api/v1/objects).
+  // If crc32c is omitted or left empty when the asset is created, this field is
+  // filled by the crc32c checksum of the Cloud Storage object indicated by
+  // [VideoAsset.uri] or [ImageAsset.uri].
+  // If crc32c is set, the asset can't be created if the crc32c value does not
+  // match with the crc32c checksum of the Cloud Storage object indicated by
+  // [VideoAsset.uri] or [ImageAsset.uri].
+  string crc32c = 7;
+
+  // Output only. The state of the asset resource.
+  State state = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Only present when `state` is `ERROR`. The reason for the error
+  // state of the asset.
+  google.rpc.Status error = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Encryption settings.
@@ -583,4 +683,47 @@ message Encryption {
     // Configuration for MPEG-Dash Common Encryption (MPEG-CENC).
     MpegCommonEncryption mpeg_cenc = 6;
   }
+}
+
+// Pool resource defines the configuration of Live Stream pools for a specific
+// location. Currently we support only one pool resource per project per
+// location. After the creation of the first input, a default pool is created
+// automatically at "projects/{project}/locations/{location}/pools/default".
+message Pool {
+  option (google.api.resource) = {
+    type: "livestream.googleapis.com/Pool"
+    pattern: "projects/{project}/locations/{location}/pools/{pool}"
+  };
+
+  // Defines the network configuration for the pool.
+  message NetworkConfig {
+    // peered_network is the network resource URL of the network that is peered
+    // to the service provider network. Must be of the format
+    // projects/NETWORK_PROJECT_NUMBER/global/networks/NETWORK_NAME, where
+    // NETWORK_PROJECT_NUMBER is the project number of the Cloud project that
+    // holds your VPC network and NETWORK_NAME is the name of your VPC network.
+    // If peered_network is omitted or empty, the pool will use endpoints that
+    // are publicly available.
+    string peered_network = 1 [(google.api.resource_reference) = {
+      type: "compute.googleapis.com/Network"
+    }];
+  }
+
+  // The resource name of the pool, in the form of:
+  // `projects/{project}/locations/{location}/pools/{poolId}`.
+  string name = 1;
+
+  // Output only. The creation time.
+  google.protobuf.Timestamp create_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The update time.
+  google.protobuf.Timestamp update_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // User-defined key/value metadata.
+  map<string, string> labels = 4;
+
+  // Network configuration for the pool.
+  NetworkConfig network_config = 5;
 }
