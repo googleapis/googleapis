@@ -270,7 +270,7 @@ maven_install(
     ],
 )
 
-_gapic_generator_java_version = "2.23.0"
+_gapic_generator_java_version = "2.23.1"
 
 maven_install(
     artifacts = [
