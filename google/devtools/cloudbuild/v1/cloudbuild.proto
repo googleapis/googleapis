@@ -1573,6 +1573,108 @@ message ApprovalResult {
   string url = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
+// GitRepoSource describes a repo and ref of a code repository.
+message GitRepoSource {
+  // The URI of the repo (e.g. https://github.com/user/repo.git).
+  // Either `uri` or `repository` can be specified and is required.
+  string uri = 1;
+
+  // The source of the SCM repo.
+  oneof source {
+    // The connected repository resource name, in the format
+    // `projects/*/locations/*/connections/*/repositories/*`. Either `uri` or
+    // `repository` can be specified and is required.
+    string repository = 6 [(google.api.resource_reference) = {
+      type: "cloudbuild.googleapis.com/Repository"
+    }];
+  }
+
+  // The branch or tag to use. Must start with "refs/" (required).
+  string ref = 2;
+
+  // See RepoType below.
+  GitFileSource.RepoType repo_type = 3;
+
+  // The resource name of the enterprise config that should be applied
+  // to this source.
+  oneof enterprise_config {
+    // The full resource name of the github enterprise config.
+    // Format:
+    // `projects/{project}/locations/{location}/githubEnterpriseConfigs/{id}`.
+    // `projects/{project}/githubEnterpriseConfigs/{id}`.
+    string github_enterprise_config = 4 [(google.api.resource_reference) = {
+      type: "cloudbuild.googleapis.com/GithubEnterpriseConfig"
+    }];
+  }
+}
+
+// GitFileSource describes a file within a (possibly remote) code repository.
+message GitFileSource {
+  // The type of the repo, since it may not be explicit from the `repo` field
+  // (e.g from a URL).
+  enum RepoType {
+    // The default, unknown repo type. Don't use it, instead use one of
+    // the other repo types.
+    UNKNOWN = 0;
+
+    // A Google Cloud Source Repositories-hosted repo.
+    CLOUD_SOURCE_REPOSITORIES = 1;
+
+    // A GitHub-hosted repo not necessarily on "github.com" (i.e. GitHub
+    // Enterprise).
+    GITHUB = 2;
+
+    // A Bitbucket Server-hosted repo.
+    BITBUCKET_SERVER = 3;
+
+    // A GitLab-hosted repo.
+    GITLAB = 4;
+  }
+
+  // The path of the file, with the repo root as the root of the path.
+  string path = 1;
+
+  // The URI of the repo.
+  // Either uri or repository can be specified.
+  // If unspecified, the repo from which the trigger invocation originated is
+  // assumed to be the repo from which to read the specified path.
+  string uri = 2;
+
+  // The source of the SCM repo.
+  oneof source {
+    // The fully qualified resource name of the Repos API repository.
+    // Either URI or repository can be specified.
+    // If unspecified, the repo from which the trigger invocation originated is
+    // assumed to be the repo from which to read the specified path.
+    string repository = 7 [(google.api.resource_reference) = {
+      type: "cloudbuild.googleapis.com/Repository"
+    }];
+  }
+
+  // See RepoType above.
+  RepoType repo_type = 3;
+
+  // The branch, tag, arbitrary ref, or SHA version of the repo to use when
+  // resolving the filename (optional).
+  // This field respects the same syntax/resolution as described here:
+  // https://git-scm.com/docs/gitrevisions
+  // If unspecified, the revision from which the trigger invocation originated
+  // is assumed to be the revision from which to read the specified path.
+  string revision = 4;
+
+  // The resource name of the enterprise config that should be applied
+  // to this source.
+  oneof enterprise_config {
+    // The full resource name of the github enterprise config.
+    // Format:
+    // `projects/{project}/locations/{location}/githubEnterpriseConfigs/{id}`.
+    // `projects/{project}/githubEnterpriseConfigs/{id}`.
+    string github_enterprise_config = 5 [(google.api.resource_reference) = {
+      type: "cloudbuild.googleapis.com/GithubEnterpriseConfig"
+    }];
+  }
+}
+
 // Configuration for an automated build in response to source repository
 // changes.
 message BuildTrigger {
@@ -1649,6 +1751,9 @@ message BuildTrigger {
     // Path, from the source root, to the build configuration file
     // (i.e. cloudbuild.yaml).
     string filename = 8;
+
+    // The file source describing the local or remote Build template.
+    GitFileSource git_file_source = 24;
   }
 
   // Output only. Time when the trigger was created.
@@ -1685,6 +1790,14 @@ message BuildTrigger {
 
   // Optional. A Common Expression Language string.
   string filter = 30 [(google.api.field_behavior) = OPTIONAL];
+
+  // The repo and ref of the repository from which to build. This field
+  // is used only for those triggers that do not respond to SCM events.
+  // Triggers that respond to such events build source at whatever commit
+  // caused the event.
+  // This field is currently only used by Webhook, Pub/Sub, Manual, and Cron
+  // triggers.
+  GitRepoSource source_to_build = 26;
 
   // The service account used for all user-controlled operations including
   // UpdateBuildTrigger, RunBuildTrigger, CreateBuild, and CancelBuild.
@@ -2203,6 +2316,83 @@ message ReceiveTriggerWebhookRequest {
 // ReceiveTriggerWebhookResponse [Experimental] is the response object for the
 // ReceiveTriggerWebhook method.
 message ReceiveTriggerWebhookResponse {}
+
+message GitHubEnterpriseConfig {
+  option (google.api.resource) = {
+    type: "cloudbuild.googleapis.com/GithubEnterpriseConfig"
+    pattern: "projects/{project}/githubEnterpriseConfigs/{config}"
+    pattern: "projects/{project}/locations/{location}/githubEnterpriseConfigs/{config}"
+  };
+
+  // Optional. The full resource name for the GitHubEnterpriseConfig
+  // For example:
+  // "projects/{$project_id}/locations/{$location_id}/githubEnterpriseConfigs/{$config_id}"
+  string name = 7 [(google.api.field_behavior) = OPTIONAL];
+
+  // The URL of the github enterprise host the configuration is for.
+  string host_url = 3;
+
+  // Required. The GitHub app id of the Cloud Build app on the GitHub Enterprise
+  // server.
+  int64 app_id = 4 [(google.api.field_behavior) = REQUIRED];
+
+  // Output only. Time when the installation was associated with the project.
+  google.protobuf.Timestamp create_time = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The key that should be attached to webhook calls to the ReceiveWebhook
+  // endpoint.
+  string webhook_key = 8;
+
+  // Optional. The network to be used when reaching out to the GitHub
+  // Enterprise server. The VPC network must be enabled for private
+  // service connection. This should be set if the GitHub Enterprise server is
+  // hosted on-premises and not reachable by public internet.
+  // If this field is left empty, no network peering will occur and calls to
+  // the GitHub Enterprise server will be made over the public internet.
+  // Must be in the format
+  // `projects/{project}/global/networks/{network}`, where {project}
+  // is a project number or id and {network} is the name of a
+  // VPC network in the project.
+  string peered_network = 9 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = { type: "compute.googleapis.com/Network" }
+  ];
+
+  // Names of secrets in Secret Manager.
+  GitHubEnterpriseSecrets secrets = 10;
+
+  // Name to display for this config.
+  string display_name = 11;
+
+  // Optional. SSL certificate to use for requests to GitHub Enterprise.
+  string ssl_ca = 12 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// GitHubEnterpriseSecrets represents the names of all necessary secrets in
+// Secret Manager for a GitHub Enterprise server.
+// Format is: projects/<project number>/secrets/<secret name>.
+message GitHubEnterpriseSecrets {
+  // The resource name for the private key secret version.
+  string private_key_version_name = 5 [(google.api.resource_reference) = {
+    type: "secretmanager.googleapis.com/SecretVersion"
+  }];
+
+  // The resource name for the webhook secret secret version in Secret Manager.
+  string webhook_secret_version_name = 6 [(google.api.resource_reference) = {
+    type: "secretmanager.googleapis.com/SecretVersion"
+  }];
+
+  // The resource name for the OAuth secret secret version in Secret Manager.
+  string oauth_secret_version_name = 7 [(google.api.resource_reference) = {
+    type: "secretmanager.googleapis.com/SecretVersion"
+  }];
+
+  // The resource name for the OAuth client ID secret version in Secret Manager.
+  string oauth_client_id_version_name = 8 [(google.api.resource_reference) = {
+    type: "secretmanager.googleapis.com/SecretVersion"
+  }];
+}
 
 // Configuration for a `WorkerPool`.
 //
