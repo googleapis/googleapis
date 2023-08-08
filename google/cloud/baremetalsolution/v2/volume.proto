@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,7 +18,9 @@ package google.cloud.baremetalsolution.v2;
 
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/cloud/baremetalsolution/v2/common.proto";
 import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "Google.Cloud.BareMetalSolution.V2";
 option go_package = "cloud.google.com/go/baremetalsolution/apiv2/baremetalsolutionpb;baremetalsolutionpb";
@@ -60,6 +62,13 @@ message Volume {
 
     // The storage volume has been requested to be deleted.
     DELETING = 3;
+
+    // The storage volume is being updated.
+    UPDATING = 4;
+
+    // The storage volume is in cool off state. It will be deleted after
+    // `expire_time`.
+    COOL_OFF = 5;
   }
 
   // Details about snapshot space reservation and usage on the storage volume.
@@ -102,6 +111,31 @@ message Volume {
     NEWEST_FIRST = 3;
   }
 
+  // Storage protocol.
+  enum Protocol {
+    // Value is not specified.
+    PROTOCOL_UNSPECIFIED = 0;
+
+    // Fibre Channel protocol.
+    FIBRE_CHANNEL = 1;
+
+    // NFS protocol means Volume is a NFS Share volume.
+    // Such volumes cannot be manipulated via Volumes API.
+    NFS = 2;
+  }
+
+  // The possible values for a workload profile.
+  enum WorkloadProfile {
+    // The workload profile is in an unknown state.
+    WORKLOAD_PROFILE_UNSPECIFIED = 0;
+
+    // The workload profile is generic.
+    GENERIC = 1;
+
+    // The workload profile is hana.
+    HANA = 2;
+  }
+
   // Output only. The resource name of this `Volume`.
   // Resource names are schemeless URIs that follow the conventions in
   // https://cloud.google.com/apis/design/resource_names.
@@ -121,6 +155,9 @@ message Volume {
   // The requested size of this storage volume, in GiB.
   int64 requested_size_gib = 4;
 
+  // Originally requested size, in GiB.
+  int64 originally_requested_size_gib = 16;
+
   // The current size of this storage volume, in GiB, including space reserved
   // for snapshots. This size might be different than the requested size if the
   // storage volume has been configured with auto grow or auto shrink.
@@ -129,6 +166,9 @@ message Volume {
   // Additional emergency size that was requested for this Volume, in GiB.
   // current_size_gib includes this value.
   int64 emergency_size_gib = 14;
+
+  // Maximum size volume can be expanded to in case of evergency, in GiB.
+  int64 max_size_gib = 17;
 
   // The size, in GiB, that this storage volume has expanded as a result of an
   // auto grow policy. In the absence of auto-grow, the value is 0.
@@ -152,6 +192,44 @@ message Volume {
 
   // Immutable. Pod name.
   string pod = 15 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Output only. Storage protocol for the Volume.
+  Protocol protocol = 18 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Whether this volume is a boot volume. A boot volume is one
+  // which contains a boot LUN.
+  bool boot_volume = 19 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Immutable. Performance tier of the Volume.
+  // Default is SHARED.
+  VolumePerformanceTier performance_tier = 20
+      [(google.api.field_behavior) = IMMUTABLE];
+
+  // Input only. User-specified notes for new Volume.
+  // Used to provision Volumes that require manual intervention.
+  string notes = 21 [(google.api.field_behavior) = INPUT_ONLY];
+
+  // The workload profile for the volume.
+  WorkloadProfile workload_profile = 22;
+
+  // Output only. Time after which volume will be fully deleted.
+  // It is filled only for volumes in COOLOFF state.
+  google.protobuf.Timestamp expire_time = 24
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Instances this Volume is attached to.
+  // This field is set only in Get requests.
+  repeated string instances = 25 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "baremetalsolution.googleapis.com/Instance"
+    }
+  ];
+
+  // Output only. Is the Volume attached at at least one instance.
+  // This field is a lightweight counterpart of `instances` field.
+  // It is filled in List responses as well.
+  bool attached = 26 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Message for requesting storage volume information.
@@ -208,12 +286,34 @@ message UpdateVolumeRequest {
 
   // The list of fields to update.
   // The only currently supported fields are:
-  //   `snapshot_auto_delete_behavior`
-  //   `snapshot_schedule_policy_name`
   //   'labels'
-  //   'snapshot_enabled'
-  //   'snapshot_reservation_detail.reserved_space_percent'
   google.protobuf.FieldMask update_mask = 2;
+}
+
+// Message requesting rename of a server.
+message RenameVolumeRequest {
+  // Required. The `name` field is used to identify the volume.
+  // Format: projects/{project}/locations/{location}/volumes/{volume}
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "baremetalsolution.googleapis.com/Volume"
+    }
+  ];
+
+  // Required. The new `id` of the volume.
+  string new_volume_id = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request for skip volume cooloff and delete it.
+message EvictVolumeRequest {
+  // Required. The name of the Volume.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "baremetalsolution.googleapis.com/Volume"
+    }
+  ];
 }
 
 // Request for emergency resize Volume.
