@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "cloud.google.com/go/workflows/executions/apiv1/executionspb;executionspb";
@@ -35,7 +36,8 @@ option (google.api.resource_definition) = {
 // [Workflows][google.cloud.workflows.v1.Workflow] called executions.
 service Executions {
   option (google.api.default_host) = "workflowexecutions.googleapis.com";
-  option (google.api.oauth_scopes) = "https://www.googleapis.com/auth/cloud-platform";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform";
 
   // Returns a list of executions which belong to the workflow with
   // the given name. The method returns executions of all workflow
@@ -83,6 +85,31 @@ message Execution {
     pattern: "projects/{project}/locations/{location}/workflows/{workflow}/executions/{execution}"
   };
 
+  // Describes the current state of the execution. More states might be added
+  // in the future.
+  enum State {
+    // Invalid state.
+    STATE_UNSPECIFIED = 0;
+
+    // The execution is in progress.
+    ACTIVE = 1;
+
+    // The execution finished successfully.
+    SUCCEEDED = 2;
+
+    // The execution failed with an error.
+    FAILED = 3;
+
+    // The execution was stopped intentionally.
+    CANCELLED = 4;
+
+    // Execution data is unavailable. See the `state_error` field.
+    UNAVAILABLE = 5;
+
+    // Request has been placed in the backlog for processing at a later time.
+    QUEUED = 6;
+  }
+
   // A single stack element (frame) where an error occurred.
   message StackTraceElement {
     // Position contains source position information about the stack trace
@@ -128,29 +155,10 @@ message Execution {
     StackTrace stack_trace = 3;
   }
 
-  // Describes the current state of the execution. More states might be added
-  // in the future.
-  enum State {
-    // Invalid state.
-    STATE_UNSPECIFIED = 0;
-
-    // The execution is in progress.
-    ACTIVE = 1;
-
-    // The execution finished successfully.
-    SUCCEEDED = 2;
-
-    // The execution failed with an error.
-    FAILED = 3;
-
-    // The execution was stopped intentionally.
-    CANCELLED = 4;
-  }
-
   // Describes the level of platform logging to apply to calls and call
   // responses during workflow executions.
   enum CallLogLevel {
-    // No call logging specified.
+    // No call logging level specified.
     CALL_LOG_LEVEL_UNSPECIFIED = 0;
 
     // Log all call steps within workflows, all call returns, and all exceptions
@@ -159,6 +167,48 @@ message Execution {
 
     // Log only exceptions that are raised from call steps within workflows.
     LOG_ERRORS_ONLY = 2;
+
+    // Explicitly log nothing.
+    LOG_NONE = 3;
+  }
+
+  // Represents the current status of this execution.
+  message Status {
+    // Represents a step of the workflow this execution is running.
+    message Step {
+      // Name of a routine within the workflow.
+      string routine = 1;
+
+      // Name of a step within the routine.
+      string step = 2;
+    }
+
+    // A list of currently executing or last executed step names for the
+    // workflow execution currently running. If the workflow has succeeded or
+    // failed, this is the last attempted or executed step. Presently, if the
+    // current step is inside a subworkflow, the list only includes that step.
+    // In the future, the list will contain items for each step in the call
+    // stack, starting with the outermost step in the `main` subworkflow, and
+    // ending with the most deeply nested step.
+    repeated Step current_steps = 1;
+  }
+
+  // Describes an error related to the current state of the Execution resource.
+  message StateError {
+    // Describes the possible types of a state error.
+    enum Type {
+      // No type specified.
+      TYPE_UNSPECIFIED = 0;
+
+      // Caused by an issue with KMS.
+      KMS_ERROR = 1;
+    }
+
+    // Provides specifics about the error.
+    string details = 1;
+
+    // The type of this state error.
+    Type type = 2;
   }
 
   // Output only. The resource name of the execution.
@@ -167,10 +217,16 @@ message Execution {
   string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Marks the beginning of execution.
-  google.protobuf.Timestamp start_time = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp start_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Marks the end of execution, successful or not.
-  google.protobuf.Timestamp end_time = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp end_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Measures the duration of the execution.
+  google.protobuf.Duration duration = 12
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Current state of the execution.
   State state = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -197,6 +253,24 @@ message Execution {
 
   // The call logging level associated to this execution.
   CallLogLevel call_log_level = 9;
+
+  // Output only. Status tracks the current steps and progress data of this
+  // execution.
+  Status status = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Labels associated with this execution.
+  // Labels can contain at most 64 entries. Keys and values can be no longer
+  // than 63 characters and can only contain lowercase letters, numeric
+  // characters, underscores, and dashes. Label keys must start with a letter.
+  // International characters are allowed.
+  // By default, labels are inherited from the workflow but are overridden by
+  // any labels associated with the execution.
+  map<string, string> labels = 11;
+
+  // Output only. Error regarding the state of the Execution resource. For
+  // example, this field will have error details if the execution data is
+  // unavailable due to revoked KMS key permissions.
+  StateError state_error = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Request for the
@@ -213,7 +287,7 @@ message ListExecutionsRequest {
   ];
 
   // Maximum number of executions to return per call.
-  // Max supported value depends on the selected Execution view: it's 10000 for
+  // Max supported value depends on the selected Execution view: it's 1000 for
   // BASIC and 100 for FULL. The default value used if the field is not
   // specified is 100, regardless of the selected view. Values greater than
   // the max value will be coerced down to it.
@@ -224,11 +298,26 @@ message ListExecutionsRequest {
   //
   // When paginating, all other parameters provided to `ListExecutions` must
   // match the call that provided the page token.
+  //
+  // Note that pagination is applied to dynamic data. The list of executions
+  // returned can change between page requests.
   string page_token = 3;
 
-  // Optional. A view defining which fields should be filled in the returned executions.
-  // The API will default to the BASIC view.
+  // Optional. A view defining which fields should be filled in the returned
+  // executions. The API will default to the BASIC view.
   ExecutionView view = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Filters applied to the [Executions.ListExecutions] results.
+  // The following fields are supported for filtering:
+  // executionID, state, startTime, endTime, duration, workflowRevisionID,
+  // stepName, and label.
+  string filter = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The ordering applied to the [Executions.ListExecutions] results.
+  // By default the ordering is based on descending start time.
+  // The following fields are supported for order by:
+  // executionID, startTime, endTime, duration, state, and workflowRevisionID.
+  string order_by = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Response for the
@@ -275,8 +364,8 @@ message GetExecutionRequest {
     }
   ];
 
-  // Optional. A view defining which fields should be filled in the returned execution.
-  // The API will default to the FULL view.
+  // Optional. A view defining which fields should be filled in the returned
+  // execution. The API will default to the FULL view.
   ExecutionView view = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -301,8 +390,8 @@ enum ExecutionView {
   EXECUTION_VIEW_UNSPECIFIED = 0;
 
   // Includes only basic metadata about the execution.
-  // Following fields are returned: name, start_time, end_time, state
-  // and workflow_revision_id.
+  // The following fields are returned: name, start_time, end_time, duration,
+  // state, and workflow_revision_id.
   BASIC = 1;
 
   // Includes all data.
