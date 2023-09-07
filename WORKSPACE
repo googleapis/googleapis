@@ -58,10 +58,15 @@ rules_jvm_external_setup()
 
 # Python rules should go early in the dependencies list, otherwise a wrong
 # version of the library will be selected as a transitive dependency of gRPC.
+_rules_python_version = "0.24.0"
+
+_rules_python_sha256 = "0a8003b044294d7840ac7d9d73eef05d6ceb682d7516781a4ec62eeb34702578"
+
 http_archive(
     name = "rules_python",
-    strip_prefix = "rules_python-0.9.0",
-    url = "https://github.com/bazelbuild/rules_python/archive/0.9.0.tar.gz",
+    sha256 = _rules_python_sha256,
+    strip_prefix = "rules_python-{}".format(_rules_python_version),
+    url = "https://github.com/bazelbuild/rules_python/archive/{}.tar.gz".format(_rules_python_version),
 )
 
 http_archive(
@@ -319,11 +324,7 @@ load("@rules_gapic//python:py_gapic_repositories.bzl", "py_gapic_repositories")
 
 py_gapic_repositories()
 
-load("@rules_python//python:pip.bzl", "pip_install")
-
-pip_install()
-
-_gapic_generator_python_version = "1.11.4"
+_gapic_generator_python_version = "1.11.5"
 
 http_archive(
     name = "gapic_generator_python",
@@ -336,6 +337,21 @@ load(
     "gapic_generator_python",
     "gapic_generator_register_toolchains",
 )
+
+load("@rules_python//python:repositories.bzl", "py_repositories")
+
+py_repositories()
+
+load("@rules_python//python:pip.bzl", "pip_parse")
+
+pip_parse(
+    name = "gapic_generator_python_pip_deps",
+    requirements_lock = "@gapic_generator_python//:requirements.txt",
+)
+
+load("@gapic_generator_python_pip_deps//:requirements.bzl", "install_deps")
+
+install_deps()
 
 gapic_generator_python()
 
