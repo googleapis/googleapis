@@ -164,6 +164,20 @@ service Tpu {
     };
   }
 
+  // Resets a QueuedResource TPU instance
+  rpc ResetQueuedResource(ResetQueuedResourceRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v2alpha1/{name=projects/*/locations/*/queuedResources/*}:reset"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+    option (google.longrunning.operation_info) = {
+      response_type: "QueuedResource"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
   // Generates the Cloud TPU service identity for the project.
   rpc GenerateServiceIdentity(GenerateServiceIdentityRequest)
       returns (GenerateServiceIdentityResponse) {
@@ -528,6 +542,9 @@ message Node {
 
   // Output only. Whether the Node belongs to a Multislice group.
   bool multislice_node = 47 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Boot disk configuration.
+  BootDiskConfig boot_disk_config = 49 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // A QueuedResource represents a request for resources that will be placed
@@ -544,6 +561,23 @@ message QueuedResource {
     // single node or multiple nodes.
     // NodeSpec provides the specification for node(s) to be created.
     message NodeSpec {
+      // Parameters to specify for multi-node QueuedResource requests. This
+      // field must be populated in case of multi-node requests instead of
+      // node_id. It's an error to specify both node_id and multi_node_params.
+      message MultiNodeParams {
+        // Required. Number of nodes with this spec. The system will attempt
+        // to provison "node_count" nodes as part of the request.
+        // This needs to be > 1.
+        int32 node_count = 1 [(google.api.field_behavior) = REQUIRED];
+
+        // Prefix of node_ids in case of multi-node request
+        // Should follow the `^[A-Za-z0-9_.~+%-]+$` regex format.
+        // If node_count = 3 and node_id_prefix = "np", node ids of nodes
+        // created will be "np-0", "np-1", "np-2". If this field is not
+        // provided we use queued_resource_id as the node_id_prefix.
+        string node_id_prefix = 2;
+      }
+
       // Required. The parent resource name.
       string parent = 1 [
         (google.api.field_behavior) = REQUIRED,
@@ -558,6 +592,10 @@ message QueuedResource {
       // instead. It's an error to specify both node_id and multi_node_params.
       string node_id = 2;
 
+      // Optional. Fields to specify in case of multi-node request.
+      MultiNodeParams multi_node_params = 6
+          [(google.api.field_behavior) = OPTIONAL];
+
       // Required. The node.
       Node node = 3 [(google.api.field_behavior) = REQUIRED];
     }
@@ -568,6 +606,9 @@ message QueuedResource {
 
   // BestEffort tier definition.
   message BestEffort {}
+
+  // Spot tier definition.
+  message Spot {}
 
   // Guaranteed tier definition.
   message Guaranteed {
@@ -623,8 +664,11 @@ message QueuedResource {
     // The BestEffort tier.
     BestEffort best_effort = 3;
 
-    // The Guaranteed tier
+    // The Guaranteed tier.
     Guaranteed guaranteed = 4;
+
+    // Optional. The Spot tier.
+    Spot spot = 9 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // The queueing policy of the QueuedRequest.
@@ -708,6 +752,18 @@ message QueuedResourceState {
   // Further data for the suspended state.
   message SuspendedData {}
 
+  // The initiator of the QueuedResource's SUSPENDING/SUSPENDED state.
+  enum StateInitiator {
+    // The state initiator is unspecified.
+    STATE_INITIATOR_UNSPECIFIED = 0;
+
+    // The current QueuedResource state was initiated by the user.
+    USER = 1;
+
+    // The current QueuedResource state was initiated by the service.
+    SERVICE = 2;
+  }
+
   // State of the QueuedResource request.
   State state = 1;
 
@@ -737,6 +793,10 @@ message QueuedResourceState {
     // Further data for the suspended state.
     SuspendedData suspended_data = 9;
   }
+
+  // Output only. The initiator of the QueuedResources's current state.
+  StateInitiator state_initiator = 10
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Request for [ListNodes][google.cloud.tpu.v2alpha1.Tpu.ListNodes].
@@ -922,6 +982,18 @@ message DeleteQueuedResourceRequest {
   // its nodes have already been deleted or the queued resource is in the
   // ACCEPTED, FAILED, or SUSPENDED state.
   bool force = 3;
+}
+
+// Request for
+// [ResetQueuedResource][google.cloud.tpu.v2alpha1.Tpu.ResetQueuedResource].
+message ResetQueuedResourceRequest {
+  // Required. The name of the queued resource.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "tpu.googleapis.com/QueuedResource"
+    }
+  ];
 }
 
 // The per-product per-project service identity for Cloud TPU service.
@@ -1212,4 +1284,36 @@ message AcceleratorConfig {
 message ShieldedInstanceConfig {
   // Defines whether the instance has Secure Boot enabled.
   bool enable_secure_boot = 1;
+}
+
+// Boot disk configurations.
+message BootDiskConfig {
+  // Optional. Customer encryption key for boot disk.
+  CustomerEncryptionKey customer_encryption_key = 1
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether the boot disk will be created with confidential compute
+  // mode.
+  bool enable_confidential_compute = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Customer's encryption key.
+message CustomerEncryptionKey {
+  oneof key {
+    // The name of the encryption key that is stored in Google Cloud KMS.
+    // For example:
+    // <pre class="lang-html">"kmsKeyName": "projects/
+    // <var class="apiparam">kms_project_id</var>/locations/
+    // <var class="apiparam">region</var>/keyRings/<var class="apiparam">
+    // key_region</var>/cryptoKeys/<var class="apiparam">key</var>
+    // </pre>
+    // The fully-qualifed key name may be returned for resource GET requests.
+    // For example:
+    // <pre class="lang-html">"kmsKeyName": "projects/
+    // <var class="apiparam">kms_project_id</var>/locations/
+    // <var class="apiparam">region</var>/keyRings/<var class="apiparam">
+    // key_region</var>/cryptoKeys/<var class="apiparam">key</var>
+    // /cryptoKeyVersions/1</pre>
+    string kms_key_name = 7;
+  }
 }

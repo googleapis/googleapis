@@ -21,6 +21,7 @@ import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
 
 option csharp_namespace = "Google.Cloud.ConfidentialComputing.V1";
 option go_package = "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb;confidentialcomputingpb";
@@ -53,6 +54,21 @@ service ConfidentialComputing {
       body: "*"
     };
   }
+}
+
+// SigningAlgorithm enumerates all the supported signing algorithms.
+enum SigningAlgorithm {
+  // Unspecified signing algorithm.
+  SIGNING_ALGORITHM_UNSPECIFIED = 0;
+
+  // RSASSA-PSS with a SHA256 digest.
+  RSASSA_PSS_SHA256 = 1;
+
+  // RSASSA-PKCS1 v1.5 with a SHA256 digest.
+  RSASSA_PKCS1V15_SHA256 = 2;
+
+  // ECDSA on the P-256 Curve with a SHA256 digest.
+  ECDSA_P256_SHA256 = 3;
 }
 
 // A Challenge from the server used to guarantee freshness of attestations
@@ -118,6 +134,14 @@ message VerifyAttestationRequest {
   // Required. The TPM-specific data provided by the attesting platform, used to
   // populate any of the claims regarding platform state.
   TpmAttestation tpm_attestation = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Optional information related to the Confidential Space TEE.
+  ConfidentialSpaceInfo confidential_space_info = 4
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A collection of optional, workload-specified claims that modify
+  // the token output.
+  TokenOptions token_options = 5 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // A response once an attestation has been successfully verified, containing a
@@ -125,6 +149,11 @@ message VerifyAttestationRequest {
 message VerifyAttestationResponse {
   // Output only. Same as claims_token, but as a string.
   string oidc_claims_token = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. A list of messages that carry the partial error details
+  // related to VerifyAttestation.
+  repeated google.rpc.Status partial_errors = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Credentials issued by GCP which are linked to the platform attestation. These
@@ -132,6 +161,18 @@ message VerifyAttestationResponse {
 message GcpCredentials {
   // Same as id_tokens, but as a string.
   repeated string service_account_id_tokens = 2;
+}
+
+// Options to modify claims in the token to generate custom-purpose tokens.
+message TokenOptions {
+  // Optional. Optional string to issue the token with a custom audience claim.
+  // Required if one or more nonces are specified.
+  string audience = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional parameter to place one or more nonces in the eat_nonce
+  // claim in the output token. The minimum size for JSON-encoded EATs is 10
+  // bytes and the maximum size is 74 bytes.
+  repeated string nonce = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // TPM2 data containing everything necessary to validate any platform state
@@ -173,4 +214,46 @@ message TpmAttestation {
   // List of DER-encoded X.509 certificates which, together with the ak_cert,
   // chain back to a trusted Root Certificate.
   repeated bytes cert_chain = 5;
+}
+
+// ConfidentialSpaceInfo contains information related to the Confidential Space
+// TEE.
+message ConfidentialSpaceInfo {
+  // Optional. A list of signed entities containing container image signatures
+  // that can be used for server-side signature verification.
+  repeated SignedEntity signed_entities = 1
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// SignedEntity represents an OCI image object containing everything necessary
+// to verify container image signatures.
+message SignedEntity {
+  // Optional. A list of container image signatures attached to an OCI image
+  // object.
+  repeated ContainerImageSignature container_image_signatures = 1
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// ContainerImageSignature holds necessary metadata to verify a container image
+// signature.
+message ContainerImageSignature {
+  // Optional. The binary signature payload following the SimpleSigning format
+  // https://github.com/sigstore/cosign/blob/main/specs/SIGNATURE_SPEC.md#simple-signing.
+  // This payload includes the container image digest.
+  bytes payload = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A signature over the payload.
+  // The container image digest is incorporated into the signature as follows:
+  // 1. Generate a SimpleSigning format payload that includes the container
+  // image digest.
+  // 2. Generate a signature over SHA256 digest of the payload.
+  // The signature generation process can be represented as follows:
+  // `Sign(sha256(SimpleSigningPayload(sha256(Image Manifest))))`
+  bytes signature = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Reserved for future use.
+  bytes public_key = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Reserved for future use.
+  SigningAlgorithm sig_alg = 4 [(google.api.field_behavior) = OPTIONAL];
 }

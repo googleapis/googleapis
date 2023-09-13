@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/longrunning/operations.proto";
+import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -28,15 +29,20 @@ option go_package = "cloud.google.com/go/workflows/apiv1/workflowspb;workflowspb
 option java_multiple_files = true;
 option java_outer_classname = "WorkflowsProto";
 option java_package = "com.google.cloud.workflows.v1";
+option (google.api.resource_definition) = {
+  type: "cloudkms.googleapis.com/CryptoKey"
+  pattern: "projects/{project}/locations/{location}/keyRings/{keyRing}/cryptoKeys/{cryptoKey}"
+};
 
 // Workflows is used to deploy and execute workflow programs.
 // Workflows makes sure the program executes reliably, despite hardware and
 // networking interruptions.
 service Workflows {
   option (google.api.default_host) = "workflows.googleapis.com";
-  option (google.api.oauth_scopes) = "https://www.googleapis.com/auth/cloud-platform";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform";
 
-  // Lists Workflows in a given project and location.
+  // Lists workflows in a given project and location.
   // The default order is not specified.
   rpc ListWorkflows(ListWorkflowsRequest) returns (ListWorkflowsResponse) {
     option (google.api.http) = {
@@ -45,7 +51,7 @@ service Workflows {
     option (google.api.method_signature) = "parent";
   }
 
-  // Gets details of a single Workflow.
+  // Gets details of a single workflow.
   rpc GetWorkflow(GetWorkflowRequest) returns (Workflow) {
     option (google.api.http) = {
       get: "/v1/{name=projects/*/locations/*/workflows/*}"
@@ -55,8 +61,9 @@ service Workflows {
 
   // Creates a new workflow. If a workflow with the specified name already
   // exists in the specified project and location, the long running operation
-  // will return [ALREADY_EXISTS][google.rpc.Code.ALREADY_EXISTS] error.
-  rpc CreateWorkflow(CreateWorkflowRequest) returns (google.longrunning.Operation) {
+  // returns a [ALREADY_EXISTS][google.rpc.Code.ALREADY_EXISTS] error.
+  rpc CreateWorkflow(CreateWorkflowRequest)
+      returns (google.longrunning.Operation) {
     option (google.api.http) = {
       post: "/v1/{parent=projects/*/locations/*}/workflows"
       body: "workflow"
@@ -71,7 +78,8 @@ service Workflows {
   // Deletes a workflow with the specified name.
   // This method also cancels and deletes all running executions of the
   // workflow.
-  rpc DeleteWorkflow(DeleteWorkflowRequest) returns (google.longrunning.Operation) {
+  rpc DeleteWorkflow(DeleteWorkflowRequest)
+      returns (google.longrunning.Operation) {
     option (google.api.http) = {
       delete: "/v1/{name=projects/*/locations/*/workflows/*}"
     };
@@ -84,10 +92,11 @@ service Workflows {
 
   // Updates an existing workflow.
   // Running this method has no impact on already running executions of the
-  // workflow. A new revision of the workflow may be created as a result of a
-  // successful update operation. In that case, such revision will be used
+  // workflow. A new revision of the workflow might be created as a result of a
+  // successful update operation. In that case, the new revision is used
   // in new workflow executions.
-  rpc UpdateWorkflow(UpdateWorkflowRequest) returns (google.longrunning.Operation) {
+  rpc UpdateWorkflow(UpdateWorkflowRequest)
+      returns (google.longrunning.Operation) {
     option (google.api.http) = {
       patch: "/v1/{workflow.name=projects/*/locations/*/workflows/*}"
       body: "workflow"
@@ -107,14 +116,51 @@ message Workflow {
     pattern: "projects/{project}/locations/{location}/workflows/{workflow}"
   };
 
-  // Describes the current state of workflow deployment. More states may be
-  // added in the future.
+  // Describes the current state of workflow deployment.
   enum State {
     // Invalid state.
     STATE_UNSPECIFIED = 0;
 
     // The workflow has been deployed successfully and is serving.
     ACTIVE = 1;
+
+    // Workflow data is unavailable. See the `state_error` field.
+    UNAVAILABLE = 2;
+  }
+
+  // Describes an error related to the current state of the workflow.
+  message StateError {
+    // Describes the possibled types of a state error.
+    enum Type {
+      // No type specified.
+      TYPE_UNSPECIFIED = 0;
+
+      // Caused by an issue with KMS.
+      KMS_ERROR = 1;
+    }
+
+    // Provides specifics about the error.
+    string details = 1;
+
+    // The type of this state error.
+    Type type = 2;
+  }
+
+  // Describes the level of platform logging to apply to calls and call
+  // responses during workflow executions.
+  enum CallLogLevel {
+    // No call logging level specified.
+    CALL_LOG_LEVEL_UNSPECIFIED = 0;
+
+    // Log all call steps within workflows, all call returns, and all exceptions
+    // raised.
+    LOG_ALL_CALLS = 1;
+
+    // Log only exceptions that are raised from call steps within workflows.
+    LOG_ERRORS_ONLY = 2;
+
+    // Explicitly log nothing.
+    LOG_NONE = 3;
   }
 
   // The resource name of the workflow.
@@ -133,27 +179,31 @@ message Workflow {
   // following properties of a workflow:
   //
   // - [Service account][google.cloud.workflows.v1.Workflow.service_account]
-  // - [Workflow code to be executed][google.cloud.workflows.v1.Workflow.source_contents]
+  // - [Workflow code to be
+  // executed][google.cloud.workflows.v1.Workflow.source_contents]
   //
-  // The format is "000001-a4d", where the first 6 characters define
+  // The format is "000001-a4d", where the first six characters define
   // the zero-padded revision ordinal number. They are followed by a hyphen and
-  // 3 hexadecimal random characters.
+  // three hexadecimal random characters.
   string revision_id = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. The timestamp of when the workflow was created.
-  google.protobuf.Timestamp create_time = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // Output only. The timestamp for when the workflow was created.
+  google.protobuf.Timestamp create_time = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. The last update timestamp of the workflow.
-  google.protobuf.Timestamp update_time = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // Output only. The timestamp for when the workflow was last updated.
+  google.protobuf.Timestamp update_time = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. The timestamp that the latest revision of the workflow
-  // was created.
-  google.protobuf.Timestamp revision_create_time = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // Output only. The timestamp for the latest revision of the workflow's
+  // creation.
+  google.protobuf.Timestamp revision_create_time = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Labels associated with this workflow.
   // Labels can contain at most 64 entries. Keys and values can be no longer
   // than 63 characters and can only contain lowercase letters, numeric
-  // characters, underscores and dashes. Label keys must start with a letter.
+  // characters, underscores, and dashes. Label keys must start with a letter.
   // International characters are allowed.
   map<string, string> labels = 8;
 
@@ -178,6 +228,42 @@ message Workflow {
     // Workflow code to be executed. The size limit is 128KB.
     string source_contents = 10;
   }
+
+  // Optional. The resource name of a KMS crypto key used to encrypt or decrypt
+  // the data associated with the workflow.
+  //
+  // Format:
+  // projects/{project}/locations/{location}/keyRings/{keyRing}/cryptoKeys/{cryptoKey}
+  //
+  // Using `-` as a wildcard for the `{project}` or not providing one at all
+  // will infer the project from the account.
+  //
+  // If not provided, data associated with the workflow will not be
+  // CMEK-encrypted.
+  string crypto_key_name = 11 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "cloudkms.googleapis.com/CryptoKey"
+    }
+  ];
+
+  // Output only. Error regarding the state of the workflow. For example, this
+  // field will have error details if the execution data is unavailable due to
+  // revoked KMS key permissions.
+  StateError state_error = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Describes the level of platform logging to apply to calls and
+  // call responses during executions of this workflow. If both the workflow and
+  // the execution specify a logging level, the execution level takes
+  // precedence.
+  CallLogLevel call_log_level = 13 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. User-defined environment variables associated with this workflow
+  // revision. This map has a maximum length of 20. Each string can take up to
+  // 40KiB. Keys cannot be empty strings and cannot start with “GOOGLE” or
+  // “WORKFLOWS".
+  map<string, string> user_env_vars = 14
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request for the
@@ -193,10 +279,10 @@ message ListWorkflowsRequest {
     }
   ];
 
-  // Maximum number of workflows to return per call. The service may return
-  // fewer than this value. If the value is not specified, a default value of
-  // 500 will be used. The maximum permitted value is 1000 and values greater
-  // than 1000 will be coerced down to 1000.
+  // Maximum number of workflows to return per call. The service might return
+  // fewer than this value even if not at the end of the collection. If a value
+  // is not specified, a default value of 500 is used. The maximum permitted
+  // value is 1000 and values greater than 1000 are coerced down to 1000.
   int32 page_size = 2;
 
   // A page token, received from a previous `ListWorkflows` call.
@@ -209,10 +295,10 @@ message ListWorkflowsRequest {
   // Filter to restrict results to specific workflows.
   string filter = 4;
 
-  // Comma-separated list of fields that that specify the order of the results.
+  // Comma-separated list of fields that specify the order of the results.
   // Default sorting order for a field is ascending. To specify descending order
-  // for a field, append a " desc" suffix.
-  // If not specified, the results will be returned in an unspecified order.
+  // for a field, append a "desc" suffix.
+  // If not specified, the results are returned in an unspecified order.
   string order_by = 5;
 }
 
@@ -220,7 +306,7 @@ message ListWorkflowsRequest {
 // [ListWorkflows][google.cloud.workflows.v1.Workflows.ListWorkflows]
 // method.
 message ListWorkflowsResponse {
-  // The workflows which match the request.
+  // The workflows that match the request.
   repeated Workflow workflows = 1;
 
   // A token, which can be sent as `page_token` to retrieve the next page.
@@ -234,7 +320,7 @@ message ListWorkflowsResponse {
 // Request for the
 // [GetWorkflow][google.cloud.workflows.v1.Workflows.GetWorkflow] method.
 message GetWorkflowRequest {
-  // Required. Name of the workflow which information should be retrieved.
+  // Required. Name of the workflow for which information should be retrieved.
   // Format: projects/{project}/locations/{location}/workflows/{workflow}
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
@@ -242,6 +328,13 @@ message GetWorkflowRequest {
       type: "workflows.googleapis.com/Workflow"
     }
   ];
+
+  // Optional. The revision of the workflow to retrieve. If the revision_id is
+  // empty, the latest revision is retrieved.
+  // The format is "000001-a4d", where the first six characters define
+  // the zero-padded decimal revision number. They are followed by a hyphen and
+  // three hexadecimal characters.
+  string revision_id = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request for the

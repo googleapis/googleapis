@@ -1,0 +1,461 @@
+// Copyright 2023 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.policysimulator.v1;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/policysimulator/v1/explanations.proto";
+import "google/iam/v1/policy.proto";
+import "google/longrunning/operations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+import "google/type/date.proto";
+
+option cc_enable_arenas = true;
+option csharp_namespace = "Google.Cloud.PolicySimulator.V1";
+option go_package = "cloud.google.com/go/policysimulator/apiv1/policysimulatorpb;policysimulatorpb";
+option java_multiple_files = true;
+option java_outer_classname = "SimulatorProto";
+option java_package = "com.google.cloud.policysimulator.v1";
+option php_namespace = "Google\\Cloud\\PolicySimulator\\V1";
+option ruby_package = "Google::Cloud::PolicySimulator::V1";
+
+// Policy Simulator API service.
+//
+// Policy Simulator is a collection of endpoints for creating, running, and
+// viewing a [Replay][google.cloud.policysimulator.v1.Replay]. A
+// [Replay][google.cloud.policysimulator.v1.Replay] is a type of simulation that
+// lets you see how your principals' access to resources might change if you
+// changed your IAM policy.
+//
+// During a [Replay][google.cloud.policysimulator.v1.Replay], Policy Simulator
+// re-evaluates, or replays, past access attempts under both the current policy
+// and  your proposed policy, and compares those results to determine how your
+// principals' access might change under the proposed policy.
+service Simulator {
+  option (google.api.default_host) = "policysimulator.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform";
+
+  // Gets the specified [Replay][google.cloud.policysimulator.v1.Replay]. Each
+  // `Replay` is available for at least 7 days.
+  rpc GetReplay(GetReplayRequest) returns (Replay) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/locations/*/replays/*}"
+      additional_bindings { get: "/v1/{name=folders/*/locations/*/replays/*}" }
+      additional_bindings {
+        get: "/v1/{name=organizations/*/locations/*/replays/*}"
+      }
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Creates and starts a [Replay][google.cloud.policysimulator.v1.Replay] using
+  // the given [ReplayConfig][google.cloud.policysimulator.v1.ReplayConfig].
+  rpc CreateReplay(CreateReplayRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/locations/*}/replays"
+      body: "replay"
+      additional_bindings {
+        post: "/v1/{parent=folders/*/locations/*}/replays"
+        body: "replay"
+      }
+      additional_bindings {
+        post: "/v1/{parent=organizations/*/locations/*}/replays"
+        body: "replay"
+      }
+    };
+    option (google.api.method_signature) = "parent,replay";
+    option (google.longrunning.operation_info) = {
+      response_type: "Replay"
+      metadata_type: "ReplayOperationMetadata"
+    };
+  }
+
+  // Lists the results of running a
+  // [Replay][google.cloud.policysimulator.v1.Replay].
+  rpc ListReplayResults(ListReplayResultsRequest)
+      returns (ListReplayResultsResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*/locations/*/replays/*}/results"
+      additional_bindings {
+        get: "/v1/{parent=folders/*/locations/*/replays/*}/results"
+      }
+      additional_bindings {
+        get: "/v1/{parent=organizations/*/locations/*/replays/*}/results"
+      }
+    };
+    option (google.api.method_signature) = "parent";
+  }
+}
+
+// A resource describing a `Replay`, or simulation.
+message Replay {
+  option (google.api.resource) = {
+    type: "policysimulator.googleapis.com/Replay"
+    pattern: "projects/{project}/locations/{location}/replays/{replay}"
+    pattern: "folders/{folder}/locations/{location}/replays/{replay}"
+    pattern: "organizations/{organization}/locations/{location}/replays/{replay}"
+  };
+
+  // Summary statistics about the replayed log entries.
+  message ResultsSummary {
+    // The total number of log entries replayed.
+    int32 log_count = 1;
+
+    // The number of replayed log entries with no difference between
+    // baseline and simulated policies.
+    int32 unchanged_count = 2;
+
+    // The number of replayed log entries with a difference between baseline and
+    // simulated policies.
+    int32 difference_count = 3;
+
+    // The number of log entries that could not be replayed.
+    int32 error_count = 4;
+
+    // The date of the oldest log entry replayed.
+    google.type.Date oldest_date = 5;
+
+    // The date of the newest log entry replayed.
+    google.type.Date newest_date = 6;
+  }
+
+  // The current state of the [Replay][google.cloud.policysimulator.v1.Replay].
+  enum State {
+    // Default value. This value is unused.
+    STATE_UNSPECIFIED = 0;
+
+    // The `Replay` has not started yet.
+    PENDING = 1;
+
+    // The `Replay` is currently running.
+    RUNNING = 2;
+
+    // The `Replay` has successfully completed.
+    SUCCEEDED = 3;
+
+    // The `Replay` has finished with an error.
+    FAILED = 4;
+  }
+
+  // Output only. The resource name of the `Replay`, which has the following
+  // format:
+  //
+  // `{projects|folders|organizations}/{resource-id}/locations/global/replays/{replay-id}`,
+  // where `{resource-id}` is the ID of the project, folder, or organization
+  // that owns the Replay.
+  //
+  // Example:
+  // `projects/my-example-project/locations/global/replays/506a5f7f-38ce-4d7d-8e03-479ce1833c36`
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The current state of the `Replay`.
+  State state = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Required. The configuration used for the `Replay`.
+  ReplayConfig config = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Output only. Summary statistics about the replayed log entries.
+  ResultsSummary results_summary = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The result of replaying a single access tuple against a simulated state.
+message ReplayResult {
+  option (google.api.resource) = {
+    type: "policysimulator.googleapis.com/ReplayResult"
+    pattern: "projects/{project}/locations/{location}/replays/{replay}/results/{replay_result}"
+    pattern: "folders/{folder}/locations/{location}/replays/{replay}/results/{replay_result}"
+    pattern: "organizations/{organization}/locations/{location}/replays/{replay}/results/{replay_result}"
+  };
+
+  // The result of replaying the access tuple.
+  oneof result {
+    // The difference between the principal's access under the current
+    // (baseline) policies and the principal's access under the proposed
+    // (simulated) policies.
+    //
+    // This field is only included for access tuples that were successfully
+    // replayed and had different results under the current policies and the
+    // proposed policies.
+    ReplayDiff diff = 5;
+
+    // The error that caused the access tuple replay to fail.
+    //
+    // This field is only included for access tuples that were not replayed
+    // successfully.
+    google.rpc.Status error = 6;
+  }
+
+  // The resource name of the `ReplayResult`, in the following format:
+  //
+  // `{projects|folders|organizations}/{resource-id}/locations/global/replays/{replay-id}/results/{replay-result-id}`,
+  // where `{resource-id}` is the ID of the project, folder, or organization
+  // that owns the [Replay][google.cloud.policysimulator.v1.Replay].
+  //
+  // Example:
+  // `projects/my-example-project/locations/global/replays/506a5f7f-38ce-4d7d-8e03-479ce1833c36/results/1234`
+  string name = 1;
+
+  // The [Replay][google.cloud.policysimulator.v1.Replay] that the access tuple
+  // was included in.
+  string parent = 2 [(google.api.resource_reference) = {
+    type: "policysimulator.googleapis.com/Replay"
+  }];
+
+  // The access tuple that was replayed. This field includes information about
+  // the principal, resource, and permission that were involved in the access
+  // attempt.
+  AccessTuple access_tuple = 3;
+
+  // The latest date this access tuple was seen in the logs.
+  google.type.Date last_seen_date = 4;
+}
+
+// Request message for
+// [Simulator.CreateReplay][google.cloud.policysimulator.v1.Simulator.CreateReplay].
+message CreateReplayRequest {
+  // Required. The parent resource where this
+  // [Replay][google.cloud.policysimulator.v1.Replay] will be created. This
+  // resource must be a project, folder, or organization with a location.
+  //
+  // Example: `projects/my-example-project/locations/global`
+  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The [Replay][google.cloud.policysimulator.v1.Replay] to create.
+  // Set `Replay.ReplayConfig` to configure the replay.
+  Replay replay = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Metadata about a Replay operation.
+message ReplayOperationMetadata {
+  // Time when the request was received.
+  google.protobuf.Timestamp start_time = 1;
+}
+
+// Request message for
+// [Simulator.GetReplay][google.cloud.policysimulator.v1.Simulator.GetReplay].
+message GetReplayRequest {
+  // Required. The name of the [Replay][google.cloud.policysimulator.v1.Replay]
+  // to retrieve, in the following format:
+  //
+  // `{projects|folders|organizations}/{resource-id}/locations/global/replays/{replay-id}`,
+  // where `{resource-id}` is the ID of the project, folder, or organization
+  // that owns the `Replay`.
+  //
+  // Example:
+  // `projects/my-example-project/locations/global/replays/506a5f7f-38ce-4d7d-8e03-479ce1833c36`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "policysimulator.googleapis.com/Replay"
+    }
+  ];
+}
+
+// Request message for
+// [Simulator.ListReplayResults][google.cloud.policysimulator.v1.Simulator.ListReplayResults].
+message ListReplayResultsRequest {
+  // Required. The [Replay][google.cloud.policysimulator.v1.Replay] whose
+  // results are listed, in the following format:
+  //
+  // `{projects|folders|organizations}/{resource-id}/locations/global/replays/{replay-id}`
+  //
+  // Example:
+  // `projects/my-project/locations/global/replays/506a5f7f-38ce-4d7d-8e03-479ce1833c36`
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "policysimulator.googleapis.com/Replay"
+    }
+  ];
+
+  // The maximum number of
+  // [ReplayResult][google.cloud.policysimulator.v1.ReplayResult] objects to
+  // return. Defaults to 5000.
+  //
+  // The maximum value is 5000; values above 5000 are rounded down to 5000.
+  int32 page_size = 2;
+
+  // A page token, received from a previous
+  // [Simulator.ListReplayResults][google.cloud.policysimulator.v1.Simulator.ListReplayResults]
+  // call. Provide this token to retrieve the next page of results.
+  //
+  // When paginating, all other parameters provided to
+  // [Simulator.ListReplayResults[] must match the call that provided the page
+  // token.
+  string page_token = 3;
+}
+
+// Response message for
+// [Simulator.ListReplayResults][google.cloud.policysimulator.v1.Simulator.ListReplayResults].
+message ListReplayResultsResponse {
+  // The results of running a [Replay][google.cloud.policysimulator.v1.Replay].
+  repeated ReplayResult replay_results = 1;
+
+  // A token that you can use to retrieve the next page of
+  // [ReplayResult][google.cloud.policysimulator.v1.ReplayResult] objects. If
+  // this field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
+}
+
+// The configuration used for a
+// [Replay][google.cloud.policysimulator.v1.Replay].
+message ReplayConfig {
+  // The source of the logs to use for a
+  // [Replay][google.cloud.policysimulator.v1.Replay].
+  enum LogSource {
+    // An unspecified log source.
+    // If the log source is unspecified, the
+    // [Replay][google.cloud.policysimulator.v1.Replay] defaults to using
+    // `RECENT_ACCESSES`.
+    LOG_SOURCE_UNSPECIFIED = 0;
+
+    // All access logs from the last 90 days. These logs may not include logs
+    // from the most recent 7 days.
+    RECENT_ACCESSES = 1;
+  }
+
+  // A mapping of the resources that you want to simulate policies for and the
+  // policies that you want to simulate.
+  //
+  // Keys are the full resource names for the resources. For example,
+  // `//cloudresourcemanager.googleapis.com/projects/my-project`.
+  // For examples of full resource names for Google Cloud services, see
+  // https://cloud.google.com/iam/help/troubleshooter/full-resource-names.
+  //
+  // Values are [Policy][google.iam.v1.Policy] objects representing the policies
+  // that you want to simulate.
+  //
+  // Replays automatically take into account any IAM policies inherited through
+  // the resource hierarchy, and any policies set on descendant resources. You
+  // do not need to include these policies in the policy overlay.
+  map<string, google.iam.v1.Policy> policy_overlay = 1;
+
+  // The logs to use as input for the
+  // [Replay][google.cloud.policysimulator.v1.Replay].
+  LogSource log_source = 2;
+}
+
+// The difference between the results of evaluating an access tuple under
+// the current (baseline) policies and under the proposed (simulated) policies.
+// This difference explains how a principal's access could change if the
+// proposed policies were applied.
+message ReplayDiff {
+  // A summary and comparison of the principal's access under the current
+  // (baseline) policies and the proposed (simulated) policies for a single
+  // access tuple.
+  //
+  // The evaluation of the principal's access is reported in the
+  // [AccessState][google.cloud.policysimulator.v1.AccessState] field.
+  AccessStateDiff access_diff = 2;
+}
+
+// A summary and comparison of the principal's access under the current
+// (baseline) policies and the proposed (simulated) policies for a single
+// access tuple.
+message AccessStateDiff {
+  // How the principal's access, specified in the AccessState field, changed
+  // between the current (baseline) policies and proposed (simulated) policies.
+  enum AccessChangeType {
+    // Default value. This value is unused.
+    ACCESS_CHANGE_TYPE_UNSPECIFIED = 0;
+
+    // The principal's access did not change.
+    // This includes the case where both baseline and simulated are UNKNOWN,
+    // but the unknown information is equivalent.
+    NO_CHANGE = 1;
+
+    // The principal's access under both the current policies and the proposed
+    // policies is `UNKNOWN`, but the unknown information differs between them.
+    UNKNOWN_CHANGE = 2;
+
+    // The principal had access under the current policies (`GRANTED`), but will
+    // no longer have access after the proposed changes (`NOT_GRANTED`).
+    ACCESS_REVOKED = 3;
+
+    // The principal did not have access under the current policies
+    // (`NOT_GRANTED`), but will have access after the proposed changes
+    // (`GRANTED`).
+    ACCESS_GAINED = 4;
+
+    // This result can occur for the following reasons:
+    //
+    // * The principal had access under the current policies (`GRANTED`), but
+    //   their access after the proposed changes is `UNKNOWN`.
+    //
+    // * The principal's access under the current policies is `UNKNOWN`, but
+    // they
+    //   will not have access after the proposed changes (`NOT_GRANTED`).
+    ACCESS_MAYBE_REVOKED = 5;
+
+    // This result can occur for the following reasons:
+    //
+    // * The principal did not have access under the current policies
+    //   (`NOT_GRANTED`), but their access after the proposed changes is
+    //   `UNKNOWN`.
+    //
+    // * The principal's access under the current policies is `UNKNOWN`, but
+    // they will have access after the proposed changes (`GRANTED`).
+    ACCESS_MAYBE_GAINED = 6;
+  }
+
+  // The results of evaluating the access tuple under the current (baseline)
+  // policies.
+  //
+  // If the [AccessState][google.cloud.policysimulator.v1.AccessState] couldn't
+  // be fully evaluated, this field explains why.
+  ExplainedAccess baseline = 1;
+
+  // The results of evaluating the access tuple under the proposed (simulated)
+  // policies.
+  //
+  // If the AccessState couldn't be fully evaluated, this field explains why.
+  ExplainedAccess simulated = 2;
+
+  // How the principal's access, specified in the AccessState field, changed
+  // between the current (baseline) policies and proposed (simulated) policies.
+  AccessChangeType access_change = 3;
+}
+
+// Details about how a set of policies, listed in
+// [ExplainedPolicy][google.cloud.policysimulator.v1.ExplainedPolicy], resulted
+// in a certain [AccessState][google.cloud.policysimulator.v1.AccessState] when
+// replaying an access tuple.
+message ExplainedAccess {
+  // Whether the principal in the access tuple has permission to access the
+  // resource in the access tuple under the given policies.
+  AccessState access_state = 1;
+
+  // If the [AccessState][google.cloud.policysimulator.v1.AccessState] is
+  // `UNKNOWN`, this field contains the policies that led to that result.
+  //
+  // If the `AccessState` is `GRANTED` or `NOT_GRANTED`, this field is
+  // omitted.
+  repeated ExplainedPolicy policies = 2;
+
+  // If the [AccessState][google.cloud.policysimulator.v1.AccessState] is
+  // `UNKNOWN`, this field contains a list of errors explaining why the result
+  // is `UNKNOWN`.
+  //
+  // If the `AccessState` is `GRANTED` or `NOT_GRANTED`, this field is
+  // omitted.
+  repeated google.rpc.Status errors = 3;
+}
