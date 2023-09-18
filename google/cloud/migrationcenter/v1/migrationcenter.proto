@@ -2382,6 +2382,7 @@ message AssetFrame {
   map<string, string> attributes = 12;
 
   // Asset performance data samples.
+  // Samples that are from more than 40 days ago or after tomorrow are ignored.
   repeated PerformanceSample performance_samples = 13;
 
   // Optional. Trace token is optionally provided to assist with debugging and
@@ -2505,7 +2506,8 @@ message MachineArchitectureDetails {
 // Details about the BIOS.
 message BiosDetails {
   // BIOS name.
-  string bios_name = 1;
+  // This fields is deprecated. Please use the `id` field instead.
+  string bios_name = 1 [deprecated = true];
 
   // BIOS ID.
   string id = 2;
@@ -3212,6 +3214,7 @@ message DiskUsageSample {
 // Performance data sample.
 message PerformanceSample {
   // Time the sample was collected.
+  // If omitted, the frame report time will be used.
   google.protobuf.Timestamp sample_time = 1;
 
   // Memory usage sample.
@@ -3311,7 +3314,29 @@ message Insight {
     // Output only. An insight about potential migrations for an asset.
     MigrationInsight migration_insight = 1
         [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. A generic insight about an asset
+    GenericInsight generic_insight = 2
+        [(google.api.field_behavior) = OUTPUT_ONLY];
   }
+}
+
+// A generic insight about an asset.
+message GenericInsight {
+  // Output only. Represents a globally unique message id for
+  // this insight, can be used for localization purposes, in case message_code
+  // is not yet known by the client use default_message instead.
+  int64 message_id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. In case message_code is not yet known by the client
+  // default_message will be the message to be used instead.
+  string default_message = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Additional information about the insight, each entry can be a
+  // logical entry and must make sense if it is displayed with line breaks
+  // between each entry. Text can contain md style links.
+  repeated string additional_information = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // An insight about potential migrations for an asset.
@@ -3334,6 +3359,36 @@ message ComputeEngineMigrationTarget {
   ComputeEngineShapeDescriptor shape = 1;
 }
 
+// Compute Engine target shape descriptor.
+message ComputeEngineShapeDescriptor {
+  // Memory in mebibytes.
+  int32 memory_mb = 1;
+
+  // Number of physical cores.
+  int32 physical_core_count = 2;
+
+  // Number of logical cores.
+  int32 logical_core_count = 3;
+
+  // Compute Engine machine series.
+  string series = 4;
+
+  // Compute Engine machine type.
+  string machine_type = 5;
+
+  // Compute Engine storage. Never empty.
+  repeated ComputeStorageDescriptor storage = 6;
+}
+
+// Compute Engine storage option descriptor.
+message ComputeStorageDescriptor {
+  // Disk type backing the storage.
+  PersistentDiskType type = 1;
+
+  // Disk size in GiB.
+  int32 size_gb = 2;
+}
+
 // Describes the fit level of an asset for migration to a specific target.
 message FitDescriptor {
   // Fit level.
@@ -3353,24 +3408,6 @@ message FitDescriptor {
 
   // Fit level.
   FitLevel fit_level = 1;
-}
-
-// Compute Engine target shape descriptor.
-message ComputeEngineShapeDescriptor {
-  // Memory in mebibytes.
-  int32 memory_mb = 1;
-
-  // Number of physical cores.
-  int32 physical_core_count = 2;
-
-  // Number of logical cores.
-  int32 logical_core_count = 3;
-
-  // Compute Engine machine series.
-  string series = 4;
-
-  // Compute Engine machine type.
-  string machine_type = 5;
 }
 
 // Message describing an aggregation. The message includes the aggregation type,
@@ -3505,8 +3542,8 @@ message ExecutionReport {
   // Validation errors encountered during the execution of the import job.
   ValidationReport execution_errors = 2;
 
-  // Total number of rows in the import job.
-  int32 total_rows_count = 3;
+  // Output only. Total number of rows in the import job.
+  int32 total_rows_count = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A resource that reports the errors encountered while processing an
@@ -3584,6 +3621,11 @@ message FrameViolationEntry {
 // machines. The set of preferences influence recommendations for migrating
 // virtual machine assets.
 message VirtualMachinePreferences {
+  // Target product for assets using this preference set.
+  // Specify either target product or business goal, but
+  // not both.
+  ComputeMigrationTargetProduct target_product = 2;
+
   // Region preferences for assets using this preference set.
   // If you are unsure which value to set, the migration service API region is
   // often a good value to start with.
@@ -3605,6 +3647,13 @@ message VirtualMachinePreferences {
   // Compute Engine preferences concern insights and recommendations for Compute
   // Engine target.
   ComputeEnginePreferences compute_engine_preferences = 6;
+
+  // Preferences concerning insights and recommendations for
+  // Google Cloud VMware Engine.
+  VmwareEnginePreferences vmware_engine_preferences = 7;
+
+  // Preferences concerning Sole Tenant nodes and virtual machines.
+  SoleTenancyPreferences sole_tenancy_preferences = 8;
 }
 
 // The user preferences relating to Compute Engine target platform.
@@ -3633,6 +3682,111 @@ message MachineSeries {
   // https://cloud.google.com/compute/docs/machine-resource#machine_type_comparison
   // for more details on the available series.
   string code = 1;
+}
+
+// The user preferences relating to Google Cloud VMware Engine target platform.
+message VmwareEnginePreferences {
+  // Type of committed use discount.
+  enum CommitmentPlan {
+    // Unspecified commitment plan.
+    COMMITMENT_PLAN_UNSPECIFIED = 0;
+
+    // No commitment plan (on-demand usage).
+    ON_DEMAND = 1;
+
+    // 1 year commitment (monthly payments).
+    COMMITMENT_1_YEAR_MONTHLY_PAYMENTS = 2;
+
+    // 3 year commitment (monthly payments).
+    COMMITMENT_3_YEAR_MONTHLY_PAYMENTS = 3;
+
+    // 1 year commitment (upfront payment).
+    COMMITMENT_1_YEAR_UPFRONT_PAYMENT = 4;
+
+    // 3 years commitment (upfront payment).
+    COMMITMENT_3_YEAR_UPFRONT_PAYMENT = 5;
+  }
+
+  // CPU overcommit ratio.
+  // Acceptable values are between 1.0 and 8.0, with 0.1 increment.
+  double cpu_overcommit_ratio = 1;
+
+  // Memory overcommit ratio.
+  // Acceptable values are 1.0, 1.25, 1.5, 1.75 and 2.0.
+  double memory_overcommit_ratio = 2;
+
+  // The Deduplication and Compression ratio is based on the logical (Used
+  // Before) space required to store data before applying deduplication and
+  // compression, in relation to the physical (Used After) space required after
+  // applying deduplication and compression. Specifically, the ratio is the Used
+  // Before space divided by the Used After space. For example, if the Used
+  // Before space is 3 GB, but the physical Used After space is 1 GB, the
+  // deduplication and compression ratio is 3x. Acceptable values are
+  // between 1.0 and 4.0.
+  double storage_deduplication_compression_ratio = 3;
+
+  // Commitment plan to consider when calculating costs for virtual machine
+  // insights and recommendations.
+  // If you are unsure which value to set, a 3 year commitment plan is often a
+  // good value to start with.
+  CommitmentPlan commitment_plan = 4;
+}
+
+// Preferences concerning Sole Tenancy nodes and VMs.
+message SoleTenancyPreferences {
+  // Sole Tenancy nodes maintenance policy.
+  enum HostMaintenancePolicy {
+    // Unspecified host maintenance policy.
+    HOST_MAINTENANCE_POLICY_UNSPECIFIED = 0;
+
+    // Default host maintenance policy.
+    HOST_MAINTENANCE_POLICY_DEFAULT = 1;
+
+    // Restart in place host maintenance policy.
+    HOST_MAINTENANCE_POLICY_RESTART_IN_PLACE = 2;
+
+    // Migrate within node group host maintenance policy.
+    HOST_MAINTENANCE_POLICY_MIGRATE_WITHIN_NODE_GROUP = 3;
+  }
+
+  // Type of committed use discount.
+  enum CommitmentPlan {
+    // Unspecified commitment plan.
+    COMMITMENT_PLAN_UNSPECIFIED = 0;
+
+    // No commitment plan (on-demand usage).
+    ON_DEMAND = 1;
+
+    // 1 year commitment.
+    COMMITMENT_1_YEAR = 2;
+
+    // 3 years commitment.
+    COMMITMENT_3_YEAR = 3;
+  }
+
+  // CPU overcommit ratio.
+  // Acceptable values are between 1.0 and 2.0 inclusive.
+  double cpu_overcommit_ratio = 1;
+
+  // Sole Tenancy nodes maintenance policy.
+  HostMaintenancePolicy host_maintenance_policy = 2;
+
+  // Commitment plan to consider when calculating costs for virtual machine
+  // insights and recommendations.
+  // If you are unsure which value to set, a 3 year commitment plan is often a
+  // good value to start with.
+  CommitmentPlan commitment_plan = 3;
+
+  // A list of sole tenant node types.
+  // An empty list means that all possible node types will be considered.
+  repeated SoleTenantNodeType node_types = 4;
+}
+
+// A Sole Tenant node type.
+message SoleTenantNodeType {
+  // Name of the Sole Tenant node. Consult
+  // https://cloud.google.com/compute/docs/nodes/sole-tenant-nodes
+  string node_name = 1;
 }
 
 // The user preferences relating to target regions.
@@ -3775,6 +3929,62 @@ message ReportSummary {
     repeated PersistentDiskType allocated_disk_types = 4;
   }
 
+  // A set of findings that applies to assets destined for VMWare Engine.
+  message VmwareEngineFinding {
+    // Set of regions in which the assets were allocated
+    repeated string allocated_regions = 1;
+
+    // Count of assets which are allocated
+    int64 allocated_asset_count = 2;
+
+    // Set of per-nodetype allocation records
+    repeated VmwareNodeAllocation node_allocations = 3;
+  }
+
+  // Represents assets allocated to a specific VMWare Node type.
+  message VmwareNodeAllocation {
+    // VMWare node type, e.g. "ve1-standard-72"
+    VmwareNode vmware_node = 1;
+
+    // Count of this node type to be provisioned
+    int64 node_count = 2;
+
+    // Count of assets allocated to these nodes
+    int64 allocated_asset_count = 3;
+  }
+
+  // A VMWare Engine Node
+  message VmwareNode {
+    // Code to identify VMware Engine node series, e.g. "ve1-standard-72". Based
+    // on the displayName of
+    // cloud.google.com/vmware-engine/docs/reference/rest/v1/projects.locations.nodeTypes
+    string code = 1;
+  }
+
+  // A set of findings that applies to assets destined for Sole-Tenant nodes.
+  message SoleTenantFinding {
+    // Set of regions in which the assets are allocated
+    repeated string allocated_regions = 1;
+
+    // Count of assets which are allocated
+    int64 allocated_asset_count = 2;
+
+    // Set of per-nodetype allocation records
+    repeated SoleTenantNodeAllocation node_allocations = 3;
+  }
+
+  // Represents the assets allocated to a specific Sole-Tenant node type.
+  message SoleTenantNodeAllocation {
+    // Sole Tenant node type, e.g. "m3-node-128-3904"
+    SoleTenantNodeType node = 1;
+
+    // Count of this node type to be provisioned
+    int64 node_count = 2;
+
+    // Count of assets allocated to these nodes
+    int64 allocated_asset_count = 3;
+  }
+
   // Summary Findings for a specific Group/PreferenceSet combination.
   message GroupPreferenceSetFinding {
     // Display Name of the Preference Set
@@ -3806,6 +4016,12 @@ message ReportSummary {
 
     // A set of findings that applies to Compute Engine machines in the input.
     ComputeEngineFinding compute_engine_finding = 10;
+
+    // A set of findings that applies to VMWare machines in the input.
+    VmwareEngineFinding vmware_engine_finding = 11;
+
+    // A set of findings that applies to Sole-Tenant machines in the input.
+    SoleTenantFinding sole_tenant_finding = 12;
   }
 
   // Summary Findings for a specific Group.
@@ -3819,9 +4035,8 @@ message ReportSummary {
     // Summary statistics for all the assets in this group.
     AssetAggregateStats asset_aggregate_stats = 3;
 
-    // Count of the number of assets in this group which are also included
-    // in another group within the same report.
-    int64 overlapping_asset_count = 4;
+    // This field is deprecated, do not rely on it having a value.
+    int64 overlapping_asset_count = 4 [deprecated = true];
 
     // Findings for each of the PreferenceSets for this group.
     repeated GroupPreferenceSetFinding preference_set_findings = 5;
@@ -3982,6 +4197,21 @@ enum CommitmentPlan {
 
   // 3 years commitment.
   COMMITMENT_PLAN_THREE_YEARS = 3;
+}
+
+// The preference for a specific Google Cloud product platform.
+enum ComputeMigrationTargetProduct {
+  // Unspecified (default value).
+  COMPUTE_MIGRATION_TARGET_PRODUCT_UNSPECIFIED = 0;
+
+  // Prefer to migrate to Google Cloud Compute Engine.
+  COMPUTE_MIGRATION_TARGET_PRODUCT_COMPUTE_ENGINE = 1;
+
+  // Prefer to migrate to Google Cloud VMware Engine.
+  COMPUTE_MIGRATION_TARGET_PRODUCT_VMWARE_ENGINE = 2;
+
+  // Prefer to migrate to Google Cloud Sole Tenant Nodes.
+  COMPUTE_MIGRATION_TARGET_PRODUCT_SOLE_TENANCY = 3;
 }
 
 // Specifies the types of views that provide complete or partial details
