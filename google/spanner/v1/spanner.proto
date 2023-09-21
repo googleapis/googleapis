@@ -288,6 +288,29 @@ service Spanner {
       body: "*"
     };
   }
+
+  // Batches the supplied mutation groups in a collection of efficient
+  // transactions. All mutations in a group are committed atomically. However,
+  // mutations across groups can be committed non-atomically in an unspecified
+  // order and thus, they must be independent of each other. Partial failure is
+  // possible, i.e., some groups may have been committed successfully, while
+  // some may have failed. The results of individual batches are streamed into
+  // the response as the batches are applied.
+  //
+  // BatchWrite requests are not replay protected, meaning that each mutation
+  // group may be applied more than once. Replays of non-idempotent mutations
+  // may have undesirable effects. For example, replays of an insert mutation
+  // may produce an already exists error or if you use generated or commit
+  // timestamp-based keys, it may result in additional rows being added to the
+  // mutation's table. We recommend structuring your mutation groups to be
+  // idempotent to avoid this issue.
+  rpc BatchWrite(BatchWriteRequest) returns (stream BatchWriteResponse) {
+    option (google.api.http) = {
+      post: "/v1/{session=projects/*/instances/*/databases/*/sessions/*}:batchWrite"
+      body: "*"
+    };
+    option (google.api.method_signature) = "session,mutation_groups";
+  }
 }
 
 // The request for [CreateSession][google.spanner.v1.Spanner.CreateSession].
@@ -1039,4 +1062,42 @@ message RollbackRequest {
 
   // Required. The transaction to roll back.
   bytes transaction_id = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The request for [BatchWrite][google.spanner.v1.Spanner.BatchWrite].
+message BatchWriteRequest {
+  // A group of mutations to be committed together. Related mutations should be
+  // placed in a group. For example, two mutations inserting rows with the same
+  // primary key prefix in both parent and child tables are related.
+  message MutationGroup {
+    // Required. The mutations in this group.
+    repeated Mutation mutations = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Required. The session in which the batch request is to be run.
+  string session = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "spanner.googleapis.com/Session" }
+  ];
+
+  // Common options for this request.
+  RequestOptions request_options = 3;
+
+  // Required. The groups of mutations to be applied.
+  repeated MutationGroup mutation_groups = 4
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// The result of applying a batch of mutations.
+message BatchWriteResponse {
+  // The mutation groups applied in this batch. The values index into the
+  // `mutation_groups` field in the corresponding `BatchWriteRequest`.
+  repeated int32 indexes = 1;
+
+  // An `OK` status indicates success. Any other status indicates a failure.
+  google.rpc.Status status = 2;
+
+  // The commit timestamp of the transaction that applied this batch.
+  // Present if `status` is `OK`, absent otherwise.
+  google.protobuf.Timestamp commit_timestamp = 3;
 }
