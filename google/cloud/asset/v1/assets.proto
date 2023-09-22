@@ -306,8 +306,42 @@ message RelatedAsset {
   string relationship_type = 4;
 }
 
+// The key and value for a
+// [tag](https://cloud.google.com/resource-manager/docs/tags/tags-overview),
+message Tag {
+  // TagKey namespaced name, in the format of {ORG_ID}/{TAG_KEY_SHORT_NAME}.
+  optional string tag_key = 1;
+
+  // TagValue namespaced name, in the format of
+  // {ORG_ID}/{TAG_KEY_SHORT_NAME}/{TAG_VALUE_SHORT_NAME}.
+  optional string tag_value = 3;
+
+  // TagValue ID, in the format of tagValues/{TAG_VALUE_ID}.
+  optional string tag_value_id = 4;
+}
+
+// The effective tags and the ancestor resources from which they were inherited.
+message EffectiveTagDetails {
+  // The [full resource
+  // name](https://cloud.google.com/asset-inventory/docs/resource-name-format)
+  // of the ancestor from which an [effective_tag][] is inherited, according to
+  // [tag
+  // inheritance](https://cloud.google.com/resource-manager/docs/tags/tags-overview#inheritance).
+  optional string attached_resource = 1;
+
+  // The effective tags inherited from the
+  // [attached_resource][google.cloud.asset.v1.EffectiveTagDetails.attached_resource].
+  // Note that tags with the same key but different values may attach to
+  // resources at a different hierarchy levels. The lower hierarchy tag value
+  // will overwrite the higher hierarchy tag value of the same tag key. In this
+  // case, the tag value at the higher hierarchy level will be removed. For more
+  // information, see [tag
+  // inheritance](https://cloud.google.com/resource-manager/docs/tags/tags-overview#inheritance).
+  repeated Tag effective_tags = 2;
+}
+
 // A result of Resource Search, containing information of a cloud resource.
-// Next ID: 32
+// Next ID: 34
 message ResourceSearchResult {
   // The full resource name of this resource. Example:
   // `//compute.googleapis.com/projects/my_project_123/zones/zone1/instances/instance1`.
@@ -555,6 +589,9 @@ message ResourceSearchResult {
   // types](https://cloud.google.com/asset-inventory/docs/supported-asset-types#supported_relationship_types).
   map<string, RelatedResources> relationships = 21;
 
+  // This field is only present for the purpose of backward compatibility.
+  // Please use the `tags` field instead.
+  //
   // TagKey namespaced names, in the format of {ORG_ID}/{TAG_KEY_SHORT_NAME}.
   // To search against the `tagKeys`:
   //
@@ -565,8 +602,11 @@ message ResourceSearchResult {
   //
   // * Use a free text query. Example:
   //     - `env`
-  repeated string tag_keys = 23;
+  repeated string tag_keys = 23 [deprecated = true];
 
+  // This field is only present for the purpose of backward compatibility.
+  // Please use the `tags` field instead.
+  //
   // TagValue namespaced names, in the format of
   // {ORG_ID}/{TAG_KEY_SHORT_NAME}/{TAG_VALUE_SHORT_NAME}.
   // To search against the `tagValues`:
@@ -579,18 +619,56 @@ message ResourceSearchResult {
   //
   // * Use a free text query. Example:
   //     - `prod`
-  repeated string tag_values = 25;
+  repeated string tag_values = 25 [deprecated = true];
 
+  // This field is only present for the purpose of backward compatibility.
+  // Please use the `tags` field instead.
+  //
   // TagValue IDs, in the format of tagValues/{TAG_VALUE_ID}.
   // To search against the `tagValueIds`:
   //
   // * Use a field query. Example:
-  //     - `tagValueIds:"456"`
   //     - `tagValueIds="tagValues/456"`
   //
   // * Use a free text query. Example:
   //     - `456`
-  repeated string tag_value_ids = 26;
+  repeated string tag_value_ids = 26 [deprecated = true];
+
+  // The tags directly attached to this resource.
+  //
+  // To search against the `tags`:
+  //
+  // * Use a field query. Example:
+  //     - `tagKeys:"123456789/env*"`
+  //     - `tagKeys="123456789/env"`
+  //     - `tagKeys:"env"`
+  //     - `tagValues:"env"`
+  //     - `tagValues:"env/prod"`
+  //     - `tagValues:"123456789/env/prod*"`
+  //     - `tagValues="123456789/env/prod"`
+  //     - `tagValueIds="tagValues/456"`
+  //
+  // * Use a free text query. Example:
+  //     - `env/prod`
+  repeated Tag tags = 29;
+
+  // The effective tags on this resource. All of the tags that are both attached
+  // to and inherited by a resource are collectively called the effective
+  // tags. For more information, see [tag
+  // inheritance](https://cloud.google.com/resource-manager/docs/tags/tags-overview#inheritance).
+  //
+  // To search against the `effective_tags`:
+  //
+  // * Use a field query. Example:
+  //     - `effectiveTagKeys:"123456789/env*"`
+  //     - `effectiveTagKeys="123456789/env"`
+  //     - `effectiveTagKeys:"env"`
+  //     - `effectiveTagValues:"env"`
+  //     - `effectiveTagValues:"env/prod"`
+  //     - `effectiveTagValues:"123456789/env/prod*"`
+  //     - `effectiveTagValues="123456789/env/prod"`
+  //     - `effectiveTagValueIds="tagValues/456"`
+  repeated EffectiveTagDetails effective_tags = 30;
 
   // The type of this resource's immediate parent, if there is one.
   //
@@ -601,6 +679,21 @@ message ResourceSearchResult {
   // * Use a free text query. Example:
   // `cloudresourcemanager.googleapis.com/Project`
   string parent_asset_type = 103;
+
+  // The actual content of Security Command Center security marks associated
+  // with the asset.
+  //
+  //
+  // Note that both staging & prod SecurityMarks are attached on prod resources.
+  // In CAS preprod/prod, both staging & prod SecurityMarks are ingested and
+  // returned in the following `security_marks` map. In that case, the prefix
+  // "staging." will be added to the keys of all the staging marks.
+  // To search against SCC SecurityMarks field:
+  //
+  //   * Use a field query:
+  //     - query by a given key value pair. Example: `sccSecurityMarks.foo=bar`
+  //     - query by a given key's existence. Example: `sccSecurityMarks.foo:*`
+  map<string, string> scc_security_marks = 32;
 }
 
 // Resource representation as defined by the corresponding service providing the
@@ -824,17 +917,17 @@ message IamPolicyAnalysisResult {
 
   // An identity under analysis.
   message Identity {
-    // The identity name in any form of members appear in
+    // The identity of members, formatted as appear in an
     // [IAM policy
-    // binding](https://cloud.google.com/iam/reference/rest/v1/Binding), such
-    // as:
+    // binding](https://cloud.google.com/iam/reference/rest/v1/Binding). For
+    // example, they might be formatted like the following:
+    //
     // - user:foo@google.com
     // - group:group1@google.com
     // - serviceAccount:s1@prj1.iam.gserviceaccount.com
     // - projectOwner:some_project_id
     // - domain:google.com
     // - allUsers
-    // - etc.
     string name = 1;
 
     // The analysis state of this identity.
