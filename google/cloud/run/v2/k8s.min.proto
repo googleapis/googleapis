@@ -43,7 +43,7 @@ option (google.api.resource_definition) = {
 // A single application container.
 // This specifies both the container to run, the command to run in the container
 // and the arguments to supply to it.
-// Note that additional arguments may be supplied by the system to the container
+// Note that additional arguments can be supplied by the system to the container
 // at runtime.
 message Container {
   // Name of the container specified as a DNS_LABEL (RFC 1123).
@@ -93,6 +93,9 @@ message Container {
   // succeeds. Container will not be added to service endpoints if the probe
   // fails.
   Probe startup_probe = 11;
+
+  // Names of the containers that must start before this container.
+  repeated string depends_on = 12;
 }
 
 // ResourceRequirements describes the compute resource requirements.
@@ -119,7 +122,7 @@ message ResourceRequirements {
 // EnvVar represents an environment variable present in a Container.
 message EnvVar {
   // Required. Name of the environment variable. Must be a C_IDENTIFIER, and
-  // mnay not exceed 32768 characters.
+  // must not exceed 32768 characters.
   string name = 1 [(google.api.field_behavior) = REQUIRED];
 
   oneof values {
@@ -202,6 +205,9 @@ message Volume {
     // mounted. Visit https://cloud.google.com/sql/docs/mysql/connect-run for
     // more information on how to connect Cloud SQL and Cloud Run.
     CloudSqlInstance cloud_sql_instance = 3;
+
+    // Ephemeral storage used as a shared volume.
+    EmptyDirVolumeSource empty_dir = 4;
   }
 }
 
@@ -285,6 +291,37 @@ message CloudSqlInstance {
   repeated string instances = 1;
 }
 
+// In memory (tmpfs) ephemeral storage.
+// It is ephemeral in the sense that when the sandbox is taken down, the data is
+// destroyed with it (it does not persist across sandbox runs).
+message EmptyDirVolumeSource {
+  // The different types of medium supported for EmptyDir.
+  enum Medium {
+    // When not specified, falls back to the default implementation which
+    // is currently in memory (this may change over time).
+    MEDIUM_UNSPECIFIED = 0;
+
+    // Explicitly set the EmptyDir to be in memory. Uses tmpfs.
+    MEMORY = 1;
+  }
+
+  // The medium on which the data is stored. Acceptable values today is only
+  // MEMORY or none. When none, the default will currently be backed by memory
+  // but could change over time. +optional
+  Medium medium = 1;
+
+  // Limit on the storage usable by this EmptyDir volume.
+  // The size limit is also applicable for memory medium.
+  // The maximum usage on memory medium EmptyDir would be the minimum value
+  // between the SizeLimit specified here and the sum of memory limits of all
+  // containers. The default is nil which means that the limit is undefined.
+  // More info:
+  // https://cloud.google.com/run/docs/configuring/in-memory-volumes#configure-volume.
+  // Info in Kubernetes:
+  // https://kubernetes.io/docs/concepts/storage/volumes/#emptydir
+  string size_limit = 2;
+}
+
 // Probe describes a health check to be performed against a container to
 // determine whether it is alive or ready to receive traffic.
 message Probe {
@@ -363,7 +400,7 @@ message GRPCAction {
   int32 port = 1;
 
   // Service is the name of the service to place in the gRPC HealthCheckRequest
-  // (see https://github.com/grpc/grpc/blob/master/doc/health-checking.md). If
+  // (see https://github.com/grpc/grpc/blob/master/doc/health-checking.md ). If
   // this is not specified, the default behavior is defined by gRPC.
   string service = 2;
 }
