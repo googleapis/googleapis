@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,7 +20,9 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/cloud/networkconnectivity/v1/common.proto";
 import "google/longrunning/operations.proto";
+import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -103,6 +105,16 @@ service HubService {
     };
   }
 
+  // Lists the Network Connectivity Center spokes associated with a
+  // specified hub and location. The list includes both spokes that are attached
+  // to the hub and spokes that have been proposed but not yet accepted.
+  rpc ListHubSpokes(ListHubSpokesRequest) returns (ListHubSpokesResponse) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/locations/global/hubs/*}:listSpokes"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
   // Lists the Network Connectivity Center spokes in a specified project and
   // location.
   rpc ListSpokes(ListSpokesRequest) returns (ListSpokesResponse) {
@@ -146,6 +158,38 @@ service HubService {
     };
   }
 
+  // Rejects a Network Connectivity Center spoke from being attached to a hub.
+  // If the spoke was previously in the `ACTIVE` state, it
+  // transitions to the `INACTIVE` state and is no longer able to
+  // connect to other spokes that are attached to the hub.
+  rpc RejectHubSpoke(RejectHubSpokeRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/global/hubs/*}:rejectSpoke"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name,spoke_uri";
+    option (google.longrunning.operation_info) = {
+      response_type: "RejectHubSpokeResponse"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
+  // Accepts a proposal to attach a Network Connectivity Center spoke
+  // to a hub.
+  rpc AcceptHubSpoke(AcceptHubSpokeRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/global/hubs/*}:acceptSpoke"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name,spoke_uri";
+    option (google.longrunning.operation_info) = {
+      response_type: "AcceptHubSpokeResponse"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
   // Deletes a Network Connectivity Center spoke.
   rpc DeleteSpoke(DeleteSpokeRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
@@ -156,6 +200,55 @@ service HubService {
       response_type: "google.protobuf.Empty"
       metadata_type: "OperationMetadata"
     };
+  }
+
+  // Gets details about a Network Connectivity Center route table.
+  rpc GetRouteTable(GetRouteTableRequest) returns (RouteTable) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/locations/global/hubs/*/routeTables/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Gets details about the specified route.
+  rpc GetRoute(GetRouteRequest) returns (Route) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/locations/global/hubs/*/routeTables/*/routes/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Lists routes in a given project.
+  rpc ListRoutes(ListRoutesRequest) returns (ListRoutesResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*/locations/global/hubs/*/routeTables/*}/routes"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Lists route tables in a given project.
+  rpc ListRouteTables(ListRouteTablesRequest)
+      returns (ListRouteTablesResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*/locations/global/hubs/*}/routeTables"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Gets details about a Network Connectivity Center group.
+  rpc GetGroup(GetGroupRequest) returns (Group) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/locations/global/hubs/*/groups/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Lists groups in a given hub.
+  rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*/locations/global/hubs/*}/groups"
+    };
+    option (google.api.method_signature) = "parent";
   }
 }
 
@@ -171,30 +264,77 @@ enum LocationFeature {
   SITE_TO_SITE_SPOKES = 2;
 }
 
+// The route's type
+enum RouteType {
+  // No route type information specified
+  ROUTE_TYPE_UNSPECIFIED = 0;
+
+  // The route leads to a destination within the primary address range of the
+  // VPC network's subnet.
+  VPC_PRIMARY_SUBNET = 1;
+
+  // The route leads to a destination within the secondary address range of the
+  // VPC network's subnet.
+  VPC_SECONDARY_SUBNET = 2;
+}
+
 // The State enum represents the lifecycle stage of a Network Connectivity
 // Center resource.
 enum State {
   // No state information available
   STATE_UNSPECIFIED = 0;
 
-  // The resource's create operation is in progress
+  // The resource's create operation is in progress.
   CREATING = 1;
 
   // The resource is active
   ACTIVE = 2;
 
-  // The resource's Delete operation is in progress
+  // The resource's delete operation is in progress.
   DELETING = 3;
 
-  // The resource's Update operation is in progress
+  // The resource's accept operation is in progress.
+  ACCEPTING = 8;
+
+  // The resource's reject operation is in progress.
+  REJECTING = 9;
+
+  // The resource's update operation is in progress.
   UPDATING = 6;
+
+  // The resource is inactive.
+  INACTIVE = 7;
+
+  // The hub associated with this spoke resource has been deleted.
+  // This state applies to spoke resources only.
+  OBSOLETE = 10;
 }
 
-// A Network Connectivity Center hub is a collection of spokes. A single hub
-// can contain spokes from multiple regions. However, if any of a hub's spokes
-// use the data transfer feature, the resources associated with those spokes
-// must all reside in the same VPC network. Spokes that do not use data
-// transfer can be associated with any VPC network in your project.
+// The SpokeType enum represents the type of spoke. The type
+// reflects the kind of resource that a spoke is associated with.
+enum SpokeType {
+  // Unspecified spoke type.
+  SPOKE_TYPE_UNSPECIFIED = 0;
+
+  // Spokes associated with VPN tunnels.
+  VPN_TUNNEL = 1;
+
+  // Spokes associated with VLAN attachments.
+  INTERCONNECT_ATTACHMENT = 2;
+
+  // Spokes associated with router appliance instances.
+  ROUTER_APPLIANCE = 3;
+
+  // Spokes associated with VPC networks.
+  VPC_NETWORK = 4;
+}
+
+// A Network Connectivity Center hub is a global management resource to which
+// you attach spokes. A single hub can contain spokes from multiple regions.
+// However, if any of a hub's spokes use the site-to-site data transfer feature,
+// the resources associated with those spokes must all be in the same VPC
+// network. Spokes that do not use site-to-site data transfer can be associated
+// with any VPC network in your project.
 message Hub {
   option (google.api.resource) = {
     type: "networkconnectivity.googleapis.com/Hub"
@@ -214,8 +354,8 @@ message Hub {
   google.protobuf.Timestamp update_time = 3
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Optional labels in key:value format. For more information about labels, see
-  // [Requirements for
+  // Optional labels in key-value pair format. For more information about
+  // labels, see [Requirements for
   // labels](https://cloud.google.com/resource-manager/docs/creating-managing-labels#requirements).
   map<string, string> labels = 4;
 
@@ -235,6 +375,21 @@ message Hub {
   // This field is read-only. Network Connectivity Center automatically
   // populates it based on the set of spokes attached to the hub.
   repeated RoutingVPC routing_vpcs = 10;
+
+  // Output only. The route tables that belong to this hub. They use the
+  // following form:
+  //    `projects/{project_number}/locations/global/hubs/{hub_id}/routeTables/{route_table_id}`
+  //
+  // This field is read-only. Network Connectivity Center automatically
+  // populates it based on the route tables nested under the hub.
+  repeated string route_tables = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. A summary of the spokes associated with a hub. The
+  // summary includes a count of spokes according to type
+  // and according to state. If any spokes are inactive,
+  // the summary also lists the reasons they are inactive,
+  // including a count for each reason.
+  SpokeSummary spoke_summary = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // RoutingVPC contains information about the VPC networks associated
@@ -254,20 +409,52 @@ message RoutingVPC {
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
-// A Network Connectivity Center spoke represents a connection between your
-// Google Cloud network resources and a non-Google-Cloud network.
+// A Network Connectivity Center spoke represents one or more network
+// connectivity resources.
 //
-// When you create a spoke, you associate it with a hub. You must also identify
-// a value for exactly one of the following fields:
+// When you create a spoke, you associate it with a hub. You must also
+// identify a value for exactly one of the following fields:
 //
 // * linked_vpn_tunnels
 // * linked_interconnect_attachments
 // * linked_router_appliance_instances
+// * linked_vpc_network
 message Spoke {
   option (google.api.resource) = {
     type: "networkconnectivity.googleapis.com/Spoke"
     pattern: "projects/{project}/locations/{location}/spokes/{spoke}"
   };
+
+  // The reason a spoke is inactive.
+  message StateReason {
+    // The Code enum represents the various reasons a state can be `INACTIVE`.
+    enum Code {
+      // No information available.
+      CODE_UNSPECIFIED = 0;
+
+      // The proposed spoke is pending review.
+      PENDING_REVIEW = 1;
+
+      // The proposed spoke has been rejected by the hub administrator.
+      REJECTED = 2;
+
+      // The spoke has been deactivated internally.
+      PAUSED = 3;
+
+      // Network Connectivity Center encountered errors while accepting
+      // the spoke.
+      FAILED = 4;
+    }
+
+    // The code associated with this reason.
+    Code code = 1;
+
+    // Human-readable details about this reason.
+    string message = 2;
+
+    // Additional information provided by the user in the RejectSpoke call.
+    string user_details = 3;
+  }
 
   // Immutable. The name of the spoke. Spoke names must be unique. They use the
   // following form:
@@ -282,8 +469,8 @@ message Spoke {
   google.protobuf.Timestamp update_time = 3
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Optional labels in key:value format. For more information about labels, see
-  // [Requirements for
+  // Optional labels in key-value pair format. For more information about
+  // labels, see [Requirements for
   // labels](https://cloud.google.com/resource-manager/docs/creating-managing-labels#requirements).
   map<string, string> labels = 4;
 
@@ -298,6 +485,14 @@ message Spoke {
     }
   ];
 
+  // Optional. The name of the group that this spoke is associated with.
+  string group = 23 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/Group"
+    }
+  ];
+
   // VPN tunnels that are associated with the spoke.
   LinkedVpnTunnels linked_vpn_tunnels = 17;
 
@@ -307,13 +502,163 @@ message Spoke {
   // Router appliance instances that are associated with the spoke.
   LinkedRouterApplianceInstances linked_router_appliance_instances = 19;
 
+  // Optional. VPC network that is associated with the spoke.
+  LinkedVpcNetwork linked_vpc_network = 20
+      [(google.api.field_behavior) = OPTIONAL];
+
   // Output only. The Google-generated UUID for the spoke. This value is unique
   // across all spoke resources. If a spoke is deleted and another with the same
-  // name is created, the new spoke is assigned a different unique_id.
+  // name is created, the new spoke is assigned a different `unique_id`.
   string unique_id = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The current lifecycle state of this spoke.
   State state = 15 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The reasons for current state of the spoke. Only present when
+  // the spoke is in the `INACTIVE` state.
+  repeated StateReason reasons = 21 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The type of resource associated with the spoke.
+  SpokeType spoke_type = 22 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+message RouteTable {
+  option (google.api.resource) = {
+    type: "networkconnectivity.googleapis.com/RouteTable"
+    pattern: "projects/{project}/locations/global/hubs/{hub}/routeTables/{route_table}"
+  };
+
+  // Immutable. The name of the route table. Route table names must be unique.
+  // They use the following form:
+  //      `projects/{project_number}/locations/global/hubs/{hub}/routeTables/{route_table_id}`
+  string name = 1 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Output only. The time the route table was created.
+  google.protobuf.Timestamp create_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time the route table was last updated.
+  google.protobuf.Timestamp update_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional labels in key-value pair format. For more information about
+  // labels, see [Requirements for
+  // labels](https://cloud.google.com/resource-manager/docs/creating-managing-labels#requirements).
+  map<string, string> labels = 4;
+
+  // An optional description of the route table.
+  string description = 5;
+
+  // Output only. The Google-generated UUID for the route table. This value is
+  // unique across all route table resources. If a route table is deleted and
+  // another with the same name is created, the new route table is assigned
+  // a different `uid`.
+  string uid = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The current lifecycle state of this route table.
+  State state = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A route defines a path from VM instances within a spoke to a specific
+// destination resource. Only VPC spokes have routes.
+message Route {
+  option (google.api.resource) = {
+    type: "networkconnectivity.googleapis.com/HubRoute"
+    pattern: "projects/{project}/locations/global/hubs/{hub}/routeTables/{route_table}/routes/{route}"
+  };
+
+  // Immutable. The name of the route. Route names must be unique. Route names
+  // use the following form:
+  //      `projects/{project_number}/locations/global/hubs/{hub}/routeTables/{route_table_id}/routes/{route_id}`
+  string name = 3 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Output only. The time the route was created.
+  google.protobuf.Timestamp create_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time the route was last updated.
+  google.protobuf.Timestamp update_time = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The destination IP address range.
+  string ip_cidr_range = 1;
+
+  // Output only. The route's type. Its type is determined by the properties of
+  // its IP address range.
+  RouteType type = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Immutable. The destination VPC network for packets on this route.
+  NextHopVpcNetwork next_hop_vpc_network = 2
+      [(google.api.field_behavior) = IMMUTABLE];
+
+  // Optional labels in key-value pair format. For more information about
+  // labels, see [Requirements for
+  // labels](https://cloud.google.com/resource-manager/docs/creating-managing-labels#requirements).
+  map<string, string> labels = 6;
+
+  // An optional description of the route.
+  string description = 7;
+
+  // Output only. The Google-generated UUID for the route. This value is unique
+  // across all Network Connectivity Center route resources. If a
+  // route is deleted and another with the same name is created,
+  // the new route is assigned a different `uid`.
+  string uid = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The current lifecycle state of the route.
+  State state = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Immutable. The spoke that this route leads to.
+  // Example: projects/12345/locations/global/spokes/SPOKE
+  string spoke = 11 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/Spoke"
+    }
+  ];
+
+  // Output only. The location of the route.
+  // Uses the following form: "projects/{project}/locations/{location}"
+  // Example: projects/1234/locations/us-central1
+  string location = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A group represents a subset of spokes attached to a hub.
+message Group {
+  option (google.api.resource) = {
+    type: "networkconnectivity.googleapis.com/Group"
+    pattern: "projects/{project}/locations/global/hubs/{hub}/groups/{group}"
+  };
+
+  // Immutable. The name of the group. Group names must be unique. They
+  // use the following form:
+  //      `projects/{project_number}/locations/global/hubs/{hub}/groups/{group_id}`
+  string name = 1 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Output only. The time the group was created.
+  google.protobuf.Timestamp create_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time the group was last updated.
+  google.protobuf.Timestamp update_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Labels in key-value pair format. For more information about
+  // labels, see [Requirements for
+  // labels](https://cloud.google.com/resource-manager/docs/creating-managing-labels#requirements).
+  map<string, string> labels = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The description of the group.
+  string description = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The Google-generated UUID for the group. This value is unique
+  // across all group resources. If a group is deleted and
+  // another with the same name is created, the new route table is assigned
+  // a different unique_id.
+  string uid = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The current lifecycle state of this group.
+  State state = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Request for
@@ -328,13 +673,13 @@ message ListHubsRequest {
     }
   ];
 
-  // The maximum number of results per page that should be returned.
+  // The maximum number of results per page to return.
   int32 page_size = 2;
 
   // The page token.
   string page_token = 3;
 
-  // An expression that filters the results listed in the response.
+  // An expression that filters the list of results.
   string filter = 4;
 
   // Sort the results by a certain order.
@@ -348,8 +693,9 @@ message ListHubsResponse {
   // The requested hubs.
   repeated Hub hubs = 1;
 
-  // The next pagination token in the List response. It should be used as
-  // page_token for the following request. An empty value means no more result.
+  // The token for the next page of the response. To see more results,
+  // use this value as the page_token for your next request. If this value
+  // is empty, there are no more results.
   string next_page_token = 2;
 
   // Locations that could not be reached.
@@ -387,11 +733,11 @@ message CreateHubRequest {
   // Required. The initial values for a new hub.
   Hub hub = 3 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. A unique request ID (optional). If you specify this ID, you can
-  // use it in cases when you need to retry your request. When you need to
-  // retry, this ID lets the server know that it can ignore the request if it
-  // has already been completed. The server guarantees that for at least 60
-  // minutes after the first request.
+  // Optional. A request ID to identify requests. Specify a unique request ID so
+  // that if you must retry your request, the server knows to ignore the request
+  // if it has already been completed. The server guarantees that a request
+  // doesn't result in creation of duplicate commitments for at least 60
+  // minutes.
   //
   // For example, consider a situation where you make an initial request and
   // the request times out. If you make the request again with the same request
@@ -419,11 +765,11 @@ message UpdateHubRequest {
   // Required. The state that the hub should be in after the update.
   Hub hub = 2 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. A unique request ID (optional). If you specify this ID, you can
-  // use it in cases when you need to retry your request. When you need to
-  // retry, this ID lets the server know that it can ignore the request if it
-  // has already been completed. The server guarantees that for at least 60
-  // minutes after the first request.
+  // Optional. A request ID to identify requests. Specify a unique request ID so
+  // that if you must retry your request, the server knows to ignore the request
+  // if it has already been completed. The server guarantees that a request
+  // doesn't result in creation of duplicate commitments for at least 60
+  // minutes.
   //
   // For example, consider a situation where you make an initial request and
   // the request times out. If you make the request again with the same request
@@ -447,11 +793,11 @@ message DeleteHubRequest {
     }
   ];
 
-  // Optional. A unique request ID (optional). If you specify this ID, you can
-  // use it in cases when you need to retry your request. When you need to
-  // retry, this ID lets the server know that it can ignore the request if it
-  // has already been completed. The server guarantees that for at least 60
-  // minutes after the first request.
+  // Optional. A request ID to identify requests. Specify a unique request ID so
+  // that if you must retry your request, the server knows to ignore the request
+  // if it has already been completed. The server guarantees that a request
+  // doesn't result in creation of duplicate commitments for at least 60
+  // minutes.
   //
   // For example, consider a situation where you make an initial request and
   // the request times out. If you make the request again with the same request
@@ -465,6 +811,79 @@ message DeleteHubRequest {
 }
 
 // The request for
+// [HubService.ListHubSpokes][google.cloud.networkconnectivity.v1.HubService.ListHubSpokes].
+//
+message ListHubSpokesRequest {
+  // Enum that controls which spoke fields are included in the response.
+  enum SpokeView {
+    // The spoke view is unspecified. When the spoke view is unspecified, the
+    // API returns the same fields as the `BASIC` view.
+    SPOKE_VIEW_UNSPECIFIED = 0;
+
+    // Includes `name`, `create_time`, `hub`, `unique_id`, `state`, `reasons`,
+    // and `spoke_type`. This is the default value.
+    BASIC = 1;
+
+    // Includes all spoke fields except `labels`.
+    // You can use the `DETAILED` view only when you set the `spoke_locations`
+    // field to `[global]`.
+    DETAILED = 2;
+  }
+
+  // Required. The name of the hub.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/Hub"
+    }
+  ];
+
+  // A list of locations.
+  // Specify one of the following: `[global]`, a single region (for
+  // example, `[us-central1]`), or a combination of
+  // values (for example, `[global, us-central1, us-west1]`).
+  // If the spoke_locations field is populated, the list of results
+  // includes only spokes in the specified location.
+  // If the spoke_locations field is not populated, the list of results
+  // includes spokes in all locations.
+  repeated string spoke_locations = 2;
+
+  // The maximum number of results to return per page.
+  int32 page_size = 3;
+
+  // The page token.
+  string page_token = 4;
+
+  // An expression that filters the list of results.
+  string filter = 5;
+
+  // Sort the results by name or create_time.
+  string order_by = 6;
+
+  // The view of the spoke to return.
+  // The view that you use determines which spoke fields are included in the
+  // response.
+  SpokeView view = 7;
+}
+
+// The response for
+// [HubService.ListHubSpokes][google.cloud.networkconnectivity.v1.HubService.ListHubSpokes].
+message ListHubSpokesResponse {
+  // The requested spokes.
+  // The spoke fields can be partially populated based on the `view` field in
+  // the request message.
+  repeated Spoke spokes = 1;
+
+  // The token for the next page of the response. To see more results,
+  // use this value as the page_token for your next request. If this value
+  // is empty, there are no more results.
+  string next_page_token = 2;
+
+  // Locations that could not be reached.
+  repeated string unreachable = 3;
+}
+
+// The request for
 // [HubService.ListSpokes][google.cloud.networkconnectivity.v1.HubService.ListSpokes].
 message ListSpokesRequest {
   // Required. The parent resource.
@@ -475,13 +894,13 @@ message ListSpokesRequest {
     }
   ];
 
-  // The maximum number of results per page that should be returned.
+  // The maximum number of results to return per page.
   int32 page_size = 2;
 
   // The page token.
   string page_token = 3;
 
-  // An expression that filters the results listed in the response.
+  // An expression that filters the list of results.
   string filter = 4;
 
   // Sort the results by a certain order.
@@ -494,8 +913,9 @@ message ListSpokesResponse {
   // The requested spokes.
   repeated Spoke spokes = 1;
 
-  // The next pagination token in the List response. It should be used as
-  // page_token for the following request. An empty value means no more result.
+  // The token for the next page of the response. To see more results,
+  // use this value as the page_token for your next request. If this value
+  // is empty, there are no more results.
   string next_page_token = 2;
 
   // Locations that could not be reached.
@@ -531,11 +951,11 @@ message CreateSpokeRequest {
   // Required. The initial values for a new spoke.
   Spoke spoke = 3 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. A unique request ID (optional). If you specify this ID, you can
-  // use it in cases when you need to retry your request. When you need to
-  // retry, this ID lets the server know that it can ignore the request if it
-  // has already been completed. The server guarantees that for at least 60
-  // minutes after the first request.
+  // Optional. A request ID to identify requests. Specify a unique request ID so
+  // that if you must retry your request, the server knows to ignore the request
+  // if it has already been completed. The server guarantees that a request
+  // doesn't result in creation of duplicate commitments for at least 60
+  // minutes.
   //
   // For example, consider a situation where you make an initial request and
   // the request times out. If you make the request again with the same request
@@ -563,11 +983,11 @@ message UpdateSpokeRequest {
   // Required. The state that the spoke should be in after the update.
   Spoke spoke = 2 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. A unique request ID (optional). If you specify this ID, you can
-  // use it in cases when you need to retry your request. When you need to
-  // retry, this ID lets the server know that it can ignore the request if it
-  // has already been completed. The server guarantees that for at least 60
-  // minutes after the first request.
+  // Optional. A request ID to identify requests. Specify a unique request ID so
+  // that if you must retry your request, the server knows to ignore the request
+  // if it has already been completed. The server guarantees that a request
+  // doesn't result in creation of duplicate commitments for at least 60
+  // minutes.
   //
   // For example, consider a situation where you make an initial request and
   // the request times out. If you make the request again with the same request
@@ -591,11 +1011,11 @@ message DeleteSpokeRequest {
     }
   ];
 
-  // Optional. A unique request ID (optional). If you specify this ID, you can
-  // use it in cases when you need to retry your request. When you need to
-  // retry, this ID lets the server know that it can ignore the request if it
-  // has already been completed. The server guarantees that for at least 60
-  // minutes after the first request.
+  // Optional. A request ID to identify requests. Specify a unique request ID so
+  // that if you must retry your request, the server knows to ignore the request
+  // if it has already been completed. The server guarantees that a request
+  // doesn't result in creation of duplicate commitments for at least 60
+  // minutes.
   //
   // For example, consider a situation where you make an initial request and
   // the request times out. If you make the request again with the same request
@@ -606,6 +1026,242 @@ message DeleteSpokeRequest {
   // The request ID must be a valid UUID, with the exception that zero UUID is
   // not supported (00000000-0000-0000-0000-000000000000).
   string request_id = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The request for
+// [HubService.AcceptHubSpoke][google.cloud.networkconnectivity.v1.HubService.AcceptHubSpoke].
+message AcceptHubSpokeRequest {
+  // Required. The name of the hub into which to accept the spoke.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/Hub"
+    }
+  ];
+
+  // Required. The URI of the spoke to accept into the hub.
+  string spoke_uri = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/Spoke"
+    }
+  ];
+
+  // Optional. A request ID to identify requests. Specify a unique request ID so
+  // that if you must retry your request, the server knows to ignore the request
+  // if it has already been completed. The server guarantees that a request
+  // doesn't result in creation of duplicate commitments for at least 60
+  // minutes.
+  //
+  // For example, consider a situation where you make an initial request and
+  // the request times out. If you make the request again with the same request
+  // ID, the server can check to see whether the original operation
+  // was received. If it was, the server ignores the second request. This
+  // behavior prevents clients from mistakenly creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID, with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The response for
+// [HubService.AcceptHubSpoke][google.cloud.networkconnectivity.v1.HubService.AcceptHubSpoke].
+message AcceptHubSpokeResponse {
+  // The spoke that was operated on.
+  Spoke spoke = 1;
+}
+
+// The request for
+// [HubService.RejectHubSpoke][google.cloud.networkconnectivity.v1.HubService.RejectHubSpoke].
+message RejectHubSpokeRequest {
+  // Required. The name of the hub from which to reject the spoke.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/Hub"
+    }
+  ];
+
+  // Required. The URI of the spoke to reject from the hub.
+  string spoke_uri = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/Spoke"
+    }
+  ];
+
+  // Optional. A request ID to identify requests. Specify a unique request ID so
+  // that if you must retry your request, the server knows to ignore the request
+  // if it has already been completed. The server guarantees that a request
+  // doesn't result in creation of duplicate commitments for at least 60
+  // minutes.
+  //
+  // For example, consider a situation where you make an initial request and
+  // the request times out. If you make the request again with the same request
+  // ID, the server can check to see whether the original operation
+  // was received. If it was, the server ignores the second request. This
+  // behavior prevents clients from mistakenly creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID, with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Additional information provided by the hub administrator.
+  string details = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The response for
+// [HubService.RejectHubSpoke][google.cloud.networkconnectivity.v1.HubService.RejectHubSpoke].
+message RejectHubSpokeResponse {
+  // The spoke that was operated on.
+  Spoke spoke = 1;
+}
+
+// The request for
+// [HubService.GetRouteTable][google.cloud.networkconnectivity.v1.HubService.GetRouteTable].
+message GetRouteTableRequest {
+  // Required. The name of the route table resource.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/RouteTable"
+    }
+  ];
+}
+
+// The request for
+// [HubService.GetRoute][google.cloud.networkconnectivity.v1.HubService.GetRoute].
+message GetRouteRequest {
+  // Required. The name of the route resource.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/HubRoute"
+    }
+  ];
+}
+
+// Request for
+// [HubService.ListRoutes][google.cloud.networkconnectivity.v1.HubService.ListRoutes]
+// method.
+message ListRoutesRequest {
+  // Required. The parent resource's name.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/RouteTable"
+    }
+  ];
+
+  // The maximum number of results to return per page.
+  int32 page_size = 2;
+
+  // The page token.
+  string page_token = 3;
+
+  // An expression that filters the list of results.
+  string filter = 4;
+
+  // Sort the results by a certain order.
+  string order_by = 5;
+}
+
+// Response for
+// [HubService.ListRoutes][google.cloud.networkconnectivity.v1.HubService.ListRoutes]
+// method.
+message ListRoutesResponse {
+  // The requested routes.
+  repeated Route routes = 1;
+
+  // The token for the next page of the response. To see more results,
+  // use this value as the page_token for your next request. If this value
+  // is empty, there are no more results.
+  string next_page_token = 2;
+
+  // RouteTables that could not be reached.
+  repeated string unreachable = 3;
+}
+
+// Request for
+// [HubService.ListRouteTables][google.cloud.networkconnectivity.v1.HubService.ListRouteTables]
+// method.
+message ListRouteTablesRequest {
+  // Required. The parent resource's name.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/Hub"
+    }
+  ];
+
+  // The maximum number of results to return per page.
+  int32 page_size = 2;
+
+  // The page token.
+  string page_token = 3;
+
+  // An expression that filters the list of results.
+  string filter = 4;
+
+  // Sort the results by a certain order.
+  string order_by = 5;
+}
+
+// Response for
+// [HubService.ListRouteTables][google.cloud.networkconnectivity.v1.HubService.ListRouteTables]
+// method.
+message ListRouteTablesResponse {
+  // The requested route tables.
+  repeated RouteTable route_tables = 1;
+
+  // The token for the next page of the response. To see more results,
+  // use this value as the page_token for your next request. If this value
+  // is empty, there are no more results.
+  string next_page_token = 2;
+
+  // Hubs that could not be reached.
+  repeated string unreachable = 3;
+}
+
+// Request for
+// [HubService.ListGroups][google.cloud.networkconnectivity.v1.HubService.ListGroups]
+// method.
+message ListGroupsRequest {
+  // Required. The parent resource's name.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/Hub"
+    }
+  ];
+
+  // The maximum number of results to return per page.
+  int32 page_size = 2;
+
+  // The page token.
+  string page_token = 3;
+
+  // An expression that filters the list of results.
+  string filter = 4;
+
+  // Sort the results by a certain order.
+  string order_by = 5;
+}
+
+// Response for
+// [HubService.ListGroups][google.cloud.networkconnectivity.v1.HubService.ListGroups]
+// method.
+message ListGroupsResponse {
+  // The requested groups.
+  repeated Group groups = 1;
+
+  // The token for the next page of the response. To see more results,
+  // use this value as the page_token for your next request. If this value
+  // is empty, there are no more results.
+  string next_page_token = 2;
+
+  // Hubs that could not be reached.
+  repeated string unreachable = 3;
 }
 
 // A collection of Cloud VPN tunnel resources. These resources should be
@@ -673,6 +1329,19 @@ message LinkedRouterApplianceInstances {
   ];
 }
 
+// An existing VPC network.
+message LinkedVpcNetwork {
+  // Required. The URI of the VPC network resource.
+  string uri = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "compute.googleapis.com/Network" }
+  ];
+
+  // Optional. IP ranges encompassing the subnets to be excluded from peering.
+  repeated string exclude_export_ranges = 2
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
 // A router appliance instance is a Compute Engine virtual machine (VM) instance
 // that acts as a BGP speaker. A router appliance instance is specified by the
 // URI of the VM and the internal IP address of one of the VM's network
@@ -691,4 +1360,79 @@ message RouterApplianceInstance {
 message LocationMetadata {
   // List of supported features
   repeated LocationFeature location_features = 1;
+}
+
+message NextHopVpcNetwork {
+  // The URI of the VPC network resource
+  string uri = 1 [
+    (google.api.resource_reference) = { type: "compute.googleapis.com/Network" }
+  ];
+}
+
+// Summarizes information about the spokes associated with a hub.
+// The summary includes a count of spokes according to type
+// and according to state. If any spokes are inactive,
+// the summary also lists the reasons they are inactive,
+// including a count for each reason.
+message SpokeSummary {
+  // The number of spokes of a given type that are associated
+  // with a specific hub. The type indicates what kind of
+  // resource is associated with the spoke.
+  message SpokeTypeCount {
+    // Output only. The type of the spokes.
+    SpokeType spoke_type = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The total number of spokes of this type that are
+    // associated with the hub.
+    int64 count = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // The number of spokes that are in a particular state
+  // and associated with a given hub.
+  message SpokeStateCount {
+    // Output only. The state of the spokes.
+    State state = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The total number of spokes that are in this state
+    // and associated with a given hub.
+    int64 count = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // The number of spokes in the hub that are inactive for this reason.
+  message SpokeStateReasonCount {
+    // Output only. The reason that a spoke is inactive.
+    Spoke.StateReason.Code state_reason_code = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The total number of spokes that are inactive for a
+    // particular reason and associated with a given hub.
+    int64 count = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Output only. Counts the number of spokes of each type that are
+  // associated with a specific hub.
+  repeated SpokeTypeCount spoke_type_counts = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Counts the number of spokes that are in each state
+  // and associated with a given hub.
+  repeated SpokeStateCount spoke_state_counts = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Counts the number of spokes that are inactive for each
+  // possible reason and associated with a given hub.
+  repeated SpokeStateReasonCount spoke_state_reason_counts = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The request for
+// [HubService.GetGroup][google.cloud.networkconnectivity.v1.HubService.GetGroup].
+message GetGroupRequest {
+  // Required. The name of the route table resource.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/Group"
+    }
+  ];
 }
