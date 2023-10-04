@@ -23,6 +23,7 @@ import "google/api/resource.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
 
 option csharp_namespace = "Google.Cloud.RecaptchaEnterprise.V1";
 option go_package = "cloud.google.com/go/recaptchaenterprise/v2/apiv1/recaptchaenterprisepb;recaptchaenterprisepb";
@@ -115,7 +116,7 @@ service RecaptchaEnterpriseService {
   // Migrates an existing key from reCAPTCHA to reCAPTCHA Enterprise.
   // Once a key is migrated, it can be used from either product. SiteVerify
   // requests are billed as CreateAssessment calls. You must be
-  // authenticated as one of the current owners of the reCAPTCHA Site Key, and
+  // authenticated as one of the current owners of the reCAPTCHA Key, and
   // your user must have the reCAPTCHA Enterprise Admin IAM role in the
   // destination project.
   rpc MigrateKey(MigrateKeyRequest) returns (Key) {
@@ -130,6 +131,54 @@ service RecaptchaEnterpriseService {
   rpc GetMetrics(GetMetricsRequest) returns (Metrics) {
     option (google.api.http) = {
       get: "/v1/{name=projects/*/keys/*/metrics}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Creates a new FirewallPolicy, specifying conditions at which reCAPTCHA
+  // Enterprise actions can be executed.
+  // A project may have a maximum of 1000 policies.
+  rpc CreateFirewallPolicy(CreateFirewallPolicyRequest)
+      returns (FirewallPolicy) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*}/firewallpolicies"
+      body: "firewall_policy"
+    };
+    option (google.api.method_signature) = "parent,firewall_policy";
+  }
+
+  // Returns the list of all firewall policies that belong to a project.
+  rpc ListFirewallPolicies(ListFirewallPoliciesRequest)
+      returns (ListFirewallPoliciesResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*}/firewallpolicies"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Returns the specified firewall policy.
+  rpc GetFirewallPolicy(GetFirewallPolicyRequest) returns (FirewallPolicy) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/firewallpolicies/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Updates the specified firewall policy.
+  rpc UpdateFirewallPolicy(UpdateFirewallPolicyRequest)
+      returns (FirewallPolicy) {
+    option (google.api.http) = {
+      patch: "/v1/{firewall_policy.name=projects/*/firewallpolicies/*}"
+      body: "firewall_policy"
+    };
+    option (google.api.method_signature) = "firewall_policy,update_mask";
+  }
+
+  // Deletes the specified firewall policy.
+  rpc DeleteFirewallPolicy(DeleteFirewallPolicyRequest)
+      returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/v1/{name=projects/*/firewallpolicies/*}"
     };
     option (google.api.method_signature) = "name";
   }
@@ -168,7 +217,7 @@ service RecaptchaEnterpriseService {
 // The create assessment request message.
 message CreateAssessmentRequest {
   // Required. The name of the project in which the assessment will be created,
-  // in the format "projects/{project}".
+  // in the format `projects/{project}`.
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -389,7 +438,7 @@ message AnnotateAssessmentRequest {
   }
 
   // Required. The resource name of the Assessment, in the format
-  // "projects/{project}/assessments/{assessment}".
+  // `projects/{project}/assessments/{assessment}`.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -538,7 +587,7 @@ message Assessment {
   };
 
   // Output only. The resource name for the Assessment in the format
-  // "projects/{project}/assessments/{assessment}".
+  // `projects/{project}/assessments/{assessment}`.
   string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // The event being assessed.
@@ -563,8 +612,16 @@ message Assessment {
   // are used to to check for leaks privately without sharing user credentials.
   PrivatePasswordLeakVerification private_password_leak_verification = 8;
 
+  // Assessment returned when firewall policies belonging to the project are
+  // evaluated using the field firewall_policy_evaluation.
+  FirewallPolicyAssessment firewall_policy_assessment = 10;
+
   // Assessment returned by Fraud Prevention when TransactionData is provided.
   FraudPreventionAssessment fraud_prevention_assessment = 11;
+
+  // Output only. Fraud Signals specific to the users involved in a payment
+  // transaction.
+  FraudSignals fraud_signals = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // The event being assessed.
@@ -593,6 +650,30 @@ message Event {
   // Optional. Unique stable hashed user identifier for the request. The
   // identifier must be hashed using hmac-sha256 with stable secret.
   bytes hashed_account_id = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Flag for a reCAPTCHA express request for an assessment without a
+  // token. If enabled, `site_key` must reference a SCORE key with WAF feature
+  // set to EXPRESS.
+  bool express = 14 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The URI resource the user requested that triggered an assessment.
+  string requested_uri = 8 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Flag for running WAF token assessment.
+  // If enabled, the token must be specified, and have been created by a
+  // WAF-enabled key.
+  bool waf_token_assessment = 9 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional JA3 fingerprint for SSL clients.
+  string ja3 = 10 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. HTTP header information about the request.
+  repeated string headers = 11 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Flag for enabling firewall policy config assessment.
+  // If this flag is enabled, the firewall policy will be evaluated and a
+  // suggested firewall action will be returned in the response.
+  bool firewall_policy_evaluation = 12 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Data describing a payment transaction to be assessed. Sending
   // this data enables reCAPTCHA Enterprise Fraud Prevention and the
@@ -776,6 +857,10 @@ message RiskAnalysis {
 
   // Reasons contributing to the risk analysis verdict.
   repeated ClassificationReason reasons = 2;
+
+  // Extended verdict reasons to be used for experimentation only. The set of
+  // possible reasons is subject to change.
+  repeated string extended_verdict_reasons = 3;
 }
 
 // Properties of the provided event token.
@@ -838,21 +923,31 @@ message FraudPreventionAssessment {
   // Information about stolen instrument fraud, where the user is not the
   // legitimate owner of the instrument being used for the purchase.
   message StolenInstrumentVerdict {
-    // Probability (0-1) of this transaction being executed with a stolen
-    // instrument.
+    // Probability of this transaction being executed with a stolen instrument.
+    // Values are from 0.0 (lowest) to 1.0 (highest).
     float risk = 1;
   }
 
   // Information about card testing fraud, where an adversary is testing
   // fraudulently obtained cards or brute forcing their details.
   message CardTestingVerdict {
-    // Probability (0-1) of this transaction attempt being part of a card
-    // testing attack.
+    // Probability of this transaction attempt being part of a card testing
+    // attack.
+    // Values are from 0.0 (lowest) to 1.0 (highest).
     float risk = 1;
   }
 
-  // Probability (0-1) of this transaction being fraudulent. Summarizes the
-  // combined risk of attack vectors below.
+  // Information about behavioral trust of the transaction.
+  message BehavioralTrustVerdict {
+    // Probability of this transaction attempt being executed in a behaviorally
+    // trustworthy way.
+    // Values are from 0.0 (lowest) to 1.0 (highest).
+    float trust = 1;
+  }
+
+  // Probability of this transaction being fraudulent. Summarizes the combined
+  // risk of attack vectors below.
+  // Values are from 0.0 (lowest) to 1.0 (highest).
   float transaction_risk = 1;
 
   // Assessment of this transaction for risk of a stolen instrument.
@@ -861,6 +956,57 @@ message FraudPreventionAssessment {
   // Assessment of this transaction for risk of being part of a card testing
   // attack.
   CardTestingVerdict card_testing_verdict = 3;
+
+  // Assessment of this transaction for behavioral trust.
+  BehavioralTrustVerdict behavioral_trust_verdict = 4;
+}
+
+// Fraud signals describing users and cards involved in the transaction.
+message FraudSignals {
+  // Signals describing the user involved in this transaction.
+  message UserSignals {
+    // Output only. This user (based on email, phone, and other identifiers) has
+    // been seen on the internet for at least this number of days.
+    int32 active_days_lower_bound = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Likelihood (from 0.0 to 1.0) this user includes synthetic
+    // components in their identity, such as a randomly generated email address,
+    // temporary phone number, or fake shipping address.
+    float synthetic_risk = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Signals describing the payment card used in this transaction.
+  message CardSignals {
+    // Risk labels describing the card being assessed, such as its funding
+    // mechanism.
+    enum CardLabel {
+      // No label specified.
+      CARD_LABEL_UNSPECIFIED = 0;
+
+      // This card has been detected as prepaid.
+      PREPAID = 1;
+
+      // This card has been detected as virtual, such as a card number generated
+      // for a single transaction or merchant.
+      VIRTUAL = 2;
+
+      // This card has been detected as being used in an unexpected geographic
+      // location.
+      UNEXPECTED_LOCATION = 3;
+    }
+
+    // Output only. The labels for the payment card in this transaction.
+    repeated CardLabel card_labels = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Output only. Signals describing the end user in this transaction.
+  UserSignals user_signals = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Signals describing the payment card or cards used in this
+  // transaction.
+  CardSignals card_signals = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Account defender risk assessment.
@@ -894,7 +1040,7 @@ message AccountDefenderAssessment {
 // The create key request message.
 message CreateKeyRequest {
   // Required. The name of the project in which the key will be created, in the
-  // format "projects/{project}".
+  // format `projects/{project}`.
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -909,7 +1055,7 @@ message CreateKeyRequest {
 // The list keys request message.
 message ListKeysRequest {
   // Required. The name of the project that contains the keys that will be
-  // listed, in the format "projects/{project}".
+  // listed, in the format `projects/{project}`.
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -939,7 +1085,7 @@ message ListKeysResponse {
 // The retrieve legacy secret key request message.
 message RetrieveLegacySecretKeyRequest {
   // Required. The public key name linked to the requested secret key in the
-  // format "projects/{project}/keys/{key}".
+  // format `projects/{project}/keys/{key}`.
   string key = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -951,7 +1097,7 @@ message RetrieveLegacySecretKeyRequest {
 // The get key request message.
 message GetKeyRequest {
   // Required. The name of the requested key, in the format
-  // "projects/{project}/keys/{key}".
+  // `projects/{project}/keys/{key}`.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -974,7 +1120,7 @@ message UpdateKeyRequest {
 // The delete key request message.
 message DeleteKeyRequest {
   // Required. The name of the key to be deleted, in the format
-  // "projects/{project}/keys/{key}".
+  // `projects/{project}/keys/{key}`.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -983,10 +1129,90 @@ message DeleteKeyRequest {
   ];
 }
 
+// The create firewall policy request message.
+message CreateFirewallPolicyRequest {
+  // Required. The name of the project this policy will apply to, in the format
+  // `projects/{project}`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudresourcemanager.googleapis.com/Project"
+    }
+  ];
+
+  // Required. Information to create the policy.
+  FirewallPolicy firewall_policy = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The list firewall policies request message.
+message ListFirewallPoliciesRequest {
+  // Required. The name of the project to list the policies for, in the format
+  // `projects/{project}`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudresourcemanager.googleapis.com/Project"
+    }
+  ];
+
+  // Optional. The maximum number of policies to return. Default is 10. Max
+  // limit is 1000.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The next_page_token value returned from a previous.
+  // ListFirewallPoliciesRequest, if any.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response to request to list firewall policies belonging to a key.
+message ListFirewallPoliciesResponse {
+  // Policy details.
+  repeated FirewallPolicy firewall_policies = 1;
+
+  // Token to retrieve the next page of results. It is set to empty if no
+  // policies remain in results.
+  string next_page_token = 2;
+}
+
+// The get firewall policy request message.
+message GetFirewallPolicyRequest {
+  // Required. The name of the requested policy, in the format
+  // `projects/{project}/firewallpolicies/{firewallpolicy}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "recaptchaenterprise.googleapis.com/FirewallPolicy"
+    }
+  ];
+}
+
+// The update firewall policy request message.
+message UpdateFirewallPolicyRequest {
+  // Required. The policy to update.
+  FirewallPolicy firewall_policy = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The mask to control which fields of the policy get updated. If
+  // the mask is not present, all fields will be updated.
+  google.protobuf.FieldMask update_mask = 2
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The delete firewall policy request message.
+message DeleteFirewallPolicyRequest {
+  // Required. The name of the policy to be deleted, in the format
+  // `projects/{project}/firewallpolicies/{firewallpolicy}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "recaptchaenterprise.googleapis.com/FirewallPolicy"
+    }
+  ];
+}
+
 // The migrate key request message.
 message MigrateKeyRequest {
   // Required. The name of the key to be migrated, in the format
-  // "projects/{project}/keys/{key}".
+  // `projects/{project}/keys/{key}`.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1008,7 +1234,7 @@ message MigrateKeyRequest {
 // The get metrics request message.
 message GetMetricsRequest {
   // Required. The name of the requested metrics, in the format
-  // "projects/{project}/keys/{key}/metrics".
+  // `projects/{project}/keys/{key}/metrics`.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1025,7 +1251,7 @@ message Metrics {
   };
 
   // Output only. The name of the metrics, in the format
-  // "projects/{project}/keys/{key}/metrics".
+  // `projects/{project}/keys/{key}/metrics`.
   string name = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Inclusive start time aligned to a day (UTC).
@@ -1060,13 +1286,13 @@ message Key {
   };
 
   // The resource name for the Key in the format
-  // "projects/{project}/keys/{key}".
+  // `projects/{project}/keys/{key}`.
   string name = 1;
 
   // Human-readable display name of this key. Modifiable by user.
   string display_name = 2;
 
-  // Platform specific settings for this key. The key can only be used on a
+  // Platform-specific settings for this key. The key can only be used on a
   // platform for which the settings are enabled.
   oneof platform_settings {
     // Settings for keys that can be used by websites.
@@ -1079,11 +1305,11 @@ message Key {
     IOSKeySettings ios_settings = 5;
   }
 
-  // See <a href="https://cloud.google.com/recaptcha-enterprise/docs/labels">
-  // Creating and managing labels</a>.
+  // See [Creating and managing labels]
+  // (https://cloud.google.com/recaptcha-enterprise/docs/labels).
   map<string, string> labels = 6;
 
-  // Output only. The timestamp corresponding to the creation of this Key.
+  // Output only. The timestamp corresponding to the creation of this key.
   google.protobuf.Timestamp create_time = 7
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
@@ -1190,6 +1416,10 @@ message AndroidKeySettings {
   // Android package names of apps allowed to use the key.
   // Example: 'com.companyname.appname'
   repeated string allowed_package_names = 1;
+
+  // Set to true for keys that are used in an Android application that is
+  // available for download in app stores in addition to the Google Play Store.
+  bool support_non_google_app_store_distribution = 3;
 }
 
 // Settings specific to keys that can be used by iOS apps.
@@ -1200,6 +1430,31 @@ message IOSKeySettings {
   // iOS bundle ids of apps allowed to use the key.
   // Example: 'com.companyname.productname.appname'
   repeated string allowed_bundle_ids = 1;
+
+  // Apple Developer account details for the app that is protected by the
+  // reCAPTCHA Key. reCAPTCHA Enterprise leverages platform-specific checks like
+  // Apple App Attest and Apple DeviceCheck to protect your app from abuse.
+  // Providing these fields allows reCAPTCHA Enterprise to get a better
+  // assessment of the integrity of your app.
+  AppleDeveloperId apple_developer_id = 3;
+}
+
+// Contains fields that are required to perform Apple-specific integrity checks.
+message AppleDeveloperId {
+  // Required. Input only. A private key (downloaded as a text file with a .p8
+  // file extension) generated for your Apple Developer account. Ensure that
+  // Apple DeviceCheck is enabled for the private key.
+  string private_key = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.field_behavior) = INPUT_ONLY
+  ];
+
+  // Required. The Apple developer key ID (10-character string).
+  string key_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The Apple team ID (10-character string) owning the provisioning
+  // profile used to build your application.
+  string team_id = 3 [(google.api.field_behavior) = REQUIRED];
 }
 
 // Score distribution.
@@ -1237,6 +1492,116 @@ message ChallengeMetrics {
   // submitted challenge solutions that were correct and resulted in
   // verification.
   int64 passed_count = 4;
+}
+
+// Policy config assessment.
+message FirewallPolicyAssessment {
+  // If the processing of a policy config fails, an error will be populated
+  // and the firewall_policy will be left empty.
+  google.rpc.Status error = 5;
+
+  // Output only. The policy that matched the request. If more than one policy
+  // may match, this is the first match. If no policy matches the incoming
+  // request, the policy field will be left empty.
+  FirewallPolicy firewall_policy = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// An individual action. Each action represents what to do if a policy
+// matches.
+message FirewallAction {
+  // An allow action continues processing a request unimpeded.
+  message AllowAction {}
+
+  // A block action serves an HTTP error code a prevents the request from
+  // hitting the backend.
+  message BlockAction {}
+
+  // A redirect action returns a 307 (temporary redirect) response, pointing
+  // the user to a ReCaptcha interstitial page to attach a token.
+  message RedirectAction {}
+
+  // A substitute action transparently serves a different page than the one
+  // requested.
+  message SubstituteAction {
+    // The address to redirect to. The target is a relative path in the
+    // current host. Example: "/blog/404.html".
+    string path = 1;
+  }
+
+  // A set header action sets a header and forwards the request to the
+  // backend. This can be used to trigger custom protection implemented on the
+  // backend.
+  message SetHeaderAction {
+    // The header key to set in the request to the backend server.
+    string key = 1;
+
+    // The header value to set in the request to the backend server.
+    string value = 2;
+  }
+
+  oneof firewall_action_oneof {
+    // The user request did not match any policy and should be allowed
+    // access to the requested resource.
+    AllowAction allow = 1;
+
+    // This action will deny access to a given page. The user will get an HTTP
+    // error code.
+    BlockAction block = 2;
+
+    // This action will redirect the request to a ReCaptcha interstitial to
+    // attach a token.
+    RedirectAction redirect = 5;
+
+    // This action will transparently serve a different page to an offending
+    // user.
+    SubstituteAction substitute = 3;
+
+    // This action will set a custom header but allow the request to continue
+    // to the customer backend.
+    SetHeaderAction set_header = 4;
+  }
+}
+
+// A FirewallPolicy represents a single matching pattern and resulting actions
+// to take.
+message FirewallPolicy {
+  option (google.api.resource) = {
+    type: "recaptchaenterprise.googleapis.com/FirewallPolicy"
+    pattern: "projects/{project}/firewallpolicies/{firewallpolicy}"
+  };
+
+  // The resource name for the FirewallPolicy in the format
+  // `projects/{project}/firewallpolicies/{firewallpolicy}`.
+  string name = 1;
+
+  // A description of what this policy aims to achieve, for convenience
+  // purposes. The description can at most include 256 UTF-8 characters.
+  string description = 2;
+
+  // The path for which this policy applies, specified as a glob pattern.
+  // For more information on glob, see the [manual
+  // page](https://man7.org/linux/man-pages/man7/glob.7.html).
+  // A path has a max length of 200 characters.
+  string path = 4;
+
+  // A CEL (Common Expression Language) conditional expression that specifies if
+  // this policy applies to an incoming user request. If this condition
+  // evaluates to true and the requested path matched the path pattern, the
+  // associated actions should be executed by the caller. The condition string
+  // is checked for CEL syntax correctness on creation. For more information,
+  // see the [CEL spec](https://github.com/google/cel-spec) and its [language
+  // definition](https://github.com/google/cel-spec/blob/master/doc/langdef.md).
+  // A condition has a max length of 500 characters.
+  string condition = 5;
+
+  // The actions that the caller should take regarding user access.
+  // There should be at most one terminal action. A terminal action is any
+  // action that forces a response, such as `AllowAction`,
+  // `BlockAction` or `SubstituteAction`.
+  // Zero or more non-terminal actions such as `SetHeader` might be
+  // specified. A single policy can contain up to 16 actions.
+  repeated FirewallAction actions = 6;
 }
 
 // The request message to list memberships in a related account group.
@@ -1277,7 +1642,7 @@ message ListRelatedAccountGroupMembershipsResponse {
 // The request message to list related account groups.
 message ListRelatedAccountGroupsRequest {
   // Required. The name of the project to list related account groups from, in
-  // the format "projects/{project}".
+  // the format `projects/{project}`.
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1313,7 +1678,7 @@ message ListRelatedAccountGroupsResponse {
 message SearchRelatedAccountGroupMembershipsRequest {
   // Required. The name of the project to search related account group
   // memberships from. Specify the project name in the following format:
-  // "projects/{project}".
+  // `projects/{project}`.
   string project = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1321,8 +1686,8 @@ message SearchRelatedAccountGroupMembershipsRequest {
     }
   ];
 
-  // Optional. The unique stable hashed user identifier we should search
-  // connections to. The identifier should correspond to a `hashed_account_id`
+  // Optional. The unique stable hashed user identifier used to search
+  // connections. The identifier should correspond to a `hashed_account_id`
   // provided in a previous `CreateAssessment` or `AnnotateAssessment` call.
   bytes hashed_account_id = 2 [(google.api.field_behavior) = OPTIONAL];
 
@@ -1408,6 +1773,10 @@ message WafSettings {
 
     // Use reCAPTCHA action-tokens to protect user actions.
     ACTION_TOKEN = 3;
+
+    // Use reCAPTCHA WAF express protection to protect any content other than
+    // web pages, like APIs and IoT devices.
+    EXPRESS = 5;
   }
 
   // Web Application Firewalls supported by reCAPTCHA Enterprise.
@@ -1417,6 +1786,9 @@ message WafSettings {
 
     // Cloud Armor
     CA = 1;
+
+    // Fastly
+    FASTLY = 3;
   }
 
   // Required. The WAF service that uses this key.
