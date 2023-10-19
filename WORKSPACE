@@ -366,12 +366,14 @@ _gapic_generator_typescript_version = "4.1.0"
 _gapic_generator_typescript_sha256 = "c55fcc6c19a19111fe6369c0288dc768656f829a7ded27d73241b0541794b50b"
 
 ### TypeScript generator
-http_archive(
-    name = "gapic_generator_typescript",
-    sha256 = _gapic_generator_typescript_sha256,
-    strip_prefix = "gapic-generator-typescript-%s" % _gapic_generator_typescript_version,
-    urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v%s.tar.gz" % _gapic_generator_typescript_version],
-)
+# http_archive(
+#     name = "gapic_generator_typescript",
+#     sha256 = _gapic_generator_typescript_sha256,
+#     strip_prefix = "gapic-generator-typescript-%s" % _gapic_generator_typescript_version,
+#     urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v%s.tar.gz" % _gapic_generator_typescript_version],
+# )
+
+local_repository(name = "gapic_generator_typescript", path = "../gapic-generator-typescript")
 
 load("@gapic_generator_typescript//:repositories.bzl", "gapic_generator_typescript_repositories", "NODE_VERSION")
 gapic_generator_typescript_repositories()
@@ -400,6 +402,13 @@ npm_translate_lock(
 load("@npm//:repositories.bzl", "npm_repositories")
 npm_repositories()
 pnpm_repository(name = "pnpm")
+
+new_local_repository(
+    name = "gapic_tools",
+    path = "@gapic_generator_typescript//:node_modules/gapic-tools",
+    build_file = "gapic_tools.BUILD",
+)
+
 
 ##############################################################################
 # PHP
