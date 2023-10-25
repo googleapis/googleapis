@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package google.devtools.artifactregistry.v1;
 
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -28,6 +29,316 @@ option java_outer_classname = "RepositoryProto";
 option java_package = "com.google.devtools.artifactregistry.v1";
 option php_namespace = "Google\\Cloud\\ArtifactRegistry\\V1";
 option ruby_package = "Google::Cloud::ArtifactRegistry::V1";
+option (google.api.resource_definition) = {
+  type: "secretmanager.googleapis.com/SecretVersion"
+  pattern: "projects/{project}/secrets/{secret}/versions/{secret_version}"
+};
+
+// Artifact policy configuration for the repository contents.
+message UpstreamPolicy {
+  // The user-provided ID of the upstream policy.
+  string id = 1;
+
+  // A reference to the repository resource, for example:
+  // `projects/p1/locations/us-central1/repositories/repo1`.
+  string repository = 2 [(google.api.resource_reference) = {
+    type: "artifactregistry.googleapis.com/Repository"
+  }];
+
+  // Entries with a greater priority value take precedence in the pull order.
+  int32 priority = 3;
+}
+
+// CleanupPolicyCondition is a set of conditions attached to a CleanupPolicy.
+// If multiple entries are set, all must be satisfied for the condition to be
+// satisfied.
+message CleanupPolicyCondition {
+  // Statuses applying to versions.
+  enum TagState {
+    // Tag status not specified.
+    TAG_STATE_UNSPECIFIED = 0;
+
+    // Applies to tagged versions only.
+    TAGGED = 1;
+
+    // Applies to untagged versions only.
+    UNTAGGED = 2;
+
+    // Applies to all versions.
+    ANY = 3;
+  }
+
+  // Match versions by tag status.
+  optional TagState tag_state = 2;
+
+  // Match versions by tag prefix. Applied on any prefix match.
+  repeated string tag_prefixes = 3;
+
+  // Match versions by version name prefix. Applied on any prefix match.
+  repeated string version_name_prefixes = 4;
+
+  // Match versions by package prefix. Applied on any prefix match.
+  repeated string package_name_prefixes = 5;
+
+  // Match versions older than a duration.
+  optional google.protobuf.Duration older_than = 6;
+
+  // Match versions newer than a duration.
+  optional google.protobuf.Duration newer_than = 7;
+}
+
+// CleanupPolicyMostRecentVersions is an alternate condition of a CleanupPolicy
+// for retaining a minimum number of versions.
+message CleanupPolicyMostRecentVersions {
+  // List of package name prefixes that will apply this rule.
+  repeated string package_name_prefixes = 1;
+
+  // Minimum number of versions to keep.
+  optional int32 keep_count = 2;
+}
+
+// Artifact policy configuration for repository cleanup policies.
+message CleanupPolicy {
+  // Action type for a cleanup policy.
+  enum Action {
+    // Action not specified.
+    ACTION_UNSPECIFIED = 0;
+
+    // Delete action.
+    DELETE = 1;
+
+    // Keep action.
+    KEEP = 2;
+  }
+
+  oneof condition_type {
+    // Policy condition for matching versions.
+    CleanupPolicyCondition condition = 2;
+
+    // Policy condition for retaining a minimum number of versions. May only be
+    // specified with a Keep action.
+    CleanupPolicyMostRecentVersions most_recent_versions = 4;
+  }
+
+  // The user-provided ID of the cleanup policy.
+  string id = 1;
+
+  // Policy action.
+  Action action = 3;
+}
+
+// Virtual repository configuration.
+message VirtualRepositoryConfig {
+  // Policies that configure the upstream artifacts distributed by the Virtual
+  // Repository. Upstream policies cannot be set on a standard repository.
+  repeated UpstreamPolicy upstream_policies = 1;
+}
+
+// Remote repository configuration.
+message RemoteRepositoryConfig {
+  // The credentials to access the remote repository.
+  message UpstreamCredentials {
+    // Username and password credentials.
+    message UsernamePasswordCredentials {
+      // The username to access the remote repository.
+      string username = 1;
+
+      // The Secret Manager key version that holds the password to access the
+      // remote repository. Must be in the format of
+      // `projects/{project}/secrets/{secret}/versions/{version}`.
+      string password_secret_version = 2 [(google.api.resource_reference) = {
+        type: "secretmanager.googleapis.com/SecretVersion"
+      }];
+    }
+
+    oneof credentials {
+      // Use username and password to access the remote repository.
+      UsernamePasswordCredentials username_password_credentials = 1;
+    }
+  }
+
+  // Configuration for a Docker remote repository.
+  message DockerRepository {
+    // Predefined list of publicly available Docker repositories like Docker
+    // Hub.
+    enum PublicRepository {
+      // Unspecified repository.
+      PUBLIC_REPOSITORY_UNSPECIFIED = 0;
+
+      // Docker Hub.
+      DOCKER_HUB = 1;
+    }
+
+    // Address of the remote repository.
+    oneof upstream {
+      // One of the publicly available Docker repositories supported by Artifact
+      // Registry.
+      PublicRepository public_repository = 1;
+    }
+  }
+
+  // Configuration for a Maven remote repository.
+  message MavenRepository {
+    // Predefined list of publicly available Maven repositories like Maven
+    // Central.
+    enum PublicRepository {
+      // Unspecified repository.
+      PUBLIC_REPOSITORY_UNSPECIFIED = 0;
+
+      // Maven Central.
+      MAVEN_CENTRAL = 1;
+    }
+
+    // Address of the remote repository.
+    oneof upstream {
+      // One of the publicly available Maven repositories supported by Artifact
+      // Registry.
+      PublicRepository public_repository = 1;
+    }
+  }
+
+  // Configuration for a Npm remote repository.
+  message NpmRepository {
+    // Predefined list of publicly available NPM repositories like npmjs.
+    enum PublicRepository {
+      // Unspecified repository.
+      PUBLIC_REPOSITORY_UNSPECIFIED = 0;
+
+      // npmjs.
+      NPMJS = 1;
+    }
+
+    // Address of the remote repository
+    oneof upstream {
+      // One of the publicly available Npm repositories supported by Artifact
+      // Registry.
+      PublicRepository public_repository = 1;
+    }
+  }
+
+  // Configuration for a Python remote repository.
+  message PythonRepository {
+    // Predefined list of publicly available Python repositories like PyPI.org.
+    enum PublicRepository {
+      // Unspecified repository.
+      PUBLIC_REPOSITORY_UNSPECIFIED = 0;
+
+      // PyPI.
+      PYPI = 1;
+    }
+
+    // Address of the remote repository.
+    oneof upstream {
+      // One of the publicly available Python repositories supported by Artifact
+      // Registry.
+      PublicRepository public_repository = 1;
+    }
+  }
+
+  // Configuration for an Apt remote repository.
+  message AptRepository {
+    // Publicly available Apt repositories constructed from a common repository
+    // base and a custom repository path.
+    message PublicRepository {
+      // Predefined list of publicly available repository bases for Apt.
+      enum RepositoryBase {
+        // Unspecified repository base.
+        REPOSITORY_BASE_UNSPECIFIED = 0;
+
+        // Debian.
+        DEBIAN = 1;
+
+        // Ubuntu LTS/Pro.
+        UBUNTU = 2;
+      }
+
+      // A common public repository base for Apt.
+      RepositoryBase repository_base = 1;
+
+      // A custom field to define a path to a specific repository from the base.
+      string repository_path = 2;
+    }
+
+    // Address of the remote repository.
+    oneof upstream {
+      // One of the publicly available Apt repositories supported by Artifact
+      // Registry.
+      PublicRepository public_repository = 1;
+    }
+  }
+
+  // Configuration for a Yum remote repository.
+  message YumRepository {
+    // Publicly available Yum repositories constructed from a common repository
+    // base and a custom repository path.
+    message PublicRepository {
+      // Predefined list of publicly available repository bases for Yum.
+      enum RepositoryBase {
+        // Unspecified repository base.
+        REPOSITORY_BASE_UNSPECIFIED = 0;
+
+        // CentOS.
+        CENTOS = 1;
+
+        // CentOS Debug.
+        CENTOS_DEBUG = 2;
+
+        // CentOS Vault.
+        CENTOS_VAULT = 3;
+
+        // CentOS Stream.
+        CENTOS_STREAM = 4;
+
+        // Rocky.
+        ROCKY = 5;
+
+        // Fedora Extra Packages for Enterprise Linux (EPEL).
+        EPEL = 6;
+      }
+
+      // A common public repository base for Yum.
+      RepositoryBase repository_base = 1;
+
+      // A custom field to define a path to a specific repository from the base.
+      string repository_path = 2;
+    }
+
+    // Address of the remote repository.
+    oneof upstream {
+      // One of the publicly available Yum repositories supported by Artifact
+      // Registry.
+      PublicRepository public_repository = 1;
+    }
+  }
+
+  // Settings specific to the remote repository.
+  oneof remote_source {
+    // Specific settings for a Docker remote repository.
+    DockerRepository docker_repository = 2;
+
+    // Specific settings for a Maven remote repository.
+    MavenRepository maven_repository = 3;
+
+    // Specific settings for an Npm remote repository.
+    NpmRepository npm_repository = 4;
+
+    // Specific settings for a Python remote repository.
+    PythonRepository python_repository = 5;
+
+    // Specific settings for an Apt remote repository.
+    AptRepository apt_repository = 6;
+
+    // Specific settings for a Yum remote repository.
+    YumRepository yum_repository = 7;
+  }
+
+  // The description of the remote source.
+  string description = 1;
+
+  // Optional. The credentials used to access the remote repository.
+  UpstreamCredentials upstream_credentials = 9
+      [(google.api.field_behavior) = OPTIONAL];
+}
 
 // A Repository for storing artifacts with a specific format.
 message Repository {
@@ -62,6 +373,16 @@ message Repository {
     VersionPolicy version_policy = 2;
   }
 
+  // DockerRepositoryConfig is docker related repository details.
+  // Provides additional configuration details for repositories of the docker
+  // format type.
+  message DockerRepositoryConfig {
+    // The repository which enabled this flag prevents all tags from being
+    // modified, moved or deleted. This does not prevent tags from being
+    // created.
+    bool immutable_tags = 1;
+  }
+
   // A package format.
   enum Format {
     // Unspecified package format.
@@ -84,6 +405,28 @@ message Repository {
 
     // Python package format.
     PYTHON = 8;
+
+    // Kubeflow Pipelines package format.
+    KFP = 9;
+
+    // Go package format.
+    GO = 10;
+  }
+
+  // The mode configures the repository to serve artifacts from different
+  // sources.
+  enum Mode {
+    // Unspecified mode.
+    MODE_UNSPECIFIED = 0;
+
+    // A standard repository storing artifacts.
+    STANDARD_REPOSITORY = 1;
+
+    // A virtual repository to serve artifacts from one or more sources.
+    VIRTUAL_REPOSITORY = 2;
+
+    // A remote repository to serve artifacts from a remote source.
+    REMOTE_REPOSITORY = 3;
   }
 
   // Repository-specific configurations.
@@ -91,14 +434,28 @@ message Repository {
     // Maven repository config contains repository level configuration
     // for the repositories of maven type.
     MavenRepositoryConfig maven_config = 9;
+
+    // Docker repository config contains repository level configuration
+    // for the repositories of docker type.
+    DockerRepositoryConfig docker_config = 17;
+  }
+
+  // Repository configuration specific to the Mode value being selected (Remote
+  // or Virtual)
+  oneof mode_config {
+    // Configuration specific for a Virtual Repository.
+    VirtualRepositoryConfig virtual_repository_config = 14;
+
+    // Configuration specific for a Remote Repository.
+    RemoteRepositoryConfig remote_repository_config = 15;
   }
 
   // The name of the repository, for example:
-  // "projects/p1/locations/us-central1/repositories/repo1".
+  // `projects/p1/locations/us-central1/repositories/repo1`.
   string name = 1;
 
-  // The format of packages that are stored in the repository.
-  Format format = 2;
+  // Optional. The format of packages that are stored in the repository.
+  Format format = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // The user-provided description of the repository.
   string description = 3;
@@ -110,17 +467,41 @@ message Repository {
   // and dashes.
   map<string, string> labels = 4;
 
-  // The time when the repository was created.
-  google.protobuf.Timestamp create_time = 5;
+  // Output only. The time when the repository was created.
+  google.protobuf.Timestamp create_time = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // The time when the repository was last updated.
-  google.protobuf.Timestamp update_time = 6;
+  // Output only. The time when the repository was last updated.
+  google.protobuf.Timestamp update_time = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // The Cloud KMS resource name of the customer managed encryption key that's
   // used to encrypt the contents of the Repository. Has the form:
   // `projects/my-project/locations/my-region/keyRings/my-kr/cryptoKeys/my-key`.
   // This value may not be changed after the Repository has been created.
   string kms_key_name = 8;
+
+  // Optional. The mode of the repository.
+  Mode mode = 10 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Cleanup policies for this repository. Cleanup policies indicate
+  // when certain package versions can be automatically deleted. Map keys are
+  // policy IDs supplied by users during policy creation. They must unique
+  // within a repository and be under 128 characters in length.
+  map<string, CleanupPolicy> cleanup_policies = 12
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The size, in bytes, of all artifact storage in this
+  // repository. Repositories that are generally available or in public preview
+  //  use this to calculate storage costs.
+  int64 size_bytes = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. If set, the repository satisfies physical zone separation.
+  bool satisfies_pzs = 16 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. If true, the cleanup pipeline is prevented from deleting versions
+  // in this repository.
+  bool cleanup_policy_dry_run = 18 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // The request to list repositories.
@@ -173,10 +554,10 @@ message CreateRepositoryRequest {
     }
   ];
 
-  // The repository id to use for this repository.
+  // Required. The repository id to use for this repository.
   string repository_id = 2 [(google.api.field_behavior) = REQUIRED];
 
-  // The repository to be created.
+  // Required. The repository to be created.
   Repository repository = 3 [(google.api.field_behavior) = REQUIRED];
 }
 
