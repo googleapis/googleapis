@@ -58,9 +58,9 @@ rules_jvm_external_setup()
 
 # Python rules should go early in the dependencies list, otherwise a wrong
 # version of the library will be selected as a transitive dependency of gRPC.
-_rules_python_version = "0.24.0"
+_rules_python_version = "0.26.0"
 
-_rules_python_sha256 = "0a8003b044294d7840ac7d9d73eef05d6ceb682d7516781a4ec62eeb34702578"
+_rules_python_sha256 = "9d04041ac92a0985e344235f5d946f71ac543f1b1565f2cdbc9a2aaee8adf55b"
 
 http_archive(
     name = "rules_python",
@@ -324,7 +324,7 @@ load("@rules_gapic//python:py_gapic_repositories.bzl", "py_gapic_repositories")
 
 py_gapic_repositories()
 
-_gapic_generator_python_version = "1.11.9"
+_gapic_generator_python_version = "1.11.10"
 
 http_archive(
     name = "gapic_generator_python",
