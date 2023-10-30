@@ -833,6 +833,9 @@ message NodeConfig {
   // Google Compute Engine hosts.
   HostMaintenancePolicy host_maintenance_policy = 44;
 
+  // A map of resource manager tag keys and values to be attached to the nodes.
+  ResourceManagerTags resource_manager_tags = 45;
+
   // Optional. Enable confidential storage on Hyperdisk.
   // boot_disk_kms_key is required when enable_confidential_storage is true.
   // This is only available for private preview.
@@ -1011,21 +1014,44 @@ message SandboxConfig {
 // filesystem.
 message EphemeralStorageConfig {
   // Number of local SSDs to use to back ephemeral storage. Uses NVMe
-  // interfaces. Each local SSD is 375 GB in size.
-  // If zero, it means to disable using local SSDs as ephemeral storage.
+  // interfaces. The limit for this value is dependent upon the maximum number
+  // of disk available on a machine per zone. See:
+  // https://cloud.google.com/compute/docs/disks/local-ssd
+  // for more information.
+  //
+  // A zero (or unset) value has different meanings depending on machine type
+  // being used:
+  // 1. For pre-Gen3 machines, which support flexible numbers of local ssds,
+  // zero (or unset) means to disable using local SSDs as ephemeral storage.
+  // 2. For Gen3 machines which dictate a specific number of local ssds, zero
+  // (or unset) means to use the default number of local ssds that goes with
+  // that machine type. For example, for a c3-standard-8-lssd machine, 2 local
+  // ssds would be provisioned. For c3-standard-8 (which doesn't support local
+  // ssds), 0 will be provisioned. See
+  // https://cloud.google.com/compute/docs/disks/local-ssd#choose_number_local_ssds
+  // for more info.
   int32 local_ssd_count = 1;
 }
 
 // LocalNvmeSsdBlockConfig contains configuration for using raw-block local
 // NVMe SSDs
 message LocalNvmeSsdBlockConfig {
-  // The number of raw-block local NVMe SSD disks to be attached to the node.
-  // Each local SSD is 375 GB in size. If zero, it means no raw-block local NVMe
-  // SSD disks to be attached to the node.
-  // The limit for this value is dependent upon the maximum number of
-  // disks available on a machine per zone. See:
+  // Number of local NVMe SSDs to use.  The limit for this value is dependent
+  // upon the maximum number of disk available on a machine per zone. See:
   // https://cloud.google.com/compute/docs/disks/local-ssd
   // for more information.
+  //
+  // A zero (or unset) value has different meanings depending on machine type
+  // being used:
+  // 1. For pre-Gen3 machines, which support flexible numbers of local ssds,
+  // zero (or unset) means to disable using local SSDs as ephemeral storage.
+  // 2. For Gen3 machines which dictate a specific number of local ssds, zero
+  // (or unset) means to use the default number of local ssds that goes with
+  // that machine type. For example, for a c3-standard-8-lssd machine, 2 local
+  // ssds would be provisioned. For c3-standard-8 (which doesn't support local
+  // ssds), 0 will be provisioned. See
+  // https://cloud.google.com/compute/docs/disks/local-ssd#choose_number_local_ssds
+  // for more info.
   int32 local_ssd_count = 1;
 }
 
@@ -1033,12 +1059,23 @@ message LocalNvmeSsdBlockConfig {
 // storage using Local SSDs.
 message EphemeralStorageLocalSsdConfig {
   // Number of local SSDs to use to back ephemeral storage. Uses NVMe
-  // interfaces. Each local SSD is 375 GB in size.
-  // If zero, it means to disable using local SSDs as ephemeral storage.
-  // The limit for this value is dependent upon the maximum number of
-  // disks available on a machine per zone. See:
+  // interfaces.
+  //
+  // A zero (or unset) value has different meanings depending on machine type
+  // being used:
+  // 1. For pre-Gen3 machines, which support flexible numbers of local ssds,
+  // zero (or unset) means to disable using local SSDs as ephemeral storage. The
+  // limit for this value is dependent upon the maximum number of disk
+  // available on a machine per zone. See:
   // https://cloud.google.com/compute/docs/disks/local-ssd
   // for more information.
+  // 2. For Gen3 machines which dictate a specific number of local ssds, zero
+  // (or unset) means to use the default number of local ssds that goes with
+  // that machine type. For example, for a c3-standard-8-lssd machine, 2 local
+  // ssds would be provisioned. For c3-standard-8 (which doesn't support local
+  // ssds), 0 will be provisioned. See
+  // https://cloud.google.com/compute/docs/disks/local-ssd#choose_number_local_ssds
+  // for more info.
   int32 local_ssd_count = 1;
 }
 
@@ -1138,8 +1175,36 @@ message HostMaintenancePolicy {
     PERIODIC = 2;
   }
 
+  // Strategy that will trigger maintenance on behalf of the customer.
+  message OpportunisticMaintenanceStrategy {
+    // The amount of time that a node can remain idle (no customer owned
+    // workloads running), before triggering maintenance.
+    optional google.protobuf.Duration node_idle_time_window = 1;
+
+    // The window of time that opportunistic maintenance can run. Example: A
+    // setting of 14 days implies that opportunistic maintenance can only be ran
+    // in the 2 weeks leading up to the scheduled maintenance date. Setting 28
+    // days allows opportunistic maintenance to run at any time in the scheduled
+    // maintenance window (all `PERIODIC` maintenance is set 28 days in
+    // advance).
+    optional google.protobuf.Duration maintenance_availability_window = 2;
+
+    // The minimum nodes required to be available in a pool. Blocks maintenance
+    // if it would cause the number of running nodes to dip below this value.
+    optional int64 min_nodes_per_pool = 3;
+  }
+
   // Specifies the frequency of planned maintenance events.
   optional MaintenanceInterval maintenance_interval = 1;
+
+  // Set of host maintenance strategies available to the customer, all require
+  // the maintenance_interval to be PERIODIC. If no strategy is set, and the
+  // interval is periodic, customer will be expected to trigger maintenance
+  // manually or let maintenance trigger at its initial scheduled time.
+  oneof maintenance_strategy {
+    // Strategy that will trigger maintenance on behalf of the customer.
+    OpportunisticMaintenanceStrategy opportunistic_maintenance_strategy = 2;
+  }
 }
 
 // Kubernetes taint is composed of three fields: key, value, and effect. Effect
@@ -2329,6 +2394,10 @@ message NodePoolAutoConfig {
   // the client during cluster creation. Each tag within the list
   // must comply with RFC1035.
   NetworkTags network_tags = 1;
+
+  // Resource manager tag keys and values to be attached to the nodes
+  // for managing Compute Engine firewalls using Network Firewall Policies.
+  ResourceManagerTags resource_manager_tags = 2;
 }
 
 // ClusterUpdate describes an update to the cluster. Exactly one update can
@@ -2574,6 +2643,13 @@ message ClusterUpdate {
   // HostMaintenancePolicy contains the desired maintenance policy for the
   // Google Compute Engine hosts.
   HostMaintenancePolicy desired_host_maintenance_policy = 132;
+
+  // The desired resource manager tags that apply to all auto-provisioned node
+  // pools in autopilot clusters and node auto-provisioning enabled clusters.
+  ResourceManagerTags desired_node_pool_auto_config_resource_manager_tags = 136;
+
+  // Specify the details of in-transit encryption.
+  optional InTransitEncryptionConfig desired_in_transit_encryption_config = 137;
 }
 
 // AdditionalPodRangesConfig is the configuration for additional pod secondary
@@ -2737,6 +2813,10 @@ message Operation {
     // [documentation on
     // resizes](https://cloud.google.com/kubernetes-engine/docs/concepts/maintenance-windows-and-exclusions#repairs).
     RESIZE_CLUSTER = 18;
+
+    // Fleet features of GKE Enterprise are being upgraded. The cluster should
+    // be assumed to be blocked for other upgrades until the operation finishes.
+    FLEET_FEATURE_UPGRADE = 19;
   }
 
   // The server-assigned ID for the operation.
@@ -3052,6 +3132,11 @@ message UpdateNodePoolRequest {
   // Initiates an upgrade operation that migrates the nodes in the
   // node pool to the specified disk size.
   int64 disk_size_gb = 38 [(google.api.field_behavior) = OPTIONAL];
+
+  // Desired resource manager tag keys and values to be attached to the nodes
+  // for managing Compute Engine firewalls using Network Firewall Policies.
+  // Existing tags will be replaced with new values.
+  ResourceManagerTags resource_manager_tags = 39;
 }
 
 // SetNodePoolAutoscalingRequest sets the autoscaler settings of a node pool.
@@ -3769,6 +3854,9 @@ message NodePool {
 
         // Start cordoning blue pool nodes.
         CORDONING_BLUE_POOL = 3;
+
+        // Start waiting after cordoning the blue pool and before draining it.
+        WAITING_TO_DRAIN_BLUE_POOL = 8;
 
         // Start draining blue pool nodes.
         DRAINING_BLUE_POOL = 4;
@@ -4852,6 +4940,9 @@ message NetworkConfig {
 
   // Whether FQDN Network Policy is enabled on this cluster.
   optional bool enable_fqdn_network_policy = 19;
+
+  // Specify the details of in-transit encryption.
+  optional InTransitEncryptionConfig in_transit_encryption_config = 20;
 }
 
 // GatewayAPIConfig contains the desired config of Gateway API on this cluster.
@@ -5757,4 +5848,31 @@ enum StackType {
 
   // The value used if the cluster is a dual stack cluster
   IPV4_IPV6 = 2;
+}
+
+// A map of resource manager tag keys and values to be attached to the nodes
+// for managing Compute Engine firewalls using Network Firewall Policies.
+// Tags must be according to specifications in
+// https://cloud.google.com/vpc/docs/tags-firewalls-overview#specifications.
+// A maximum of 5 tag key-value pairs can be specified.
+// Existing tags will be replaced with new values.
+message ResourceManagerTags {
+  // Tags must be in one of the following formats ([KEY]=[VALUE])
+  // 1. `tagKeys/{tag_key_id}=tagValues/{tag_value_id}`
+  // 2. `{org_id}/{tag_key_name}={tag_value_name}`
+  // 3. `{project_id}/{tag_key_name}={tag_value_name}`
+  map<string, string> tags = 1;
+}
+
+// Options for in-transit encryption.
+enum InTransitEncryptionConfig {
+  // Unspecified, will be inferred as default -
+  // IN_TRANSIT_ENCRYPTION_UNSPECIFIED.
+  IN_TRANSIT_ENCRYPTION_CONFIG_UNSPECIFIED = 0;
+
+  // In-transit encryption is disabled.
+  IN_TRANSIT_ENCRYPTION_DISABLED = 1;
+
+  // Data in-transit is encrypted using inter-node transparent encryption.
+  IN_TRANSIT_ENCRYPTION_INTER_NODE_TRANSPARENT = 2;
 }
