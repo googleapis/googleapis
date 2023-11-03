@@ -155,6 +155,20 @@ service ContactCenterInsights {
     };
   }
 
+  // Deletes multiple conversations in a single request.
+  rpc BulkDeleteConversations(BulkDeleteConversationsRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/locations/*}/conversations:bulkDelete"
+      body: "*"
+    };
+    option (google.api.method_signature) = "parent,filter";
+    option (google.longrunning.operation_info) = {
+      response_type: "BulkDeleteConversationsResponse"
+      metadata_type: "BulkDeleteConversationsMetadata"
+    };
+  }
+
   // Imports conversations and processes them according to the user's
   // configuration.
   rpc IngestConversations(IngestConversationsRequest)
@@ -688,8 +702,23 @@ message DeleteConversationRequest {
 message IngestConversationsRequest {
   // Configuration for Cloud Storage bucket sources.
   message GcsSource {
+    enum BucketObjectType {
+      // The object type is unspecified and will default to TRANSCRIPT.
+      BUCKET_OBJECT_TYPE_UNSPECIFIED = 0;
+
+      // The object is a transcript.
+      TRANSCRIPT = 1;
+
+      // The object is an audio file.
+      AUDIO = 2;
+    }
+
     // Required. The Cloud Storage bucket containing source objects.
     string bucket_uri = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. Specifies the type of the objects in `bucket_uri`.
+    BucketObjectType bucket_object_type = 2
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Configuration for processing transcript objects.
@@ -703,6 +732,16 @@ message IngestConversationsRequest {
     // An opaque, user-specified string representing the human agent who handled
     // the conversations.
     string agent_id = 1;
+
+    // Optional. For audio conversations, this field indicates which of the
+    // channels, 1 or 2, contains the agent. Note that this must be set for
+    // audio conversations to be properly displayed and analyzed.
+    int32 agent_channel = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. For audio conversations, this field indicates which of the
+    // channels, 1 or 2, contains the customer. Note that this must be set for
+    // audio conversations to be properly displayed and analyzed.
+    int32 customer_channel = 3 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Configuration for an external data store containing objects that will
@@ -729,6 +768,14 @@ message IngestConversationsRequest {
 
   // Configuration that applies to all conversations.
   ConversationConfig conversation_config = 4;
+
+  // Optional. DLP settings for transcript redaction. Optional, will default to
+  // the config specified in Settings.
+  RedactionConfig redaction_config = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Default Speech-to-Text configuration. Optional, will default to
+  // the config specified in Settings.
+  SpeechConfig speech_config = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // The metadata for an IngestConversations operation.
@@ -893,6 +940,11 @@ message BulkAnalyzeConversationsMetadata {
   // Total number of analyses requested. Computed by the number of conversations
   // returned by `filter` multiplied by `analysis_percentage` in the request.
   int32 total_requested_analyses_count = 6;
+
+  // Output only. Partial errors during bulk analyze operation that might cause
+  // the operation output to be incomplete.
+  repeated google.rpc.Status partial_errors = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // The response for a bulk analyze conversations operation.
@@ -903,6 +955,50 @@ message BulkAnalyzeConversationsResponse {
   // Count of failed analyses.
   int32 failed_analysis_count = 2;
 }
+
+// The request to delete conversations in bulk.
+message BulkDeleteConversationsRequest {
+  // Required. The parent resource to create analyses in.
+  // Format:
+  // projects/{project}/locations/{location}
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
+
+  // Filter used to select the subset of conversations to analyze.
+  string filter = 2;
+
+  // Maximum number of conversations to delete. The default is 1000. It can be
+  // changed by setting the `max_delete_count` field.
+  int32 max_delete_count = 3;
+
+  // If set to true, all of this conversation's analyses will also be deleted.
+  // Otherwise, the request will only succeed if the conversation has no
+  // analyses.
+  bool force = 4;
+}
+
+// The metadata for a bulk delete conversations operation.
+message BulkDeleteConversationsMetadata {
+  // The time the operation was created.
+  google.protobuf.Timestamp create_time = 1;
+
+  // The time the operation finished running.
+  google.protobuf.Timestamp end_time = 2;
+
+  // The original request for bulk delete.
+  BulkDeleteConversationsRequest request = 3;
+
+  // Partial errors during bulk delete conversations operation that might cause
+  // the operation output to be incomplete.
+  repeated google.rpc.Status partial_errors = 4;
+}
+
+// The response for a bulk analyze conversations operation.
+message BulkDeleteConversationsResponse {}
 
 // The request to export insights.
 message ExportInsightsDataRequest {
