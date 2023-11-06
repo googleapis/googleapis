@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -42,6 +42,19 @@ service Lineage {
   option (google.api.default_host) = "datalineage.googleapis.com";
   option (google.api.oauth_scopes) =
       "https://www.googleapis.com/auth/cloud-platform";
+
+  // Creates new lineage events together with their parents: process and run.
+  // Updates the process and run if they already exist.
+  // Mapped from Open Lineage specification:
+  // https://github.com/OpenLineage/OpenLineage/blob/main/spec/OpenLineage.json.
+  rpc ProcessOpenLineageRunEvent(ProcessOpenLineageRunEventRequest)
+      returns (ProcessOpenLineageRunEventResponse) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/locations/*}:processOpenLineageRunEvent"
+      body: "open_lineage"
+    };
+    option (google.api.method_signature) = "parent,open_lineage";
+  }
 
   // Creates a new process.
   rpc CreateProcess(CreateProcessRequest) returns (Process) {
@@ -232,8 +245,11 @@ message Process {
   // or numbers, spaces or characters like `_-:&.`
   string display_name = 2 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The attributes of the process. Can be anything, for example,
-  // "author". Up to 100 attributes are allowed.
+  // Optional. The attributes of the process. Should only be used for the
+  // purpose of non-semantic management (classifying, describing or labeling the
+  // process).
+  //
+  // Up to 100 attributes are allowed.
   map<string, google.protobuf.Value> attributes = 3
       [(google.api.field_behavior) = OPTIONAL];
 
@@ -280,8 +296,10 @@ message Run {
   // or numbers, spaces or characters like `_-:&.`
   string display_name = 2 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The attributes of the run. Can be anything, for example, a string
-  // with an SQL request. Up to 100 attributes are allowed.
+  // Optional. The attributes of the run. Should only be used for the purpose of
+  // non-semantic management (classifying, describing or labeling the run).
+  //
+  // Up to 100 attributes are allowed.
   map<string, google.protobuf.Value> attributes = 3
       [(google.api.field_behavior) = OPTIONAL];
 
@@ -316,11 +334,11 @@ message LineageEvent {
   // Optional. List of source-target pairs. Can't contain more than 100 tuples.
   repeated EventLink links = 8 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The beginning of the transformation which resulted in this
+  // Required. The beginning of the transformation which resulted in this
   // lineage event. For streaming scenarios, it should be the beginning of the
   // period from which the lineage is being reported.
   google.protobuf.Timestamp start_time = 6
-      [(google.api.field_behavior) = OPTIONAL];
+      [(google.api.field_behavior) = REQUIRED];
 
   // Optional. The end of the transformation which resulted in this lineage
   // event.  For streaming scenarios, it should be the end of the period from
@@ -340,16 +358,9 @@ message EventLink {
 
 // The soft reference to everything you can attach a lineage event to.
 message EntityReference {
-  // Required. Fully Qualified Name of the entity. Useful for referencing
-  // entities that aren't represented as GCP resources, for example, tables in
-  // Dataproc Metastore API.
-  //
-  // Examples:
-  //
-  //   * `bigquery:dataset.project_id.dataset_id`
-  //   * `bigquery:table.project_id.dataset_id.table_id`
-  //   * `pubsub:project_id.topic_id`
-  //   * `dataproc_metastore:projectId.locationId.instanceId.databaseId.tableId`
+  // Required. [Fully Qualified Name
+  // (FQN)](https://cloud.google.com/data-catalog/docs/fully-qualified-names)
+  // of the entity.
   string fully_qualified_name = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
@@ -380,6 +391,9 @@ message OperationMetadata {
 
     // The resource deletion operation.
     DELETE = 1;
+
+    // The resource creation operation.
+    CREATE = 2;
   }
 
   // Output only. The current operation state.
@@ -404,6 +418,48 @@ message OperationMetadata {
   // success. This field is unset if the operation is still ongoing.
   google.protobuf.Timestamp end_time = 6
       [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Request message for
+// [ProcessOpenLineageRunEvent][google.cloud.datacatalog.lineage.v1.ProcessOpenLineageRunEvent].
+message ProcessOpenLineageRunEventRequest {
+  // Required. The name of the project and its location that should own the
+  // process, run, and lineage event.
+  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. OpenLineage message following OpenLineage format:
+  // https://github.com/OpenLineage/OpenLineage/blob/main/spec/OpenLineage.json
+  google.protobuf.Struct open_lineage = 2
+      [(google.api.field_behavior) = REQUIRED];
+
+  // A unique identifier for this request. Restricted to 36 ASCII characters.
+  // A random UUID is recommended. This request is idempotent only if a
+  // `request_id` is provided.
+  string request_id = 3;
+}
+
+// Response message for
+// [ProcessOpenLineageRunEvent][google.cloud.datacatalog.lineage.v1.ProcessOpenLineageRunEvent].
+message ProcessOpenLineageRunEventResponse {
+  // Created process name.
+  // Format: `projects/{project}/locations/{location}/processes/{process}`.
+  string process = 1 [(google.api.resource_reference) = {
+    type: "datalineage.googleapis.com/Process"
+  }];
+
+  // Created run name.
+  // Format:
+  // `projects/{project}/locations/{location}/processes/{process}/runs/{run}`.
+  string run = 2 [
+    (google.api.resource_reference) = { type: "datalineage.googleapis.com/Run" }
+  ];
+
+  // Created lineage event names.
+  // Format:
+  // `projects/{project}/locations/{location}/processes/{process}/runs/{run}/lineageEvents/{lineage_event}`.
+  repeated string lineage_events = 3 [(google.api.resource_reference) = {
+    type: "datalineage.googleapis.com/LineageEvent"
+  }];
 }
 
 // Request message for
@@ -542,6 +598,9 @@ message UpdateRunRequest {
   // The list of fields to update. Currently not used. The whole message is
   // updated.
   google.protobuf.FieldMask update_mask = 2;
+
+  // If set to true and the run is not found, the request creates it.
+  bool allow_missing = 3;
 }
 
 // Request message for
@@ -693,7 +752,7 @@ message DeleteLineageEventRequest {
 // Request message for
 // [SearchLinks][google.cloud.datacatalog.lineage.v1.Lineage.SearchLinks].
 message SearchLinksRequest {
-  // Required. The project and location you want search in the format `projects/*/locations/*`
+  // Required. The project and location you want search in.
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -769,7 +828,7 @@ message Link {
 // Request message for
 // [BatchSearchLinkProcesses][google.cloud.datacatalog.lineage.v1.Lineage.BatchSearchLinkProcesses].
 message BatchSearchLinkProcessesRequest {
-  // Required. The project and location you want search in the format `projects/*/locations/*`
+  // Required. The project and location where you want to search.
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -861,9 +920,16 @@ message Origin {
 
     // Looker Studio
     LOOKER_STUDIO = 5;
+
+    // Dataproc
+    DATAPROC = 6;
   }
 
   // Type of the source.
+  //
+  // Use of a source_type other than `CUSTOM` for process creation
+  // or updating is highly discouraged, and may be restricted in the future
+  // without notice.
   SourceType source_type = 1;
 
   // If the source_type isn't CUSTOM, the value of this field should be a GCP
