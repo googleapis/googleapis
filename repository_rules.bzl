@@ -150,6 +150,10 @@ def switched_rules_by_language(
         java and grpc and gapic,
         "@gapic_generator_java//rules_java_gapic:java_gapic_pkg.bzl",
     )
+    rules["java_gapic_assembly_shell_pkg"] = _switch(
+        java and grpc and gapic,
+        "@gapic_generator_java//library_generation:java_gapic_shell_pkg.bzl",
+    )
 
     #
     # Python
