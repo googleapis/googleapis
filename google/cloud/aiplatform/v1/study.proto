@@ -21,6 +21,7 @@ import "google/api/resource.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
 
 option csharp_namespace = "Google.Cloud.AIPlatform.V1";
 option go_package = "cloud.google.com/go/aiplatform/apiv1/aiplatformpb;aiplatformpb";
@@ -211,6 +212,17 @@ message TrialContext {
   // NOTE: a Context without any Parameters matches the entire feasible search
   //   space.
   repeated Trial.Parameter parameters = 2;
+}
+
+// Time-based Constraint for Study
+message StudyTimeConstraint {
+  oneof constraint {
+    // Counts the wallclock time passed since the creation of this Study.
+    google.protobuf.Duration max_duration = 1;
+
+    // Compares the wallclock time to this time. Must use UTC timezone.
+    google.protobuf.Timestamp end_time = 2;
+  }
 }
 
 // Represents specification of a Study.
@@ -504,6 +516,62 @@ message StudySpec {
     optional bool update_all_stopped_trials = 6;
   }
 
+  // The configuration (stopping conditions) for automated stopping of a Study.
+  // Conditions include trial budgets, time budgets, and convergence detection.
+  message StudyStoppingConfig {
+    // If true, a Study enters STOPPING_ASAP whenever it would normally enters
+    // STOPPING state.
+    //
+    // The bottom line is: set to true if you want to interrupt on-going
+    // evaluations of Trials as soon as the study stopping condition is met.
+    // (Please see Study.State documentation for the source of truth).
+    google.protobuf.BoolValue should_stop_asap = 1;
+
+    // Each "stopping rule" in this proto specifies an "if" condition. Before
+    // Vizier would generate a new suggestion, it first checks each specified
+    // stopping rule, from top to bottom in this list.
+    // Note that the first few rules (e.g. minimum_runtime_constraint,
+    // min_num_trials) will prevent other stopping rules from being evaluated
+    // until they are met. For example, setting `min_num_trials=5` and
+    // `always_stop_after= 1 hour` means that the Study will ONLY stop after it
+    // has 5 COMPLETED trials, even if more than an hour has passed since its
+    // creation. It follows the first applicable rule (whose "if" condition is
+    // satisfied) to make a stopping decision. If none of the specified rules
+    // are applicable, then Vizier decides that the study should not stop.
+    // If Vizier decides that the study should stop, the study enters
+    // STOPPING state (or STOPPING_ASAP if should_stop_asap = true).
+    // IMPORTANT: The automatic study state transition happens precisely as
+    // described above; that is, deleting trials or updating StudyConfig NEVER
+    // automatically moves the study state back to ACTIVE. If you want to
+    // _resume_ a Study that was stopped, 1) change the stopping conditions if
+    // necessary, 2) activate the study, and then 3) ask for suggestions.
+    // If the specified time or duration has not passed, do not stop the
+    // study.
+    StudyTimeConstraint minimum_runtime_constraint = 2;
+
+    // If the specified time or duration has passed, stop the study.
+    StudyTimeConstraint maximum_runtime_constraint = 3;
+
+    // If there are fewer than this many COMPLETED trials, do not stop the
+    // study.
+    google.protobuf.Int32Value min_num_trials = 4;
+
+    // If there are more than this many trials, stop the study.
+    google.protobuf.Int32Value max_num_trials = 5;
+
+    // If the objective value has not improved for this many consecutive
+    // trials, stop the study.
+    //
+    // WARNING: Effective only for single-objective studies.
+    google.protobuf.Int32Value max_num_trials_no_progress = 6;
+
+    // If the objective value has not improved for this much time, stop the
+    // study.
+    //
+    // WARNING: Effective only for single-objective studies.
+    google.protobuf.Duration max_duration_no_progress = 7;
+  }
+
   // The available search algorithms for the Study.
   enum Algorithm {
     // The default algorithm used by Vertex AI for [hyperparameter
@@ -589,6 +657,10 @@ message StudySpec {
 
   // Describe which measurement selection type will be used
   MeasurementSelectionType measurement_selection_type = 7;
+
+  // Conditions for automated stopping of a Study. Enable automated stopping by
+  // configuring at least one condition.
+  optional StudyStoppingConfig study_stopping_config = 11;
 }
 
 // A message representing a Measurement of a Trial. A Measurement contains
