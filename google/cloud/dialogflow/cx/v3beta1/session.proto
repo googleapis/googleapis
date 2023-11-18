@@ -27,6 +27,7 @@ import "google/cloud/dialogflow/cx/v3beta1/page.proto";
 import "google/cloud/dialogflow/cx/v3beta1/response_message.proto";
 import "google/cloud/dialogflow/cx/v3beta1/session_entity_type.proto";
 import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
 import "google/protobuf/struct.proto";
 import "google/rpc/status.proto";
 import "google/type/latlng.proto";
@@ -43,6 +44,11 @@ option (google.api.resource_definition) = {
   type: "dialogflow.googleapis.com/Session"
   pattern: "projects/{project}/locations/{location}/agents/{agent}/sessions/{session}"
   pattern: "projects/{project}/locations/{location}/agents/{agent}/environments/{environment}/sessions/{session}"
+};
+option (google.api.resource_definition) = {
+  type: "discoveryengine.googleapis.com/DataStore"
+  pattern: "projects/{project}/locations/{location}/dataStores/{data_store}"
+  pattern: "projects/{project}/locations/{location}/collections/{collection}/dataStores/{data_store}"
 };
 
 // A session represents an interaction with a user. You retrieve user input
@@ -114,6 +120,78 @@ service Sessions {
       }
     };
   }
+
+  // Updates the feedback received from the user for a single turn of the bot
+  // response.
+  rpc SubmitAnswerFeedback(SubmitAnswerFeedbackRequest)
+      returns (AnswerFeedback) {
+    option (google.api.http) = {
+      post: "/v3beta1/{session=projects/*/locations/*/agents/*/sessions/*}:submitAnswerFeedback"
+      body: "*"
+    };
+  }
+}
+
+// Stores information about feedback provided by users about a response.
+message AnswerFeedback {
+  // Represents thumbs up/down rating provided by user about a response.
+  enum Rating {
+    // Rating not specified.
+    RATING_UNSPECIFIED = 0;
+
+    // Thumbs up feedback from user.
+    THUMBS_UP = 1;
+
+    // Thumbs down feedback from user.
+    THUMBS_DOWN = 2;
+  }
+
+  // Stores extra information about why users provided thumbs down rating.
+  message RatingReason {
+    // Optional. Custom reason labels for thumbs down rating provided by the
+    // user. The maximum number of labels allowed is 10 and the maximum length
+    // of a single label is 128 characters.
+    repeated string reason_labels = 3 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Additional feedback about the rating.
+    // This field can be populated without choosing a predefined `reason`.
+    string feedback = 2 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Optional. Rating from user for the specific Dialogflow response.
+  Rating rating = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. In case of thumbs down rating provided, users can optionally
+  // provide context about the rating.
+  RatingReason rating_reason = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Custom rating from the user about the provided answer, with
+  // maximum length of 1024 characters. For example, client could use a
+  // customized JSON object to indicate the rating.
+  string custom_rating = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The request to set the feedback for a bot answer.
+message SubmitAnswerFeedbackRequest {
+  // Required. The name of the session the feedback was sent to.
+  string session = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dialogflow.googleapis.com/Session"
+    }
+  ];
+
+  // Required. ID of the response to update its feedback. This is the same as
+  // DetectIntentResponse.response_id.
+  string response_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Feedback provided for a bot answer.
+  AnswerFeedback answer_feedback = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The mask to control which fields to update. If the mask is not
+  // present, all fields will be updated.
+  google.protobuf.FieldMask update_mask = 4
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // The request to detect user's intent.
@@ -609,6 +687,120 @@ message QueryParameters {
   // This value should be no longer than 1 day.
   google.protobuf.Duration session_ttl = 16
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Information about the end-user to improve the relevance and
+  // accuracy of generative answers.
+  //
+  // This will be interpreted and used by a language model, so, for good
+  // results, the data should be self-descriptive, and in a simple structure.
+  //
+  // Example:
+  //
+  // ```json
+  // {
+  //   "subscription plan": "Business Premium Plus",
+  //   "devices owned": [
+  //     {"model": "Google Pixel 7"},
+  //     {"model": "Google Pixel Tablet"}
+  //   ]
+  // }
+  // ```
+  google.protobuf.Struct end_user_metadata = 18
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Search configuration for UCS search queries.
+  SearchConfig search_config = 20 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Search configuration for UCS search queries.
+message SearchConfig {
+  // Optional. Boosting configuration for the datastores.
+  repeated BoostSpecs boost_specs = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Filter configuration for the datastores.
+  repeated FilterSpecs filter_specs = 2
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Boost specification to boost certain documents.
+// A copy of google.cloud.discoveryengine.v1main.BoostSpec, field documentation
+// is available at
+// https://cloud.google.com/generative-ai-app-builder/docs/reference/rest/v1alpha/BoostSpec
+message BoostSpec {
+  // Boost applies to documents which match a condition.
+  message ConditionBoostSpec {
+    // Optional. An expression which specifies a boost condition. The syntax and
+    // supported fields are the same as a filter expression.
+    // Examples:
+    //
+    // * To boost documents with document ID "doc_1" or "doc_2", and
+    // color
+    //   "Red" or "Blue":
+    //     * (id: ANY("doc_1", "doc_2")) AND (color: ANY("Red","Blue"))
+    string condition = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Strength of the condition boost, which should be in [-1, 1].
+    // Negative boost means demotion. Default is 0.0.
+    //
+    // Setting to 1.0 gives the document a big promotion. However, it does not
+    // necessarily mean that the boosted document will be the top result at
+    // all times, nor that other documents will be excluded. Results could
+    // still be shown even when none of them matches the condition. And
+    // results that are significantly more relevant to the search query can
+    // still trump your heavily favored but irrelevant documents.
+    //
+    // Setting to -1.0 gives the document a big demotion. However, results
+    // that are deeply relevant might still be shown. The document will have
+    // an upstream battle to get a fairly high ranking, but it is not blocked
+    // out completely.
+    //
+    // Setting to 0.0 means no boost applied. The boosting condition is
+    // ignored.
+    float boost = 2 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Optional. Condition boost specifications. If a document matches multiple
+  // conditions in the specifictions, boost scores from these specifications are
+  // all applied and combined in a non-linear way. Maximum number of
+  // specifications is 20.
+  repeated ConditionBoostSpec condition_boost_specs = 1
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Boost specifications for data stores.
+message BoostSpecs {
+  // Optional. Data Stores where the boosting configuration is applied. The full
+  // names of the referenced data stores. Formats:
+  // `projects/{project}/locations/{location}/collections/{collection}/dataStores/{data_store}`
+  // `projects/{project}/locations/{location}/dataStores/{data_store}
+  repeated string data_stores = 1 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "discoveryengine.googleapis.com/DataStore"
+    }
+  ];
+
+  // Optional. A list of boosting specifications.
+  repeated BoostSpec spec = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Filter specifications for data stores.
+message FilterSpecs {
+  // Optional. Data Stores where the boosting configuration is applied. The full
+  // names of the referenced data stores. Formats:
+  // `projects/{project}/locations/{location}/collections/{collection}/dataStores/{data_store}`
+  // `projects/{project}/locations/{location}/dataStores/{data_store}
+  repeated string data_stores = 1 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "discoveryengine.googleapis.com/DataStore"
+    }
+  ];
+
+  // Optional. The filter expression to be applied.
+  // Expression syntax is documented at
+  // https://cloud.google.com/generative-ai-app-builder/docs/filter-search-metadata#filter-expression-syntax
+  string filter = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Represents the query input. It can contain one of:
@@ -774,6 +966,10 @@ message QueryResult {
   // Dialogflow exports audio to Google Cloud Storage, then the client may need
   // to wait for the resulting object to appear in the bucket before proceeding.
   AdvancedSettings advanced_settings = 21;
+
+  // Indicates whether the Thumbs up/Thumbs down rating controls are need to be
+  // shown for the response in the Dialogflow Messenger widget.
+  bool allow_answer_feedback = 32;
 }
 
 // Represents the natural language text to be processed.
