@@ -20,6 +20,7 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/cloud/sql/v1/cloud_sql_resources.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/wrappers.proto";
 
@@ -160,6 +161,13 @@ service SqlInstancesService {
   rpc PromoteReplica(SqlInstancesPromoteReplicaRequest) returns (Operation) {
     option (google.api.http) = {
       post: "/v1/projects/{project}/instances/{instance}/promoteReplica"
+    };
+  }
+
+  // Switches over from the primary instance to the replica instance.
+  rpc Switchover(SqlInstancesSwitchoverRequest) returns (Operation) {
+    option (google.api.http) = {
+      post: "/v1/projects/{project}/instances/{instance}/switchover"
     };
   }
 
@@ -449,6 +457,26 @@ message SqlInstancesPromoteReplicaRequest {
 
   // ID of the project that contains the read replica.
   string project = 2;
+
+  // Set to true if the promote operation should attempt to re-add the original
+  // primary as a replica when it comes back online. Otherwise, if this value is
+  // false or not set, the original primary will be a standalone instance.
+  bool failover = 3;
+}
+
+// Instance switchover request.
+message SqlInstancesSwitchoverRequest {
+  // Cloud SQL read replica instance name.
+  string instance = 1;
+
+  // ID of the project that contains the replica.
+  string project = 2;
+
+  // Optional. (MySQL only) Cloud SQL instance operations timeout, which is a
+  // sum of all database operations. Default value is 10 minutes and can be
+  // modified to a maximum value of 24 hours.
+  google.protobuf.Duration db_timeout = 3
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Instance reset SSL config request.
@@ -1120,8 +1148,12 @@ message DatabaseInstance {
   // Output only. The dns name of the instance.
   optional string dns_name = 49 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. The dns name of the primary instance in a replication group.
+  // Output only. DEPRECATED: please use write_endpoint instead.
   optional string primary_dns_name = 51
+      [deprecated = true, (google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The dns name of the primary instance in a replication group.
+  optional string write_endpoint = 52
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
@@ -1341,6 +1373,10 @@ message SqlExternalSyncSettingError {
 
     // The global variable local_infile is off on external server replica.
     LOCAL_INFILE_OFF = 35;
+
+    // This code instructs customers to turn on point-in-time recovery manually
+    // for the instance after promoting the Cloud SQL for PostgreSQL instance.
+    TURN_ON_PITR_AFTER_PROMOTE = 36;
   }
 
   // Can be `sql#externalSyncSettingError` or
@@ -1404,6 +1440,12 @@ message ReplicaConfiguration {
   // primary instance. Only one replica can be specified as failover target, and
   // the replica has to be in different zone with the primary instance.
   google.protobuf.BoolValue failover_target = 3;
+
+  // Optional. Specifies if a SQL Server replica is a cascadable replica. A
+  // cascadable replica is a SQL Server cross region replica that supports
+  // replica(s) under it.
+  google.protobuf.BoolValue cascadable_replica = 5
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 enum SqlInstanceType {
