@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,6 +18,8 @@ package google.firestore.admin.v1;
 
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "Google.Cloud.Firestore.Admin.V1";
 option go_package = "cloud.google.com/go/firestore/apiv1/admin/adminpb;adminpb";
@@ -78,6 +80,26 @@ message Database {
     OPTIMISTIC_WITH_ENTITY_GROUPS = 3;
   }
 
+  // Point In Time Recovery feature enablement.
+  enum PointInTimeRecoveryEnablement {
+    // Not used.
+    POINT_IN_TIME_RECOVERY_ENABLEMENT_UNSPECIFIED = 0;
+
+    // Reads are supported on selected versions of the data from within the past
+    // 7 days:
+    //
+    // * Reads against any timestamp within the past hour
+    // * Reads against 1-minute snapshots beyond 1 hour and within 7 days
+    //
+    // `version_retention_period` and `earliest_version_time` can be
+    // used to determine the supported versions.
+    POINT_IN_TIME_RECOVERY_ENABLED = 1;
+
+    // Reads are supported on any version of the data from within the past 1
+    // hour.
+    POINT_IN_TIME_RECOVERY_DISABLED = 2;
+  }
+
   // The type of App Engine integration mode.
   enum AppEngineIntegrationMode {
     // Not used.
@@ -89,8 +111,10 @@ message Database {
     // the database.
     ENABLED = 1;
 
-    // Appengine has no affect on the ability of this database to serve
+    // App Engine has no effect on the ability of this database to serve
     // requests.
+    //
+    // This is the default setting for databases created with the Firestore API.
     DISABLED = 2;
   }
 
@@ -98,7 +122,7 @@ message Database {
   // Format: `projects/{project}/databases/{database}`
   string name = 1;
 
-  // The location of the database. Available databases are listed at
+  // The location of the database. Available locations are listed at
   // https://cloud.google.com/firestore/docs/locations.
   string location_id = 9;
 
@@ -110,13 +134,40 @@ message Database {
   // The concurrency control mode to use for this database.
   ConcurrencyMode concurrency_mode = 15;
 
+  // Output only. The period during which past versions of data are retained in
+  // the database.
+  //
+  // Any [read][google.firestore.v1.GetDocumentRequest.read_time]
+  // or [query][google.firestore.v1.ListDocumentsRequest.read_time] can specify
+  // a `read_time` within this window, and will read the state of the database
+  // at that time.
+  //
+  // If the PITR feature is enabled, the retention period is 7 days. Otherwise,
+  // the retention period is 1 hour.
+  google.protobuf.Duration version_retention_period = 17
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The earliest timestamp at which older versions of the data can
+  // be read from the database. See [version_retention_period] above; this field
+  // is populated with `now - version_retention_period`.
+  //
+  // This value is continuously updated, and becomes stale the moment it is
+  // queried. If you are using this value to recover data, make sure to account
+  // for the time from the moment when the value is queried to the moment when
+  // you initiate the recovery.
+  google.protobuf.Timestamp earliest_version_time = 18
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Whether to enable the PITR feature on this database.
+  PointInTimeRecoveryEnablement point_in_time_recovery_enablement = 21;
+
   // The App Engine integration mode to use for this database.
   AppEngineIntegrationMode app_engine_integration_mode = 19;
 
-  // Output only. The key_prefix for this database. This key_prefix is used, in combination
-  // with the project id ("<key prefix>~<project id>") to construct the
-  // application id that is returned from the Cloud Datastore APIs in Google App
-  // Engine first generation runtimes.
+  // Output only. The key_prefix for this database. This key_prefix is used, in
+  // combination with the project id ("<key prefix>~<project id>") to construct
+  // the application id that is returned from the Cloud Datastore APIs in Google
+  // App Engine first generation runtimes.
   //
   // This value may be empty in which case the appid to use for URL-encoded keys
   // is the project_id (eg: foo instead of v~foo).
