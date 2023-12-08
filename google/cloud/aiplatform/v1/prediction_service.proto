@@ -21,7 +21,9 @@ import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/httpbody.proto";
 import "google/api/resource.proto";
+import "google/cloud/aiplatform/v1/content.proto";
 import "google/cloud/aiplatform/v1/explanation.proto";
+import "google/cloud/aiplatform/v1/tool.proto";
 import "google/cloud/aiplatform/v1/types.proto";
 import "google/protobuf/struct.proto";
 
@@ -134,6 +136,20 @@ service PredictionService {
     };
     option (google.api.method_signature) =
         "endpoint,instances,parameters,deployed_model_id";
+  }
+
+  // Generate content with multimodal inputs with streaming support.
+  rpc StreamGenerateContent(GenerateContentRequest)
+      returns (stream GenerateContentResponse) {
+    option (google.api.http) = {
+      post: "/v1/{model=projects/*/locations/*/endpoints/*}:streamGenerateContent"
+      body: "*"
+      additional_bindings {
+        post: "/v1/{model=projects/*/locations/*/publishers/*/models/*}:streamGenerateContent"
+        body: "*"
+      }
+    };
+    option (google.api.method_signature) = "model,contents";
   }
 }
 
@@ -459,10 +475,18 @@ message CountTokensRequest {
     }
   ];
 
+  // Required. The name of the publisher model requested to serve the
+  // prediction. Format:
+  // `projects/{project}/locations/{location}/publishers/*/models/*`
+  string model = 3 [(google.api.field_behavior) = REQUIRED];
+
   // Required. The instances that are the input to token counting call.
   // Schema is identical to the prediction schema of the underlying model.
   repeated google.protobuf.Value instances = 2
       [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Input content.
+  repeated Content contents = 4 [(google.api.field_behavior) = REQUIRED];
 }
 
 // Response message for [PredictionService.CountTokens][].
@@ -473,4 +497,88 @@ message CountTokensResponse {
   // The total number of billable characters counted across all instances from
   // the request.
   int32 total_billable_characters = 2;
+}
+
+// Request message for [PredictionService.GenerateContent].
+message GenerateContentRequest {
+  // Required. The name of the publisher model requested to serve the
+  // prediction. Format:
+  // `projects/{project}/locations/{location}/publishers/*/models/*`
+  string model = 5 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The content of the current conversation with the model.
+  //
+  // For single-turn queries, this is a single instance. For multi-turn queries,
+  // this is a repeated field that contains conversation history + latest
+  // request.
+  repeated Content contents = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. A list of `Tools` the model may use to generate the next
+  // response.
+  //
+  // A `Tool` is a piece of code that enables the system to interact with
+  // external systems to perform an action, or set of actions, outside of
+  // knowledge and scope of the model. The only supported tool is currently
+  // `Function`
+  repeated Tool tools = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Per request settings for blocking unsafe content.
+  // Enforced on GenerateContentResponse.candidates.
+  repeated SafetySetting safety_settings = 3
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Generation config.
+  GenerationConfig generation_config = 4
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message for [PredictionService.GenerateContent].
+message GenerateContentResponse {
+  // Content filter results for a prompt sent in the request.
+  message PromptFeedback {
+    // Blocked reason enumeration.
+    enum BlockedReason {
+      // Unspecified blocked reason.
+      BLOCKED_REASON_UNSPECIFIED = 0;
+
+      // Candidates blocked due to safety.
+      SAFETY = 1;
+
+      // Candidates blocked due to other reason.
+      OTHER = 2;
+    }
+
+    // Output only. Blocked reason.
+    BlockedReason block_reason = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Safety ratings.
+    repeated SafetyRating safety_ratings = 2
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. A readable block reason message.
+    string block_reason_message = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Usage metadata about response(s).
+  message UsageMetadata {
+    // Number of tokens in the request.
+    int32 prompt_token_count = 1;
+
+    // Number of tokens in the response(s).
+    int32 candidates_token_count = 2;
+
+    int32 total_token_count = 3;
+  }
+
+  // Output only. Generated candidates.
+  repeated Candidate candidates = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Content filter results for a prompt sent in the request.
+  // Note: Sent only in the first stream chunk.
+  // Only happens when no candidates were generated due to content violations.
+  PromptFeedback prompt_feedback = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Usage metadata about the response(s).
+  UsageMetadata usage_metadata = 4;
 }
