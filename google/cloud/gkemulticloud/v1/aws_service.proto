@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,7 +21,9 @@ import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/gkemulticloud/v1/aws_resources.proto";
+import "google/cloud/gkemulticloud/v1/common_resources.proto";
 import "google/longrunning/operations.proto";
+import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -113,6 +115,15 @@ service AwsClusters {
     };
   }
 
+  // Generates an access token for a cluster agent.
+  rpc GenerateAwsClusterAgentToken(GenerateAwsClusterAgentTokenRequest)
+      returns (GenerateAwsClusterAgentTokenResponse) {
+    option (google.api.http) = {
+      post: "/v1/{aws_cluster=projects/*/locations/*/awsClusters/*}:generateAwsClusterAgentToken"
+      body: "*"
+    };
+  }
+
   // Generates a short-lived access token to authenticate to a given
   // [AwsCluster][google.cloud.gkemulticloud.v1.AwsCluster] resource.
   rpc GenerateAwsAccessToken(GenerateAwsAccessTokenRequest)
@@ -156,6 +167,25 @@ service AwsClusters {
     };
   }
 
+  // Rolls back a previously aborted or failed
+  // [AwsNodePool][google.cloud.gkemulticloud.v1.AwsNodePool] update request.
+  // Makes no changes if the last update request successfully finished.
+  // If an update request is in progress, you cannot rollback the update.
+  // You must first cancel or let it finish unsuccessfully before you can
+  // rollback.
+  rpc RollbackAwsNodePoolUpdate(RollbackAwsNodePoolUpdateRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/awsClusters/*/awsNodePools/*}:rollback"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+    option (google.longrunning.operation_info) = {
+      response_type: "AwsNodePool"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
   // Describes a specific
   // [AwsNodePool][google.cloud.gkemulticloud.v1.AwsNodePool] resource.
   rpc GetAwsNodePool(GetAwsNodePoolRequest) returns (AwsNodePool) {
@@ -191,6 +221,25 @@ service AwsClusters {
     option (google.longrunning.operation_info) = {
       response_type: "google.protobuf.Empty"
       metadata_type: "OperationMetadata"
+    };
+  }
+
+  // Gets the OIDC discovery document for the cluster.
+  // See the
+  // [OpenID Connect Discovery 1.0
+  // specification](https://openid.net/specs/openid-connect-discovery-1_0.html)
+  // for details.
+  rpc GetAwsOpenIdConfig(GetAwsOpenIdConfigRequest) returns (AwsOpenIdConfig) {
+    option (google.api.http) = {
+      get: "/v1/{aws_cluster=projects/*/locations/*/awsClusters/*}/.well-known/openid-configuration"
+    };
+  }
+
+  // Gets the public component of the cluster signing keys in
+  // JSON Web Key format.
+  rpc GetAwsJsonWebKeys(GetAwsJsonWebKeysRequest) returns (AwsJsonWebKeys) {
+    option (google.api.http) = {
+      get: "/v1/{aws_cluster=projects/*/locations/*/awsClusters/*}/jwks"
     };
   }
 
@@ -257,6 +306,8 @@ message UpdateAwsClusterRequest {
   //  *   `annotations`.
   //  *   `control_plane.version`.
   //  *   `authorization.admin_users`.
+  //  *   `authorization.admin_groups`.
+  //  *   `binary_authorization.evaluation_mode`.
   //  *   `control_plane.aws_services_authentication.role_arn`.
   //  *   `control_plane.aws_services_authentication.role_session_name`.
   //  *   `control_plane.config_encryption.kms_key_arn`.
@@ -268,6 +319,7 @@ message UpdateAwsClusterRequest {
   //  *   `control_plane.root_volume.size_gib`.
   //  *   `control_plane.root_volume.volume_type`.
   //  *   `control_plane.root_volume.iops`.
+  //  *   `control_plane.root_volume.throughput`.
   //  *   `control_plane.root_volume.kms_key_arn`.
   //  *   `control_plane.ssh_config`.
   //  *   `control_plane.ssh_config.ec2_key_pair`.
@@ -276,6 +328,7 @@ message UpdateAwsClusterRequest {
   //  *   `logging_config.component_config.enable_components`.
   //  *   `control_plane.tags`.
   //  *   `monitoring_config.managed_prometheus_config.enabled`.
+  //  *   `networking.per_node_pool_sg_rules_disabled`.
   google.protobuf.FieldMask update_mask = 4
       [(google.api.field_behavior) = REQUIRED];
 }
@@ -369,6 +422,12 @@ message DeleteAwsClusterRequest {
   // Useful for idempotent deletion.
   bool allow_missing = 3;
 
+  // Optional. If set to true, the deletion of
+  // [AwsCluster][google.cloud.gkemulticloud.v1.AwsCluster] resource will
+  // succeed even if errors occur during deleting in cluster resources. Using
+  // this parameter may result in orphaned resources in the cluster.
+  bool ignore_errors = 5 [(google.api.field_behavior) = OPTIONAL];
+
   // The current etag of the
   // [AwsCluster][google.cloud.gkemulticloud.v1.AwsCluster].
   //
@@ -436,6 +495,7 @@ message UpdateAwsNodePoolRequest {
   //  *   `config.config_encryption.kms_key_arn`.
   //  *   `config.security_group_ids`.
   //  *   `config.root_volume.iops`.
+  //  *   `config.root_volume.throughput`.
   //  *   `config.root_volume.kms_key_arn`.
   //  *   `config.root_volume.volume_type`.
   //  *   `config.root_volume.size_gib`.
@@ -451,8 +511,38 @@ message UpdateAwsNodePoolRequest {
   //  *   `config.autoscaling_metrics_collection`.
   //  *   `config.autoscaling_metrics_collection.granularity`.
   //  *   `config.autoscaling_metrics_collection.metrics`.
+  //  *   `config.instance_type`.
+  //  *   `management.auto_repair`.
+  //  *   `management`.
+  //  *   `update_settings`.
+  //  *   `update_settings.surge_settings`.
+  //  *   `update_settings.surge_settings.max_surge`.
+  //  *   `update_settings.surge_settings.max_unavailable`.
   google.protobuf.FieldMask update_mask = 3
       [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request message for `AwsClusters.RollbackAwsNodePoolUpdate` method.
+message RollbackAwsNodePoolUpdateRequest {
+  // Required. The name of the
+  // [AwsNodePool][google.cloud.gkemulticloud.v1.AwsNodePool] resource to
+  // rollback.
+  //
+  // `AwsNodePool` names are formatted as
+  // `projects/<project-id>/locations/<region>/awsClusters/<cluster-id>/awsNodePools/<node-pool-id>`.
+  //
+  // See [Resource Names](https://cloud.google.com/apis/design/resource_names)
+  // for more details on Google Cloud resource names.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "gkemulticloud.googleapis.com/AwsNodePool"
+    }
+  ];
+
+  // Optional. Option for rollback to ignore the PodDisruptionBudget when
+  // draining the node pool nodes. Default value is false.
+  bool respect_pdb = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request message for `AwsClusters.GetAwsNodePool` method.
@@ -546,6 +636,12 @@ message DeleteAwsNodePoolRequest {
   // Useful for idempotent deletion.
   bool allow_missing = 3;
 
+  // Optional. If set to true, the deletion of
+  // [AwsNodePool][google.cloud.gkemulticloud.v1.AwsNodePool] resource will
+  // succeed even if errors occur during deleting in node pool resources. Using
+  // this parameter may result in orphaned resources in the node pool.
+  bool ignore_errors = 5 [(google.api.field_behavior) = OPTIONAL];
+
   // The current ETag of the
   // [AwsNodePool][google.cloud.gkemulticloud.v1.AwsNodePool].
   //
@@ -554,6 +650,36 @@ message DeleteAwsNodePoolRequest {
   // If the provided ETag does not match the current etag of the node pool,
   // the request will fail and an ABORTED error will be returned.
   string etag = 4;
+}
+
+// GetAwsOpenIdConfigRequest gets the OIDC discovery document for the
+// cluster. See the OpenID Connect Discovery 1.0 specification for details.
+message GetAwsOpenIdConfigRequest {
+  // Required. The AwsCluster, which owns the OIDC discovery document.
+  // Format:
+  // projects/{project}/locations/{location}/awsClusters/{cluster}
+  string aws_cluster = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "gkemulticloud.googleapis.com/AwsCluster"
+    }
+  ];
+}
+
+// GetAwsJsonWebKeysRequest gets the public component of the keys used by the
+// cluster to sign token requests. This will be the jwks_uri for the discover
+// document returned by getOpenIDConfig. See the OpenID Connect
+// Discovery 1.0 specification for details.
+message GetAwsJsonWebKeysRequest {
+  // Required. The AwsCluster, which owns the JsonWebKeys.
+  // Format:
+  // projects/{project}/locations/{location}/awsClusters/{cluster}
+  string aws_cluster = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "gkemulticloud.googleapis.com/AwsCluster"
+    }
+  ];
 }
 
 // GetAwsServerConfigRequest gets the server config of GKE cluster on AWS.
@@ -602,4 +728,49 @@ message GenerateAwsAccessTokenResponse {
   // Output only. Timestamp at which the token will expire.
   google.protobuf.Timestamp expiration_time = 2
       [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+message GenerateAwsClusterAgentTokenRequest {
+  // Required.
+  string aws_cluster = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "gkemulticloud.googleapis.com/AwsCluster"
+    }
+  ];
+
+  // Required.
+  string subject_token = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required.
+  string subject_token_type = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Required.
+  string version = 4 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional.
+  string node_pool_id = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional.
+  string grant_type = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional.
+  string audience = 7 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional.
+  string scope = 8 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional.
+  string requested_token_type = 9 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional.
+  string options = 10 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message GenerateAwsClusterAgentTokenResponse {
+  string access_token = 1;
+
+  int32 expires_in = 2;
+
+  string token_type = 3;
 }

@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/gkemulticloud/v1/common_resources.proto";
 import "google/protobuf/timestamp.proto";
+import "google/type/date.proto";
 
 option csharp_namespace = "Google.Cloud.GkeMultiCloud.V1";
 option go_package = "cloud.google.com/go/gkemulticloud/apiv1/gkemulticloudpb;gkemulticloudpb";
@@ -153,6 +154,10 @@ message AwsCluster {
   // Optional. Monitoring configuration for this cluster.
   MonitoringConfig monitoring_config = 21
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Binary Authorization configuration for this cluster.
+  BinaryAuthorization binary_authorization = 22
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // ControlPlane defines common parameters between control plane nodes.
@@ -252,20 +257,35 @@ message AwsServicesAuthentication {
 
 // Configuration related to the cluster RBAC settings.
 message AwsAuthorization {
-  // Required. Users that can perform operations as a cluster admin. A managed
+  // Optional. Users that can perform operations as a cluster admin. A managed
   // ClusterRoleBinding will be created to grant the `cluster-admin` ClusterRole
   // to the users. Up to ten admin users can be provided.
   //
   // For more info on RBAC, see
   // https://kubernetes.io/docs/reference/access-authn-authz/rbac/#user-facing-roles
   repeated AwsClusterUser admin_users = 1
-      [(google.api.field_behavior) = REQUIRED];
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Groups of users that can perform operations as a cluster admin. A
+  // managed ClusterRoleBinding will be created to grant the `cluster-admin`
+  // ClusterRole to the groups. Up to ten admin groups can be provided.
+  //
+  // For more info on RBAC, see
+  // https://kubernetes.io/docs/reference/access-authn-authz/rbac/#user-facing-roles
+  repeated AwsClusterGroup admin_groups = 2
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Identities of a user-type subject for AWS clusters.
 message AwsClusterUser {
   // Required. The name of the user, e.g. `my-gcp-id@gmail.com`.
   string username = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Identities of a group-type subject for AWS clusters.
+message AwsClusterGroup {
+  // Required. The name of the group, e.g. `my-group@domain.com`.
+  string group = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
 // Configuration related to application-layer secrets encryption.
@@ -306,6 +326,12 @@ message AwsVolumeTemplate {
   // GP3 volume.
   int32 iops = 3 [(google.api.field_behavior) = OPTIONAL];
 
+  // Optional. The throughput that the volume supports, in MiB/s. Only valid if
+  // volume_type is GP3.
+  //
+  // If the volume_type is GP3 and this is not speficied, it defaults to 125.
+  int32 throughput = 5 [(google.api.field_behavior) = OPTIONAL];
+
   // Optional. The Amazon Resource Name (ARN) of the Customer Managed Key (CMK)
   // used to encrypt AWS EBS volumes.
   //
@@ -336,6 +362,14 @@ message AwsClusterNetworking {
   // changed after creation.
   repeated string service_address_cidr_blocks = 3
       [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Disable the per node pool subnet security group rules on the
+  // control plane security group. When set to true, you must also provide one
+  // or more security groups that ensure node pools are able to send requests to
+  // the control plane on TCP/443 and TCP/8132. Failure to do so may result in
+  // unavailable node pools.
+  bool per_node_pool_sg_rules_disabled = 5
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // An Anthos node pool running on AWS.
@@ -443,13 +477,70 @@ message AwsNodePool {
   // Output only. A set of errors found in the node pool.
   repeated AwsNodePoolError errors = 29
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The Management configuration for this node pool.
+  AwsNodeManagement management = 30 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Update settings control the speed and disruption of the update.
+  UpdateSettings update_settings = 32 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// UpdateSettings control the level of parallelism and the level of
+// disruption caused during the update of a node pool.
+//
+// These settings are applicable when the node pool update requires replacing
+// the existing node pool nodes with the updated ones.
+//
+// UpdateSettings are optional. When UpdateSettings are not specified during the
+// node pool creation, a default is chosen based on the parent cluster's
+// version. For clusters with minor version 1.27 and later, a default
+// surge_settings configuration with max_surge = 1 and max_unavailable = 0 is
+// used. For clusters with older versions, node pool updates use the traditional
+// rolling update mechanism of updating one node at a time in a
+// "terminate before create" fashion and update_settings is not applicable.
+//
+// Set the surge_settings parameter to use the Surge Update mechanism for
+// the rolling update of node pool nodes.
+// 1. max_surge controls the number of additional nodes that can be created
+// beyond the current size of the node pool temporarily for the time of the
+// update to increase the number of available nodes.
+// 2. max_unavailable controls the number of nodes that can be simultaneously
+// unavailable during the update.
+// 3. (max_surge + max_unavailable) determines the level of parallelism (i.e.,
+// the number of nodes being updated at the same time).
+message UpdateSettings {
+  // Optional. Settings for surge update.
+  SurgeSettings surge_settings = 1 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// SurgeSettings contains the parameters for Surge update.
+message SurgeSettings {
+  // Optional. The maximum number of nodes that can be created beyond the
+  // current size of the node pool during the update process.
+  int32 max_surge = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The maximum number of nodes that can be simultaneously
+  // unavailable during the update process. A node is considered unavailable if
+  // its status is not Ready.
+  int32 max_unavailable = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// AwsNodeManagement defines the set of node management features turned on for
+// an AWS node pool.
+message AwsNodeManagement {
+  // Optional. Whether or not the nodes will be automatically repaired. When set
+  // to true, the nodes in this node pool will be monitored and if they fail
+  // health checks consistently over a period of time, an automatic repair
+  // action will be triggered to replace them with new nodes.
+  bool auto_repair = 1 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Parameters that describe the nodes in a cluster.
 message AwsNodeConfig {
-  // Optional. The AWS instance type.
+  // Optional. The EC2 instance type when creating on-Demand instances.
   //
-  // When unspecified, it uses a default based on the node pool's version.
+  // If unspecified during node pool creation, a default will be chosen based on
+  // the node pool version, and assigned to this field.
   string instance_type = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Template for the root volume provisioned for node pool nodes.
@@ -478,8 +569,7 @@ message AwsNodeConfig {
   string iam_instance_profile = 6 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. The OS image type to use on node pool instances.
-  // Can have a value of `ubuntu`, or `windows` if the cluster enables
-  // the Windows node pool preview feature.
+  // Can be unspecified, or have a value of `ubuntu`.
   //
   // When unspecified, it defaults to `ubuntu`.
   string image_type = 11 [(google.api.field_behavior) = OPTIONAL];
@@ -511,6 +601,13 @@ message AwsNodeConfig {
   // When unspecified, metrics collection is disabled.
   AwsAutoscalingGroupMetricsCollection autoscaling_metrics_collection = 15
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Configuration for provisioning EC2 Spot instances
+  //
+  // When specified, the node pool will provision Spot instances from the set
+  // of spot_config.instance_types.
+  // This field is mutually exclusive with `instance_type`.
+  SpotConfig spot_config = 16 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // AwsNodePoolAutoscaling contains information required by cluster autoscaler
@@ -525,6 +622,38 @@ message AwsNodePoolAutoscaling {
   int32 max_node_count = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
+// AwsOpenIdConfig is an OIDC discovery document for the cluster.
+// See the OpenID Connect Discovery 1.0 specification for details.
+message AwsOpenIdConfig {
+  // OIDC Issuer.
+  string issuer = 1;
+
+  // JSON Web Key uri.
+  string jwks_uri = 2;
+
+  // Supported response types.
+  repeated string response_types_supported = 3;
+
+  // Supported subject types.
+  repeated string subject_types_supported = 4;
+
+  // supported ID Token signing Algorithms.
+  repeated string id_token_signing_alg_values_supported = 5;
+
+  // Supported claims.
+  repeated string claims_supported = 6;
+
+  // Supported grant types.
+  repeated string grant_types = 7;
+}
+
+// AwsJsonWebKeys is a valid JSON Web Key Set as specififed in RFC 7517.
+message AwsJsonWebKeys {
+  // The public component of the keys used by the cluster to sign token
+  // requests.
+  repeated Jwk keys = 1;
+}
+
 // AwsServerConfig is the configuration of GKE cluster on AWS.
 message AwsServerConfig {
   option (google.api.resource) = {
@@ -535,7 +664,10 @@ message AwsServerConfig {
   // The resource name of the config.
   string name = 1;
 
-  // List of valid Kubernetes versions.
+  // List of all released Kubernetes versions, including ones which are end of
+  // life and can no longer be used.  Filter by the `enabled`
+  // property to limit to currently available versions.
+  // Valid versions supported for both create and update operations
   repeated AwsK8sVersionInfo valid_versions = 2;
 
   // The list of supported AWS regions.
@@ -546,6 +678,27 @@ message AwsServerConfig {
 message AwsK8sVersionInfo {
   // Kubernetes version name.
   string version = 1;
+
+  // Optional. True if the version is available for cluster creation. If a
+  // version is enabled for creation, it can be used to create new clusters.
+  // Otherwise, cluster creation will fail. However, cluster upgrade operations
+  // may succeed, even if the version is not enabled.
+  bool enabled = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. True if this cluster version belongs to a minor version that has
+  // reached its end of life and is no longer in scope to receive security and
+  // bug fixes.
+  bool end_of_life = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The estimated date (in Pacific Time) when this cluster version
+  // will reach its end of life. Or if this version is no longer supported (the
+  // `end_of_life` field is true), this is the actual date (in Pacific time)
+  // when the version reached its end of life.
+  google.type.Date end_of_life_date = 5
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The date (in Pacific Time) when the cluster version was released.
+  google.type.Date release_date = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // SSH configuration for AWS resources.
@@ -612,6 +765,12 @@ message AwsAutoscalingGroupMetricsCollection {
   // If you specify Granularity and don't specify any metrics, all metrics are
   // enabled.
   repeated string metrics = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// SpotConfig has configuration info for Spot node.
+message SpotConfig {
+  // Required. A list of instance types for creating spot node pool.
+  repeated string instance_types = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
 // AwsClusterError describes errors found on AWS clusters.
