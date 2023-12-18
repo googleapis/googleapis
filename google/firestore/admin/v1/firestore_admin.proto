@@ -164,7 +164,8 @@ service FirestoreAdmin {
   // only supports listing fields that have been explicitly overridden. To issue
   // this query, call
   // [FirestoreAdmin.ListFields][google.firestore.admin.v1.FirestoreAdmin.ListFields]
-  // with the filter set to `indexConfig.usesAncestorConfig:false` .
+  // with the filter set to `indexConfig.usesAncestorConfig:false or
+  // `ttlConfig:*`.
   rpc ListFields(ListFieldsRequest) returns (ListFieldsResponse) {
     option (google.api.http) = {
       get: "/v1/{parent=projects/*/databases/*/collectionGroups/*}/fields"
@@ -257,6 +258,19 @@ service FirestoreAdmin {
       metadata_type: "UpdateDatabaseMetadata"
     };
   }
+
+  // Deletes a database.
+  rpc DeleteDatabase(DeleteDatabaseRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      delete: "/v1/{name=projects/*/databases/*}"
+    };
+    option (google.api.method_signature) = "name";
+    option (google.longrunning.operation_info) = {
+      response_type: "Database"
+      metadata_type: "DeleteDatabaseMetadata"
+    };
+  }
 }
 
 // A request to list the Firestore Databases in all locations for a project.
@@ -289,7 +303,11 @@ message CreateDatabaseRequest {
   // Required. The ID to use for the database, which will become the final
   // component of the database's resource name.
   //
-  // The value must be set to "(default)".
+  // This value should be 4-63 characters. Valid characters are /[a-z][0-9]-/
+  // with first character a letter and the last a letter or a number. Must not
+  // be UUID-like /[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}/.
+  //
+  // "(default)" database id is also valid.
   string database_id = 3 [(google.api.field_behavior) = REQUIRED];
 }
 
@@ -300,6 +318,17 @@ message CreateDatabaseMetadata {}
 message ListDatabasesResponse {
   // The databases in the project.
   repeated Database databases = 1;
+
+  // In the event that data about individual databases cannot be listed they
+  // will be recorded here.
+  //
+  // An example entry might be: projects/some_project/locations/some_location
+  // This can happen if the Cloud Region that the Database resides in is
+  // currently unavailable.  In this case we can't fetch all the details about
+  // the database. You may be able to get a more detailed error message
+  // (or possibly fetch the resource) by sending a 'Get' request for the
+  // resource or a 'List' request for the specific location.
+  repeated string unreachable = 3;
 }
 
 // The request for
@@ -327,6 +356,27 @@ message UpdateDatabaseRequest {
 
 // Metadata related to the update database operation.
 message UpdateDatabaseMetadata {}
+
+// The request for
+// [FirestoreAdmin.DeleteDatabase][google.firestore.admin.v1.FirestoreAdmin.DeleteDatabase].
+message DeleteDatabaseRequest {
+  // Required. A name of the form
+  // `projects/{project_id}/databases/{database_id}`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "firestore.googleapis.com/Database"
+    }
+  ];
+
+  // The current etag of the Database.
+  // If an etag is provided and does not match the current etag of the database,
+  // deletion will be blocked and a FAILED_PRECONDITION error will be returned.
+  string etag = 3;
+}
+
+// Metadata related to the delete database operation.
+message DeleteDatabaseMetadata {}
 
 // The request for
 // [FirestoreAdmin.CreateIndex][google.firestore.admin.v1.FirestoreAdmin.CreateIndex].
@@ -488,7 +538,7 @@ message ExportDocumentsRequest {
   // generated based on the start time.
   string output_uri_prefix = 3;
 
-  // Unspecified means all namespaces. This is the preferred
+  // An empty list represents all namespaces. This is the preferred
   // usage for databases that don't use namespaces.
   //
   // An empty string element represents the default namespace. This should be
@@ -529,7 +579,7 @@ message ImportDocumentsRequest {
   // [google.firestore.admin.v1.ExportDocumentsResponse.output_uri_prefix][google.firestore.admin.v1.ExportDocumentsResponse.output_uri_prefix].
   string input_uri_prefix = 3;
 
-  // Unspecified means all namespaces. This is the preferred
+  // An empty list represents all namespaces. This is the preferred
   // usage for databases that don't use namespaces.
   //
   // An empty string element represents the default namespace. This should be
