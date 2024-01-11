@@ -186,6 +186,10 @@ def switched_rules_by_language(
         go,
         "@io_bazel_rules_go//proto:def.bzl",
     )
+    rules["go_grpc_library"] = _switch(
+        go,
+        "@io_bazel_rules_go//proto:def.bzl",
+    )
     rules["go_library"] = _switch(
         go,
         "@io_bazel_rules_go//go:def.bzl",
