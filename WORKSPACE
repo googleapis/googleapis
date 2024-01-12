@@ -34,6 +34,17 @@ http_archive(
     urls = ["https://github.com/bazelbuild/bazel-skylib/releases/download/{0}/bazel-skylib-{0}.tar.gz".format(_bazel_skylib_version)],
 )
 
+_bazel_features_version = "1.2.0"
+
+_bazel_features_sha256 = "b8789c83c893d7ef3041d3f2795774936b27ff61701a705df52fd41d6ddbf692"
+
+http_archive(
+    name = "bazel_features",
+    sha256 = _bazel_features_sha256,
+    strip_prefix = "bazel_features-%s" % _bazel_features_version,
+    url = "https://github.com/bazel-contrib/bazel_features/releases/download/v{0}/bazel_features-v{0}.tar.gz".format(_bazel_features_version),
+)
+
 # Protobuf depends on very old version of rules_jvm_external.
 # Importing older version of rules_jvm_external first (this is one of the things that protobuf_deps() call
 # below will do) breaks the Java client library generation process, so importing the proper version explicitly before calling protobuf_deps().
@@ -86,11 +97,11 @@ rules_pkg_dependencies()
 # rules_gapic_repositories because both depend on rules_go and we need to manage
 # our version of rules_go explicitly rather than depend on the version those
 # bring in transitively.
-_io_bazel_rules_go_version = "0.34.0"
+_io_bazel_rules_go_version = "0.44.2"
 
 http_archive(
     name = "io_bazel_rules_go",
-    sha256 = "16e9fca53ed6bd4ff4ad76facc9b7b651a89db1689a2877d6fd7b82aa824e366",
+    sha256 = "7c76d6236b28ff695aa28cf35f95de317a9472fd1fb14ac797c9bf684f09b37c",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v{0}/rules_go-v{0}.zip".format(_io_bazel_rules_go_version),
         "https://github.com/bazelbuild/rules_go/releases/download/v{0}/rules_go-v{0}.zip".format(_io_bazel_rules_go_version),
