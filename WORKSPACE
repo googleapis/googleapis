@@ -284,7 +284,7 @@ maven_install(
     ],
 )
 
-_gapic_generator_java_version = "2.31.0"
+_gapic_generator_java_version = "2.32.0"
 
 maven_install(
     artifacts = [
