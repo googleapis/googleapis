@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/chat/v1/history_state.proto";
 import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
 
 option go_package = "google.golang.org/genproto/googleapis/chat/v1;chat";
 option java_multiple_files = true;
@@ -34,8 +35,7 @@ message Space {
     pattern: "spaces/{space}"
   };
 
-  // Deprecated: The type of a space. Use `singleUserBotDm` or `spaceType`
-  // (developer preview) instead.
+  // Deprecated: Use `SpaceType` instead.
   enum Type {
     TYPE_UNSPECIFIED = 0;
 
@@ -43,13 +43,12 @@ message Space {
     ROOM = 1;
 
     // 1:1 Direct Message between a human and a Chat app, where all messages are
-    // flat. Note that this does not include direct messages between two humans.
+    // flat. Note that this doesn't include direct messages between two humans.
     DM = 2;
   }
 
   // The type of space. Required when creating or updating a space. Output only
-  // for other usage. [Developer
-  // Preview](https://developers.google.com/workspace/preview).
+  // for other usage.
   enum SpaceType {
     // Reserved.
     SPACE_TYPE_UNSPECIFIED = 0;
@@ -87,28 +86,62 @@ message Space {
 
   // Details about the space including description and rules.
   message SpaceDetails {
-    // Optional. A description of the space. It could describe the space's
+    // Optional. A description of the space. For example, describe the space's
     // discussion topic, functional purpose, or participants.
+    //
+    // Supports up to 150 characters.
     string description = 1;
 
     // Optional. The space's rules, expectations, and etiquette.
+    //
+    // Supports up to 5,000 characters.
     string guidelines = 2;
+  }
+
+  // Represents the [access
+  // setting](https://support.google.com/chat/answer/11971020) of the space.
+  // [Developer Preview](https://developers.google.com/workspace/preview).
+  message AccessSettings {
+    // Represents the access state of the Space.
+    enum AccessState {
+      // Access state is unknown or not supported in this API.
+      ACCESS_STATE_UNSPECIFIED = 0;
+
+      // Space is discoverable by added or invited members or groups.
+      PRIVATE = 1;
+
+      // Space is discoverable by the selected [target
+      // audience](https://support.google.com/a/answer/9934697), as well as
+      // added or invited members or groups.
+      DISCOVERABLE = 2;
+    }
+
+    // Output only. Indicates the access state of the space.
+    AccessState access_state = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Optional. The resource name of the [target
+    // audience](https://support.google.com/a/answer/9934697) who can access the
+    // space. Set this field to a valid target audience ID to make the space
+    // discoverable or use the `audiences/default` alias to set the space with
+    // the default access setting in Admin Console. Unset this field to make
+    // the space restricted. Only populated when the space is discoverable.
+    // Format: `audiences/{audience}`, `audiences/default` can be used as the
+    // alias of the default Chat [Sharing
+    // setting](https://support.google.com/a/answer/12129901).
+    string audience = 3 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Resource name of the space.
   //
-  // Format: spaces/{space}
+  // Format: `spaces/{space}`
   string name = 1;
 
-  // Output only. Deprecated: Use `singleUserBotDm` or `spaceType` (developer
-  // preview) instead.
-  //
+  // Output only. Deprecated: Use `space_type` instead.
   // The type of a space.
   Type type = 2 [deprecated = true, (google.api.field_behavior) = OUTPUT_ONLY];
 
-  // The type of space. Required when creating or updating a space. Output only
-  // for other usage. [Developer
-  // Preview](https://developers.google.com/workspace/preview).
+  // The type of space. Required when creating a space or updating the space
+  // type of a space. Output only for other usage.
   SpaceType space_type = 10;
 
   // Optional. Whether the space is a DM between a Chat app and a single
@@ -122,9 +155,30 @@ message Space {
 
   // The space's display name. Required when [creating a
   // space](https://developers.google.com/chat/api/reference/rest/v1/spaces/create).
+  // If you receive the error message `ALREADY_EXISTS` when creating a space or
+  // updating the `displayName`, try a different `displayName`. An
+  // existing space within the Google Workspace organization might already use
+  // this display name.
   //
-  // For direct messages, this field may be empty.
+  // For direct messages, this field might be empty.
+  //
+  // Supports up to 128 characters.
   string display_name = 3;
+
+  // Immutable. Whether this space permits any Google Chat user as a member.
+  // Input when creating a space in a Google Workspace organization. Omit this
+  // field when creating spaces in the following conditions:
+  //
+  //   * The authenticated user uses a Google Account. By default,
+  //     the space permits any Google Chat user.
+  //
+  //   * The space is used to [import data to Google Chat]
+  //     (https://developers.google.com/chat/api/guides/import-data-overview).
+  //     Import mode spaces must only permit members from the same Google
+  //     Workspace organization.
+  //
+  // For existing spaces, this field is output only.
+  bool external_user_allowed = 8 [(google.api.field_behavior) = IMMUTABLE];
 
   // Output only. The threading state in the Chat space.
   SpaceThreadingState space_threading_state = 9
@@ -134,39 +188,78 @@ message Space {
   SpaceDetails space_details = 11;
 
   // The message history state for messages and threads in this space.
+  google.chat.v1.HistoryState space_history_state = 13;
+
+  // Optional. Whether this space is created in `Import Mode` as part of a data
+  // migration into Google Workspace. While spaces are being imported, they
+  // aren't visible to users until the import is complete.
+  bool import_mode = 16 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Immutable. For spaces created in Chat, the time the space was
+  // created. This field is output only, except when used in import mode spaces.
+  //
+  // For import mode spaces, set this field to the historical timestamp at which
+  // the space was created in the source in order to preserve the original
+  // creation time.
+  //
+  // Only populated in the output when `spaceType` is `GROUP_CHAT` or `SPACE`.
+  google.protobuf.Timestamp create_time = 17 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+
+  // Output only. Whether the Chat app was installed by a Google Workspace
+  // administrator. Administrators can install a Chat app for their domain,
+  // organizational unit, or a group of users.
+  //
+  // Administrators can only install Chat apps for direct messaging between
+  // users and the app. To support admin install, your app must feature direct
+  // messaging.
+  bool admin_installed = 19 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Specifies the [access
+  // setting](https://support.google.com/chat/answer/11971020) of the space.
+  // Only populated when the `space_type` is `SPACE`.
   // [Developer Preview](https://developers.google.com/workspace/preview).
-  HistoryState space_history_state = 13;
+  AccessSettings access_settings = 23 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// [Developer Preview](https://developers.google.com/workspace/preview).
 message CreateSpaceRequest {
-  // Required. The `displayName` and `spaceType` fields must be populated.
-  // Only `SpaceType.SPACE` is supported. The resource name will be assigned on
-  // the server and overwrite anything specified.
+  // Required. The `displayName` and `spaceType` fields must be populated.  Only
+  // `SpaceType.SPACE` is supported.
+  //
+  // If you receive the error message `ALREADY_EXISTS` when creating a space,
+  // try a different `displayName`. An existing space within the Google
+  // Workspace organization might already use this display name.
+  //
+  // The space `name` is assigned on the server so anything specified in this
+  // field will be ignored.
   Space space = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. A unique identifier for this request.
   // A random UUID is recommended.
-  // This request is only idempotent if a `request_id` is provided.
-  // Specifying an existing value for `request_id` from the same Chat app with
-  // a different authenticated user returns an error.
+  // Specifying an existing request ID returns the space created with that ID
+  // instead of creating a new space.
+  // Specifying an existing request ID from the same Chat app with a different
+  // authenticated user returns an error.
   string request_id = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // A request to list the spaces the caller is a member of.
 message ListSpacesRequest {
-  // Optional. The maximum number of spaces to return. The service may return
+  // Optional. The maximum number of spaces to return. The service might return
   // fewer than this value.
   //
   // If unspecified, at most 100 spaces are returned.
   //
-  // The maximum value is 1000; values above 1000 are coerced to 1000.
+  // The maximum value is 1,000. If you use a value more than 1,000, it's
+  // automatically changed to 1,000.
   //
-  // Negative values return an INVALID_ARGUMENT error.
+  // Negative values return an `INVALID_ARGUMENT` error.
   int32 page_size = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. A page token, received from a previous list spaces call.
-  // Provide this to retrieve the subsequent page.
+  // Provide this parameter to retrieve the subsequent page.
   //
   // When paginating, the filter value should match the call that provided the
   // page token. Passing a different value may lead to unexpected results.
@@ -174,27 +267,23 @@ message ListSpacesRequest {
 
   // Optional. A query filter.
   //
-  // Requires [user
-  // authentication](https://developers.google.com/chat/api/guides/auth/users).
+  // You can filter spaces by the space type
+  // ([`space_type`](https://developers.google.com/chat/api/reference/rest/v1/spaces#spacetype)).
   //
-  // The API supports filtering by `spaceType`.
+  // To filter by space type, you must specify valid enum value, such as
+  // `SPACE` or `GROUP_CHAT` (the `space_type` can't be
+  // `SPACE_TYPE_UNSPECIFIED`). To query for multiple space types, use the `OR`
+  // operator.
   //
   // For example, the following queries are valid:
   //
   // ```
-  // spaceType = "SPACE"
+  // space_type = "SPACE"
   // spaceType = "GROUP_CHAT" OR spaceType = "DIRECT_MESSAGE"
   // ```
   //
-  // Invalid queries are rejected by the server with an INVALID_ARGUMENT error.
-  //
-  // With [service account
-  // authentication](https://developers.google.com/chat/api/guides/auth/service-accounts),
-  // this field is ignored and the query always returns all spaces. But Chat API
-  // still validates the query syntax with service accounts, so invalid queries
-  // are still rejected.
-  //
-  // [Developer Preview](https://developers.google.com/workspace/preview).
+  // Invalid queries are rejected by the server with an `INVALID_ARGUMENT`
+  // error.
   string filter = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -202,7 +291,7 @@ message ListSpacesResponse {
   // List of spaces in the requested (or first) page.
   repeated Space spaces = 1;
 
-  // A token that can be sent as `pageToken` to retrieve the next page of
+  // You can send a token as `pageToken` to retrieve the next page of
   // results. If empty, there are no subsequent pages.
   string next_page_token = 2;
 }
@@ -211,46 +300,71 @@ message ListSpacesResponse {
 message GetSpaceRequest {
   // Required. Resource name of the space, in the form "spaces/*".
   //
-  // Format: spaces/{space}
+  // Format: `spaces/{space}`
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = { type: "chat.googleapis.com/Space" }
   ];
 }
 
+// A request to get direct message space based on the user resource.
+message FindDirectMessageRequest {
+  // Required. Resource name of the user to find direct message with.
+  //
+  // Format: `users/{user}`, where `{user}` is either the `id` for the
+  // [person](https://developers.google.com/people/api/rest/v1/people) from the
+  // People API, or the `id` for the
+  // [user](https://developers.google.com/admin-sdk/directory/reference/rest/v1/users)
+  // in the Directory API. For example, if the People API profile ID is
+  // `123456789`, you can find a direct message with that person by using
+  // `users/123456789` as the `name`. When [authenticated as a
+  // user](https://developers.google.com/chat/api/guides/auth/users), you can
+  // use the email as an alias for `{user}`. For example,
+  // `users/example@gmail.com` where `example@gmail.com` is the email of the
+  // Google Chat user.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
 // A request to update a single space.
-// [Developer Preview](https://developers.google.com/workspace/preview).
 message UpdateSpaceRequest {
-  // Required. Space with fields to be updated. Space.name must be
-  // populated in the form of "spaces/{space}". Only fields
-  // specified by update_mask are updated.
+  // Required. Space with fields to be updated. `Space.name` must be
+  // populated in the form of `spaces/{space}`. Only fields
+  // specified by `update_mask` are updated.
   Space space = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // Required. The field paths to be updated, comma separated if there are
+  // Required. The updated field paths, comma separated if there are
   // multiple.
   //
   // Currently supported field paths:
   //
-  // - display_name (Only supports changing the display name of a space with
-  // the SPACE type, or when also including the `space_type` mask to change a
-  // GROUP_CHAT space type to SPACE. Trying to update the display name of a
-  // GROUP_CHAT or a DIRECT_MESSAGE space results in an invalid argument error.)
+  // - `display_name` (Only supports changing the display name of a space with
+  // the `SPACE` type, or when also including the `space_type` mask to change a
+  // `GROUP_CHAT` space type to `SPACE`. Trying to update the display name of a
+  // `GROUP_CHAT` or a `DIRECT_MESSAGE` space results in an invalid argument
+  // error. If you receive the error message `ALREADY_EXISTS` when updating the
+  // `displayName`, try a different `displayName`. An existing space within the
+  // Google Workspace organization might already use this display name.)
   //
-  // - space_type (Only supports changing a GROUP_CHAT space type to SPACE.
-  // Include `display_name` together with `space_type` in the update mask and
-  // ensure that the specified space has a non-empty display name and the SPACE
-  // space type. Including the `space_type` mask and the SPACE type in the
-  // specified space when updating the display name is optional if the existing
-  // space already has the SPACE type. Trying to update the space type in other
-  // ways results in an invalid argument error).
+  // - `space_type` (Only supports changing a `GROUP_CHAT` space type to
+  // `SPACE`. Include `display_name` together with `space_type` in the update
+  // mask and ensure that the specified space has a non-empty display name and
+  // the `SPACE` space type. Including the `space_type` mask and the `SPACE`
+  // type in the specified space when updating the display name is optional if
+  // the existing space already has the `SPACE` type. Trying to update the
+  // space type in other ways results in an invalid argument error).
   //
-  // - space_details
+  // - `space_details`
   //
-  // - space_history_state (Supports [turning history on or off for the
+  // - `space_history_state` (Supports [turning history on or off for the
   // space](https://support.google.com/chat/answer/7664687) if [the organization
   // allows users to change their history
   // setting](https://support.google.com/a/answer/7664184).
   // Warning: mutually exclusive with all other field paths.)
+  // - Developer Preview: `access_settings.audience` (Supports changing the
+  // [access setting](https://support.google.com/chat/answer/11971020) of a
+  // space. If no audience is specified in the access setting, the space's
+  // access setting is updated to restricted. Warning: mutually exclusive with
+  // all other field paths.)
   google.protobuf.FieldMask update_mask = 2;
 }
 
@@ -258,9 +372,25 @@ message UpdateSpaceRequest {
 message DeleteSpaceRequest {
   // Required. Resource name of the space to delete.
   //
-  // Format: spaces/{space}
+  // Format: `spaces/{space}`
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = { type: "chat.googleapis.com/Space" }
   ];
+}
+
+// Request message for completing the import process for a space.
+message CompleteImportSpaceRequest {
+  // Required. Resource name of the import mode space.
+  //
+  // Format: `spaces/{space}`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "chat.googleapis.com/Space" }
+  ];
+}
+
+message CompleteImportSpaceResponse {
+  // The import mode space.
+  Space space = 1;
 }

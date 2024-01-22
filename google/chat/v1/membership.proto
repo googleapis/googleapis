@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,7 +18,9 @@ package google.chat.v1;
 
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/chat/v1/group.proto";
 import "google/chat/v1/user.proto";
+import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "google.golang.org/genproto/googleapis/chat/v1;chat";
@@ -37,26 +39,27 @@ message Membership {
   // Specifies the member's relationship with a space. Other membership states
   // might be supported in the future.
   enum MembershipState {
-    // Default, do not use.
+    // Default value. Don't use.
     MEMBERSHIP_STATE_UNSPECIFIED = 0;
 
-    // The user has joined the space.
+    // The user is added to the space, and can participate in the space.
     JOINED = 1;
 
-    // The user has been invited, is able to join the space, but currently has
-    // not joined.
+    // The user is invited to join the space, but hasn't joined it.
     INVITED = 2;
 
-    // The user is not a member of the space, has not been invited and is not
-    // able to join the space.
+    // The user doesn't belong to the space and doesn't have a pending
+    // invitation to join the space.
     NOT_A_MEMBER = 3;
   }
 
   // Represents a user's permitted actions in a Chat space. More enum values
   // might be added in the future.
   enum MembershipRole {
-    // Default value. The user isn't a member of the space, but might be
-    // invited.
+    // Default value. For [users][google.chat.v1.Membership.member]: they
+    // aren't a member of the space, but can be invited. For
+    // [Google Groups][google.chat.v1.Membership.group_member]: they're always
+    //  assigned this role (other enum values might be used in the future).
     MEMBERSHIP_ROLE_UNSPECIFIED = 0;
 
     // A member of the space. The user has basic permissions, like sending
@@ -65,15 +68,15 @@ message Membership {
     ROLE_MEMBER = 1;
 
     // A space manager. The user has all basic permissions plus administrative
-    // permissions that allow them to manage the space, like adding or removing
+    // permissions that let them manage the space, like adding or removing
     // members. Only supported in
     // [SpaceType.SPACE][google.chat.v1.Space.SpaceType].
     ROLE_MANAGER = 2;
   }
 
-  // Resource name of the membership.
+  // Resource name of the membership, assigned by the server.
   //
-  // Format: spaces/{space}/members/{member}
+  // Format: `spaces/{space}/members/{member}`
   string name = 1 [
     (google.api.resource_reference) = { type: "chat.googleapis.com/Membership" }
   ];
@@ -81,34 +84,47 @@ message Membership {
   // Output only. State of the membership.
   MembershipState state = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. User's role within a Chat space, which determines their
-  // permitted actions in the space.
-  MembershipRole role = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // Optional. User's role within a Chat space, which determines their permitted
+  // actions in the space.
+  //
+  // [Developer Preview](https://developers.google.com/workspace/preview):
+  // This field can only be used as input in `UpdateMembership`.
+  MembershipRole role = 7 [(google.api.field_behavior) = OPTIONAL];
 
   // Member associated with this membership. Other member types might be
   // supported in the future.
   oneof memberType {
-    // A Google Chat user or app.
-    //
-    // Format: `users/{user}` or `users/app`
-    //
-    // When `users/{user}`, represents a
-    // [person](https://developers.google.com/people/api/rest/v1/people) in the
-    // People API or a
-    // [user](https://developers.google.com/admin-sdk/directory/reference/rest/v1/users)
-    // in the Admin SDK Directory API.
-    //
-    // When `users/app`, represents a Chat app creating membership for itself.
+    // The Google Chat user or app the membership corresponds to.
+    // If your Chat app [authenticates as a
+    // user](https://developers.google.com/chat/api/guides/auth/users), the
+    // output populates the
+    // [user](https://developers.google.com/chat/api/reference/rest/v1/User)
+    // `name` and `type`.
     User member = 3;
+
+    // The Google Group the membership corresponds to.
+    // Only supports read operations. Other operations, like creating or
+    // updating a membership, aren't currently supported.
+    Group group_member = 5;
   }
 
-  // Output only. The creation time of the membership, such as when a member
-  // joined or was invited to join a space.
-  google.protobuf.Timestamp create_time = 4
-      [(google.api.field_behavior) = OUTPUT_ONLY];
+  // Optional. Immutable. The creation time of the membership, such as when a
+  // member joined or was invited to join a space. This field is output only,
+  // except when used to import historical memberships in import mode spaces.
+  google.protobuf.Timestamp create_time = 4 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+
+  // Optional. Immutable. The deletion time of the membership, such as when a
+  // member left or was removed from a space. This field is output only, except
+  // when used to import historical memberships in import mode spaces.
+  google.protobuf.Timestamp delete_time = 8 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = OPTIONAL
+  ];
 }
 
-// [Developer Preview](https://developers.google.com/workspace/preview).
 message CreateMembershipRequest {
   // Required. The resource name of the space for which to create the
   // membership.
@@ -127,12 +143,34 @@ message CreateMembershipRequest {
   // and overwrite anything specified.
   // When a Chat app creates a membership relation for a human user, it must use
   // the `chat.memberships` scope, set `user.type` to `HUMAN`, and set
-  // `user.name` to `users/{person}`, representing a
-  // [person](https://developers.google.com/people/api/rest/v1/people) in the
-  // People API. When a Chat app creates a membership relation for itself, it
-  // must use the `chat.memberships.app` scope, set `user.type` to `BOT`, and
-  // set `user.name` to `users/app`.
+  // `user.name` with format `users/{user}`, where `{user}` can be the email
+  // address for the user. For users in the same Workspace organization `{user}`
+  // can also be the `id` of the
+  // [person](https://developers.google.com/people/api/rest/v1/people) from the
+  // People API, or the `id` for the user in the Directory API. For example, if
+  // the People API Person profile ID for `user@example.com` is `123456789`, you
+  // can add the user to the space by setting the `membership.member.name` to
+  // `users/user@example.com` or `users/123456789`. When a Chat app creates a
+  // membership relation for itself, it must use the `chat.memberships.app`
+  // scope, set `user.type` to `BOT`, and set `user.name` to `users/app`.
   Membership membership = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request message for updating a membership.
+// [Developer Preview](https://developers.google.com/workspace/preview).
+message UpdateMembershipRequest {
+  // Required. The membership to update. Only fields specified by `update_mask`
+  // are updated.
+  Membership membership = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The field paths to update. Separate multiple values with commas
+  // or use `*` to update all field paths.
+  //
+  // Currently supported field paths:
+  //
+  // - `role`
+  google.protobuf.FieldMask update_mask = 2
+      [(google.api.field_behavior) = REQUIRED];
 }
 
 message ListMembershipsRequest {
@@ -147,31 +185,38 @@ message ListMembershipsRequest {
     }
   ];
 
-  // The maximum number of memberships to return. The service may return fewer
-  // than this value.
+  // Optional. The maximum number of memberships to return. The service might
+  // return fewer than this value.
   //
   // If unspecified, at most 100 memberships are returned.
   //
-  // The maximum value is 1000; values above 1000 are coerced to 1000.
+  // The maximum value is 1,000. If you use a value more than 1,000, it's
+  // automatically changed to 1,000.
   //
-  // Negative values return an INVALID_ARGUMENT error.
-  int32 page_size = 2;
+  // Negative values return an `INVALID_ARGUMENT` error.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
 
-  // A page token, received from a previous list memberships call.
-  // Provide this to retrieve the subsequent page.
+  // Optional. A page token, received from a previous call to list memberships.
+  // Provide this parameter to retrieve the subsequent page.
   //
   // When paginating, all other parameters provided should match the call that
   // provided the page token. Passing different values to the other parameters
-  // may lead to unexpected results.
-  string page_token = 3;
+  // might lead to unexpected results.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. A query filter.
   //
-  // The API supports filtering by `role` and `type`.
+  // You can filter memberships by a member's role
+  // ([`role`](https://developers.google.com/chat/api/reference/rest/v1/spaces.members#membershiprole))
+  // and type
+  // ([`member.type`](https://developers.google.com/chat/api/reference/rest/v1/User#type)).
   //
-  // `role` only accepts `ROLE_MEMBER` and `ROLE_MANAGER` values.
+  // To filter by role, set `role` to `ROLE_MEMBER` or `ROLE_MANAGER`.
   //
-  // `member.type` only accepts `HUMAN` and `BOT` values.
+  // To filter by type, set `member.type` to `HUMAN` or `BOT`.
+  //
+  // To filter by both role and type, use the `AND` operator. To filter by
+  // either role or type, use the `OR` operator.
   //
   // For example, the following queries are valid:
   //
@@ -180,13 +225,29 @@ message ListMembershipsRequest {
   // member.type = "HUMAN" AND role = "ROLE_MANAGER"
   // ```
   //
-  // Invalid queries are rejected by the server with an INVALID_ARGUMENT error.
+  // The following queries are invalid:
+  //
+  // ```
+  // member.type = "HUMAN" AND member.type = "BOT"
+  // role = "ROLE_MANAGER" AND role = "ROLE_MEMBER"
+  // ```
+  //
+  // Invalid queries are rejected by the server with an `INVALID_ARGUMENT`
+  // error.
   string filter = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. When `true`, also returns memberships associated with a
+  // [Google Group][google.chat.v1.Membership.group_member], in
+  // addition to other types of memberships. If a
+  // [filter][google.chat.v1.ListMembershipsRequest.filter] is set,
+  // [Google Group][google.chat.v1.Membership.group_member]
+  // memberships that don't match the filter criteria aren't returned.
+  bool show_groups = 6 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. When `true`, also returns memberships associated with
   // [invited][google.chat.v1.Membership.MembershipState.INVITED] members, in
   // addition to other types of memberships. If a
-  // [filter][google.chat.v1.Membership.filter] is set,
+  // filter is set,
   // [invited][google.chat.v1.Membership.MembershipState.INVITED] memberships
   // that don't match the filter criteria aren't returned.
   //
@@ -196,10 +257,11 @@ message ListMembershipsRequest {
 }
 
 message ListMembershipsResponse {
-  // List of memberships in the requested (or first) page.
-  repeated Membership memberships = 1;
+  // Unordered list. List of memberships in the requested (or first) page.
+  repeated Membership memberships = 1
+      [(google.api.field_behavior) = UNORDERED_LIST];
 
-  // A token that can be sent as `pageToken` to retrieve the next page of
+  // A token that you can send as `pageToken` to retrieve the next page of
   // results. If empty, there are no subsequent pages.
   string next_page_token = 2;
 }
@@ -207,7 +269,16 @@ message ListMembershipsResponse {
 message GetMembershipRequest {
   // Required. Resource name of the membership to retrieve.
   //
-  // Format: spaces/{space}/members/{member}
+  // To get the app's own membership, you can optionally use
+  // `spaces/{space}/members/app`.
+  //
+  // Format: `spaces/{space}/members/{member}` or `spaces/{space}/members/app`
+  //
+  // When [authenticated as a
+  // user](https://developers.google.com/chat/api/guides/auth/users), you can
+  // use the user's email as an alias for `{member}`. For example,
+  // `spaces/{space}/members/example@gmail.com` where `example@gmail.com` is the
+  // email of the Google Chat user.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = { type: "chat.googleapis.com/Membership" }
@@ -220,12 +291,15 @@ message DeleteMembershipRequest {
   // memberships.
   //
   // When deleting a human membership, requires the `chat.memberships` scope and
-  // `spaces/{space}/members/{member}` format.
+  // `spaces/{space}/members/{member}` format. You can use the email as an
+  // alias for `{member}`. For example,
+  // `spaces/{space}/members/example@gmail.com` where `example@gmail.com` is the
+  // email of the Google Chat user.
   //
   // When deleting an app membership, requires the `chat.memberships.app` scope
   // and `spaces/{space}/members/app` format.
   //
-  // Format: spaces/{space}/members/{member} or spaces/{space}/members/app
+  // Format: `spaces/{space}/members/{member}` or `spaces/{space}/members/app`.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = { type: "chat.googleapis.com/Membership" }
