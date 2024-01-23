@@ -252,7 +252,7 @@ com_googleapis_gapic_generator_go_repositories()
 # dependencies of gapic-generator-go.
 load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
 
-go_register_toolchains(version = "1.18.6")
+go_register_toolchains(version = "1.19.13")
 
 go_rules_dependencies()
 
