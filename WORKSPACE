@@ -235,7 +235,7 @@ local_repository(
     path = ".",
 )
 
-_gapic_generator_go_version = "0.39.3"
+_gapic_generator_go_version = "0.40.0"
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
