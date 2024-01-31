@@ -25,10 +25,13 @@ import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
+option csharp_namespace = "Google.Cloud.TelcoAutomation.V1";
 option go_package = "cloud.google.com/go/telcoautomation/apiv1alpha1/telcoautomationpb;telcoautomationpb";
 option java_multiple_files = true;
 option java_outer_classname = "TelcoautomationProto";
 option java_package = "com.google.cloud.telcoautomation.v1alpha1";
+option php_namespace = "Google\\Cloud\\TelcoAutomation\\V1";
+option ruby_package = "Google::Cloud::TelcoAutomation::V1";
 
 // TelcoAutomation Service manages the control plane cluster a.k.a.
 // Orchestration Cluster (GKE cluster with config controller) of TNA. It also
@@ -163,14 +166,6 @@ service TelcoAutomation {
     option (google.api.method_signature) = "name";
   }
 
-  // Deletes the specified revision of the blueprint.
-  rpc DeleteBlueprintRevision(DeleteBlueprintRevisionRequest)
-      returns (Blueprint) {
-    option (google.api.http) = {
-      delete: "/v1alpha1/{name=projects/*/locations/*/orchestrationClusters/*/blueprints/*}:deleteRevision"
-    };
-  }
-
   // List all blueprints.
   rpc ListBlueprints(ListBlueprintsRequest) returns (ListBlueprintsResponse) {
     option (google.api.http) = {
@@ -289,15 +284,6 @@ service TelcoAutomation {
     option (google.api.method_signature) = "name";
   }
 
-  // Deletes a deployment and all its revisions.
-  rpc DeleteDeployment(DeleteDeploymentRequest)
-      returns (google.protobuf.Empty) {
-    option (google.api.http) = {
-      delete: "/v1alpha1/{name=projects/*/locations/*/orchestrationClusters/*/deployments/*}"
-    };
-    option (google.api.method_signature) = "name";
-  }
-
   // Removes the deployment by marking it as DELETING. Post which deployment and
   // it's revisions gets deleted.
   rpc RemoveDeployment(RemoveDeploymentRequest)
@@ -307,14 +293,6 @@ service TelcoAutomation {
       body: "*"
     };
     option (google.api.method_signature) = "name";
-  }
-
-  // Deletes the specified revision of the deployment.
-  rpc DeleteDeploymentRevision(DeleteDeploymentRevisionRequest)
-      returns (Deployment) {
-    option (google.api.http) = {
-      delete: "/v1alpha1/{name=projects/*/locations/*/orchestrationClusters/*/deployments/*}:deleteRevision"
-    };
   }
 
   // List all deployments.
@@ -444,10 +422,10 @@ enum ResourceType {
   RESOURCE_TYPE_UNSPECIFIED = 0;
 
   // User specified NF Deploy CR.
-  NF_DEPLOY_CUSTOM_RESOURCE = 1;
+  NF_DEPLOY_RESOURCE = 1;
 
   // CRs that are part of a blueprint.
-  BLUEPRINT_CUSTOM_RESOURCE = 2;
+  DEPLOYMENT_RESOURCE = 2;
 }
 
 // Status of an entity (resource, deployment).
@@ -464,8 +442,50 @@ enum Status {
   // Failed or stalled.
   STATUS_FAILED = 3;
 
-  // NFDeploy specific status.
+  // Delete in progress.
+  STATUS_DELETING = 4;
+
+  // Deleted deployment.
+  STATUS_DELETED = 5;
+
+  // NFDeploy specific status. Peering in progress.
   STATUS_PEERING = 10;
+
+  // K8s objects such as NetworkAttachmentDefinition don't have a defined
+  // status.
+  STATUS_NOT_APPLICABLE = 11;
+}
+
+// DeploymentLevel of a blueprint signifies where the blueprint will be
+// applied.
+enum DeploymentLevel {
+  // Default unspecified deployment level.
+  DEPLOYMENT_LEVEL_UNSPECIFIED = 0;
+
+  // Blueprints at HYDRATION level cannot be used to create a Deployment
+  // (A user cannot manually initate deployment of these blueprints on
+  // orchestration or workload cluster).
+  // These blueprints stay in a user's private catalog and are configured and
+  // deployed by TNA automation.
+  HYDRATION = 1;
+
+  // Blueprints at SINGLE_DEPLOYMENT level can be
+  // a) Modified in private catalog.
+  // b) Used to create a deployment on orchestration cluster by the user, once
+  // approved.
+  SINGLE_DEPLOYMENT = 2;
+
+  // Blueprints at MULTI_DEPLOYMENT level can be
+  // a) Modified in private catalog.
+  // b) Used to create a deployment on orchestration cluster which will create
+  // further hydrated deployments.
+  MULTI_DEPLOYMENT = 3;
+
+  // Blueprints at WORKLOAD_CLUSTER_DEPLOYMENT level can be
+  // a) Modified in private catalog.
+  // b) Used to create a deployment on workload cluster by the user, once
+  // approved.
+  WORKLOAD_CLUSTER_DEPLOYMENT = 4;
 }
 
 // Orchestration cluster represents a GKE cluster with config controller and
@@ -495,7 +515,8 @@ message OrchestrationCluster {
     FAILED = 4;
   }
 
-  // Name of the orchestration cluster.
+  // Name of the orchestration cluster. The name of orchestration cluster cannot
+  // be more than 24 characters.
   string name = 1;
 
   // Management configuration of the underlying GKE cluster.
@@ -606,7 +627,7 @@ message EdgeSlm {
 // b) modified as per a user's need
 // c) proposed and approved.
 // On approval, a revision of blueprint is created which can be used to
-// create a deployment on Orchestration Cluster.
+// create a deployment on Orchestration or Workload Cluster.
 message Blueprint {
   option (google.api.resource) = {
     type: "telcoautomation.googleapis.com/Blueprint"
@@ -631,9 +652,9 @@ message Blueprint {
 
     // When a proposed blueprint is approved, it moves to APPROVED state. A new
     // revision is committed. The latest committed revision can be used to
-    // create a deployment on Orchestration Cluster. Edits to an APPROVED
-    // blueprint changes its state back to DRAFT. The last committed revision of
-    // a blueprint represents its latest APPROVED state.
+    // create a deployment on Orchestration or Workload Cluster. Edits to an
+    // APPROVED blueprint changes its state back to DRAFT. The last committed
+    // revision of a blueprint represents its latest APPROVED state.
     APPROVED = 3;
   }
 
@@ -689,6 +710,15 @@ message Blueprint {
   // Output only. Source provider is the author of a public blueprint, from
   // which this blueprint is created.
   string source_provider = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. DeploymentLevel of a blueprint signifies where the blueprint
+  // will be applied. e.g. [HYDRATION, SINGLE_DEPLOYMENT, MULTI_DEPLOYMENT]
+  DeploymentLevel deployment_level = 14
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Indicates if the deployment created from this blueprint can be
+  // rolled back.
+  bool rollback_support = 15 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A Blueprint contains a collection of kubernetes resources in the form of
@@ -705,26 +735,6 @@ message PublicBlueprint {
     singular: "publicBlueprint"
   };
 
-  // DeploymentLevel of a blueprint signifies where the blueprint will be
-  // applied.
-  enum DeploymentLevel {
-    // Default unspecified deployment level.
-    DEPLOYMENT_LEVEL_UNSPECIFIED = 0;
-
-    // Blueprints at HYDRATION level cannot be used to create a Deployment
-    // (A user cannot manually initate deployment of these blueprints on
-    // orchestration or workload cluster).
-    // These blueprints stay in a user's private catalog and are configured and
-    // deployed by TNA automation.
-    HYDRATION = 1;
-
-    // Blueprints at DEPLOYMENT level can be
-    // a) Modified in private catalog.
-    // b) Used to create a deployment on orchestration cluster by the user, once
-    // approved.
-    DEPLOYMENT = 2;
-  }
-
   // Name of the public blueprint.
   string name = 1;
 
@@ -735,16 +745,20 @@ message PublicBlueprint {
   string description = 3;
 
   // DeploymentLevel of a blueprint signifies where the blueprint will be
-  // applied. e.g. [HYDRATION, DEPLOYMENT]
+  // applied. e.g. [HYDRATION, SINGLE_DEPLOYMENT, MULTI_DEPLOYMENT]
   DeploymentLevel deployment_level = 4;
 
   // Source provider is the author of a public blueprint. e.g. Google, vendors
   string source_provider = 5;
+
+  // Output only. Indicates if the deployment created from this blueprint can be
+  // rolled back.
+  bool rollback_support = 15 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Deployment contains a collection of YAML files (This collection is also known
 // as package) that can to applied on an orchestration cluster (GKE cluster with
-// TNA addons).
+// TNA addons) or a workload cluster.
 message Deployment {
   option (google.api.resource) = {
     type: "telcoautomation.googleapis.com/Deployment"
@@ -764,12 +778,17 @@ message Deployment {
     DRAFT = 1;
 
     // This state means that the contents (YAML files containing kubernetes
-    // resources) of the deployment have been applied to an Orchestration
-    // Cluster. A revision is created when a deployment is applied. This
-    // revision will represent the latest view of what is applied on the cluster
-    // until the deployment is modified and applied again, which will create a
-    // new revision.
+    // resources) of the deployment have been applied to an Orchestration or
+    // Workload Cluster. A revision is created when a deployment is applied.
+    // This revision will represent the latest view of what is applied on the
+    // cluster until the deployment is modified and applied again, which will
+    // create a new revision.
     APPLIED = 2;
+
+    // A deployment in DELETING state has been marked for deletion. Its
+    // deletion status can be queried using `ComputeDeploymentStatus` API. No
+    // updates are allowed to a deployment in DELETING state.
+    DELETING = 3;
   }
 
   // The name of the deployment.
@@ -782,18 +801,14 @@ message Deployment {
     (google.api.field_behavior) = OUTPUT_ONLY
   ];
 
-  // Required. Immutable. The blueprint revision from which this deployment was
-  // created.
-  string source_blueprint_revision = 3 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.field_behavior) = IMMUTABLE
-  ];
+  // Required. The blueprint revision from which this deployment was created.
+  string source_blueprint_revision = 3 [(google.api.field_behavior) = REQUIRED];
 
   // Output only. The timestamp that the revision was created.
   google.protobuf.Timestamp revision_create_time = 4
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. State of the deployment (DRAFT, APPLIED).
+  // Output only. State of the deployment (DRAFT, APPLIED, DELETING).
   State state = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Optional. Human readable name of a Deployment.
@@ -824,6 +839,24 @@ message Deployment {
   // Output only. Source provider is the author of a public blueprint, from
   // which this deployment is created.
   string source_provider = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Immutable. The WorkloadCluster on which to create the Deployment.
+  // This field should only be passed when the deployment_level of the source
+  // blueprint specifies deployments on workload clusters e.g.
+  // WORKLOAD_CLUSTER_DEPLOYMENT.
+  string workload_cluster = 13 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+
+  // Output only. Attributes to where the deployment can inflict changes. The
+  // value can only be [SINGLE_DEPLOYMENT, MULTI_DEPLOYMENT].
+  DeploymentLevel deployment_level = 14
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Indicates if the deployment can be rolled back, exported from
+  // public blueprint.
+  bool rollback_support = 15 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A collection of kubernetes yaml files which are deployed on a Workload
@@ -1145,18 +1178,6 @@ message DeleteBlueprintRequest {
   ];
 }
 
-// Request object for `DeleteBlueprintRevision`.
-message DeleteBlueprintRevisionRequest {
-  // Required. The name of the blueprint revision in the form
-  // {blueprint_id}@{revision_id}.
-  string name = 1 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = {
-      type: "telcoautomation.googleapis.com/Blueprint"
-    }
-  ];
-}
-
 // Request object for `ListBlueprints`.
 message ListBlueprintsRequest {
   // Required. The name of parent orchestration cluster resource.
@@ -1269,10 +1290,10 @@ message SearchBlueprintRevisionsRequest {
   // Required. Supported queries:
   // 1. ""                       : Lists all revisions across all blueprints.
   // 2. "latest=true"            : Lists latest revisions across all blueprints.
-  // 3. "name=<name>"            : Lists all revisions of blueprint with name
-  // <name>.
-  // 4. "name=<name> latest=true": Lists latest revision of blueprint with name
-  // <name>
+  // 3. "name={name}"            : Lists all revisions of blueprint with name
+  // {name}.
+  // 4. "name={name} latest=true": Lists latest revision of blueprint with name
+  // {name}
   string query = 2 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. The maximum number of blueprints revisions to return per page.
@@ -1399,32 +1420,9 @@ message GetDeploymentRequest {
   DeploymentView view = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Request object for `DeleteDeployment`.
-message DeleteDeploymentRequest {
-  // Required. The name of deployment to delete.
-  string name = 1 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = {
-      type: "telcoautomation.googleapis.com/Deployment"
-    }
-  ];
-}
-
 // Request object for `RemoveDeployment`.
 message RemoveDeploymentRequest {
   // Required. The name of deployment to initiate delete.
-  string name = 1 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = {
-      type: "telcoautomation.googleapis.com/Deployment"
-    }
-  ];
-}
-
-// Request object for `DeleteDeploymentRevision`.
-message DeleteDeploymentRevisionRequest {
-  // Required. The name of the deployment revision in the form
-  // {deployment_id}@{revision_id}.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1512,10 +1510,10 @@ message SearchDeploymentRevisionsRequest {
   // 1. ""                       : Lists all revisions across all deployments.
   // 2. "latest=true"            : Lists latest revisions across all
   // deployments.
-  // 3. "name=<name>"            : Lists all revisions of deployment with name
-  // <name>.
-  // 4. "name=<name> latest=true": Lists latest revision of deployment with name
-  // <name>
+  // 3. "name={name}"            : Lists all revisions of deployment with name
+  // {name}.
+  // 4. "name={name} latest=true": Lists latest revision of deployment with name
+  // {name}
   string query = 2 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. The maximum number of deployment revisions to return per page.
@@ -1566,7 +1564,7 @@ message ApplyDeploymentRequest {
 
 // Request object for `ComputeDeploymentStatus`.
 message ComputeDeploymentStatusRequest {
-  // Required. The name of the deployment.
+  // Required. The name of the deployment without revisionID.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1581,7 +1579,7 @@ message ComputeDeploymentStatusResponse {
   string name = 1;
 
   // Output only. Aggregated status of a deployment.
-  Status status = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  Status aggregated_status = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Resource level status details in deployments.
   repeated ResourceStatus resource_statuses = 3
@@ -1722,7 +1720,8 @@ message StandardManagementConfig {
   // network.
   string subnet = 2 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The /28 network that the masters will use.
+  // Optional. The /28 network that the masters will use. It should be free
+  // within the network.
   string master_ipv4_cidr_block = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The IP address range for the cluster pod IPs. Set to blank to
@@ -1860,4 +1859,67 @@ message ResourceStatus {
 
   // Output only. Status of the resource.
   Status status = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Detailed status of NFDeploy.
+  NFDeployStatus nf_deploy_status = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Deployment status of NFDeploy.
+message NFDeployStatus {
+  // Output only. Total number of NFs targeted by this deployment
+  int32 targeted_nfs = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Total number of NFs targeted by this deployment with a Ready
+  // Condition set.
+  int32 ready_nfs = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Per-Site Status.
+  repeated NFDeploySiteStatus sites = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Per-Site Status.
+message NFDeploySiteStatus {
+  // Output only. Site id.
+  string site = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. If true, the Site Deletion is in progress.
+  bool pending_deletion = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Hydration status.
+  HydrationStatus hydration = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Workload status.
+  WorkloadStatus workload = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Hydration status.
+message HydrationStatus {
+  // Output only. SiteVersion Hydration is targeting.
+  SiteVersion site_version = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Status.
+  string status = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// SiteVersion Hydration is targeting.
+message SiteVersion {
+  // Output only. NF vendor.
+  string nf_vendor = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. NF vendor type.
+  string nf_type = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. NF version.
+  string nf_version = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Workload status.
+message WorkloadStatus {
+  // Output only. SiteVersion running in the workload cluster.
+  SiteVersion site_version = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Status.
+  string status = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
