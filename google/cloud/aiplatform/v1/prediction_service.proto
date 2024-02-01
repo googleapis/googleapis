@@ -77,8 +77,22 @@ service PredictionService {
     option (google.api.method_signature) = "endpoint,http_body";
   }
 
-  // Perform an unary online prediction request for Vertex first-party products
-  // and frameworks.
+  // Perform a streaming online prediction with an arbitrary HTTP payload.
+  rpc StreamRawPredict(StreamRawPredictRequest)
+      returns (stream google.api.HttpBody) {
+    option (google.api.http) = {
+      post: "/v1/{endpoint=projects/*/locations/*/endpoints/*}:streamRawPredict"
+      body: "*"
+      additional_bindings {
+        post: "/v1/{endpoint=projects/*/locations/*/publishers/*/models/*}:streamRawPredict"
+        body: "*"
+      }
+    };
+    option (google.api.method_signature) = "endpoint,http_body";
+  }
+
+  // Perform an unary online prediction request to a gRPC model server for
+  // Vertex first-party products and frameworks.
   rpc DirectPredict(DirectPredictRequest) returns (DirectPredictResponse) {
     option (google.api.http) = {
       post: "/v1/{endpoint=projects/*/locations/*/endpoints/*}:directPredict"
@@ -86,7 +100,8 @@ service PredictionService {
     };
   }
 
-  // Perform an online prediction request through gRPC.
+  // Perform an unary online prediction request to a gRPC model server for
+  // custom containers.
   rpc DirectRawPredict(DirectRawPredictRequest)
       returns (DirectRawPredictResponse) {
     option (google.api.http) = {
@@ -94,6 +109,16 @@ service PredictionService {
       body: "*"
     };
   }
+
+  // Perform a streaming online prediction request to a gRPC model server for
+  // Vertex first-party products and frameworks.
+  rpc StreamDirectPredict(stream StreamDirectPredictRequest)
+      returns (stream StreamDirectPredictResponse) {}
+
+  // Perform a streaming online prediction request to a gRPC model server for
+  // custom containers.
+  rpc StreamDirectRawPredict(stream StreamDirectRawPredictRequest)
+      returns (stream StreamDirectRawPredictResponse) {}
 
   // Perform a streaming online prediction request for Vertex first-party
   // products and frameworks.
@@ -136,6 +161,20 @@ service PredictionService {
     };
     option (google.api.method_signature) =
         "endpoint,instances,parameters,deployed_model_id";
+  }
+
+  // Generate content with multimodal inputs.
+  rpc GenerateContent(GenerateContentRequest)
+      returns (GenerateContentResponse) {
+    option (google.api.http) = {
+      post: "/v1/{model=projects/*/locations/*/endpoints/*}:generateContent"
+      body: "*"
+      additional_bindings {
+        post: "/v1/{model=projects/*/locations/*/publishers/*/models/*}:generateContent"
+        body: "*"
+      }
+    };
+    option (google.api.method_signature) = "model,contents";
   }
 
   // Generate content with multimodal inputs with streaming support.
@@ -255,6 +294,23 @@ message RawPredictRequest {
 }
 
 // Request message for
+// [PredictionService.StreamRawPredict][google.cloud.aiplatform.v1.PredictionService.StreamRawPredict].
+message StreamRawPredictRequest {
+  // Required. The name of the Endpoint requested to serve the prediction.
+  // Format:
+  // `projects/{project}/locations/{location}/endpoints/{endpoint}`
+  string endpoint = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/Endpoint"
+    }
+  ];
+
+  // The prediction input. Supports HTTP headers and arbitrary data payload.
+  google.api.HttpBody http_body = 2;
+}
+
+// Request message for
 // [PredictionService.DirectPredict][google.cloud.aiplatform.v1.PredictionService.DirectPredict].
 message DirectPredictRequest {
   // Required. The name of the Endpoint requested to serve the prediction.
@@ -313,6 +369,85 @@ message DirectRawPredictRequest {
 // Response message for
 // [PredictionService.DirectRawPredict][google.cloud.aiplatform.v1.PredictionService.DirectRawPredict].
 message DirectRawPredictResponse {
+  // The prediction output.
+  bytes output = 1;
+}
+
+// Request message for
+// [PredictionService.StreamDirectPredict][google.cloud.aiplatform.v1.PredictionService.StreamDirectPredict].
+//
+// The first message must contain
+// [endpoint][google.cloud.aiplatform.v1.StreamDirectPredictRequest.endpoint]
+// field and optionally [input][]. The subsequent messages must contain
+// [input][].
+message StreamDirectPredictRequest {
+  // Required. The name of the Endpoint requested to serve the prediction.
+  // Format:
+  // `projects/{project}/locations/{location}/endpoints/{endpoint}`
+  string endpoint = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/Endpoint"
+    }
+  ];
+
+  // Optional. The prediction input.
+  repeated Tensor inputs = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The parameters that govern the prediction.
+  Tensor parameters = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message for
+// [PredictionService.StreamDirectPredict][google.cloud.aiplatform.v1.PredictionService.StreamDirectPredict].
+message StreamDirectPredictResponse {
+  // The prediction output.
+  repeated Tensor outputs = 1;
+
+  // The parameters that govern the prediction.
+  Tensor parameters = 2;
+}
+
+// Request message for
+// [PredictionService.StreamDirectRawPredict][google.cloud.aiplatform.v1.PredictionService.StreamDirectRawPredict].
+//
+// The first message must contain
+// [endpoint][google.cloud.aiplatform.v1.StreamDirectRawPredictRequest.endpoint]
+// and
+// [method_name][google.cloud.aiplatform.v1.StreamDirectRawPredictRequest.method_name]
+// fields and optionally
+// [input][google.cloud.aiplatform.v1.StreamDirectRawPredictRequest.input]. The
+// subsequent messages must contain
+// [input][google.cloud.aiplatform.v1.StreamDirectRawPredictRequest.input].
+// [method_name][google.cloud.aiplatform.v1.StreamDirectRawPredictRequest.method_name]
+// in the subsequent messages have no effect.
+message StreamDirectRawPredictRequest {
+  // Required. The name of the Endpoint requested to serve the prediction.
+  // Format:
+  // `projects/{project}/locations/{location}/endpoints/{endpoint}`
+  string endpoint = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/Endpoint"
+    }
+  ];
+
+  // Optional. Fully qualified name of the API method being invoked to perform
+  // predictions.
+  //
+  // Format:
+  // `/namespace.Service/Method/`
+  // Example:
+  // `/tensorflow.serving.PredictionService/Predict`
+  string method_name = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The prediction input.
+  bytes input = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message for
+// [PredictionService.StreamDirectRawPredict][google.cloud.aiplatform.v1.PredictionService.StreamDirectRawPredict].
+message StreamDirectRawPredictResponse {
   // The prediction output.
   bytes output = 1;
 }
