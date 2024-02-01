@@ -125,23 +125,9 @@ http_archive(
 # for most of the other languages as well, so they can be considered as the core cross-language
 # dependencies.
 
-# Import boringssl explicitly to override what gRPC imports as its dependency.
-# Boringssl build fails on gcc12 without this fix:
-# https://github.com/google/boringssl/commit/8462a367bb57e9524c3d8eca9c62733c63a63cf4,
-# which is present only in the newest version of boringssl, not the one imported
-# by gRPC. Remove this import once gRPC depends on a newer version.
-http_archive(
-    name = "boringssl",
-    sha256 = "b460f8673f3393e58ce506e9cdde7f2c3b2575b075f214cb819fb57d809f052b",
-    strip_prefix = "boringssl-bb41bc007079982da419c0ec3186e510cbcf09d0",
-    urls = [
-        "https://github.com/google/boringssl/archive/bb41bc007079982da419c0ec3186e510cbcf09d0.zip",
-    ],
-)
+_grpc_version = "1.60.0"
 
-_grpc_version = "1.55.1"
-
-_grpc_sha256 = "17c0685da231917a7b3be2671a7b13b550a85fdda5e475313264c5f51c4da3f8"
+_grpc_sha256 = "09640607a340ff0d97407ed22fe4adb177e5bb85329821122084359cd57c3dea"
 
 http_archive(
     name = "com_github_grpc_grpc",
@@ -152,12 +138,17 @@ http_archive(
 
 # Explicitly declaring Protobuf version, while Protobuf dependency is already
 # instantiated in grpc_deps().
+_protobuf_version = "25.2"
+
+_protobuf_sha256 = "8ff511a64fc46ee792d3fe49a5a1bcad6f7dc50dfbba5a28b0e5b979c17f9871"
+
 http_archive(
     name = "com_google_protobuf",
-    sha256 = "0b0395d34e000f1229679e10d984ed7913078f3dd7f26cf0476467f5e65716f4",
-    strip_prefix = "protobuf-23.2",
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/v23.2.tar.gz"],
+    sha256 = _protobuf_sha256,
+    strip_prefix = "protobuf-%s" % _protobuf_version,
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/v%s.tar.gz" % _protobuf_version],
 )
+
 
 load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
 
