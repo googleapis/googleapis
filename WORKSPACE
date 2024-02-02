@@ -323,7 +323,7 @@ load("@rules_gapic//python:py_gapic_repositories.bzl", "py_gapic_repositories")
 
 py_gapic_repositories()
 
-_gapic_generator_python_version = "1.14.0"
+_gapic_generator_python_version = "1.14.1"
 
 http_archive(
     name = "gapic_generator_python",
