@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,17 +19,22 @@ package google.cloud.dialogflow.v2beta1;
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/protobuf/duration.proto";
-import "google/protobuf/field_mask.proto";
-import "google/protobuf/timestamp.proto";
-import "google/api/annotations.proto";
 
 option cc_enable_arenas = true;
-option csharp_namespace = "Google.Cloud.Dialogflow.V2beta1";
-option go_package = "google.golang.org/genproto/googleapis/cloud/dialogflow/v2beta1;dialogflow";
+option csharp_namespace = "Google.Cloud.Dialogflow.V2Beta1";
+option go_package = "cloud.google.com/go/dialogflow/apiv2beta1/dialogflowpb;dialogflowpb";
 option java_multiple_files = true;
 option java_outer_classname = "AudioConfigProto";
 option java_package = "com.google.cloud.dialogflow.v2beta1";
 option objc_class_prefix = "DF";
+option (google.api.resource_definition) = {
+  type: "automl.googleapis.com/Model"
+  pattern: "projects/{project}/locations/{location}/models/{model}"
+};
+option (google.api.resource_definition) = {
+  type: "speech.googleapis.com/PhraseSet"
+  pattern: "projects/{project}/locations/{location}/phraseSets/{phrase_set}"
+};
 
 // Hints for the speech recognizer to help with recognition in a specific
 // conversation state.
@@ -47,7 +52,7 @@ message SpeechContext {
   // See the [Cloud Speech
   // documentation](https://cloud.google.com/speech-to-text/quotas) for usage
   // limits.
-  repeated string phrases = 1;
+  repeated string phrases = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Boost for this context compared to other contexts:
   //
@@ -58,56 +63,7 @@ message SpeechContext {
   //
   // Dialogflow recommends that you use boosts in the range (0, 20] and that you
   // find a value that fits your use case with binary search.
-  float boost = 2;
-}
-
-// Audio encoding of the audio content sent in the conversational query request.
-// Refer to the
-// [Cloud Speech API
-// documentation](https://cloud.google.com/speech-to-text/docs/basics) for more
-// details.
-enum AudioEncoding {
-  // Not specified.
-  AUDIO_ENCODING_UNSPECIFIED = 0;
-
-  // Uncompressed 16-bit signed little-endian samples (Linear PCM).
-  AUDIO_ENCODING_LINEAR_16 = 1;
-
-  // [`FLAC`](https://xiph.org/flac/documentation.html) (Free Lossless Audio
-  // Codec) is the recommended encoding because it is lossless (therefore
-  // recognition is not compromised) and requires only about half the
-  // bandwidth of `LINEAR16`. `FLAC` stream encoding supports 16-bit and
-  // 24-bit samples, however, not all fields in `STREAMINFO` are supported.
-  AUDIO_ENCODING_FLAC = 2;
-
-  // 8-bit samples that compand 14-bit audio samples using G.711 PCMU/mu-law.
-  AUDIO_ENCODING_MULAW = 3;
-
-  // Adaptive Multi-Rate Narrowband codec. `sample_rate_hertz` must be 8000.
-  AUDIO_ENCODING_AMR = 4;
-
-  // Adaptive Multi-Rate Wideband codec. `sample_rate_hertz` must be 16000.
-  AUDIO_ENCODING_AMR_WB = 5;
-
-  // Opus encoded audio frames in Ogg container
-  // ([OggOpus](https://wiki.xiph.org/OggOpus)).
-  // `sample_rate_hertz` must be 16000.
-  AUDIO_ENCODING_OGG_OPUS = 6;
-
-  // Although the use of lossy encodings is not recommended, if a very low
-  // bitrate encoding is required, `OGG_OPUS` is highly preferred over
-  // Speex encoding. The [Speex](https://speex.org/) encoding supported by
-  // Dialogflow API has a header byte in each block, as in MIME type
-  // `audio/x-speex-with-header-byte`.
-  // It is a variant of the RTP Speex encoding defined in
-  // [RFC 5574](https://tools.ietf.org/html/rfc5574).
-  // The stream is a sequence of blocks, one block per RTP packet. Each block
-  // starts with a byte containing the length of the block, in bytes, followed
-  // by one or more frames of Speex data, padded to an integral number of
-  // bytes (octets) as specified in RFC 5574. In other words, each RTP header
-  // is replaced with a single byte containing the block length. Only Speex
-  // wideband is supported. `sample_rate_hertz` must be 16000.
-  AUDIO_ENCODING_SPEEX_WITH_HEADER_BYTE = 7;
+  float boost = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Information for a word recognized by the speech recognizer.
@@ -135,72 +91,75 @@ message SpeechWordInfo {
   float confidence = 4;
 }
 
-// Variant of the specified [Speech model][google.cloud.dialogflow.v2beta1.InputAudioConfig.model] to use.
+// Configuration of the barge-in behavior. Barge-in instructs the API to return
+// a detected utterance at a proper time while the client is playing back the
+// response audio from a previous request. When the client sees the
+// utterance, it should stop the playback and immediately get ready for
+// receiving the responses for the current request.
 //
-// See the [Cloud Speech
-// documentation](https://cloud.google.com/speech-to-text/docs/enhanced-models)
-// for which models have different variants. For example, the "phone_call" model
-// has both a standard and an enhanced variant. When you use an enhanced model,
-// you will generally receive higher quality results than for a standard model.
-enum SpeechModelVariant {
-  // No model variant specified. In this case Dialogflow defaults to
-  // USE_BEST_AVAILABLE.
-  SPEECH_MODEL_VARIANT_UNSPECIFIED = 0;
+// The barge-in handling requires the client to start streaming audio input
+// as soon as it starts playing back the audio from the previous response. The
+// playback is modeled into two phases:
+//
+// * No barge-in phase: which goes first and during which speech detection
+//   should not be carried out.
+//
+// * Barge-in phase: which follows the no barge-in phase and during which
+//   the API starts speech detection and may inform the client that an utterance
+//   has been detected. Note that no-speech event is not expected in this
+//   phase.
+//
+// The client provides this configuration in terms of the durations of those
+// two phases. The durations are measured in terms of the audio length fromt the
+// the start of the input audio.
+//
+// The flow goes like below:
+//
+// ```
+// --> Time
+//
+// without speech detection  | utterance only | utterance or no-speech event
+//                           |                |
+//           +-------------+ | +------------+ | +---------------+
+// ----------+ no barge-in +-|-+  barge-in  +-|-+ normal period +-----------
+//           +-------------+ | +------------+ | +---------------+
+// ```
+//
+// No-speech event is a response with END_OF_UTTERANCE without any transcript
+// following up.
+message BargeInConfig {
+  // Duration that is not eligible for barge-in at the beginning of the input
+  // audio.
+  google.protobuf.Duration no_barge_in_duration = 1;
 
-  // Use the best available variant of the [Speech
-  // model][InputAudioConfig.model] that the caller is eligible for.
-  //
-  // Please see the [Dialogflow
-  // docs](https://cloud.google.com/dialogflow/docs/data-logging) for
-  // how to make your project eligible for enhanced models.
-  USE_BEST_AVAILABLE = 1;
-
-  // Use standard model variant even if an enhanced model is available.  See the
-  // [Cloud Speech
-  // documentation](https://cloud.google.com/speech-to-text/docs/enhanced-models)
-  // for details about enhanced models.
-  USE_STANDARD = 2;
-
-  // Use an enhanced model variant:
-  //
-  // * If an enhanced variant does not exist for the given
-  //   [model][google.cloud.dialogflow.v2beta1.InputAudioConfig.model] and request language, Dialogflow falls
-  //   back to the standard variant.
-  //
-  //   The [Cloud Speech
-  //   documentation](https://cloud.google.com/speech-to-text/docs/enhanced-models)
-  //   describes which models have enhanced variants.
-  //
-  // * If the API caller isn't eligible for enhanced models, Dialogflow returns
-  //   an error.  Please see the [Dialogflow
-  //   docs](https://cloud.google.com/dialogflow/docs/data-logging)
-  //   for how to make your project eligible.
-  USE_ENHANCED = 3;
+  // Total duration for the playback at the beginning of the input audio.
+  google.protobuf.Duration total_duration = 2;
 }
 
 // Instructs the speech recognizer on how to process the audio content.
 message InputAudioConfig {
   // Required. Audio encoding of the audio content to process.
-  AudioEncoding audio_encoding = 1;
+  AudioEncoding audio_encoding = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. Sample rate (in Hertz) of the audio content sent in the query.
-  // Refer to
-  // [Cloud Speech API
+  // Refer to [Cloud Speech API
   // documentation](https://cloud.google.com/speech-to-text/docs/basics) for
   // more details.
-  int32 sample_rate_hertz = 2;
+  int32 sample_rate_hertz = 2 [(google.api.field_behavior) = REQUIRED];
 
   // Required. The language of the supplied audio. Dialogflow does not do
   // translations. See [Language
   // Support](https://cloud.google.com/dialogflow/docs/reference/language)
   // for a list of the currently supported language codes. Note that queries in
   // the same session do not necessarily need to specify the same language.
-  string language_code = 3;
+  string language_code = 3 [(google.api.field_behavior) = REQUIRED];
 
-  // If `true`, Dialogflow returns [SpeechWordInfo][google.cloud.dialogflow.v2beta1.SpeechWordInfo] in
-  // [StreamingRecognitionResult][google.cloud.dialogflow.v2beta1.StreamingRecognitionResult] with information about the recognized speech
-  // words, e.g. start and end time offsets. If false or unspecified, Speech
-  // doesn't return any word-level information.
+  // If `true`, Dialogflow returns
+  // [SpeechWordInfo][google.cloud.dialogflow.v2beta1.SpeechWordInfo] in
+  // [StreamingRecognitionResult][google.cloud.dialogflow.v2beta1.StreamingRecognitionResult]
+  // with information about the recognized speech words, e.g. start and end time
+  // offsets. If false or unspecified, Speech doesn't return any word-level
+  // information.
   bool enable_word_info = 13;
 
   // A list of strings containing words and phrases that the speech
@@ -210,9 +169,9 @@ message InputAudioConfig {
   // documentation](https://cloud.google.com/speech-to-text/docs/basics#phrase-hints)
   // for more details.
   //
-  // This field is deprecated. Please use [speech_contexts]() instead. If you
-  // specify both [phrase_hints]() and [speech_contexts](), Dialogflow will
-  // treat the [phrase_hints]() as a single additional [SpeechContext]().
+  // This field is deprecated. Please use [`speech_contexts`]() instead. If you
+  // specify both [`phrase_hints`]() and [`speech_contexts`](), Dialogflow will
+  // treat the [`phrase_hints`]() as a single additional [`SpeechContext`]().
   repeated string phrase_hints = 4 [deprecated = true];
 
   // Context information to assist speech recognition.
@@ -222,20 +181,13 @@ message InputAudioConfig {
   // for more details.
   repeated SpeechContext speech_contexts = 11;
 
-  // Which Speech model to select for the given request. Select the
-  // model best suited to your domain to get best results. If a model is not
-  // explicitly specified, then we auto-select a model based on the parameters
-  // in the InputAudioConfig.
-  // If enhanced speech model is enabled for the agent and an enhanced
-  // version of the specified model for the language does not exist, then the
-  // speech is recognized using the standard version of the specified model.
-  // Refer to
-  // [Cloud Speech API
-  // documentation](https://cloud.google.com/speech-to-text/docs/basics#select-model)
-  // for more details.
+  // Optional. Which Speech model to select for the given request.
+  // For more information, see
+  // [Speech models](https://cloud.google.com/dialogflow/es/docs/speech-models).
   string model = 7;
 
-  // Which variant of the [Speech model][google.cloud.dialogflow.v2beta1.InputAudioConfig.model] to use.
+  // Which variant of the [Speech
+  // model][google.cloud.dialogflow.v2beta1.InputAudioConfig.model] to use.
   SpeechModelVariant model_variant = 10;
 
   // If `false` (default), recognition does not cease until the
@@ -250,11 +202,19 @@ message InputAudioConfig {
   // over StreamingDetectIntentRequest.single_utterance.
   bool single_utterance = 8;
 
-  // Only used in [Participants.AnalyzeContent][google.cloud.dialogflow.v2beta1.Participants.AnalyzeContent] and
+  // Only used in
+  // [Participants.AnalyzeContent][google.cloud.dialogflow.v2beta1.Participants.AnalyzeContent]
+  // and
   // [Participants.StreamingAnalyzeContent][google.cloud.dialogflow.v2beta1.Participants.StreamingAnalyzeContent].
   // If `false` and recognition doesn't return any result, trigger
   // `NO_SPEECH_RECOGNIZED` event to Dialogflow agent.
   bool disable_no_speech_recognized_event = 14;
+
+  // Configuration of barge-in behavior during the streaming of input audio.
+  BargeInConfig barge_in_config = 15;
+
+  // Enable automatic punctuation option at the speech backend.
+  bool enable_automatic_punctuation = 17;
 }
 
 // Description of which voice to use for speech synthesis.
@@ -265,28 +225,29 @@ message VoiceSelectionParams {
   //
   // For the list of available voices, please refer to [Supported voices and
   // languages](https://cloud.google.com/text-to-speech/docs/voices).
-  string name = 1;
+  string name = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The preferred gender of the voice. If not set, the service will
   // choose a voice based on the other parameters such as language_code and
-  // [name][google.cloud.dialogflow.v2beta1.VoiceSelectionParams.name]. Note that this is only a preference, not requirement. If a
-  // voice of the appropriate gender is not available, the synthesizer should
-  // substitute a voice with a different gender rather than failing the request.
-  SsmlVoiceGender ssml_gender = 2;
+  // [name][google.cloud.dialogflow.v2beta1.VoiceSelectionParams.name]. Note
+  // that this is only a preference, not requirement. If a voice of the
+  // appropriate gender is not available, the synthesizer should substitute a
+  // voice with a different gender rather than failing the request.
+  SsmlVoiceGender ssml_gender = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Configuration of how speech should be synthesized.
 message SynthesizeSpeechConfig {
   // Optional. Speaking rate/speed, in the range [0.25, 4.0]. 1.0 is the normal
-  // native speed supported by the specific voice. 2.0 is twice as fast, and
-  // 0.5 is half as fast. If unset(0.0), defaults to the native 1.0 speed. Any
-  // other values < 0.25 or > 4.0 will return an error.
-  double speaking_rate = 1;
+  // native speed supported by the specific voice. 2.0 is twice as fast, and 0.5
+  // is half as fast. If unset(0.0), defaults to the native 1.0 speed. Any other
+  // values < 0.25 or > 4.0 will return an error.
+  double speaking_rate = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Speaking pitch, in the range [-20.0, 20.0]. 20 means increase 20
   // semitones from the original pitch. -20 means decrease 20 semitones from the
   // original pitch.
-  double pitch = 2;
+  double pitch = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Volume gain (in dB) of the normal native volume supported by the
   // specific voice, in the range [-96.0, 16.0]. If unset, or set to a value of
@@ -296,32 +257,16 @@ message SynthesizeSpeechConfig {
   // amplitude of the normal native signal amplitude. We strongly recommend not
   // to exceed +10 (dB) as there's usually no effective increase in loudness for
   // any value greater than that.
-  double volume_gain_db = 3;
+  double volume_gain_db = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. An identifier which selects 'audio effects' profiles that are
   // applied on (post synthesized) text to speech. Effects are applied on top of
   // each other in the order they are given.
-  repeated string effects_profile_id = 5;
+  repeated string effects_profile_id = 5
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The desired voice of the synthesized audio.
-  VoiceSelectionParams voice = 4;
-}
-
-// Gender of the voice as described in
-// [SSML voice element](https://www.w3.org/TR/speech-synthesis11/#edef_voice).
-enum SsmlVoiceGender {
-  // An unspecified gender, which means that the client doesn't care which
-  // gender the selected voice will have.
-  SSML_VOICE_GENDER_UNSPECIFIED = 0;
-
-  // A male voice.
-  SSML_VOICE_GENDER_MALE = 1;
-
-  // A female voice.
-  SSML_VOICE_GENDER_FEMALE = 2;
-
-  // A gender-neutral voice.
-  SSML_VOICE_GENDER_NEUTRAL = 3;
+  VoiceSelectionParams voice = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Instructs the speech synthesizer how to generate the output audio content.
@@ -329,7 +274,8 @@ enum SsmlVoiceGender {
 // text-to-speech settings applied to the agent.
 message OutputAudioConfig {
   // Required. Audio encoding of the synthesized audio content.
-  OutputAudioEncoding audio_encoding = 1 [(google.api.field_behavior) = REQUIRED];
+  OutputAudioEncoding audio_encoding = 1
+      [(google.api.field_behavior) = REQUIRED];
 
   // The synthesis sample rate (in hertz) for this audio. If not
   // provided, then the synthesizer will use the default sample rate based on
@@ -348,38 +294,47 @@ message TelephonyDtmfEvents {
   repeated TelephonyDtmf dtmf_events = 1;
 }
 
-// Audio encoding of the output audio format in Text-To-Speech.
-enum OutputAudioEncoding {
-  // Not specified.
-  OUTPUT_AUDIO_ENCODING_UNSPECIFIED = 0;
-
-  // Uncompressed 16-bit signed little-endian samples (Linear PCM).
-  // Audio content returned as LINEAR16 also contains a WAV header.
-  OUTPUT_AUDIO_ENCODING_LINEAR_16 = 1;
-
-  // MP3 audio at 32kbps.
-  OUTPUT_AUDIO_ENCODING_MP3 = 2;
-
-  // MP3 audio at 64kbps.
-  OUTPUT_AUDIO_ENCODING_MP3_64_KBPS = 4;
-
-  // Opus encoded audio wrapped in an ogg container. The result will be a
-  // file which can be played natively on Android, and in browsers (at least
-  // Chrome and Firefox). The quality of the encoding is considerably higher
-  // than MP3 while using approximately the same bitrate.
-  OUTPUT_AUDIO_ENCODING_OGG_OPUS = 3;
-
-  // 8-bit samples that compand 14-bit audio samples using G.711 PCMU/mu-law.
-  OUTPUT_AUDIO_ENCODING_MULAW = 5;
-}
-
-// Configures speech transcription for  [ConversationProfile][google.cloud.dialogflow.v2beta1.ConversationProfile].
+// Configures speech transcription for
+// [ConversationProfile][google.cloud.dialogflow.v2beta1.ConversationProfile].
 message SpeechToTextConfig {
-  // Optional. The speech model used in speech to text.
+  // The speech model used in speech to text.
   // `SPEECH_MODEL_VARIANT_UNSPECIFIED`, `USE_BEST_AVAILABLE` will be treated as
-  // `USE_ENHANCED`. It can be overridden in [AnalyzeContentRequest][google.cloud.dialogflow.v2beta1.AnalyzeContentRequest] and
-  // [StreamingAnalyzeContentRequest][google.cloud.dialogflow.v2beta1.StreamingAnalyzeContentRequest] request.
-  SpeechModelVariant speech_model_variant = 1 [(google.api.field_behavior) = OPTIONAL];
+  // `USE_ENHANCED`. It can be overridden in
+  // [AnalyzeContentRequest][google.cloud.dialogflow.v2beta1.AnalyzeContentRequest]
+  // and
+  // [StreamingAnalyzeContentRequest][google.cloud.dialogflow.v2beta1.StreamingAnalyzeContentRequest]
+  // request. If enhanced model variant is specified and an enhanced version of
+  // the specified model for the language does not exist, then it would emit an
+  // error.
+  SpeechModelVariant speech_model_variant = 1;
+
+  // Which Speech model to select. Select the
+  // model best suited to your domain to get best results. If a model is not
+  // explicitly specified, then Dialogflow auto-selects a model based on other
+  // parameters in the SpeechToTextConfig and Agent settings.
+  // If enhanced speech model is enabled for the agent and an enhanced
+  // version of the specified model for the language does not exist, then the
+  // speech is recognized using the standard version of the specified model.
+  // Refer to
+  // [Cloud Speech API
+  // documentation](https://cloud.google.com/speech-to-text/docs/basics#select-model)
+  // for more details.
+  // If you specify a model, the following models typically have the best
+  // performance:
+  //
+  // - phone_call (best for Agent Assist and telephony)
+  // - latest_short (best for Dialogflow non-telephony)
+  // - command_and_search
+  //
+  // Leave this field unspecified to use
+  // [Agent Speech
+  // settings](https://cloud.google.com/dialogflow/cx/docs/concept/agent#settings-speech)
+  // for model selection.
+  string model = 2;
+
+  // Use timeout based endpointing, interpreting endpointer sensitivy as
+  // seconds of timeout value.
+  bool use_timeout_based_endpointing = 11;
 }
 
 // [DTMF](https://en.wikipedia.org/wiki/Dual-tone_multi-frequency_signaling)
@@ -435,4 +390,139 @@ enum TelephonyDtmf {
 
   // Pound/diamond/hash/square/gate/octothorpe: '#'.
   DTMF_POUND = 16;
+}
+
+// Audio encoding of the audio content sent in the conversational query request.
+// Refer to the
+// [Cloud Speech API
+// documentation](https://cloud.google.com/speech-to-text/docs/basics) for more
+// details.
+enum AudioEncoding {
+  // Not specified.
+  AUDIO_ENCODING_UNSPECIFIED = 0;
+
+  // Uncompressed 16-bit signed little-endian samples (Linear PCM).
+  AUDIO_ENCODING_LINEAR_16 = 1;
+
+  // [`FLAC`](https://xiph.org/flac/documentation.html) (Free Lossless Audio
+  // Codec) is the recommended encoding because it is lossless (therefore
+  // recognition is not compromised) and requires only about half the
+  // bandwidth of `LINEAR16`. `FLAC` stream encoding supports 16-bit and
+  // 24-bit samples, however, not all fields in `STREAMINFO` are supported.
+  AUDIO_ENCODING_FLAC = 2;
+
+  // 8-bit samples that compand 14-bit audio samples using G.711 PCMU/mu-law.
+  AUDIO_ENCODING_MULAW = 3;
+
+  // Adaptive Multi-Rate Narrowband codec. `sample_rate_hertz` must be 8000.
+  AUDIO_ENCODING_AMR = 4;
+
+  // Adaptive Multi-Rate Wideband codec. `sample_rate_hertz` must be 16000.
+  AUDIO_ENCODING_AMR_WB = 5;
+
+  // Opus encoded audio frames in Ogg container
+  // ([OggOpus](https://wiki.xiph.org/OggOpus)).
+  // `sample_rate_hertz` must be 16000.
+  AUDIO_ENCODING_OGG_OPUS = 6;
+
+  // Although the use of lossy encodings is not recommended, if a very low
+  // bitrate encoding is required, `OGG_OPUS` is highly preferred over
+  // Speex encoding. The [Speex](https://speex.org/) encoding supported by
+  // Dialogflow API has a header byte in each block, as in MIME type
+  // `audio/x-speex-with-header-byte`.
+  // It is a variant of the RTP Speex encoding defined in
+  // [RFC 5574](https://tools.ietf.org/html/rfc5574).
+  // The stream is a sequence of blocks, one block per RTP packet. Each block
+  // starts with a byte containing the length of the block, in bytes, followed
+  // by one or more frames of Speex data, padded to an integral number of
+  // bytes (octets) as specified in RFC 5574. In other words, each RTP header
+  // is replaced with a single byte containing the block length. Only Speex
+  // wideband is supported. `sample_rate_hertz` must be 16000.
+  AUDIO_ENCODING_SPEEX_WITH_HEADER_BYTE = 7;
+}
+
+// Variant of the specified [Speech
+// model][google.cloud.dialogflow.v2beta1.InputAudioConfig.model] to use.
+//
+// See the [Cloud Speech
+// documentation](https://cloud.google.com/speech-to-text/docs/enhanced-models)
+// for which models have different variants. For example, the "phone_call" model
+// has both a standard and an enhanced variant. When you use an enhanced model,
+// you will generally receive higher quality results than for a standard model.
+enum SpeechModelVariant {
+  // No model variant specified. In this case Dialogflow defaults to
+  // USE_BEST_AVAILABLE.
+  SPEECH_MODEL_VARIANT_UNSPECIFIED = 0;
+
+  // Use the best available variant of the [Speech
+  // model][InputAudioConfig.model] that the caller is eligible for.
+  //
+  // Please see the [Dialogflow
+  // docs](https://cloud.google.com/dialogflow/docs/data-logging) for
+  // how to make your project eligible for enhanced models.
+  USE_BEST_AVAILABLE = 1;
+
+  // Use standard model variant even if an enhanced model is available.  See the
+  // [Cloud Speech
+  // documentation](https://cloud.google.com/speech-to-text/docs/enhanced-models)
+  // for details about enhanced models.
+  USE_STANDARD = 2;
+
+  // Use an enhanced model variant:
+  //
+  // * If an enhanced variant does not exist for the given
+  //   [model][google.cloud.dialogflow.v2beta1.InputAudioConfig.model] and
+  //   request language, Dialogflow falls back to the standard variant.
+  //
+  //   The [Cloud Speech
+  //   documentation](https://cloud.google.com/speech-to-text/docs/enhanced-models)
+  //   describes which models have enhanced variants.
+  //
+  // * If the API caller isn't eligible for enhanced models, Dialogflow returns
+  //   an error.  Please see the [Dialogflow
+  //   docs](https://cloud.google.com/dialogflow/docs/data-logging)
+  //   for how to make your project eligible.
+  USE_ENHANCED = 3;
+}
+
+// Gender of the voice as described in
+// [SSML voice element](https://www.w3.org/TR/speech-synthesis11/#edef_voice).
+enum SsmlVoiceGender {
+  // An unspecified gender, which means that the client doesn't care which
+  // gender the selected voice will have.
+  SSML_VOICE_GENDER_UNSPECIFIED = 0;
+
+  // A male voice.
+  SSML_VOICE_GENDER_MALE = 1;
+
+  // A female voice.
+  SSML_VOICE_GENDER_FEMALE = 2;
+
+  // A gender-neutral voice.
+  SSML_VOICE_GENDER_NEUTRAL = 3;
+}
+
+// Audio encoding of the output audio format in Text-To-Speech.
+enum OutputAudioEncoding {
+  // Not specified.
+  OUTPUT_AUDIO_ENCODING_UNSPECIFIED = 0;
+
+  // Uncompressed 16-bit signed little-endian samples (Linear PCM).
+  // Audio content returned as LINEAR16 also contains a WAV header.
+  OUTPUT_AUDIO_ENCODING_LINEAR_16 = 1;
+
+  // MP3 audio at 32kbps.
+  OUTPUT_AUDIO_ENCODING_MP3 = 2;
+
+  // MP3 audio at 64kbps.
+  OUTPUT_AUDIO_ENCODING_MP3_64_KBPS = 4;
+
+  // Opus encoded audio wrapped in an ogg container. The result will be a
+  // file which can be played natively on Android, and in browsers (at least
+  // Chrome and Firefox). The quality of the encoding is considerably higher
+  // than MP3 while using approximately the same bitrate.
+  OUTPUT_AUDIO_ENCODING_OGG_OPUS = 3;
+
+  // 8-bit samples that compand 14-bit audio samples using G.711 PCMU/mu-law.
+  OUTPUT_AUDIO_ENCODING_MULAW = 5;
 }

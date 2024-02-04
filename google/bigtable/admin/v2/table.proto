@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -34,15 +34,6 @@ option (google.api.resource_definition) = {
   pattern: "projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}/cryptoKeyVersions/{crypto_key_version}"
 };
 
-// Indicates the type of the restore source.
-enum RestoreSourceType {
-  // No restore associated.
-  RESTORE_SOURCE_TYPE_UNSPECIFIED = 0;
-
-  // A backup was used as the source of the restore.
-  BACKUP = 1;
-}
-
 // Information about a table restore.
 message RestoreInfo {
   // The type of the restore source.
@@ -54,6 +45,16 @@ message RestoreInfo {
     // may no longer exist.
     BackupInfo backup_info = 2;
   }
+}
+
+// Change stream configuration.
+message ChangeStreamConfig {
+  // How long the change stream should be retained. Change stream data older
+  // than the retention period will not be returned when reading the change
+  // stream from the table.
+  // Values must be at least 1 day and at most 7 days, and will be truncated to
+  // microsecond granularity.
+  google.protobuf.Duration retention_period = 1;
 }
 
 // A collection of user data indexed by row, column, and timestamp.
@@ -96,7 +97,8 @@ message Table {
     }
 
     // Output only. The state of replication for the table in this cluster.
-    ReplicationState replication_state = 1;
+    ReplicationState replication_state = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
 
     // Output only. The encryption information for the table in this cluster.
     // If the encryption key protecting this resource is customer managed, then
@@ -133,7 +135,7 @@ message Table {
     // state.
     REPLICATION_VIEW = 3;
 
-    // Only populates 'name' and fields related to the table's encryption state.
+    // Only populates `name` and fields related to the table's encryption state.
     ENCRYPTION_VIEW = 5;
 
     // Populates all fields.
@@ -150,23 +152,38 @@ message Table {
   // particular cluster (for example, if its zone is unavailable), then
   // there will be an entry for the cluster with UNKNOWN `replication_status`.
   // Views: `REPLICATION_VIEW`, `ENCRYPTION_VIEW`, `FULL`
-  map<string, ClusterState> cluster_states = 2;
+  map<string, ClusterState> cluster_states = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // (`CreationOnly`)
   // The column families configured for this table, mapped by column family ID.
-  // Views: `SCHEMA_VIEW`, `FULL`
+  // Views: `SCHEMA_VIEW`, `STATS_VIEW`, `FULL`
   map<string, ColumnFamily> column_families = 3;
 
-  // (`CreationOnly`)
-  // The granularity (i.e. `MILLIS`) at which timestamps are stored in
-  // this table. Timestamps not matching the granularity will be rejected.
-  // If unspecified at creation time, the value will be set to `MILLIS`.
-  // Views: `SCHEMA_VIEW`, `FULL`.
-  TimestampGranularity granularity = 4;
+  // Immutable. The granularity (i.e. `MILLIS`) at which timestamps are stored
+  // in this table. Timestamps not matching the granularity will be rejected. If
+  // unspecified at creation time, the value will be set to `MILLIS`. Views:
+  // `SCHEMA_VIEW`, `FULL`.
+  TimestampGranularity granularity = 4
+      [(google.api.field_behavior) = IMMUTABLE];
 
   // Output only. If this table was restored from another data source (e.g. a
   // backup), this field will be populated with information about the restore.
-  RestoreInfo restore_info = 6;
+  RestoreInfo restore_info = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // If specified, enable the change stream on this table.
+  // Otherwise, the change stream is disabled and the change stream is not
+  // retained.
+  ChangeStreamConfig change_stream_config = 8;
+
+  // Set to true to make the table protected against data loss. i.e. deleting
+  // the following resources through Admin APIs are prohibited:
+  //
+  // * The table.
+  // * The column families in the table.
+  // * The instance containing the table.
+  //
+  // Note one can still delete the data stored in the table through Data APIs.
+  bool deletion_protection = 9;
 }
 
 // A set of columns within a table which share a common configuration.
@@ -284,32 +301,33 @@ message Snapshot {
     CREATING = 2;
   }
 
-  // Output only. The unique name of the snapshot.
+  // The unique name of the snapshot.
   // Values are of the form
   // `projects/{project}/instances/{instance}/clusters/{cluster}/snapshots/{snapshot}`.
   string name = 1;
 
   // Output only. The source table at the time the snapshot was taken.
-  Table source_table = 2;
+  Table source_table = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The size of the data in the source table at the time the
   // snapshot was taken. In some cases, this value may be computed
   // asynchronously via a background process and a placeholder of 0 will be used
   // in the meantime.
-  int64 data_size_bytes = 3;
+  int64 data_size_bytes = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The time when the snapshot is created.
-  google.protobuf.Timestamp create_time = 4;
+  google.protobuf.Timestamp create_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. The time when the snapshot will be deleted. The maximum amount
-  // of time a snapshot can stay active is 365 days. If 'ttl' is not specified,
+  // The time when the snapshot will be deleted. The maximum amount of time a
+  // snapshot can stay active is 365 days. If 'ttl' is not specified,
   // the default maximum of 365 days will be used.
   google.protobuf.Timestamp delete_time = 5;
 
   // Output only. The current state of the snapshot.
-  State state = 6;
+  State state = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. Description of the snapshot.
+  // Description of the snapshot.
   string description = 7;
 }
 
@@ -333,7 +351,7 @@ message Backup {
     READY = 2;
   }
 
-  // Output only. A globally unique identifier for the backup which cannot be
+  // A globally unique identifier for the backup which cannot be
   // changed. Values are of the form
   // `projects/{project}/instances/{instance}/clusters/{cluster}/
   //    backups/[_a-zA-Z0-9][-_.a-zA-Z0-9]*`
@@ -343,7 +361,7 @@ message Backup {
   // The backup is stored in the cluster identified by the prefix of the backup
   // name of the form
   // `projects/{project}/instances/{instance}/clusters/{cluster}`.
-  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string name = 1;
 
   // Required. Immutable. Name of the table from which this backup was created.
   // This needs to be in the same instance as the backup. Values are of the form
@@ -353,8 +371,13 @@ message Backup {
     (google.api.field_behavior) = REQUIRED
   ];
 
+  // Output only. Name of the backup from which this backup was copied. If a
+  // backup is not created by copying a backup, this field will be empty. Values
+  // are of the form: projects/<project>/instances/<instance>/backups/<backup>.
+  string source_backup = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+
   // Required. The expiration time of the backup, with microseconds
-  // granularity that must be at least 6 hours and at most 30 days
+  // granularity that must be at least 6 hours and at most 90 days
   // from the time the request is received. Once the `expire_time`
   // has passed, Cloud Bigtable will delete the backup and free the
   // resources used by the backup.
@@ -402,4 +425,18 @@ message BackupInfo {
 
   // Output only. Name of the table the backup was created from.
   string source_table = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Name of the backup from which this backup was copied. If a
+  // backup is not created by copying a backup, this field will be empty. Values
+  // are of the form: projects/<project>/instances/<instance>/backups/<backup>.
+  string source_backup = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Indicates the type of the restore source.
+enum RestoreSourceType {
+  // No restore associated.
+  RESTORE_SOURCE_TYPE_UNSPECIFIED = 0;
+
+  // A backup was used as the source of the restore.
+  BACKUP = 1;
 }

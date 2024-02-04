@@ -1,0 +1,409 @@
+// Copyright 2023 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.dataplex.v1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/dataplex/v1/processing.proto";
+
+option go_package = "cloud.google.com/go/dataplex/apiv1/dataplexpb;dataplexpb";
+option java_multiple_files = true;
+option java_outer_classname = "DataQualityProto";
+option java_package = "com.google.cloud.dataplex.v1";
+option (google.api.resource_definition) = {
+  type: "bigquery.googleapis.com/Table"
+  pattern: "projects/{project}/datasets/{dataset}/tables/{table}"
+};
+
+// DataQualityScan related setting.
+message DataQualitySpec {
+  // The configuration of post scan actions of DataQualityScan.
+  message PostScanActions {
+    // The configuration of BigQuery export post scan action.
+    message BigQueryExport {
+      // Optional. The BigQuery table to export DataQualityScan results to.
+      // Format:
+      // //bigquery.googleapis.com/projects/PROJECT_ID/datasets/DATASET_ID/tables/TABLE_ID
+      string results_table = 1 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Optional. If set, results will be exported to the provided BigQuery
+    // table.
+    BigQueryExport bigquery_export = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Required. The list of rules to evaluate against a data source. At least one
+  // rule is required.
+  repeated DataQualityRule rules = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The percentage of the records to be selected from the dataset for
+  // DataScan.
+  //
+  // * Value can range between 0.0 and 100.0 with up to 3 significant decimal
+  // digits.
+  // * Sampling is not applied if `sampling_percent` is not specified, 0 or
+  // 100.
+  float sampling_percent = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A filter applied to all rows in a single DataScan job.
+  // The filter needs to be a valid SQL expression for a WHERE clause in
+  // BigQuery standard SQL syntax.
+  // Example: col1 >= 0 AND col2 < 10
+  string row_filter = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Actions to take upon job completion.
+  PostScanActions post_scan_actions = 6
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The output of a DataQualityScan.
+message DataQualityResult {
+  // The result of post scan actions of DataQualityScan job.
+  message PostScanActionsResult {
+    // The result of BigQuery export post scan action.
+    message BigQueryExportResult {
+      // Execution state for the exporting.
+      enum State {
+        // The exporting state is unspecified.
+        STATE_UNSPECIFIED = 0;
+
+        // The exporting completed successfully.
+        SUCCEEDED = 1;
+
+        // The exporting is no longer running due to an error.
+        FAILED = 2;
+
+        // The exporting is skipped due to no valid scan result to export
+        // (usually caused by scan failed).
+        SKIPPED = 3;
+      }
+
+      // Output only. Execution state for the BigQuery exporting.
+      State state = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+      // Output only. Additional information about the BigQuery exporting.
+      string message = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+    }
+
+    // Output only. The result of BigQuery export post scan action.
+    BigQueryExportResult bigquery_export_result = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Overall data quality result -- `true` if all rules passed.
+  bool passed = 5;
+
+  // Output only. The overall data quality score.
+  //
+  // The score ranges between [0, 100] (up to two decimal points).
+  optional float score = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // A list of results at the dimension level.
+  //
+  // A dimension will have a corresponding `DataQualityDimensionResult` if and
+  // only if there is at least one rule with the 'dimension' field set to it.
+  repeated DataQualityDimensionResult dimensions = 2;
+
+  // Output only. A list of results at the column level.
+  //
+  // A column will have a corresponding `DataQualityColumnResult` if and only if
+  // there is at least one rule with the 'column' field set to it.
+  repeated DataQualityColumnResult columns = 10
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // A list of all the rules in a job, and their results.
+  repeated DataQualityRuleResult rules = 3;
+
+  // The count of rows processed.
+  int64 row_count = 4;
+
+  // The data scanned for this result.
+  ScannedData scanned_data = 7;
+
+  // Output only. The result of post scan actions.
+  PostScanActionsResult post_scan_actions_result = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// DataQualityRuleResult provides a more detailed, per-rule view of the results.
+message DataQualityRuleResult {
+  // The rule specified in the DataQualitySpec, as is.
+  DataQualityRule rule = 1;
+
+  // Whether the rule passed or failed.
+  bool passed = 7;
+
+  // The number of rows a rule was evaluated against.
+  //
+  // This field is only valid for row-level type rules.
+  //
+  // Evaluated count can be configured to either
+  //
+  // * include all rows (default) - with `null` rows automatically failing rule
+  // evaluation, or
+  // * exclude `null` rows from the `evaluated_count`, by setting
+  // `ignore_nulls = true`.
+  int64 evaluated_count = 9;
+
+  // The number of rows which passed a rule evaluation.
+  //
+  // This field is only valid for row-level type rules.
+  int64 passed_count = 8;
+
+  // The number of rows with null values in the specified column.
+  int64 null_count = 5;
+
+  // The ratio of **passed_count / evaluated_count**.
+  //
+  // This field is only valid for row-level type rules.
+  double pass_ratio = 6;
+
+  // The query to find rows that did not pass this rule.
+  //
+  // This field is only valid for row-level type rules.
+  string failing_rows_query = 10;
+}
+
+// DataQualityDimensionResult provides a more detailed, per-dimension view of
+// the results.
+message DataQualityDimensionResult {
+  // Output only. The dimension config specified in the DataQualitySpec, as is.
+  DataQualityDimension dimension = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Whether the dimension passed or failed.
+  bool passed = 3;
+
+  // Output only. The dimension-level data quality score for this data scan job
+  // if and only if the 'dimension' field is set.
+  //
+  // The score ranges between [0, 100] (up to two decimal
+  // points).
+  optional float score = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A dimension captures data quality intent about a defined subset of the rules
+// specified.
+message DataQualityDimension {
+  // The dimension name a rule belongs to. Supported dimensions are
+  // ["COMPLETENESS", "ACCURACY", "CONSISTENCY", "VALIDITY", "UNIQUENESS",
+  // "INTEGRITY"]
+  string name = 1;
+}
+
+// A rule captures data quality intent about a data source.
+message DataQualityRule {
+  // Evaluates whether each column value lies between a specified range.
+  message RangeExpectation {
+    // Optional. The minimum column value allowed for a row to pass this
+    // validation. At least one of `min_value` and `max_value` need to be
+    // provided.
+    string min_value = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The maximum column value allowed for a row to pass this
+    // validation. At least one of `min_value` and `max_value` need to be
+    // provided.
+    string max_value = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Whether each value needs to be strictly greater than ('>') the
+    // minimum, or if equality is allowed.
+    //
+    // Only relevant if a `min_value` has been defined. Default = false.
+    bool strict_min_enabled = 3 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Whether each value needs to be strictly lesser than ('<') the
+    // maximum, or if equality is allowed.
+    //
+    // Only relevant if a `max_value` has been defined. Default = false.
+    bool strict_max_enabled = 4 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Evaluates whether each column value is null.
+  message NonNullExpectation {}
+
+  // Evaluates whether each column value is contained by a specified set.
+  message SetExpectation {
+    // Optional. Expected values for the column value.
+    repeated string values = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Evaluates whether each column value matches a specified regex.
+  message RegexExpectation {
+    // Optional. A regular expression the column value is expected to match.
+    string regex = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Evaluates whether the column has duplicates.
+  message UniquenessExpectation {}
+
+  // Evaluates whether the column aggregate statistic lies between a specified
+  // range.
+  message StatisticRangeExpectation {
+    // The list of aggregate metrics a rule can be evaluated against.
+    enum ColumnStatistic {
+      // Unspecified statistic type
+      STATISTIC_UNDEFINED = 0;
+
+      // Evaluate the column mean
+      MEAN = 1;
+
+      // Evaluate the column min
+      MIN = 2;
+
+      // Evaluate the column max
+      MAX = 3;
+    }
+
+    // Optional. The aggregate metric to evaluate.
+    ColumnStatistic statistic = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The minimum column statistic value allowed for a row to pass
+    // this validation.
+    //
+    // At least one of `min_value` and `max_value` need to be provided.
+    string min_value = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The maximum column statistic value allowed for a row to pass
+    // this validation.
+    //
+    // At least one of `min_value` and `max_value` need to be provided.
+    string max_value = 3 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Whether column statistic needs to be strictly greater than
+    // ('>') the minimum, or if equality is allowed.
+    //
+    // Only relevant if a `min_value` has been defined. Default = false.
+    bool strict_min_enabled = 4 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Whether column statistic needs to be strictly lesser than ('<')
+    // the maximum, or if equality is allowed.
+    //
+    // Only relevant if a `max_value` has been defined. Default = false.
+    bool strict_max_enabled = 5 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Evaluates whether each row passes the specified condition.
+  //
+  // The SQL expression needs to use BigQuery standard SQL syntax and should
+  // produce a boolean value per row as the result.
+  //
+  // Example: col1 >= 0 AND col2 < 10
+  message RowConditionExpectation {
+    // Optional. The SQL expression.
+    string sql_expression = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Evaluates whether the provided expression is true.
+  //
+  // The SQL expression needs to use BigQuery standard SQL syntax and should
+  // produce a scalar boolean result.
+  //
+  // Example: MIN(col1) >= 0
+  message TableConditionExpectation {
+    // Optional. The SQL expression.
+    string sql_expression = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // The rule-specific configuration.
+  oneof rule_type {
+    // Row-level rule which evaluates whether each column value lies between a
+    // specified range.
+    RangeExpectation range_expectation = 1;
+
+    // Row-level rule which evaluates whether each column value is null.
+    NonNullExpectation non_null_expectation = 2;
+
+    // Row-level rule which evaluates whether each column value is contained by
+    // a specified set.
+    SetExpectation set_expectation = 3;
+
+    // Row-level rule which evaluates whether each column value matches a
+    // specified regex.
+    RegexExpectation regex_expectation = 4;
+
+    // Row-level rule which evaluates whether each column value is unique.
+    UniquenessExpectation uniqueness_expectation = 100;
+
+    // Aggregate rule which evaluates whether the column aggregate
+    // statistic lies between a specified range.
+    StatisticRangeExpectation statistic_range_expectation = 101;
+
+    // Row-level rule which evaluates whether each row in a table passes the
+    // specified condition.
+    RowConditionExpectation row_condition_expectation = 200;
+
+    // Aggregate rule which evaluates whether the provided expression is true
+    // for a table.
+    TableConditionExpectation table_condition_expectation = 201;
+  }
+
+  // Optional. The unnested column which this rule is evaluated against.
+  string column = 500 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Rows with `null` values will automatically fail a rule, unless
+  // `ignore_null` is `true`. In that case, such `null` rows are trivially
+  // considered passing.
+  //
+  // This field is only valid for the following type of rules:
+  //
+  // * RangeExpectation
+  // * RegexExpectation
+  // * SetExpectation
+  // * UniquenessExpectation
+  bool ignore_null = 501 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. The dimension a rule belongs to. Results are also aggregated at
+  // the dimension level. Supported dimensions are **["COMPLETENESS",
+  // "ACCURACY", "CONSISTENCY", "VALIDITY", "UNIQUENESS", "INTEGRITY"]**
+  string dimension = 502 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The minimum ratio of **passing_rows / total_rows** required to
+  // pass this rule, with a range of [0.0, 1.0].
+  //
+  // 0 indicates default value (i.e. 1.0).
+  //
+  // This field is only valid for row-level type rules.
+  double threshold = 503 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A mutable name for the rule.
+  //
+  // * The name must contain only letters (a-z, A-Z), numbers (0-9), or
+  // hyphens (-).
+  // * The maximum length is 63 characters.
+  // * Must start with a letter.
+  // * Must end with a number or a letter.
+  string name = 504 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Description of the rule.
+  //
+  // * The maximum length is 1,024 characters.
+  string description = 505 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// DataQualityColumnResult provides a more detailed, per-column view of
+// the results.
+message DataQualityColumnResult {
+  // Output only. The column specified in the DataQualityRule.
+  string column = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The column-level data quality score for this data scan job if
+  // and only if the 'column' field is set.
+  //
+  // The score ranges between between [0, 100] (up to two decimal
+  // points).
+  optional float score = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}

@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import "google/protobuf/struct.proto";
 import "google/type/date.proto";
 import "google/type/money.proto";
 
-option go_package = "google.golang.org/genproto/googleapis/cloud/billing/budgets/v1beta1;budgets";
+option go_package = "cloud.google.com/go/billing/budgets/apiv1beta1/budgetspb;budgetspb";
 option java_multiple_files = true;
 option java_package = "com.google.cloud.billing.budgets.v1beta1";
 
@@ -56,6 +56,10 @@ message Budget {
 
   // Optional. Rules that trigger alerts (notifications of thresholds
   // being crossed) when spend exceeds the specified percentages of the budget.
+  //
+  // Optional for `pubsubTopic` notifications.
+  //
+  // Required if using email notifications.
   repeated ThresholdRule threshold_rules = 5
       [(google.api.field_behavior) = OPTIONAL];
 
@@ -100,13 +104,28 @@ message BudgetAmount {
 // [Filter.custom_period][google.cloud.billing.budgets.v1beta1.Filter.custom_period].
 message LastPeriodAmount {}
 
-// ThresholdRule contains a definition of a threshold which triggers
-// an alert (a notification of a threshold being crossed) to be sent when
-// spend goes above the specified amount.
-// Alerts are automatically e-mailed to users with the Billing Account
-// Administrator role or the Billing Account User role.
-// The thresholds here have no effect on notifications sent to anything
-// configured under `Budget.all_updates_rule`.
+// ThresholdRule contains the definition of a threshold. Threshold rules define
+// the triggering events used to generate a budget notification email. When a
+// threshold is crossed (spend exceeds the specified percentages of the
+// budget), budget alert emails are sent to the email recipients you specify
+// in the
+// [NotificationsRule](#notificationsrule).
+//
+// Threshold rules also affect the fields included in the
+// [JSON data
+// object](https://cloud.google.com/billing/docs/how-to/budgets-programmatic-notifications#notification_format)
+// sent to a Pub/Sub topic.
+//
+// Threshold rules are _required_ if using email notifications.
+//
+// Threshold rules are _optional_ if only setting a
+// [`pubsubTopic` NotificationsRule](#NotificationsRule),
+// unless you want your JSON data object to include data about the thresholds
+// you set.
+//
+// For more information, see
+// [set budget threshold rules and
+// actions](https://cloud.google.com/billing/docs/how-to/budgets#budget-actions).
 message ThresholdRule {
   // The type of basis used to determine if spend has passed the threshold.
   enum Basis {
@@ -176,6 +195,16 @@ message AllUpdatesRule {
   // account.
   bool disable_default_iam_recipients = 4
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. When set to true, and when the budget has a single project
+  // configured, notifications will be sent to project level recipients of that
+  // project. This field will be ignored if the budget has multiple or no
+  // project configured.
+  //
+  // Currently, project level recipients are the users with `Owner` role on a
+  // cloud project.
+  bool enable_project_level_recipients = 5
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // A filter for a budget, limiting the scope of the cost to calculate.
@@ -207,8 +236,17 @@ message Filter {
   // specifying that usage from only this set of projects should be
   // included in the budget. If omitted, the report will include all usage for
   // the billing account, regardless of which project the usage occurred on.
-  // Only zero or one project can be specified currently.
   repeated string projects = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A set of folder and organization names of the form
+  // `folders/{folderId}` or `organizations/{organizationId}`, specifying that
+  // usage from only this set of folders and organizations should be included in
+  // the budget. If omitted, the budget includes all usage that the billing
+  // account pays for. If the folder or organization contains projects that are
+  // paid for by a different Cloud Billing account, the budget *doesn't* apply
+  // to those projects.
+  repeated string resource_ancestors = 2
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. If
   // [Filter.credit_types_treatment][google.cloud.billing.budgets.v1beta1.Filter.credit_types_treatment]
@@ -243,15 +281,20 @@ message Filter {
   repeated string subaccounts = 5 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. A single label and value pair specifying that usage from only
-  // this set of labeled resources should be included in the budget. Currently,
-  // multiple entries or multiple values per entry are not allowed. If omitted,
+  // this set of labeled resources should be included in the budget. If omitted,
   // the report will include all labeled and unlabeled usage.
+  //
+  // An object containing a single `"key": value` pair. Example: `{ "name":
+  // "wrench" }`.
+  //
+  //  _Currently, multiple entries or multiple values per entry are not
+  //  allowed._
   map<string, google.protobuf.ListValue> labels = 6
       [(google.api.field_behavior) = OPTIONAL];
 
   // Multiple options to choose the budget's time period, specifying that only
   // usage that occurs during this time period should be included in the budget.
-  // If not set, the `usage_period` defaults to CalendarPeriod.MONTH.
+  // If not set, the <code>usage_period</code> defaults to CalendarPeriod.MONTH.
   oneof usage_period {
     // Optional. Specifies to track usage for recurring calendar period.
     // For example, assume that CalendarPeriod.QUARTER is set. The budget will
@@ -283,6 +326,8 @@ message CustomPeriod {
 // `CalendarPeriod`". All calendar times begin at 12 AM US and Canadian
 // Pacific Time (UTC-8).
 enum CalendarPeriod {
+  // Calendar period is unset. This is the default if the budget is for a
+  // custom time period (CustomPeriod).
   CALENDAR_PERIOD_UNSPECIFIED = 0;
 
   // A month. Month starts on the first day of each month, such as January 1,

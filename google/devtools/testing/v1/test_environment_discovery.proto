@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,11 +17,11 @@ syntax = "proto3";
 package google.devtools.testing.v1;
 
 import "google/api/annotations.proto";
-import "google/devtools/testing/v1/test_execution.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/type/date.proto";
-import "google/api/client.proto";
 
 option go_package = "google.golang.org/genproto/googleapis/devtools/testing/v1;testing";
 option java_multiple_files = true;
@@ -73,7 +73,8 @@ service TestEnvironmentDiscoveryService {
   // - INVALID_ARGUMENT - if the request is malformed
   // - NOT_FOUND - if the environment type does not exist
   // - INTERNAL - if an internal error occurred
-  rpc GetTestEnvironmentCatalog(GetTestEnvironmentCatalogRequest) returns (TestEnvironmentCatalog) {
+  rpc GetTestEnvironmentCatalog(GetTestEnvironmentCatalogRequest)
+      returns (TestEnvironmentCatalog) {
     option (google.api.http) = {
       get: "/v1/testEnvironmentCatalog/{environment_type}"
     };
@@ -197,6 +198,9 @@ message AndroidModel {
   // Whether this device is a phone, tablet, wearable, etc.
   DeviceFormFactor form_factor = 16;
 
+  // Version-specific information of an Android model.
+  repeated PerAndroidVersionInfo per_version_info = 21;
+
   // Screen size in the horizontal (X) dimension measured in pixels.
   int32 screen_x = 5;
 
@@ -229,7 +233,6 @@ message AndroidModel {
   repeated string tags = 8;
 
   // URL of a thumbnail image (photo) of the device.
-  // e.g. https://lh3.googleusercontent.com/90WcauuJiCYABEl8U0lcZeuS5STUbf2yW...
   string thumbnail_url = 19;
 }
 
@@ -260,6 +263,38 @@ message AndroidVersion {
   // Tags for this dimension.
   // Examples: "default", "preview", "deprecated".
   repeated string tags = 7;
+}
+
+// A version-specific information of an Android model.
+message PerAndroidVersionInfo {
+  // An Android version.
+  string version_id = 1;
+
+  // The number of online devices for an Android version.
+  DeviceCapacity device_capacity = 2;
+
+  // Output only. Identifies supported clients for DirectAccess for this Android
+  // version.
+  DirectAccessVersionInfo direct_access_version_info = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Denotes whether Direct Access is supported, and by which client versions.
+//
+// DirectAccessService is currently available as a preview to select developers.
+// You can register today on behalf of you and your team at
+// https://developer.android.com/studio/preview/android-device-streaming
+message DirectAccessVersionInfo {
+  // Whether direct access is supported at all. Clients are expected to
+  // filter down the device list to only android models and versions which
+  // support Direct Access when that is the user intent.
+  bool direct_access_supported = 1;
+
+  // Output only. Indicates client-device compatibility, where a device is known
+  // to work only with certain workarounds implemented in the Android Studio
+  // client. Expected format "major.minor.micro.patch", e.g.
+  // "5921.22.2211.8881706".
+  string minimum_android_studio_version = 2;
 }
 
 // Data about the relative number of devices running a
@@ -330,6 +365,9 @@ message IosModel {
 
   // Whether this device is a phone, tablet, wearable, etc.
   DeviceFormFactor form_factor = 6;
+
+  // Version-specific information of an iOS model.
+  repeated PerIosVersionInfo per_version_info = 14;
 }
 
 // An iOS version.
@@ -352,6 +390,15 @@ message IosVersion {
 
   // The available Xcode versions for this version.
   repeated string supported_xcode_version_ids = 5;
+}
+
+// A version-specific information of an iOS model.
+message PerIosVersionInfo {
+  // An iOS version.
+  string version_id = 1;
+
+  // The number of online devices for an iOS version.
+  DeviceCapacity device_capacity = 2;
 }
 
 // A location/region designation for language.
@@ -434,10 +481,12 @@ message TrafficRule {
 
 // The currently provided software environment on the devices under test.
 message ProvidedSoftwareCatalog {
+  // Deprecated: Use AndroidX Test Orchestrator going forward.
+  //
   // A string representing the current version of Android Test Orchestrator
   // that is used in the environment. The package is available at
   // https://maven.google.com/web/index.html#com.android.support.test:orchestrator.
-  string orchestrator_version = 1;
+  string orchestrator_version = 1 [deprecated = true];
 
   // A string representing the current version of AndroidX Test Orchestrator
   // that is used in the environment. The package is available at
@@ -475,4 +524,53 @@ enum DeviceFormFactor {
 
   // This device has the shape of a watch or other wearable.
   WEARABLE = 3;
+}
+
+// Capacity based on the number of online devices in the lab.
+//
+// Important: device capacity does not directly reflect the length of the
+// queue at a moment in time. It does not take into account current traffic or
+// the state of the devices.
+//
+// For physical devices, the number is the average of online devices in the last
+// 30 days.
+enum DeviceCapacity {
+  // The value of device capacity is unknown or unset.
+  DEVICE_CAPACITY_UNSPECIFIED = 0;
+
+  // Devices that are high in capacity (The lab has a large number of these
+  // devices).
+  //
+  // These devices are generally suggested for running a large number of
+  // simultaneous tests (e.g. more than 100 tests).
+  //
+  // Please note that high capacity devices do not guarantee short wait times
+  // due to several factors:
+  // 1. Traffic (how heavily they are used at any given moment)
+  // 2. High capacity devices are prioritized for certain usages, which may
+  // cause user tests to be slower than selecting other similar device types.
+  DEVICE_CAPACITY_HIGH = 1;
+
+  // Devices that are medium in capacity (The lab has a decent number of these
+  // devices, though not as many as high capacity devices).
+  //
+  // These devices are suitable for fewer test runs (e.g. fewer than 100 tests)
+  // and only for low shard counts (e.g. less than 10 shards).
+  DEVICE_CAPACITY_MEDIUM = 2;
+
+  // Devices that are low in capacity (The lab has a small number of these
+  // devices).
+  //
+  // These devices may be used if users need to test on this specific device
+  // model and version. Please note that due to low capacity, the tests may take
+  // much longer to finish, especially if a large number of tests are invoked at
+  // once. These devices are not suitable for test sharding.
+  DEVICE_CAPACITY_LOW = 3;
+
+  // Devices that are completely missing from the lab.
+  //
+  // These devices are unavailable either temporarily or permanently and should
+  // not be requested. If the device is also marked as deprecated, this state
+  // is very likely permanent.
+  DEVICE_CAPACITY_NONE = 4;
 }

@@ -11,7 +11,7 @@ libraries, documentation, and other artifacts.
 ### Bazel
 
 The recommended way to build the API client libraries is through
-[Bazel](https://bazel.build/) >= 2.0.0.
+[Bazel](https://bazel.build/) >= 4.2.2.
 
 First, [install bazel](https://docs.bazel.build/versions/master/install.html).
 
@@ -36,7 +36,7 @@ bazel build //google/example/library/v1/...
 To build the Java package for one library:
 
 ```
-bazel build //google/example/library/v1:google-cloud-library-v1-java
+bazel build //google/example/library/v1:google-cloud-example-library-v1-java
 ```
 
 Bazel packages exist in all the libraries for Java, Go, Python, Ruby, Node.js, PHP and C#.

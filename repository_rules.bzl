@@ -65,6 +65,7 @@ def switched_rules_by_language(
         python = False,
         ruby = False,
         csharp = False,
+        go_test = False,
         rules_override = {}):
     """Switches rules in the generated imports.bzl between no-op and the actual implementation.
 
@@ -106,6 +107,9 @@ def switched_rules_by_language(
         ruby (bool): Enable Ruby specific rules. False by default.
         python (bool): Enable Python-specific rules. False by default.
         csharp (bool): Enable C# specific rules. False by default.
+        go_test (bool): A special temporary flag to disable only go_test targets. This is needed to
+            support rules_go version 0.24.0+, which made importmap duplicates an error instead of a
+            warning. More details: https://github.com/bazelbuild/rules_go/issues/1986.
         rules_override (dict): Custom rule overrides (for advanced usage).
     """
 
@@ -162,9 +166,17 @@ def switched_rules_by_language(
         python and grpc and gapic,
         "@gapic_generator_python//rules_python_gapic:py_gapic.bzl",
     )
+    rules["py_test"] = _switch(
+        python and grpc and gapic,
+        "native.py_test",
+    )
     rules["py_gapic_assembly_pkg"] = _switch(
         python and grpc and gapic,
         "@gapic_generator_python//rules_python_gapic:py_gapic_pkg.bzl",
+    )
+    rules["py_import"] = _switch(
+        python and grpc and gapic,
+        "@rules_python//python:defs.bzl",
     )
 
     #
@@ -174,12 +186,16 @@ def switched_rules_by_language(
         go,
         "@io_bazel_rules_go//proto:def.bzl",
     )
+    rules["go_grpc_library"] = _switch(
+        go,
+        "@io_bazel_rules_go//proto:def.bzl",
+    )
     rules["go_library"] = _switch(
         go,
         "@io_bazel_rules_go//go:def.bzl",
     )
     rules["go_test"] = _switch(
-        go and grpc and gapic,
+        go and grpc and gapic and go_test,
         "@io_bazel_rules_go//go:def.bzl",
     )
     rules["go_gapic_library"] = _switch(

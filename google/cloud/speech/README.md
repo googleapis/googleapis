@@ -1,3 +1,3 @@
 # Introduction
 
-Google Cloud Speech API provides speech recognition as a service.
+Google Cloud Speech-to-Text API provides speech recognition as a service.

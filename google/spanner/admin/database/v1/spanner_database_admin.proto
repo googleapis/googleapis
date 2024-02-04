@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,12 +24,13 @@ import "google/iam/v1/iam_policy.proto";
 import "google/iam/v1/policy.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 import "google/spanner/admin/database/v1/backup.proto";
 import "google/spanner/admin/database/v1/common.proto";
 
 option csharp_namespace = "Google.Cloud.Spanner.Admin.Database.V1";
-option go_package = "google.golang.org/genproto/googleapis/spanner/admin/database/v1;database";
+option go_package = "cloud.google.com/go/spanner/admin/database/apiv1/databasepb;databasepb";
 option java_multiple_files = true;
 option java_outer_classname = "SpannerDatabaseAdminProto";
 option java_package = "com.google.spanner.admin.database.v1";
@@ -42,10 +43,11 @@ option (google.api.resource_definition) = {
 
 // Cloud Spanner Database Admin API
 //
-// The Cloud Spanner Database Admin API can be used to create, drop, and
-// list databases. It also enables updating the schema of pre-existing
-// databases. It can be also used to create, delete and list backups for a
-// database and to restore from an existing backup.
+// The Cloud Spanner Database Admin API can be used to:
+//   * create, drop, and list databases
+//   * update the schema of pre-existing databases
+//   * create, delete and list backups for a database
+//   * restore a database from an existing backup
 service DatabaseAdmin {
   option (google.api.default_host) = "spanner.googleapis.com";
   option (google.api.oauth_scopes) =
@@ -88,6 +90,55 @@ service DatabaseAdmin {
     option (google.api.method_signature) = "name";
   }
 
+  // Updates a Cloud Spanner database. The returned
+  // [long-running operation][google.longrunning.Operation] can be used to track
+  // the progress of updating the database. If the named database does not
+  // exist, returns `NOT_FOUND`.
+  //
+  // While the operation is pending:
+  //
+  //   * The database's
+  //     [reconciling][google.spanner.admin.database.v1.Database.reconciling]
+  //     field is set to true.
+  //   * Cancelling the operation is best-effort. If the cancellation succeeds,
+  //     the operation metadata's
+  //     [cancel_time][google.spanner.admin.database.v1.UpdateDatabaseMetadata.cancel_time]
+  //     is set, the updates are reverted, and the operation terminates with a
+  //     `CANCELLED` status.
+  //   * New UpdateDatabase requests will return a `FAILED_PRECONDITION` error
+  //     until the pending operation is done (returns successfully or with
+  //     error).
+  //   * Reading the database via the API continues to give the pre-request
+  //     values.
+  //
+  // Upon completion of the returned operation:
+  //
+  //   * The new values are in effect and readable via the API.
+  //   * The database's
+  //     [reconciling][google.spanner.admin.database.v1.Database.reconciling]
+  //     field becomes false.
+  //
+  // The returned [long-running operation][google.longrunning.Operation] will
+  // have a name of the format
+  // `projects/<project>/instances/<instance>/databases/<database>/operations/<operation_id>`
+  // and can be used to track the database modification. The
+  // [metadata][google.longrunning.Operation.metadata] field type is
+  // [UpdateDatabaseMetadata][google.spanner.admin.database.v1.UpdateDatabaseMetadata].
+  // The [response][google.longrunning.Operation.response] field type is
+  // [Database][google.spanner.admin.database.v1.Database], if successful.
+  rpc UpdateDatabase(UpdateDatabaseRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      patch: "/v1/{database.name=projects/*/instances/*/databases/*}"
+      body: "database"
+    };
+    option (google.api.method_signature) = "database,update_mask";
+    option (google.longrunning.operation_info) = {
+      response_type: "Database"
+      metadata_type: "UpdateDatabaseMetadata"
+    };
+  }
+
   // Updates the schema of a Cloud Spanner database by
   // creating/altering/dropping tables, columns, indexes, etc. The returned
   // [long-running operation][google.longrunning.Operation] will have a name of
@@ -110,6 +161,8 @@ service DatabaseAdmin {
   // Drops (aka deletes) a Cloud Spanner database.
   // Completed backups for the database will be retained according to their
   // `expire_time`.
+  // Note: Cloud Spanner might continue to accept requests for a few seconds
+  // after the database has been deleted.
   rpc DropDatabase(DropDatabaseRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
       delete: "/v1/{database=projects/*/instances/*/databases/*}"
@@ -184,6 +237,10 @@ service DatabaseAdmin {
         post: "/v1/{resource=projects/*/instances/*/backups/*}:testIamPermissions"
         body: "*"
       }
+      additional_bindings {
+        post: "/v1/{resource=projects/*/instances/*/databases/*/databaseRoles/*}:testIamPermissions"
+        body: "*"
+      }
     };
     option (google.api.method_signature) = "resource,permissions";
   }
@@ -209,6 +266,30 @@ service DatabaseAdmin {
     option (google.longrunning.operation_info) = {
       response_type: "google.spanner.admin.database.v1.Backup"
       metadata_type: "google.spanner.admin.database.v1.CreateBackupMetadata"
+    };
+  }
+
+  // Starts copying a Cloud Spanner Backup.
+  // The returned backup [long-running operation][google.longrunning.Operation]
+  // will have a name of the format
+  // `projects/<project>/instances/<instance>/backups/<backup>/operations/<operation_id>`
+  // and can be used to track copying of the backup. The operation is associated
+  // with the destination backup.
+  // The [metadata][google.longrunning.Operation.metadata] field type is
+  // [CopyBackupMetadata][google.spanner.admin.database.v1.CopyBackupMetadata].
+  // The [response][google.longrunning.Operation.response] field type is
+  // [Backup][google.spanner.admin.database.v1.Backup], if successful. Cancelling the returned operation will stop the
+  // copying and delete the backup.
+  // Concurrent CopyBackup requests can run on the same source backup.
+  rpc CopyBackup(CopyBackupRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/instances/*}/backups:copy"
+      body: "*"
+    };
+    option (google.api.method_signature) = "parent,backup_id,source_backup,expire_time";
+    option (google.longrunning.operation_info) = {
+      response_type: "google.spanner.admin.database.v1.Backup"
+      metadata_type: "google.spanner.admin.database.v1.CopyBackupMetadata"
     };
   }
 
@@ -304,6 +385,14 @@ service DatabaseAdmin {
   rpc ListBackupOperations(ListBackupOperationsRequest) returns (ListBackupOperationsResponse) {
     option (google.api.http) = {
       get: "/v1/{parent=projects/*/instances/*}/backupOperations"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Lists Cloud Spanner database roles.
+  rpc ListDatabaseRoles(ListDatabaseRolesRequest) returns (ListDatabaseRolesResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*/instances/*/databases/*}/databaseRoles"
     };
     option (google.api.method_signature) = "parent";
   }
@@ -407,6 +496,17 @@ message Database {
   // database option set using DatabaseAdmin.CreateDatabase or
   // DatabaseAdmin.UpdateDatabaseDdl. If not explicitly set, this is empty.
   string default_leader = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The dialect of the Cloud Spanner Database.
+  DatabaseDialect database_dialect = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Whether drop protection is enabled for this database. Defaults to false,
+  // if not set.
+  bool enable_drop_protection = 11;
+
+  // Output only. If true, the database is being updated. If false, there are no
+  // ongoing update operations for the database.
+  bool reconciling = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // The request for [ListDatabases][google.spanner.admin.database.v1.DatabaseAdmin.ListDatabases].
@@ -469,6 +569,26 @@ message CreateDatabaseRequest {
   // specified, Cloud Spanner will encrypt/decrypt all data at rest using
   // Google default encryption.
   EncryptionConfig encryption_config = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The dialect of the Cloud Spanner Database.
+  DatabaseDialect database_dialect = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Proto descriptors used by CREATE/ALTER PROTO BUNDLE statements in
+  // 'extra_statements' above.
+  // Contains a protobuf-serialized
+  // [google.protobuf.FileDescriptorSet](https://github.com/protocolbuffers/protobuf/blob/main/src/google/protobuf/descriptor.proto).
+  // To generate it, [install](https://grpc.io/docs/protoc-installation/) and
+  // run `protoc` with --include_imports and --descriptor_set_out. For example,
+  // to generate for moon/shot/app.proto, run
+  // ```
+  // $protoc  --proto_path=/app_path --proto_path=/lib_path \
+  //          --include_imports \
+  //          --descriptor_set_out=descriptors.data \
+  //          moon/shot/app.proto
+  // ```
+  // For more details, see protobuffer [self
+  // description](https://developers.google.com/protocol-buffers/docs/techniques#self-description).
+  bytes proto_descriptors = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Metadata type for the operation returned by
@@ -490,6 +610,37 @@ message GetDatabaseRequest {
       type: "spanner.googleapis.com/Database"
     }
   ];
+}
+
+// The request for
+// [UpdateDatabase][google.spanner.admin.database.v1.DatabaseAdmin.UpdateDatabase].
+message UpdateDatabaseRequest {
+  // Required. The database to update.
+  // The `name` field of the database is of the form
+  // `projects/<project>/instances/<instance>/databases/<database>`.
+  Database database = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The list of fields to update. Currently, only
+  // `enable_drop_protection` field can be updated.
+  google.protobuf.FieldMask update_mask = 2
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// Metadata type for the operation returned by
+// [UpdateDatabase][google.spanner.admin.database.v1.DatabaseAdmin.UpdateDatabase].
+message UpdateDatabaseMetadata {
+  // The request for
+  // [UpdateDatabase][google.spanner.admin.database.v1.DatabaseAdmin.UpdateDatabase].
+  UpdateDatabaseRequest request = 1;
+
+  // The progress of the
+  // [UpdateDatabase][google.spanner.admin.database.v1.DatabaseAdmin.UpdateDatabase]
+  // operation.
+  OperationProgress progress = 2;
+
+  // The time at which this operation was cancelled. If set, this operation is
+  // in the process of undoing itself (which is best-effort).
+  google.protobuf.Timestamp cancel_time = 3;
 }
 
 // Enqueues the given DDL statements to be applied, in order but not
@@ -540,6 +691,43 @@ message UpdateDatabaseDdlRequest {
   // [UpdateDatabaseDdl][google.spanner.admin.database.v1.DatabaseAdmin.UpdateDatabaseDdl] returns
   // `ALREADY_EXISTS`.
   string operation_id = 3;
+
+  // Optional. Proto descriptors used by CREATE/ALTER PROTO BUNDLE statements.
+  // Contains a protobuf-serialized
+  // [google.protobuf.FileDescriptorSet](https://github.com/protocolbuffers/protobuf/blob/main/src/google/protobuf/descriptor.proto).
+  // To generate it, [install](https://grpc.io/docs/protoc-installation/) and
+  // run `protoc` with --include_imports and --descriptor_set_out. For example,
+  // to generate for moon/shot/app.proto, run
+  // ```
+  // $protoc  --proto_path=/app_path --proto_path=/lib_path \
+  //          --include_imports \
+  //          --descriptor_set_out=descriptors.data \
+  //          moon/shot/app.proto
+  // ```
+  // For more details, see protobuffer [self
+  // description](https://developers.google.com/protocol-buffers/docs/techniques#self-description).
+  bytes proto_descriptors = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Action information extracted from a DDL statement. This proto is used to
+// display the brief info of the DDL statement for the operation
+// [UpdateDatabaseDdl][google.spanner.admin.database.v1.DatabaseAdmin.UpdateDatabaseDdl].
+message DdlStatementActionInfo {
+  // The action for the DDL statement, e.g. CREATE, ALTER, DROP, GRANT, etc.
+  // This field is a non-empty string.
+  string action = 1;
+
+  // The entity type for the DDL statement, e.g. TABLE, INDEX, VIEW, etc.
+  // This field can be empty string for some DDL statement,
+  // e.g. for statement "ANALYZE", `entity_type` = "".
+  string entity_type = 2;
+
+  // The entity name(s) being operated on the DDL statement.
+  // E.g.
+  // 1. For statement "CREATE TABLE t1(...)", `entity_names` = ["t1"].
+  // 2. For statement "GRANT ROLE r1, r2 ...", `entity_names` = ["r1", "r2"].
+  // 3. For statement "ANALYZE", `entity_names` = [].
+  repeated string entity_names = 3;
 }
 
 // Metadata type for the operation returned by
@@ -559,20 +747,23 @@ message UpdateDatabaseDdlMetadata {
   // timestamp for the statement `statements[i]`.
   repeated google.protobuf.Timestamp commit_timestamps = 3;
 
-  // Output only. When true, indicates that the operation is throttled e.g
+  // Output only. When true, indicates that the operation is throttled e.g.
   // due to resource constraints. When resources become available the operation
   // will resume and this field will be false again.
   bool throttled = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // The progress of the
-  // [UpdateDatabaseDdl][google.spanner.admin.database.v1.DatabaseAdmin.UpdateDatabaseDdl] operations.
-  // Currently, only index creation statements will have a continuously
-  // updating progress.
-  // For non-index creation statements, `progress[i]` will have start time
-  // and end time populated with commit timestamp of operation,
-  // as well as a progress of 100% once the operation has completed.
-  // `progress[i]` is the operation progress for `statements[i]`.
+  // [UpdateDatabaseDdl][google.spanner.admin.database.v1.DatabaseAdmin.UpdateDatabaseDdl]
+  // operations. All DDL statements will have continuously updating progress,
+  // and `progress[i]` is the operation progress for `statements[i]`. Also,
+  // `progress[i]` will have start time and end time populated with commit
+  // timestamp of operation, as well as a progress of 100% once the operation
+  // has completed.
   repeated OperationProgress progress = 5;
+
+  // The brief action info for the DDL statements.
+  // `actions[i]` is the brief info for `statements[i]`.
+  repeated DdlStatementActionInfo actions = 6;
 }
 
 // The request for [DropDatabase][google.spanner.admin.database.v1.DatabaseAdmin.DropDatabase].
@@ -604,6 +795,13 @@ message GetDatabaseDdlResponse {
   // A list of formatted DDL statements defining the schema of the database
   // specified in the request.
   repeated string statements = 1;
+
+  // Proto descriptors stored in the database.
+  // Contains a protobuf-serialized
+  // [google.protobuf.FileDescriptorSet](https://github.com/protocolbuffers/protobuf/blob/main/src/google/protobuf/descriptor.proto).
+  // For more details, see protobuffer [self
+  // description](https://developers.google.com/protocol-buffers/docs/techniques#self-description).
+  bytes proto_descriptors = 2;
 }
 
 // The request for
@@ -635,6 +833,8 @@ message ListDatabaseOperationsRequest {
   //      for [RestoreDatabaseMetadata][google.spanner.admin.database.v1.RestoreDatabaseMetadata] is
   //      `type.googleapis.com/google.spanner.admin.database.v1.RestoreDatabaseMetadata`.
   //   * `metadata.<field_name>` - any field in metadata.value.
+  //      `metadata.@type` must be specified first, if filtering on metadata
+  //      fields.
   //   * `error` - Error associated with the long-running operation.
   //   * `response.@type` - the type of response.
   //   * `response.<field_name>` - any field in response.value.
@@ -832,4 +1032,52 @@ enum RestoreSourceType {
 
   // A backup was used as the source of the restore.
   BACKUP = 1;
+}
+
+// A Cloud Spanner database role.
+message DatabaseRole {
+  option (google.api.resource) = {
+    type: "spanner.googleapis.com/DatabaseRole"
+    pattern: "projects/{project}/instances/{instance}/databases/{database}/databaseRoles/{role}"
+  };
+
+  // Required. The name of the database role. Values are of the form
+  // `projects/<project>/instances/<instance>/databases/<database>/databaseRoles/
+  // {role}`, where `<role>` is as specified in the `CREATE ROLE`
+  // DDL statement. This name can be passed to Get/Set IAMPolicy methods to
+  // identify the database role.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The request for [ListDatabaseRoles][google.spanner.admin.database.v1.DatabaseAdmin.ListDatabaseRoles].
+message ListDatabaseRolesRequest {
+  // Required. The database whose roles should be listed.
+  // Values are of the form
+  // `projects/<project>/instances/<instance>/databases/<database>/databaseRoles`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "spanner.googleapis.com/Database"
+    }
+  ];
+
+  // Number of database roles to be returned in the response. If 0 or less,
+  // defaults to the server's maximum allowed page size.
+  int32 page_size = 2;
+
+  // If non-empty, `page_token` should contain a
+  // [next_page_token][google.spanner.admin.database.v1.ListDatabaseRolesResponse.next_page_token] from a
+  // previous [ListDatabaseRolesResponse][google.spanner.admin.database.v1.ListDatabaseRolesResponse].
+  string page_token = 3;
+}
+
+// The response for [ListDatabaseRoles][google.spanner.admin.database.v1.DatabaseAdmin.ListDatabaseRoles].
+message ListDatabaseRolesResponse {
+  // Database roles that matched the request.
+  repeated DatabaseRole database_roles = 1;
+
+  // `next_page_token` can be sent in a subsequent
+  // [ListDatabaseRoles][google.spanner.admin.database.v1.DatabaseAdmin.ListDatabaseRoles]
+  // call to fetch more of the matching roles.
+  string next_page_token = 2;
 }

@@ -1,0 +1,1483 @@
+// Copyright 2023 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.spanner.executor.v1;
+
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/longrunning/operations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+import "google/spanner/admin/database/v1/backup.proto";
+import "google/spanner/admin/database/v1/common.proto";
+import "google/spanner/admin/database/v1/spanner_database_admin.proto";
+import "google/spanner/admin/instance/v1/spanner_instance_admin.proto";
+import "google/spanner/v1/spanner.proto";
+import "google/spanner/v1/type.proto";
+
+option go_package = "cloud.google.com/go/spanner/executor/apiv1/executorpb;executorpb";
+option java_multiple_files = true;
+option java_outer_classname = "CloudExecutorProto";
+option java_package = "com.google.spanner.executor.v1";
+
+// Service that executes SpannerActions asynchronously.
+service SpannerExecutorProxy {
+  option (google.api.default_host) = "spanner-cloud-executor.googleapis.com";
+
+  // ExecuteActionAsync is a streaming call that starts executing a new Spanner
+  // action.
+  //
+  // For each request, the server will reply with one or more responses, but
+  // only the last response will contain status in the outcome.
+  //
+  // Responses can be matched to requests by action_id. It is allowed to have
+  // multiple actions in flight--in that case, actions are be executed in
+  // parallel.
+  rpc ExecuteActionAsync(stream SpannerAsyncActionRequest)
+      returns (stream SpannerAsyncActionResponse) {}
+}
+
+// Request to executor service that start a new Spanner action.
+message SpannerAsyncActionRequest {
+  // Action id to uniquely identify this action request.
+  int32 action_id = 1;
+
+  // The actual SpannerAction to perform.
+  SpannerAction action = 2;
+}
+
+// Response from executor service.
+message SpannerAsyncActionResponse {
+  // Action id corresponds to the request.
+  int32 action_id = 1;
+
+  // If action results are split into multiple responses, only the last response
+  // can and should contain status.
+  SpannerActionOutcome outcome = 2;
+}
+
+// SpannerAction defines a primitive action that can be performed against
+// Spanner, such as begin or commit a transaction, or perform a read or
+// mutation.
+message SpannerAction {
+  // Database against which to perform action.
+  // In a context where a series of actions take place, an action may omit
+  // database path if it applies to the same database as the previous action.
+  string database_path = 1;
+
+  // Action represents a spanner action kind, there will only be one action kind
+  // per SpannerAction.
+  oneof action {
+    // Action to start a transaction.
+    StartTransactionAction start = 10;
+
+    // Action to finish a transaction.
+    FinishTransactionAction finish = 11;
+
+    // Action to do a normal read.
+    ReadAction read = 20;
+
+    // Action to do a query.
+    QueryAction query = 21;
+
+    // Action to buffer a mutation.
+    MutationAction mutation = 22;
+
+    // Action to a DML.
+    DmlAction dml = 23;
+
+    // Action to a batch DML.
+    BatchDmlAction batch_dml = 24;
+
+    // Action to write a mutation.
+    WriteMutationsAction write = 25;
+
+    // Action to a partitioned update.
+    PartitionedUpdateAction partitioned_update = 27;
+
+    // Action that contains any administrative operation, like database,
+    // instance manipulation.
+    AdminAction admin = 30;
+
+    // Action to start a batch transaction.
+    StartBatchTransactionAction start_batch_txn = 40;
+
+    // Action to close a batch transaction.
+    CloseBatchTransactionAction close_batch_txn = 41;
+
+    // Action to generate database partitions for batch read.
+    GenerateDbPartitionsForReadAction generate_db_partitions_read = 42;
+
+    // Action to generate database partitions for batch query.
+    GenerateDbPartitionsForQueryAction generate_db_partitions_query = 43;
+
+    // Action to execute batch actions on generated partitions.
+    ExecutePartitionAction execute_partition = 44;
+
+    // Action to execute change stream query.
+    ExecuteChangeStreamQuery execute_change_stream_query = 50;
+  }
+}
+
+// A single read request.
+message ReadAction {
+  // The table to read at.
+  string table = 1;
+
+  // The index to read at if it's an index read.
+  optional string index = 2;
+
+  // List of columns must begin with the key columns used for the read.
+  repeated string column = 3;
+
+  // Keys for performing this read.
+  KeySet keys = 4;
+
+  // Limit on number of rows to read. If set, must be positive.
+  int32 limit = 5;
+}
+
+// A SQL query request.
+message QueryAction {
+  // Parameter that bind to placeholders in the SQL string
+  message Parameter {
+    // Name of the parameter (with no leading @).
+    string name = 1;
+
+    // Type of the parameter.
+    google.spanner.v1.Type type = 2;
+
+    // Value of the parameter.
+    Value value = 3;
+  }
+
+  // The SQL string.
+  string sql = 1;
+
+  // Parameters for the SQL string.
+  repeated Parameter params = 2;
+}
+
+// A single DML statement.
+message DmlAction {
+  // DML statement.
+  QueryAction update = 1;
+
+  // Whether to autocommit the transaction after executing the DML statement,
+  // if the Executor supports autocommit.
+  optional bool autocommit_if_supported = 2;
+}
+
+// Batch of DML statements invoked using batched execution.
+message BatchDmlAction {
+  // DML statements.
+  repeated QueryAction updates = 1;
+}
+
+// Value represents a single value that can be read or written to/from
+// Spanner.
+message Value {
+  // Exactly one of the following fields will be present.
+  oneof value_type {
+    // If is_null is set, then this value is null.
+    bool is_null = 1;
+
+    // Int type value. It's used for all integer number types, like int32 and
+    // int64.
+    int64 int_value = 2;
+
+    // Bool type value.
+    bool bool_value = 3;
+
+    // Double type value. It's used for all float point types, like float and
+    // double.
+    double double_value = 4;
+
+    // Bytes type value, stored in CORD. It's also used for PROTO type value.
+    bytes bytes_value = 5;
+
+    // String type value, stored in CORD.
+    string string_value = 6;
+
+    // Struct type value. It contains a ValueList representing the values in
+    // this struct.
+    ValueList struct_value = 7;
+
+    // Timestamp type value.
+    google.protobuf.Timestamp timestamp_value = 8;
+
+    // Date type value. Date is specified as a number of days since Unix epoch.
+    int32 date_days_value = 9;
+
+    // If set, holds the sentinel value for the transaction CommitTimestamp.
+    bool is_commit_timestamp = 10;
+
+    // Array type value. The underlying Valuelist should have values that have
+    // the same type.
+    ValueList array_value = 11;
+  }
+
+  // Type of array element. Only set if value is an array.
+  optional google.spanner.v1.Type array_type = 12;
+}
+
+// KeyRange represents a range of rows in a table or index.
+//
+// A range has a start key and an end key. These keys can be open or
+// closed, indicating if the range includes rows with that key.
+//
+// Keys are represented by "ValueList", where the ith value in the list
+// corresponds to the ith component of the table or index primary key.
+message KeyRange {
+  // Type controls whether "start" and "limit" are open or closed. By default,
+  // "start" is closed, and "limit" is open.
+  enum Type {
+    // "TYPE_UNSPECIFIED" is equivalent to "CLOSED_OPEN".
+    TYPE_UNSPECIFIED = 0;
+
+    // [start,limit]
+    CLOSED_CLOSED = 1;
+
+    // [start,limit)
+    CLOSED_OPEN = 2;
+
+    // (start,limit]
+    OPEN_CLOSED = 3;
+
+    // (start,limit)
+    OPEN_OPEN = 4;
+  }
+
+  // "start" and "limit" must have the same number of key parts,
+  // though they may name only a prefix of the table or index key.
+  // The start key of this KeyRange.
+  ValueList start = 1;
+
+  // The end key of this KeyRange.
+  ValueList limit = 2;
+
+  // "start" and "limit" type for this KeyRange.
+  optional Type type = 3;
+}
+
+// KeySet defines a collection of Spanner keys and/or key ranges. All
+// the keys are expected to be in the same table. The keys need not be
+// sorted in any particular way.
+message KeySet {
+  // A list of specific keys. Entries in "keys" should have exactly as
+  // many elements as there are columns in the primary or index key
+  // with which this "KeySet" is used.
+  repeated ValueList point = 1;
+
+  // A list of key ranges.
+  repeated KeyRange range = 2;
+
+  // For convenience "all" can be set to "true" to indicate that this
+  // "KeySet" matches all keys in the table or index. Note that any keys
+  // specified in "keys" or "ranges" are only yielded once.
+  bool all = 3;
+}
+
+// List of values.
+message ValueList {
+  // Values contained in this ValueList.
+  repeated Value value = 1;
+}
+
+// A single mutation request.
+message MutationAction {
+  // Arguments to Insert, InsertOrUpdate, and Replace operations.
+  message InsertArgs {
+    // The names of the columns to be written.
+    repeated string column = 1;
+
+    // Type information for the "values" entries below.
+    repeated google.spanner.v1.Type type = 2;
+
+    // The values to be written.
+    repeated ValueList values = 3;
+  }
+
+  // Arguments to Update.
+  message UpdateArgs {
+    // The columns to be updated. Identical to InsertArgs.column.
+    repeated string column = 1;
+
+    // Type information for "values". Identical to InsertArgs.type.
+    repeated google.spanner.v1.Type type = 2;
+
+    // The values to be updated. Identical to InsertArgs.values.
+    repeated ValueList values = 3;
+  }
+
+  // Mod represents the write action that will be perform to a table. Each mod
+  // will specify exactly one action, from insert, update, insert_or_update,
+  // replace and delete.
+  message Mod {
+    // The table to write.
+    string table = 1;
+
+    // Exactly one of the remaining elements may be present.
+    // Insert new rows into "table".
+    InsertArgs insert = 2;
+
+    // Update columns stored in existing rows of "table".
+    UpdateArgs update = 3;
+
+    // Insert or update existing rows of "table".
+    InsertArgs insert_or_update = 4;
+
+    // Replace existing rows of "table".
+    InsertArgs replace = 5;
+
+    // Delete rows from "table".
+    KeySet delete_keys = 6;
+  }
+
+  // Mods that contained in this mutation.
+  repeated Mod mod = 1;
+}
+
+// WriteMutationAction defines an action of flushing the mutation so they
+// are visible to subsequent operations in the transaction.
+message WriteMutationsAction {
+  // The mutation to write.
+  MutationAction mutation = 1;
+}
+
+// PartitionedUpdateAction defines an action to execute a partitioned DML
+// which runs different partitions in parallel.
+message PartitionedUpdateAction {
+  message ExecutePartitionedUpdateOptions {
+    // RPC Priority
+    optional google.spanner.v1.RequestOptions.Priority rpc_priority = 1;
+
+    // Transaction tag
+    optional string tag = 2;
+  }
+
+  // Options for partitioned update.
+  optional ExecutePartitionedUpdateOptions options = 1;
+
+  // Partitioned dml query.
+  QueryAction update = 2;
+}
+
+// StartTransactionAction defines an action of initializing a transaction.
+message StartTransactionAction {
+  // Concurrency is for read-only transactions and must be omitted for
+  // read-write transactions.
+  optional Concurrency concurrency = 1;
+
+  // Metadata about tables and columns that will be involved in this
+  // transaction. It is to convert values of key parts correctly.
+  repeated TableMetadata table = 2;
+
+  // Transaction_seed contains workid and op pair for this transaction, used for
+  // testing.
+  string transaction_seed = 3;
+
+  // Execution options (e.g., whether transaction is opaque, optimistic).
+  optional TransactionExecutionOptions execution_options = 4;
+}
+
+// Concurrency for read-only transactions.
+message Concurrency {
+  // Concurrency mode set for read-only transactions, exactly one mode below
+  // should be set.
+  oneof concurrency_mode {
+    // Indicates a read at a consistent timestamp that is specified relative to
+    // now. That is, if the caller has specified an exact staleness of s
+    // seconds, we will read at now - s.
+    double staleness_seconds = 1;
+
+    // Indicates a boundedly stale read that reads at a timestamp >= T.
+    int64 min_read_timestamp_micros = 2;
+
+    // Indicates a boundedly stale read that is at most N seconds stale.
+    double max_staleness_seconds = 3;
+
+    // Indicates a read at a consistent timestamp.
+    int64 exact_timestamp_micros = 4;
+
+    // Indicates a strong read, must only be set to true, or unset.
+    bool strong = 5;
+
+    // Indicates a batch read, must only be set to true, or unset.
+    bool batch = 6;
+  }
+
+  // True if exact_timestamp_micros is set, and the chosen timestamp is that of
+  // a snapshot epoch.
+  bool snapshot_epoch_read = 7;
+
+  // If set, this is a snapshot epoch read constrained to read only the
+  // specified log scope root table, and its children. Will not be set for full
+  // database epochs.
+  string snapshot_epoch_root_table = 8;
+
+  // Set only when batch is true.
+  int64 batch_read_timestamp_micros = 9;
+}
+
+// TableMetadata contains metadata of a single table.
+message TableMetadata {
+  // Table name.
+  string name = 1;
+
+  // Columns, in the same order as in the schema.
+  repeated ColumnMetadata column = 2;
+
+  // Keys, in order. Column name is currently not populated.
+  repeated ColumnMetadata key_column = 3;
+}
+
+// ColumnMetadata represents metadata of a single column.
+message ColumnMetadata {
+  // Column name.
+  string name = 1;
+
+  // Column type.
+  google.spanner.v1.Type type = 2;
+}
+
+// Options for executing the transaction.
+message TransactionExecutionOptions {
+  // Whether optimistic concurrency should be used to execute this transaction.
+  bool optimistic = 1;
+}
+
+// FinishTransactionAction defines an action of finishing a transaction.
+message FinishTransactionAction {
+  // Mode indicates how the transaction should be finished.
+  enum Mode {
+    // "MODE_UNSPECIFIED" is equivalent to "COMMIT".
+    MODE_UNSPECIFIED = 0;
+
+    // Commit the transaction.
+    COMMIT = 1;
+
+    // Drop the transaction without committing it.
+    ABANDON = 2;
+  }
+
+  // Defines how exactly the transaction should be completed, e.g. with
+  // commit or abortion.
+  Mode mode = 1;
+}
+
+// AdminAction defines all the cloud spanner admin actions, including
+// instance/database admin ops, backup ops and operation actions.
+message AdminAction {
+  // Exactly one of the actions below will be performed in AdminAction.
+  oneof action {
+    // Action that creates a user instance config.
+    CreateUserInstanceConfigAction create_user_instance_config = 1;
+
+    // Action that updates a user instance config.
+    UpdateUserInstanceConfigAction update_user_instance_config = 2;
+
+    // Action that deletes a user instance config.
+    DeleteUserInstanceConfigAction delete_user_instance_config = 3;
+
+    // Action that gets a user instance config.
+    GetCloudInstanceConfigAction get_cloud_instance_config = 4;
+
+    // Action that lists user instance configs.
+    ListCloudInstanceConfigsAction list_instance_configs = 5;
+
+    // Action that creates a Cloud Spanner instance.
+    CreateCloudInstanceAction create_cloud_instance = 6;
+
+    // Action that updates a Cloud Spanner instance.
+    UpdateCloudInstanceAction update_cloud_instance = 7;
+
+    // Action that deletes a Cloud Spanner instance.
+    DeleteCloudInstanceAction delete_cloud_instance = 8;
+
+    // Action that lists Cloud Spanner instances.
+    ListCloudInstancesAction list_cloud_instances = 9;
+
+    // Action that retrieves a Cloud Spanner instance.
+    GetCloudInstanceAction get_cloud_instance = 10;
+
+    // Action that creates a Cloud Spanner database.
+    CreateCloudDatabaseAction create_cloud_database = 11;
+
+    // Action that updates the schema of a Cloud Spanner database.
+    UpdateCloudDatabaseDdlAction update_cloud_database_ddl = 12;
+
+    // Action that updates the schema of a Cloud Spanner database.
+    UpdateCloudDatabaseAction update_cloud_database = 27;
+
+    // Action that drops a Cloud Spanner database.
+    DropCloudDatabaseAction drop_cloud_database = 13;
+
+    // Action that lists Cloud Spanner databases.
+    ListCloudDatabasesAction list_cloud_databases = 14;
+
+    // Action that lists Cloud Spanner database operations.
+    ListCloudDatabaseOperationsAction list_cloud_database_operations = 15;
+
+    // Action that restores a Cloud Spanner database from a backup.
+    RestoreCloudDatabaseAction restore_cloud_database = 16;
+
+    // Action that gets a Cloud Spanner database.
+    GetCloudDatabaseAction get_cloud_database = 17;
+
+    // Action that creates a Cloud Spanner database backup.
+    CreateCloudBackupAction create_cloud_backup = 18;
+
+    // Action that copies a Cloud Spanner database backup.
+    CopyCloudBackupAction copy_cloud_backup = 19;
+
+    // Action that gets a Cloud Spanner database backup.
+    GetCloudBackupAction get_cloud_backup = 20;
+
+    // Action that updates a Cloud Spanner database backup.
+    UpdateCloudBackupAction update_cloud_backup = 21;
+
+    // Action that deletes a Cloud Spanner database backup.
+    DeleteCloudBackupAction delete_cloud_backup = 22;
+
+    // Action that lists Cloud Spanner database backups.
+    ListCloudBackupsAction list_cloud_backups = 23;
+
+    // Action that lists Cloud Spanner database backup operations.
+    ListCloudBackupOperationsAction list_cloud_backup_operations = 24;
+
+    // Action that gets an operation.
+    GetOperationAction get_operation = 25;
+
+    // Action that cancels an operation.
+    CancelOperationAction cancel_operation = 26;
+
+    // Action that reconfigures a Cloud Spanner database.
+    ReconfigureCloudDatabaseAction reconfigure_cloud_database = 28;
+  }
+}
+
+// Action that creates a user instance config.
+message CreateUserInstanceConfigAction {
+  // User instance config ID (not path), e.g. "custom-config".
+  string user_config_id = 1;
+
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 2;
+
+  // Base config ID, e.g. "test-config".
+  string base_config_id = 3;
+
+  // Replicas that should be included in the user config.
+  repeated google.spanner.admin.instance.v1.ReplicaInfo replicas = 4;
+}
+
+// Action that updates a user instance config.
+message UpdateUserInstanceConfigAction {
+  // User instance config ID (not path), e.g. "custom-config".
+  string user_config_id = 1;
+
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 2;
+
+  // The descriptive name for this instance config as it appears in UIs.
+  optional string display_name = 3;
+
+  // labels.
+  map<string, string> labels = 4;
+}
+
+// Action that gets a user instance config.
+message GetCloudInstanceConfigAction {
+  // Instance config ID (not path), e.g. "custom-config".
+  string instance_config_id = 1;
+
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 2;
+}
+
+// Action that deletes a user instance configs.
+message DeleteUserInstanceConfigAction {
+  // User instance config ID (not path), e.g. "custom-config".
+  string user_config_id = 1;
+
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 2;
+}
+
+// Action that lists user instance configs.
+message ListCloudInstanceConfigsAction {
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 1;
+
+  // Number of instance configs to be returned in the response. If 0 or
+  // less, defaults to the server's maximum allowed page size.
+  optional int32 page_size = 2;
+
+  // If non-empty, "page_token" should contain a next_page_token
+  // from a previous ListInstanceConfigsResponse to the same "parent".
+  optional string page_token = 3;
+}
+
+// Action that creates a Cloud Spanner instance.
+message CreateCloudInstanceAction {
+  // Cloud instance ID (not path), e.g. "test-instance".
+  string instance_id = 1;
+
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 2;
+
+  // Instance config ID, e.g. "test-config".
+  string instance_config_id = 3;
+
+  // Number of nodes (processing_units should not be set or set to 0 if used).
+  optional int32 node_count = 4;
+
+  // Number of processing units (node_count should be set to 0 if used).
+  optional int32 processing_units = 6;
+
+  // The autoscaling config for this instance. If non-empty, an autoscaling
+  // instance will be created (processing_units and node_count should be set to
+  // 0 if used).
+  optional google.spanner.admin.instance.v1.AutoscalingConfig
+      autoscaling_config = 7;
+
+  // labels.
+  map<string, string> labels = 5;
+}
+
+// Action that updates a Cloud Spanner instance.
+message UpdateCloudInstanceAction {
+  // Cloud instance ID (not path), e.g. "test-instance".
+  string instance_id = 1;
+
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 2;
+
+  // The descriptive name for this instance as it appears in UIs.
+  // Must be unique per project and between 4 and 30 characters in length.
+  optional string display_name = 3;
+
+  // The number of nodes allocated to this instance. At most one of either
+  // node_count or processing_units should be present in the message.
+  optional int32 node_count = 4;
+
+  // The number of processing units allocated to this instance. At most one of
+  // processing_units or node_count should be present in the message.
+  optional int32 processing_units = 5;
+
+  // The autoscaling config for this instance. If non-empty, this instance is
+  // using autoscaling (processing_units and node_count should be set to
+  // 0 if used).
+  optional google.spanner.admin.instance.v1.AutoscalingConfig
+      autoscaling_config = 7;
+
+  // labels.
+  map<string, string> labels = 6;
+}
+
+// Action that deletes a Cloud Spanner instance.
+message DeleteCloudInstanceAction {
+  // Cloud instance ID (not path), e.g. "test-instance".
+  string instance_id = 1;
+
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 2;
+}
+
+// Action that creates a Cloud Spanner database.
+message CreateCloudDatabaseAction {
+  // Cloud instance ID (not path), e.g. "test-instance".
+  string instance_id = 1;
+
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 2;
+
+  // Cloud database ID (not full path), e.g. "db0".
+  string database_id = 3;
+
+  // SDL statements to apply to the new database.
+  repeated string sdl_statement = 4;
+
+  // The KMS key used to encrypt the database to be created if the database
+  // should be CMEK protected.
+  google.spanner.admin.database.v1.EncryptionConfig encryption_config = 5;
+
+  // Optional SQL dialect (GOOGLESQL or POSTGRESQL).  Default: GOOGLESQL.
+  optional string dialect = 6;
+
+  optional bytes proto_descriptors = 7;
+}
+
+// Action that updates the schema of a Cloud Spanner database.
+message UpdateCloudDatabaseDdlAction {
+  // Cloud instance ID (not path), e.g. "test-instance".
+  string instance_id = 1;
+
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 2;
+
+  // Cloud database ID (not full path), e.g. "db0".
+  string database_id = 3;
+
+  // SDL statements to apply to the database.
+  repeated string sdl_statement = 4;
+
+  // Op ID can be used to track progress of the update. If set, it must be
+  // unique per database. If not set, Cloud Spanner will generate operation ID
+  // automatically.
+  string operation_id = 5;
+
+  optional bytes proto_descriptors = 6;
+}
+
+// Action that updates a Cloud Spanner database.
+message UpdateCloudDatabaseAction {
+  // Cloud instance ID (not path), e.g. "test-instance".
+  string instance_id = 1;
+
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 2;
+
+  // Cloud database name (not full path), e.g. "db0".
+  string database_name = 3;
+
+  // Updated value of enable_drop_protection, this is the only field that has
+  // supported to be updated.
+  bool enable_drop_protection = 4;
+}
+
+// Action that drops a Cloud Spanner database.
+message DropCloudDatabaseAction {
+  // Cloud instance ID (not path), e.g. "test-instance".
+  string instance_id = 1;
+
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 2;
+
+  // Cloud database ID (not full path), e.g. "db0".
+  string database_id = 3;
+}
+
+// Action that reconfigures a Cloud Spanner database.
+message ReconfigureCloudDatabaseAction {
+  // The fully qualified uri of the database to be reconfigured.
+  optional string database_uri = 1;
+
+  // The locations of the serving regions, e.g. "asia-south1".
+  repeated string serving_locations = 2;
+}
+
+// Action that lists Cloud Spanner databases.
+message ListCloudDatabasesAction {
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 1;
+
+  // Cloud instance ID (not path) to list databases from, e.g. "test-instance".
+  string instance_id = 2;
+
+  // Number of databases to be returned in the response. If 0 or
+  // less, defaults to the server's maximum allowed page size.
+  int32 page_size = 3;
+
+  // If non-empty, "page_token" should contain a next_page_token
+  // from a previous ListDatabasesResponse to the same "parent"
+  // and with the same "filter".
+  string page_token = 4;
+}
+
+// Action that lists Cloud Spanner databases.
+message ListCloudInstancesAction {
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 1;
+
+  // A filter expression that filters what operations are returned in the
+  // response.
+  // The expression must specify the field name, a comparison operator,
+  // and the value that you want to use for filtering.
+  // Refer spanner_instance_admin.proto.ListInstancesRequest for
+  // detail.
+  optional string filter = 2;
+
+  // Number of instances to be returned in the response. If 0 or
+  // less, defaults to the server's maximum allowed page size.
+  optional int32 page_size = 3;
+
+  // If non-empty, "page_token" should contain a next_page_token
+  // from a previous ListInstancesResponse to the same "parent"
+  // and with the same "filter".
+  optional string page_token = 4;
+}
+
+// Action that retrieves a Cloud Spanner instance.
+message GetCloudInstanceAction {
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 1;
+
+  // Cloud instance ID (not path) to retrieve the instance from,
+  // e.g. "test-instance".
+  string instance_id = 2;
+}
+
+// Action that lists Cloud Spanner database operations.
+message ListCloudDatabaseOperationsAction {
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 1;
+
+  // Cloud instance ID (not path) to list database operations from,
+  // e.g. "test-instance".
+  string instance_id = 2;
+
+  // A filter expression that filters what operations are returned in the
+  // response.
+  // The expression must specify the field name, a comparison operator,
+  // and the value that you want to use for filtering.
+  // Refer spanner_database_admin.proto.ListDatabaseOperationsRequest for
+  // detail.
+  string filter = 3;
+
+  // Number of databases to be returned in the response. If 0 or
+  // less, defaults to the server's maximum allowed page size.
+  int32 page_size = 4;
+
+  // If non-empty, "page_token" should contain a next_page_token
+  // from a previous ListDatabaseOperationsResponse to the same "parent"
+  // and with the same "filter".
+  string page_token = 5;
+}
+
+// Action that restores a Cloud Spanner database from a backup.
+message RestoreCloudDatabaseAction {
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 1;
+
+  // Cloud instance ID (not path) containing the backup, e.g. "backup-instance".
+  string backup_instance_id = 2;
+
+  // The id of the backup from which to restore, e.g. "test-backup".
+  string backup_id = 3;
+
+  // Cloud instance ID (not path) containing the database, e.g.
+  // "database-instance".
+  string database_instance_id = 4;
+
+  // The id of the database to create and restore to, e.g. "db0". Note that this
+  // database must not already exist.
+  string database_id = 5;
+}
+
+// Action that gets a Cloud Spanner database.
+message GetCloudDatabaseAction {
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 1;
+
+  // Cloud instance ID (not path), e.g. "test-instance".
+  string instance_id = 2;
+
+  // The id of the database to get, e.g. "db0".
+  string database_id = 3;
+}
+
+// Action that creates a Cloud Spanner database backup.
+message CreateCloudBackupAction {
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 1;
+
+  // Cloud instance ID (not path), e.g. "test-instance".
+  string instance_id = 2;
+
+  // The id of the backup to be created, e.g. "test-backup".
+  string backup_id = 3;
+
+  // The id of the database from which this backup was
+  // created, e.g. "db0". Note that this needs to be in the
+  // same instance as the backup.
+  string database_id = 4;
+
+  // Output only. The expiration time of the backup, which must be at least 6
+  // hours and at most 366 days from the time the request is received.
+  google.protobuf.Timestamp expire_time = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The version time of the backup, which must be within the time range of
+  // [earliest_version_time, NOW], where earliest_version_time is retrieved by
+  // cloud spanner frontend API (See details: go/cs-pitr-lite-design).
+  optional google.protobuf.Timestamp version_time = 6;
+}
+
+// Action that copies a Cloud Spanner database backup.
+message CopyCloudBackupAction {
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 1;
+
+  // Cloud instance ID (not path), e.g. "test-instance".
+  string instance_id = 2;
+
+  // The id of the backup to be created, e.g. "test-backup".
+  string backup_id = 3;
+
+  // The fully qualified uri of the source backup from which this
+  // backup was copied. eg.
+  // "projects/<project_id>/instances/<instance_id>/backups/<backup_id>".
+  string source_backup = 4;
+
+  // Output only. The expiration time of the backup, which must be at least 6
+  // hours and at most 366 days from the time the request is received.
+  google.protobuf.Timestamp expire_time = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Action that gets a Cloud Spanner database backup.
+message GetCloudBackupAction {
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 1;
+
+  // Cloud instance ID (not path), e.g. "test-instance".
+  string instance_id = 2;
+
+  // The id of the backup to get, e.g. "test-backup".
+  string backup_id = 3;
+}
+
+// Action that updates a Cloud Spanner database backup.
+message UpdateCloudBackupAction {
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 1;
+
+  // Cloud instance ID (not path), e.g. "test-instance".
+  string instance_id = 2;
+
+  // The id of the backup to update, e.g. "test-backup".
+  string backup_id = 3;
+
+  // Output only. Updated value of expire_time, this is the only field
+  // that supported to be updated.
+  google.protobuf.Timestamp expire_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Action that deletes a Cloud Spanner database backup.
+message DeleteCloudBackupAction {
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 1;
+
+  // Cloud instance ID (not path), e.g. "test-instance".
+  string instance_id = 2;
+
+  // The id of the backup to delete, e.g. "test-backup".
+  string backup_id = 3;
+}
+
+// Action that lists Cloud Spanner database backups.
+message ListCloudBackupsAction {
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 1;
+
+  // Cloud instance ID (not path) to list backups from, e.g. "test-instance".
+  string instance_id = 2;
+
+  // A filter expression that filters backups listed in the response.
+  // The expression must specify the field name, a comparison operator,
+  // and the value that you want to use for filtering.
+  // Refer backup.proto.ListBackupsRequest for detail.
+  string filter = 3;
+
+  // Number of backups to be returned in the response. If 0 or
+  // less, defaults to the server's maximum allowed page size.
+  int32 page_size = 4;
+
+  // If non-empty, "page_token" should contain a next_page_token
+  // from a previous ListBackupsResponse to the same "parent"
+  // and with the same "filter".
+  string page_token = 5;
+}
+
+// Action that lists Cloud Spanner database backup operations.
+message ListCloudBackupOperationsAction {
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 1;
+
+  // Cloud instance ID (not path) to list backup operations from,
+  // e.g. "test-instance".
+  string instance_id = 2;
+
+  // A filter expression that filters what operations are returned in the
+  // response.
+  // The expression must specify the field name, a comparison operator,
+  // and the value that you want to use for filtering.
+  // Refer backup.proto.ListBackupOperationsRequest for detail.
+  string filter = 3;
+
+  // Number of backups to be returned in the response. If 0 or
+  // less, defaults to the server's maximum allowed page size.
+  int32 page_size = 4;
+
+  // If non-empty, "page_token" should contain a next_page_token
+  // from a previous ListBackupOperationsResponse to the same "parent"
+  // and with the same "filter".
+  string page_token = 5;
+}
+
+// Action that gets an operation.
+message GetOperationAction {
+  // The name of the operation resource.
+  string operation = 1;
+}
+
+// Action that cancels an operation.
+message CancelOperationAction {
+  // The name of the operation resource to be cancelled.
+  string operation = 1;
+}
+
+// Starts a batch read-only transaction in executor. Successful outcomes of this
+// action will contain batch_txn_id--the identificator that can be used to start
+// the same transaction in other Executors to parallelize partition processing.
+//
+// Example of a batch read flow:
+// 1. Start batch transaction with a timestamp (StartBatchTransactionAction)
+// 2. Generate database partitions for a read or query
+// (GenerateDbPartitionsForReadAction/GenerateDbPartitionsForQueryAction)
+// 3. Call ExecutePartitionAction for some or all partitions, process rows
+// 4. Clean up the transaction (CloseBatchTransactionAction).
+//
+// More sophisticated example, with parallel processing:
+// 1. Start batch transaction with a timestamp (StartBatchTransactionAction),
+// note the returned BatchTransactionId
+// 2. Generate database partitions for a read or query
+// (GenerateDbPartitionsForReadAction/GenerateDbPartitionsForQueryAction)
+// 3. Distribute the partitions over a pool of workers, along with the
+// transaction ID.
+//
+// In each worker:
+// 4-1. StartBatchTransactionAction with the given transaction ID
+// 4-2. ExecutePartitionAction for each partition it got, process read results
+// 4-3. Close (not cleanup) the transaction (CloseBatchTransactionAction).
+//
+// When all workers are done:
+// 5. Cleanup the transaction (CloseBatchTransactionAction). This can be done
+// either by the last worker to finish the job, or by the main Executor that
+// initialized this transaction in the first place. It is also possible to clean
+// it up with a brand new Executor -- just execute StartBatchTransactionAction
+// with the ID, then clean it up right away.
+//
+// Cleaning up is optional, but recommended.
+message StartBatchTransactionAction {
+  // To start a new transaction, specify an exact timestamp. Alternatively, an
+  // existing batch transaction ID can be used. Either one of two must be
+  // set.
+  oneof param {
+    // The exact timestamp to start the batch transaction.
+    google.protobuf.Timestamp batch_txn_time = 1;
+
+    // ID of a batch read-only transaction. It can be used to start the same
+    // batch transaction on multiple executors and parallelize partition
+    // processing.
+    bytes tid = 2;
+  }
+
+  // Database role to assume while performing this action. Setting the
+  // database_role will enforce additional role-based access checks on this
+  // action.
+  string cloud_database_role = 3;
+}
+
+// Closes or cleans up the currently opened batch read-only transaction.
+//
+// Once a transaction is closed, the Executor can be disposed of or used to
+// start start another transaction. Closing a batch transaction in one Executor
+// doesn't affect the transaction's state in other Executors that also read from
+// it.
+//
+// When a transaction is cleaned up, it becomes globally invalid. Cleaning up is
+// optional, but recommended.
+message CloseBatchTransactionAction {
+  // Indicates whether the transaction needs to be cleaned up.
+  bool cleanup = 1;
+}
+
+// Generate database partitions for the given read. Successful outcomes will
+// contain database partitions in the db_partition field.
+message GenerateDbPartitionsForReadAction {
+  // Read to generate partitions for.
+  ReadAction read = 1;
+
+  // Metadata related to the tables involved in the read.
+  repeated TableMetadata table = 2;
+
+  // Desired size of data in each partition. Spanner doesn't guarantee to
+  // respect this value.
+  optional int64 desired_bytes_per_partition = 3;
+
+  // If set, the desired max number of partitions. Spanner doesn't guarantee to
+  // respect this value.
+  optional int64 max_partition_count = 4;
+}
+
+// Generate database partitions for the given query. Successful outcomes will
+// contain database partitions in the db_partition field.
+message GenerateDbPartitionsForQueryAction {
+  // Query to generate partitions for.
+  QueryAction query = 1;
+
+  // Desired size of data in each partition. Spanner doesn't guarantee to
+  // respect this value.
+  optional int64 desired_bytes_per_partition = 2;
+}
+
+// Identifies a database partition generated for a particular read or query. To
+// read rows from the partition, use ExecutePartitionAction.
+message BatchPartition {
+  // Serialized Partition instance.
+  bytes partition = 1;
+
+  // The partition token decrypted from partition.
+  bytes partition_token = 2;
+
+  // Table name is set iff the partition was generated for a read (as opposed to
+  // a query).
+  optional string table = 3;
+
+  // Index name if the partition was generated for an index read.
+  optional string index = 4;
+}
+
+// Performs a read or query for the given partitions. This action must be
+// executed in the context of the same transaction that was used to generate
+// given partitions.
+message ExecutePartitionAction {
+  // Batch partition to execute on.
+  BatchPartition partition = 1;
+}
+
+// Execute a change stream TVF query.
+message ExecuteChangeStreamQuery {
+  // Name for this change stream.
+  string name = 1;
+
+  // Specifies that records with commit_timestamp greater than or equal to
+  // start_time should be returned.
+  google.protobuf.Timestamp start_time = 2;
+
+  // Specifies that records with commit_timestamp less than or equal to
+  // end_time should be returned.
+  optional google.protobuf.Timestamp end_time = 3;
+
+  // Specifies which change stream partition to query, based on the content of
+  // child partitions records.
+  optional string partition_token = 4;
+
+  // Read options for this change stream query.
+  repeated string read_options = 5;
+
+  // Determines how frequently a heartbeat ChangeRecord will be returned in case
+  // there are no transactions committed in this partition, in milliseconds.
+  optional int32 heartbeat_milliseconds = 6;
+
+  // Deadline for this change stream query, in seconds.
+  optional int64 deadline_seconds = 7;
+
+  // Database role to assume while performing this action. This should only be
+  // set for cloud requests. Setting the database role will enforce additional
+  // role-based access checks on this action.
+  optional string cloud_database_role = 8;
+}
+
+// SpannerActionOutcome defines a result of execution of a single SpannerAction.
+message SpannerActionOutcome {
+  // If an outcome is split into multiple parts, status will be set only in the
+  // last part.
+  optional google.rpc.Status status = 1;
+
+  // Transaction timestamp. It must be set for successful committed actions.
+  optional google.protobuf.Timestamp commit_time = 2;
+
+  // Result of a ReadAction. This field must be set for ReadActions even if
+  // no rows were read.
+  optional ReadResult read_result = 3;
+
+  // Result of a Query. This field must be set for Queries even if no rows were
+  // read.
+  optional QueryResult query_result = 4;
+
+  // This bit indicates that Spanner has restarted the current transaction. It
+  // means that the client should replay all the reads and writes.
+  // Setting it to true is only valid in the context of a read-write
+  // transaction, as an outcome of a committing FinishTransactionAction.
+  optional bool transaction_restarted = 5;
+
+  // In successful StartBatchTransactionAction outcomes, this contains the ID of
+  // the transaction.
+  optional bytes batch_txn_id = 6;
+
+  // Generated database partitions (result of a
+  // GenetageDbPartitionsForReadAction/GenerateDbPartitionsForQueryAction).
+  repeated BatchPartition db_partition = 7;
+
+  // Result of admin related actions.
+  optional AdminResult admin_result = 8;
+
+  // Stores rows modified by query in single DML or batch DML action.
+  // In case of batch DML action, stores 0 as row count of errored DML query.
+  repeated int64 dml_rows_modified = 9;
+
+  // Change stream records returned by a change stream query.
+  repeated ChangeStreamRecord change_stream_records = 10;
+}
+
+// AdminResult contains admin action results, for database/backup/operation.
+message AdminResult {
+  // Results of cloud backup related actions.
+  CloudBackupResponse backup_response = 1;
+
+  // Results of operation related actions.
+  OperationResponse operation_response = 2;
+
+  // Results of database related actions.
+  CloudDatabaseResponse database_response = 3;
+
+  // Results of instance related actions.
+  CloudInstanceResponse instance_response = 4;
+
+  // Results of instance config related actions.
+  CloudInstanceConfigResponse instance_config_response = 5;
+}
+
+// CloudBackupResponse contains results returned by cloud backup related
+// actions.
+message CloudBackupResponse {
+  // List of backups returned by ListCloudBackupsAction.
+  repeated google.spanner.admin.database.v1.Backup listed_backups = 1;
+
+  // List of operations returned by ListCloudBackupOperationsAction.
+  repeated google.longrunning.Operation listed_backup_operations = 2;
+
+  // "next_page_token" can be sent in a subsequent list action
+  // to fetch more of the matching data.
+  string next_page_token = 3;
+
+  // Backup returned by GetCloudBackupAction/UpdateCloudBackupAction.
+  google.spanner.admin.database.v1.Backup backup = 4;
+}
+
+// OperationResponse contains results returned by operation related actions.
+message OperationResponse {
+  // List of operations returned by ListOperationsAction.
+  repeated google.longrunning.Operation listed_operations = 1;
+
+  // "next_page_token" can be sent in a subsequent list action
+  // to fetch more of the matching data.
+  string next_page_token = 2;
+
+  // Operation returned by GetOperationAction.
+  google.longrunning.Operation operation = 3;
+}
+
+// CloudInstanceResponse contains results returned by cloud instance related
+// actions.
+message CloudInstanceResponse {
+  // List of instances returned by ListCloudInstancesAction.
+  repeated google.spanner.admin.instance.v1.Instance listed_instances = 1;
+
+  // "next_page_token" can be sent in a subsequent list action
+  // to fetch more of the matching data.
+  string next_page_token = 2;
+
+  // Instance returned by GetCloudInstanceAction
+  google.spanner.admin.instance.v1.Instance instance = 3;
+}
+
+// CloudInstanceConfigResponse contains results returned by cloud instance
+// config related actions.
+message CloudInstanceConfigResponse {
+  // List of instance configs returned by ListCloudInstanceConfigsAction.
+  repeated google.spanner.admin.instance.v1.InstanceConfig
+      listed_instance_configs = 1;
+
+  // "next_page_token" can be sent in a subsequent list action
+  // to fetch more of the matching data.
+  string next_page_token = 2;
+
+  // Instance config returned by GetCloudInstanceConfigAction.
+  google.spanner.admin.instance.v1.InstanceConfig instance_config = 3;
+}
+
+// CloudDatabaseResponse contains results returned by cloud database related
+// actions.
+message CloudDatabaseResponse {
+  // List of databases returned by ListCloudDatabasesAction.
+  repeated google.spanner.admin.database.v1.Database listed_databases = 1;
+
+  // List of operations returned by ListCloudDatabaseOperationsAction.
+  repeated google.longrunning.Operation listed_database_operations = 2;
+
+  // "next_page_token" can be sent in a subsequent list action
+  // to fetch more of the matching data.
+  string next_page_token = 3;
+
+  // Database returned by GetCloudDatabaseAction
+  google.spanner.admin.database.v1.Database database = 4;
+}
+
+// ReadResult contains rows read.
+message ReadResult {
+  // Table name.
+  string table = 1;
+
+  // Index name, if read from an index.
+  optional string index = 2;
+
+  // Request index (multiread only).
+  optional int32 request_index = 3;
+
+  // Rows read. Each row is a struct with multiple fields, one for each column
+  // in read result. All rows have the same type.
+  repeated ValueList row = 4;
+
+  // The type of rows read. It must be set if at least one row was read.
+  optional google.spanner.v1.StructType row_type = 5;
+}
+
+// QueryResult contains result of a Query.
+message QueryResult {
+  // Rows read. Each row is a struct with multiple fields, one for each column
+  // in read result. All rows have the same type.
+  repeated ValueList row = 1;
+
+  // The type of rows read. It must be set if at least one row was read.
+  optional google.spanner.v1.StructType row_type = 2;
+}
+
+// Raw ChangeStream records.
+// Encodes one of: DataChangeRecord, HeartbeatRecord, ChildPartitionsRecord
+// returned from the ChangeStream API.
+message ChangeStreamRecord {
+  // Record represents one type of the change stream record.
+  oneof record {
+    // Data change record.
+    DataChangeRecord data_change = 1;
+
+    // Child partitions record.
+    ChildPartitionsRecord child_partition = 2;
+
+    // Heartbeat record.
+    HeartbeatRecord heartbeat = 3;
+  }
+}
+
+// ChangeStream data change record.
+message DataChangeRecord {
+  // Column types.
+  message ColumnType {
+    // Column name.
+    string name = 1;
+
+    // Column type in JSON.
+    string type = 2;
+
+    // Whether the column is a primary key column.
+    bool is_primary_key = 3;
+
+    // The position of the column as defined in the schema.
+    int64 ordinal_position = 4;
+  }
+
+  // Describes the changes that were made.
+  message Mod {
+    // The primary key values in JSON.
+    string keys = 1;
+
+    // The new values of the changed columns in JSON. Only contain the non-key
+    // columns.
+    string new_values = 2;
+
+    // The old values of the changed columns in JSON. Only contain the non-key
+    // columns.
+    string old_values = 3;
+  }
+
+  // The timestamp in which the change was committed.
+  google.protobuf.Timestamp commit_time = 1;
+
+  // The sequence number for the record within the transaction.
+  string record_sequence = 2;
+
+  // A globally unique string that represents the transaction in which the
+  // change was committed.
+  string transaction_id = 3;
+
+  // Indicates whether this is the last record for a transaction in the current
+  // partition.
+  bool is_last_record = 4;
+
+  // Name of the table affected by the change.
+  string table = 5;
+
+  // Column types defined in the schema.
+  repeated ColumnType column_types = 6;
+
+  // Changes made in the transaction.
+  repeated Mod mods = 7;
+
+  // Describes the type of change. One of INSERT, UPDATE or DELETE.
+  string mod_type = 8;
+
+  // One of value capture type: NEW_VALUES, OLD_VALUES, OLD_AND_NEW_VALUES.
+  string value_capture_type = 9;
+
+  // Number of records in transactions.
+  int64 record_count = 10;
+
+  // Number of partitions in transactions.
+  int64 partition_count = 11;
+
+  // Transaction tag info.
+  string transaction_tag = 12;
+
+  // Whether the transaction is a system transactionn.
+  bool is_system_transaction = 13;
+}
+
+// ChangeStream child partition record.
+message ChildPartitionsRecord {
+  // A single child partition.
+  message ChildPartition {
+    // Partition token string used to identify the child partition in queries.
+    string token = 1;
+
+    // Parent partition tokens of this child partition.
+    repeated string parent_partition_tokens = 2;
+  }
+
+  // Data change records returned from child partitions in this child partitions
+  // record will have a commit timestamp greater than or equal to start_time.
+  google.protobuf.Timestamp start_time = 1;
+
+  // A monotonically increasing sequence number that can be used to define the
+  // ordering of the child partitions record when there are multiple child
+  // partitions records returned with the same start_time in a particular
+  // partition.
+  string record_sequence = 2;
+
+  // A set of child partitions and their associated information.
+  repeated ChildPartition child_partitions = 3;
+}
+
+// ChangeStream heartbeat record.
+message HeartbeatRecord {
+  // Timestamp for this heartbeat check.
+  google.protobuf.Timestamp heartbeat_time = 1;
+}

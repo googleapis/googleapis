@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,17 +23,10 @@ import "google/protobuf/timestamp.proto";
 import "google/type/money.proto";
 
 option csharp_namespace = "Google.Cloud.Recommender.V1Beta1";
-option go_package = "google.golang.org/genproto/googleapis/cloud/recommender/v1beta1;recommender";
+option go_package = "cloud.google.com/go/recommender/apiv1beta1/recommenderpb;recommenderpb";
 option java_multiple_files = true;
 option java_package = "com.google.cloud.recommender.v1beta1";
 option objc_class_prefix = "CREC";
-option (google.api.resource_definition) = {
-  type: "recommender.googleapis.com/Recommender"
-  pattern: "projects/{project}/locations/{location}/recommenders/{recommender}"
-  pattern: "billingAccounts/{billing_account}/locations/{location}/recommenders/{recommender}"
-  pattern: "folders/{folder}/locations/{location}/recommenders/{recommender}"
-  pattern: "organizations/{organization}/locations/{location}/recommenders/{recommender}"
-};
 
 // A recommendation along with a suggested action. E.g., a rightsizing
 // recommendation for an underutilized VM, IAM role recommendations, etc
@@ -45,6 +38,24 @@ message Recommendation {
     pattern: "folders/{folder}/locations/{location}/recommenders/{recommender}/recommendations/{recommendation}"
     pattern: "organizations/{organization}/locations/{location}/recommenders/{recommender}/recommendations/{recommendation}"
   };
+
+  // Recommendation priority levels.
+  enum Priority {
+    // Recommendation has unspecified priority.
+    PRIORITY_UNSPECIFIED = 0;
+
+    // Recommendation has P4 priority (lowest priority).
+    P4 = 1;
+
+    // Recommendation has P3 priority (second lowest priority).
+    P3 = 2;
+
+    // Recommendation has P2 priority (second highest priority).
+    P2 = 3;
+
+    // Recommendation has P1 priority (highest priority).
+    P1 = 4;
+  }
 
   // Reference to an associated insight.
   message InsightReference {
@@ -84,6 +95,9 @@ message Recommendation {
   // or negative.
   repeated Impact additional_impact = 6;
 
+  // Recommendation's priority.
+  Priority priority = 17;
+
   // Content of the recommendation describing recommended changes to resources.
   RecommendationContent content = 7;
 
@@ -96,6 +110,12 @@ message Recommendation {
 
   // Insights that led to this recommendation.
   repeated InsightReference associated_insights = 14;
+
+  // Corresponds to a mutually exclusive group ID within a recommender.
+  // A non-empty ID indicates that the recommendation belongs to a mutually
+  // exclusive group. This means that only one recommendation within the group
+  // is suggested to be applied.
+  string xor_group_id = 18;
 }
 
 // Contains what resources are changing and how they are changing.
@@ -104,6 +124,9 @@ message RecommendationContent {
   // that, all operations within one group are expected to be performed
   // atomically and in an order.
   repeated OperationGroup operation_groups = 2;
+
+  // Condensed overview information about the recommendation.
+  google.protobuf.Struct overview = 3;
 }
 
 // Group of operations that need to be performed atomically.
@@ -123,7 +146,7 @@ message OperationGroup {
 // * Allows extension to custom operations not natively supported by RFC6902.
 // See https://tools.ietf.org/html/rfc6902 for details on the original RFC.
 message Operation {
-  // Type of this operation. Contains one of 'and', 'remove', 'replace', 'move',
+  // Type of this operation. Contains one of 'add', 'remove', 'replace', 'move',
   // 'copy', 'test' and 'custom' operations. This field is case-insensitive and
   // always populated.
   string action = 1;
@@ -197,7 +220,7 @@ message Operation {
   map<string, google.protobuf.Value> path_filters = 8;
 
   // Similar to path_filters, this contains set of filters to apply if `path`
-  // field referes to array elements. This is meant to support value matching
+  // field refers to array elements. This is meant to support value matching
   // beyond exact match. To perform exact match, use path_filters.
   // When both path_filters and path_value_matchers are set, an implicit AND
   // must be performed.
@@ -219,9 +242,30 @@ message CostProjection {
   // An approximate projection on amount saved or amount incurred. Negative cost
   // units indicate cost savings and positive cost units indicate increase.
   // See google.type.Money documentation for positive/negative units.
+  //
+  // A user's permissions may affect whether the cost is computed using list
+  // prices or custom contract prices.
   google.type.Money cost = 1;
 
   // Duration for which this cost applies.
+  google.protobuf.Duration duration = 2;
+}
+
+// Contains various ways of describing the impact on Security.
+message SecurityProjection {
+  // This field can be used by the recommender to define details specific to
+  // security impact.
+  google.protobuf.Struct details = 2;
+}
+
+// Contains metadata about how much sustainability a recommendation can save or
+// incur.
+message SustainabilityProjection {
+  // Carbon Footprint generated in kg of CO2 equivalent.
+  // Chose kg_c_o2e so that the name renders correctly in camelCase (kgCO2e).
+  double kg_c_o2e = 1;
+
+  // Duration for which this sustanability applies.
   google.protobuf.Duration duration = 2;
 }
 
@@ -243,6 +287,9 @@ message Impact {
 
     // Indicates a potential increase or decrease in manageability.
     MANAGEABILITY = 4;
+
+    // Indicates a potential increase or decrease in sustainability.
+    SUSTAINABILITY = 5;
   }
 
   // Category that is being targeted.
@@ -252,6 +299,12 @@ message Impact {
   oneof projection {
     // Use with CategoryType.COST
     CostProjection cost_projection = 100;
+
+    // Use with CategoryType.SECURITY
+    SecurityProjection security_projection = 101;
+
+    // Use with CategoryType.SUSTAINABILITY
+    SustainabilityProjection sustainability_projection = 102;
   }
 }
 
@@ -298,4 +351,20 @@ message RecommendationStateInfo {
 
   // A map of metadata for the state, provided by user or automations systems.
   map<string, string> state_metadata = 2;
+}
+
+// The type of a recommender.
+message RecommenderType {
+  option (google.api.resource) = {
+    type: "recommender.googleapis.com/Recommender"
+    pattern: "projects/{project}/locations/{location}/recommenders/{recommender}"
+    pattern: "billingAccounts/{billing_account}/locations/{location}/recommenders/{recommender}"
+    pattern: "folders/{folder}/locations/{location}/recommenders/{recommender}"
+    pattern: "organizations/{organization}/locations/{location}/recommenders/{recommender}"
+    pattern: "recommenders/{recommender}"
+  };
+
+  // The recommender's name in format RecommenderTypes/{recommender_type}
+  // eg:  recommenderTypes/google.iam.policy.Recommender
+  string name = 1;
 }

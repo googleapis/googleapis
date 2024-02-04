@@ -1,0 +1,272 @@
+// Copyright 2023 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.confidentialcomputing.v1;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+
+option csharp_namespace = "Google.Cloud.ConfidentialComputing.V1";
+option go_package = "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb;confidentialcomputingpb";
+option java_multiple_files = true;
+option java_outer_classname = "ServiceProto";
+option java_package = "com.google.cloud.confidentialcomputing.v1";
+option php_namespace = "Google\\Cloud\\ConfidentialComputing\\V1";
+option ruby_package = "Google::Cloud::ConfidentialComputing::V1";
+
+// Service describing handlers for resources
+service ConfidentialComputing {
+  option (google.api.default_host) = "confidentialcomputing.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform";
+
+  // Creates a new Challenge in a given project and location.
+  rpc CreateChallenge(CreateChallengeRequest) returns (Challenge) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/locations/*}/challenges"
+      body: "challenge"
+    };
+    option (google.api.method_signature) = "parent,challenge";
+  }
+
+  // Verifies the provided attestation info, returning a signed OIDC token.
+  rpc VerifyAttestation(VerifyAttestationRequest)
+      returns (VerifyAttestationResponse) {
+    option (google.api.http) = {
+      post: "/v1/{challenge=projects/*/locations/*/challenges/*}:verifyAttestation"
+      body: "*"
+    };
+  }
+}
+
+// SigningAlgorithm enumerates all the supported signing algorithms.
+enum SigningAlgorithm {
+  // Unspecified signing algorithm.
+  SIGNING_ALGORITHM_UNSPECIFIED = 0;
+
+  // RSASSA-PSS with a SHA256 digest.
+  RSASSA_PSS_SHA256 = 1;
+
+  // RSASSA-PKCS1 v1.5 with a SHA256 digest.
+  RSASSA_PKCS1V15_SHA256 = 2;
+
+  // ECDSA on the P-256 Curve with a SHA256 digest.
+  ECDSA_P256_SHA256 = 3;
+}
+
+// Token type enum contains the different types of token responses Confidential
+// Space supports
+enum TokenType {
+  // Unspecified token type
+  TOKEN_TYPE_UNSPECIFIED = 0;
+
+  // OpenID Connect (OIDC) token type
+  TOKEN_TYPE_OIDC = 1;
+}
+
+// A Challenge from the server used to guarantee freshness of attestations
+message Challenge {
+  option (google.api.resource) = {
+    type: "confidentialcomputing.googleapis.com/Challenge"
+    pattern: "projects/{project}/locations/{location}/challenges/{uuid}"
+  };
+
+  // Output only. The resource name for this Challenge in the format
+  // `projects/*/locations/*/challenges/*`
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time at which this Challenge was created
+  google.protobuf.Timestamp create_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time at which this Challenge will no longer be usable. It
+  // is also the expiration time for any tokens generated from this Challenge.
+  google.protobuf.Timestamp expire_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Indicates if this challenge has been used to generate a token.
+  bool used = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Identical to nonce, but as a string.
+  string tpm_nonce = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Message for creating a Challenge
+message CreateChallengeRequest {
+  // Required. The resource name of the location where the Challenge will be
+  // used, in the format `projects/*/locations/*`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
+
+  // Required. The Challenge to be created. Currently this field can be empty as
+  // all the Challenge fields are set by the server.
+  Challenge challenge = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A request for an OIDC token, providing all the necessary information needed
+// for this service to verify the plaform state of the requestor.
+message VerifyAttestationRequest {
+  // Required. The name of the Challenge whose nonce was used to generate the
+  // attestation, in the format `projects/*/locations/*/challenges/*`. The
+  // provided Challenge will be consumed, and cannot be used again.
+  string challenge = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "confidentialcomputing.googleapis.com/Challenge"
+    }
+  ];
+
+  // Optional. Credentials used to populate the "emails" claim in the
+  // claims_token.
+  GcpCredentials gcp_credentials = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. The TPM-specific data provided by the attesting platform, used to
+  // populate any of the claims regarding platform state.
+  TpmAttestation tpm_attestation = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Optional information related to the Confidential Space TEE.
+  ConfidentialSpaceInfo confidential_space_info = 4
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A collection of optional, workload-specified claims that modify
+  // the token output.
+  TokenOptions token_options = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A response once an attestation has been successfully verified, containing a
+// signed OIDC token.
+message VerifyAttestationResponse {
+  // Output only. Same as claims_token, but as a string.
+  string oidc_claims_token = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. A list of messages that carry the partial error details
+  // related to VerifyAttestation.
+  repeated google.rpc.Status partial_errors = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Credentials issued by GCP which are linked to the platform attestation. These
+// will be verified server-side as part of attestaion verification.
+message GcpCredentials {
+  // Same as id_tokens, but as a string.
+  repeated string service_account_id_tokens = 2;
+}
+
+// Options to modify claims in the token to generate custom-purpose tokens.
+message TokenOptions {
+  // Optional. Optional string to issue the token with a custom audience claim.
+  // Required if one or more nonces are specified.
+  string audience = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional parameter to place one or more nonces in the eat_nonce
+  // claim in the output token. The minimum size for JSON-encoded EATs is 10
+  // bytes and the maximum size is 74 bytes.
+  repeated string nonce = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional token type to select what type of token to return.
+  TokenType token_type = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// TPM2 data containing everything necessary to validate any platform state
+// measured into the TPM.
+message TpmAttestation {
+  // Information about Platform Control Registers (PCRs) including a signature
+  // over their values, which can be used for remote validation.
+  message Quote {
+    // The hash algorithm of the PCR bank being quoted, encoded as a TPM_ALG_ID
+    int32 hash_algo = 1;
+
+    // Raw binary values of each PCRs being quoted.
+    map<int32, bytes> pcr_values = 2;
+
+    // TPM2 quote, encoded as a TPMS_ATTEST
+    bytes raw_quote = 3;
+
+    // TPM2 signature, encoded as a TPMT_SIGNATURE
+    bytes raw_signature = 4;
+  }
+
+  // TPM2 PCR Quotes generated by calling TPM2_Quote on each PCR bank.
+  repeated Quote quotes = 1;
+
+  // The binary TCG Event Log containing events measured into the TPM by the
+  // platform firmware and operating system. Formatted as described in the
+  // "TCG PC Client Platform Firmware Profile Specification".
+  bytes tcg_event_log = 2;
+
+  // An Event Log containing additional events measured into the TPM that are
+  // not already present in the tcg_event_log. Formatted as described in the
+  // "Canonical Event Log Format" TCG Specification.
+  bytes canonical_event_log = 3;
+
+  // DER-encoded X.509 certificate of the Attestation Key (otherwise known as
+  // an AK or a TPM restricted signing key) used to generate the quotes.
+  bytes ak_cert = 4;
+
+  // List of DER-encoded X.509 certificates which, together with the ak_cert,
+  // chain back to a trusted Root Certificate.
+  repeated bytes cert_chain = 5;
+}
+
+// ConfidentialSpaceInfo contains information related to the Confidential Space
+// TEE.
+message ConfidentialSpaceInfo {
+  // Optional. A list of signed entities containing container image signatures
+  // that can be used for server-side signature verification.
+  repeated SignedEntity signed_entities = 1
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// SignedEntity represents an OCI image object containing everything necessary
+// to verify container image signatures.
+message SignedEntity {
+  // Optional. A list of container image signatures attached to an OCI image
+  // object.
+  repeated ContainerImageSignature container_image_signatures = 1
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// ContainerImageSignature holds necessary metadata to verify a container image
+// signature.
+message ContainerImageSignature {
+  // Optional. The binary signature payload following the SimpleSigning format
+  // https://github.com/sigstore/cosign/blob/main/specs/SIGNATURE_SPEC.md#simple-signing.
+  // This payload includes the container image digest.
+  bytes payload = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A signature over the payload.
+  // The container image digest is incorporated into the signature as follows:
+  // 1. Generate a SimpleSigning format payload that includes the container
+  // image digest.
+  // 2. Generate a signature over SHA256 digest of the payload.
+  // The signature generation process can be represented as follows:
+  // `Sign(sha256(SimpleSigningPayload(sha256(Image Manifest))))`
+  bytes signature = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Reserved for future use.
+  bytes public_key = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Reserved for future use.
+  SigningAlgorithm sig_alg = 4 [(google.api.field_behavior) = OPTIONAL];
+}

@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,17 +16,22 @@ syntax = "proto3";
 
 package google.cloud.securitycenter.v1;
 
-import public "google/cloud/securitycenter/v1/run_asset_discovery_response.proto";
 import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/securitycenter/v1/asset.proto";
+import "google/cloud/securitycenter/v1/bigquery_export.proto";
+import "google/cloud/securitycenter/v1/effective_security_health_analytics_custom_module.proto";
+import "google/cloud/securitycenter/v1/external_system.proto";
 import "google/cloud/securitycenter/v1/finding.proto";
 import "google/cloud/securitycenter/v1/folder.proto";
 import "google/cloud/securitycenter/v1/mute_config.proto";
 import "google/cloud/securitycenter/v1/notification_config.proto";
 import "google/cloud/securitycenter/v1/organization_settings.proto";
+import "google/cloud/securitycenter/v1/run_asset_discovery_response.proto";
+import "google/cloud/securitycenter/v1/security_health_analytics_custom_config.proto";
+import "google/cloud/securitycenter/v1/security_health_analytics_custom_module.proto";
 import "google/cloud/securitycenter/v1/security_marks.proto";
 import "google/cloud/securitycenter/v1/source.proto";
 import "google/iam/v1/iam_policy.proto";
@@ -37,9 +42,10 @@ import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
 
 option csharp_namespace = "Google.Cloud.SecurityCenter.V1";
-option go_package = "google.golang.org/genproto/googleapis/cloud/securitycenter/v1;securitycenter";
+option go_package = "cloud.google.com/go/securitycenter/apiv1/securitycenterpb;securitycenterpb";
 option java_multiple_files = true;
 option java_package = "com.google.cloud.securitycenter.v1";
 option php_namespace = "Google\\Cloud\\SecurityCenter\\V1";
@@ -48,12 +54,14 @@ option ruby_package = "Google::Cloud::SecurityCenter::V1";
 // V1 APIs for Security Center service.
 service SecurityCenter {
   option (google.api.default_host) = "securitycenter.googleapis.com";
-  option (google.api.oauth_scopes) = "https://www.googleapis.com/auth/cloud-platform";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform";
 
   // Kicks off an LRO to bulk mute findings for a parent based on a filter. The
   // parent can be either an organization, folder or project. The findings
   // matched by the filter will be muted after the LRO is done.
-  rpc BulkMuteFindings(BulkMuteFindingsRequest) returns (google.longrunning.Operation) {
+  rpc BulkMuteFindings(BulkMuteFindingsRequest)
+      returns (google.longrunning.Operation) {
     option (google.api.http) = {
       post: "/v1/{parent=organizations/*}/findings:bulkMute"
       body: "*"
@@ -71,6 +79,29 @@ service SecurityCenter {
       response_type: "google.cloud.securitycenter.v1.BulkMuteFindingsResponse"
       metadata_type: "google.protobuf.Empty"
     };
+  }
+
+  // Creates a resident SecurityHealthAnalyticsCustomModule at the scope of the
+  // given CRM parent, and also creates inherited
+  // SecurityHealthAnalyticsCustomModules for all CRM descendants of the given
+  // parent. These modules are enabled by default.
+  rpc CreateSecurityHealthAnalyticsCustomModule(
+      CreateSecurityHealthAnalyticsCustomModuleRequest)
+      returns (SecurityHealthAnalyticsCustomModule) {
+    option (google.api.http) = {
+      post: "/v1/{parent=organizations/*/securityHealthAnalyticsSettings}/customModules"
+      body: "security_health_analytics_custom_module"
+      additional_bindings {
+        post: "/v1/{parent=folders/*/securityHealthAnalyticsSettings}/customModules"
+        body: "security_health_analytics_custom_module"
+      }
+      additional_bindings {
+        post: "/v1/{parent=projects/*/securityHealthAnalyticsSettings}/customModules"
+        body: "security_health_analytics_custom_module"
+      }
+    };
+    option (google.api.method_signature) =
+        "parent,security_health_analytics_custom_module";
   }
 
   // Creates a source.
@@ -111,39 +142,82 @@ service SecurityCenter {
   }
 
   // Creates a notification config.
-  rpc CreateNotificationConfig(CreateNotificationConfigRequest) returns (NotificationConfig) {
+  rpc CreateNotificationConfig(CreateNotificationConfigRequest)
+      returns (NotificationConfig) {
     option (google.api.http) = {
       post: "/v1/{parent=organizations/*}/notificationConfigs"
       body: "notification_config"
+      additional_bindings {
+        post: "/v1/{parent=folders/*}/notificationConfigs"
+        body: "notification_config"
+      }
+      additional_bindings {
+        post: "/v1/{parent=projects/*}/notificationConfigs"
+        body: "notification_config"
+      }
     };
-    option (google.api.method_signature) = "parent,config_id,notification_config";
+    option (google.api.method_signature) =
+        "parent,config_id,notification_config";
     option (google.api.method_signature) = "parent,notification_config";
   }
 
   // Deletes an existing mute config.
-  rpc DeleteMuteConfig(DeleteMuteConfigRequest) returns (google.protobuf.Empty) {
+  rpc DeleteMuteConfig(DeleteMuteConfigRequest)
+      returns (google.protobuf.Empty) {
     option (google.api.http) = {
       delete: "/v1/{name=organizations/*/muteConfigs/*}"
-      additional_bindings {
-        delete: "/v1/{name=folders/*/muteConfigs/*}"
-      }
-      additional_bindings {
-        delete: "/v1/{name=projects/*/muteConfigs/*}"
-      }
+      additional_bindings { delete: "/v1/{name=folders/*/muteConfigs/*}" }
+      additional_bindings { delete: "/v1/{name=projects/*/muteConfigs/*}" }
     };
     option (google.api.method_signature) = "name";
   }
 
   // Deletes a notification config.
-  rpc DeleteNotificationConfig(DeleteNotificationConfigRequest) returns (google.protobuf.Empty) {
+  rpc DeleteNotificationConfig(DeleteNotificationConfigRequest)
+      returns (google.protobuf.Empty) {
     option (google.api.http) = {
       delete: "/v1/{name=organizations/*/notificationConfigs/*}"
+      additional_bindings {
+        delete: "/v1/{name=folders/*/notificationConfigs/*}"
+      }
+      additional_bindings {
+        delete: "/v1/{name=projects/*/notificationConfigs/*}"
+      }
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Deletes the specified SecurityHealthAnalyticsCustomModule and all of its
+  // descendants in the CRM hierarchy. This method is only supported for
+  // resident custom modules.
+  rpc DeleteSecurityHealthAnalyticsCustomModule(
+      DeleteSecurityHealthAnalyticsCustomModuleRequest)
+      returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/v1/{name=organizations/*/securityHealthAnalyticsSettings/customModules/*}"
+      additional_bindings {
+        delete: "/v1/{name=folders/*/securityHealthAnalyticsSettings/customModules/*}"
+      }
+      additional_bindings {
+        delete: "/v1/{name=projects/*/securityHealthAnalyticsSettings/customModules/*}"
+      }
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Gets a BigQuery export.
+  rpc GetBigQueryExport(GetBigQueryExportRequest) returns (BigQueryExport) {
+    option (google.api.http) = {
+      get: "/v1/{name=organizations/*/bigQueryExports/*}"
+      additional_bindings { get: "/v1/{name=folders/*/bigQueryExports/*}" }
+      additional_bindings { get: "/v1/{name=projects/*/bigQueryExports/*}" }
     };
     option (google.api.method_signature) = "name";
   }
 
   // Gets the access control policy on the specified Source.
-  rpc GetIamPolicy(google.iam.v1.GetIamPolicyRequest) returns (google.iam.v1.Policy) {
+  rpc GetIamPolicy(google.iam.v1.GetIamPolicyRequest)
+      returns (google.iam.v1.Policy) {
     option (google.api.http) = {
       post: "/v1/{resource=organizations/*/sources/*}:getIamPolicy"
       body: "*"
@@ -155,28 +229,60 @@ service SecurityCenter {
   rpc GetMuteConfig(GetMuteConfigRequest) returns (MuteConfig) {
     option (google.api.http) = {
       get: "/v1/{name=organizations/*/muteConfigs/*}"
-      additional_bindings {
-        get: "/v1/{name=folders/*/muteConfigs/*}"
-      }
-      additional_bindings {
-        get: "/v1/{name=projects/*/muteConfigs/*}"
-      }
+      additional_bindings { get: "/v1/{name=folders/*/muteConfigs/*}" }
+      additional_bindings { get: "/v1/{name=projects/*/muteConfigs/*}" }
     };
     option (google.api.method_signature) = "name";
   }
 
   // Gets a notification config.
-  rpc GetNotificationConfig(GetNotificationConfigRequest) returns (NotificationConfig) {
+  rpc GetNotificationConfig(GetNotificationConfigRequest)
+      returns (NotificationConfig) {
     option (google.api.http) = {
       get: "/v1/{name=organizations/*/notificationConfigs/*}"
+      additional_bindings { get: "/v1/{name=folders/*/notificationConfigs/*}" }
+      additional_bindings { get: "/v1/{name=projects/*/notificationConfigs/*}" }
     };
     option (google.api.method_signature) = "name";
   }
 
   // Gets the settings for an organization.
-  rpc GetOrganizationSettings(GetOrganizationSettingsRequest) returns (OrganizationSettings) {
+  rpc GetOrganizationSettings(GetOrganizationSettingsRequest)
+      returns (OrganizationSettings) {
     option (google.api.http) = {
       get: "/v1/{name=organizations/*/organizationSettings}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Retrieves an EffectiveSecurityHealthAnalyticsCustomModule.
+  rpc GetEffectiveSecurityHealthAnalyticsCustomModule(
+      GetEffectiveSecurityHealthAnalyticsCustomModuleRequest)
+      returns (EffectiveSecurityHealthAnalyticsCustomModule) {
+    option (google.api.http) = {
+      get: "/v1/{name=organizations/*/securityHealthAnalyticsSettings/effectiveCustomModules/*}"
+      additional_bindings {
+        get: "/v1/{name=folders/*/securityHealthAnalyticsSettings/effectiveCustomModules/*}"
+      }
+      additional_bindings {
+        get: "/v1/{name=projects/*/securityHealthAnalyticsSettings/effectiveCustomModules/*}"
+      }
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Retrieves a SecurityHealthAnalyticsCustomModule.
+  rpc GetSecurityHealthAnalyticsCustomModule(
+      GetSecurityHealthAnalyticsCustomModuleRequest)
+      returns (SecurityHealthAnalyticsCustomModule) {
+    option (google.api.http) = {
+      get: "/v1/{name=organizations/*/securityHealthAnalyticsSettings/customModules/*}"
+      additional_bindings {
+        get: "/v1/{name=folders/*/securityHealthAnalyticsSettings/customModules/*}"
+      }
+      additional_bindings {
+        get: "/v1/{name=projects/*/securityHealthAnalyticsSettings/customModules/*}"
+      }
     };
     option (google.api.method_signature) = "name";
   }
@@ -192,6 +298,7 @@ service SecurityCenter {
   // Filters an organization's assets and  groups them by their specified
   // properties.
   rpc GroupAssets(GroupAssetsRequest) returns (GroupAssetsResponse) {
+    option deprecated = true;
     option (google.api.http) = {
       post: "/v1/{parent=organizations/*}/assets:group"
       body: "*"
@@ -231,15 +338,29 @@ service SecurityCenter {
 
   // Lists an organization's assets.
   rpc ListAssets(ListAssetsRequest) returns (ListAssetsResponse) {
+    option deprecated = true;
     option (google.api.http) = {
       get: "/v1/{parent=organizations/*}/assets"
+      additional_bindings { get: "/v1/{parent=folders/*}/assets" }
+      additional_bindings { get: "/v1/{parent=projects/*}/assets" }
+    };
+  }
+
+  // Returns a list of all resident SecurityHealthAnalyticsCustomModules under
+  // the given CRM parent and all of the parent’s CRM descendants.
+  rpc ListDescendantSecurityHealthAnalyticsCustomModules(
+      ListDescendantSecurityHealthAnalyticsCustomModulesRequest)
+      returns (ListDescendantSecurityHealthAnalyticsCustomModulesResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=organizations/*/securityHealthAnalyticsSettings}/customModules:listDescendant"
       additional_bindings {
-        get: "/v1/{parent=folders/*}/assets"
+        get: "/v1/{parent=folders/*/securityHealthAnalyticsSettings}/customModules:listDescendant"
       }
       additional_bindings {
-        get: "/v1/{parent=projects/*}/assets"
+        get: "/v1/{parent=projects/*/securityHealthAnalyticsSettings}/customModules:listDescendant"
       }
     };
+    option (google.api.method_signature) = "parent";
   }
 
   // Lists an organization or source's findings.
@@ -249,33 +370,65 @@ service SecurityCenter {
   rpc ListFindings(ListFindingsRequest) returns (ListFindingsResponse) {
     option (google.api.http) = {
       get: "/v1/{parent=organizations/*/sources/*}/findings"
-      additional_bindings {
-        get: "/v1/{parent=folders/*/sources/*}/findings"
-      }
-      additional_bindings {
-        get: "/v1/{parent=projects/*/sources/*}/findings"
-      }
+      additional_bindings { get: "/v1/{parent=folders/*/sources/*}/findings" }
+      additional_bindings { get: "/v1/{parent=projects/*/sources/*}/findings" }
     };
   }
 
   // Lists mute configs.
-  rpc ListMuteConfigs(ListMuteConfigsRequest) returns (ListMuteConfigsResponse) {
+  rpc ListMuteConfigs(ListMuteConfigsRequest)
+      returns (ListMuteConfigsResponse) {
     option (google.api.http) = {
       get: "/v1/{parent=organizations/*}/muteConfigs"
-      additional_bindings {
-        get: "/v1/{parent=folders/*}/muteConfigs"
-      }
-      additional_bindings {
-        get: "/v1/{parent=projects/*}/muteConfigs"
-      }
+      additional_bindings { get: "/v1/{parent=folders/*}/muteConfigs" }
+      additional_bindings { get: "/v1/{parent=projects/*}/muteConfigs" }
     };
     option (google.api.method_signature) = "parent";
   }
 
   // Lists notification configs.
-  rpc ListNotificationConfigs(ListNotificationConfigsRequest) returns (ListNotificationConfigsResponse) {
+  rpc ListNotificationConfigs(ListNotificationConfigsRequest)
+      returns (ListNotificationConfigsResponse) {
     option (google.api.http) = {
       get: "/v1/{parent=organizations/*}/notificationConfigs"
+      additional_bindings { get: "/v1/{parent=folders/*}/notificationConfigs" }
+      additional_bindings { get: "/v1/{parent=projects/*}/notificationConfigs" }
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Returns a list of all EffectiveSecurityHealthAnalyticsCustomModules for the
+  // given parent. This includes resident modules defined at the scope of the
+  // parent, and inherited modules, inherited from CRM ancestors.
+  rpc ListEffectiveSecurityHealthAnalyticsCustomModules(
+      ListEffectiveSecurityHealthAnalyticsCustomModulesRequest)
+      returns (ListEffectiveSecurityHealthAnalyticsCustomModulesResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=organizations/*/securityHealthAnalyticsSettings}/effectiveCustomModules"
+      additional_bindings {
+        get: "/v1/{parent=folders/*/securityHealthAnalyticsSettings}/effectiveCustomModules"
+      }
+      additional_bindings {
+        get: "/v1/{parent=projects/*/securityHealthAnalyticsSettings}/effectiveCustomModules"
+      }
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Returns a list of all SecurityHealthAnalyticsCustomModules for the given
+  // parent. This includes resident modules defined at the scope of the parent,
+  // and inherited modules, inherited from CRM ancestors.
+  rpc ListSecurityHealthAnalyticsCustomModules(
+      ListSecurityHealthAnalyticsCustomModulesRequest)
+      returns (ListSecurityHealthAnalyticsCustomModulesResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=organizations/*/securityHealthAnalyticsSettings}/customModules"
+      additional_bindings {
+        get: "/v1/{parent=folders/*/securityHealthAnalyticsSettings}/customModules"
+      }
+      additional_bindings {
+        get: "/v1/{parent=projects/*/securityHealthAnalyticsSettings}/customModules"
+      }
     };
     option (google.api.method_signature) = "parent";
   }
@@ -284,12 +437,8 @@ service SecurityCenter {
   rpc ListSources(ListSourcesRequest) returns (ListSourcesResponse) {
     option (google.api.http) = {
       get: "/v1/{parent=organizations/*}/sources"
-      additional_bindings {
-        get: "/v1/{parent=folders/*}/sources"
-      }
-      additional_bindings {
-        get: "/v1/{parent=projects/*}/sources"
-      }
+      additional_bindings { get: "/v1/{parent=folders/*}/sources" }
+      additional_bindings { get: "/v1/{parent=projects/*}/sources" }
     };
     option (google.api.method_signature) = "parent";
   }
@@ -300,7 +449,9 @@ service SecurityCenter {
   // This API can only be called with limited frequency for an organization. If
   // it is called too frequently the caller will receive a TOO_MANY_REQUESTS
   // error.
-  rpc RunAssetDiscovery(RunAssetDiscoveryRequest) returns (google.longrunning.Operation) {
+  rpc RunAssetDiscovery(RunAssetDiscoveryRequest)
+      returns (google.longrunning.Operation) {
+    option deprecated = true;
     option (google.api.http) = {
       post: "/v1/{parent=organizations/*}/assets:runDiscovery"
       body: "*"
@@ -347,7 +498,8 @@ service SecurityCenter {
   }
 
   // Sets the access control policy on the specified Source.
-  rpc SetIamPolicy(google.iam.v1.SetIamPolicyRequest) returns (google.iam.v1.Policy) {
+  rpc SetIamPolicy(google.iam.v1.SetIamPolicyRequest)
+      returns (google.iam.v1.Policy) {
     option (google.api.http) = {
       post: "/v1/{resource=organizations/*/sources/*}:setIamPolicy"
       body: "*"
@@ -356,12 +508,50 @@ service SecurityCenter {
   }
 
   // Returns the permissions that a caller has on the specified source.
-  rpc TestIamPermissions(google.iam.v1.TestIamPermissionsRequest) returns (google.iam.v1.TestIamPermissionsResponse) {
+  rpc TestIamPermissions(google.iam.v1.TestIamPermissionsRequest)
+      returns (google.iam.v1.TestIamPermissionsResponse) {
     option (google.api.http) = {
       post: "/v1/{resource=organizations/*/sources/*}:testIamPermissions"
       body: "*"
     };
     option (google.api.method_signature) = "resource,permissions";
+  }
+
+  // Simulates a given SecurityHealthAnalyticsCustomModule and Resource.
+  rpc SimulateSecurityHealthAnalyticsCustomModule(
+      SimulateSecurityHealthAnalyticsCustomModuleRequest)
+      returns (SimulateSecurityHealthAnalyticsCustomModuleResponse) {
+    option (google.api.http) = {
+      post: "/v1/{parent=organizations/*/securityHealthAnalyticsSettings}/customModules:simulate"
+      body: "*"
+      additional_bindings {
+        post: "/v1/{parent=folders/*/securityHealthAnalyticsSettings}/customModules:simulate"
+        body: "*"
+      }
+      additional_bindings {
+        post: "/v1/{parent=projects/*/securityHealthAnalyticsSettings}/customModules:simulate"
+        body: "*"
+      }
+    };
+    option (google.api.method_signature) = "parent,custom_config,resource";
+  }
+
+  // Updates external system. This is for a given finding.
+  rpc UpdateExternalSystem(UpdateExternalSystemRequest)
+      returns (ExternalSystem) {
+    option (google.api.http) = {
+      patch: "/v1/{external_system.name=organizations/*/sources/*/findings/*/externalSystems/*}"
+      body: "external_system"
+      additional_bindings {
+        patch: "/v1/{external_system.name=folders/*/sources/*/findings/*/externalSystems/*}"
+        body: "external_system"
+      }
+      additional_bindings {
+        patch: "/v1/{external_system.name=projects/*/sources/*/findings/*/externalSystems/*}"
+        body: "external_system"
+      }
+    };
+    option (google.api.method_signature) = "external_system,update_mask";
   }
 
   // Creates or updates a finding. The corresponding source must exist for a
@@ -402,22 +592,56 @@ service SecurityCenter {
   //
   // Updates a notification config. The following update
   // fields are allowed: description, pubsub_topic, streaming_config.filter
-  rpc UpdateNotificationConfig(UpdateNotificationConfigRequest) returns (NotificationConfig) {
+  rpc UpdateNotificationConfig(UpdateNotificationConfigRequest)
+      returns (NotificationConfig) {
     option (google.api.http) = {
       patch: "/v1/{notification_config.name=organizations/*/notificationConfigs/*}"
       body: "notification_config"
+      additional_bindings {
+        patch: "/v1/{notification_config.name=folders/*/notificationConfigs/*}"
+        body: "notification_config"
+      }
+      additional_bindings {
+        patch: "/v1/{notification_config.name=projects/*/notificationConfigs/*}"
+        body: "notification_config"
+      }
     };
     option (google.api.method_signature) = "notification_config";
     option (google.api.method_signature) = "notification_config,update_mask";
   }
 
   // Updates an organization's settings.
-  rpc UpdateOrganizationSettings(UpdateOrganizationSettingsRequest) returns (OrganizationSettings) {
+  rpc UpdateOrganizationSettings(UpdateOrganizationSettingsRequest)
+      returns (OrganizationSettings) {
     option (google.api.http) = {
       patch: "/v1/{organization_settings.name=organizations/*/organizationSettings}"
       body: "organization_settings"
     };
     option (google.api.method_signature) = "organization_settings";
+  }
+
+  // Updates the SecurityHealthAnalyticsCustomModule under the given name based
+  // on the given update mask. Updating the enablement state is supported on
+  // both resident and inherited modules (though resident modules cannot have an
+  // enablement state of "inherited"). Updating the display name and custom
+  // config of a module is supported on resident modules only.
+  rpc UpdateSecurityHealthAnalyticsCustomModule(
+      UpdateSecurityHealthAnalyticsCustomModuleRequest)
+      returns (SecurityHealthAnalyticsCustomModule) {
+    option (google.api.http) = {
+      patch: "/v1/{security_health_analytics_custom_module.name=organizations/*/securityHealthAnalyticsSettings/customModules/*}"
+      body: "security_health_analytics_custom_module"
+      additional_bindings {
+        patch: "/v1/{security_health_analytics_custom_module.name=folders/*/securityHealthAnalyticsSettings/customModules/*}"
+        body: "security_health_analytics_custom_module"
+      }
+      additional_bindings {
+        patch: "/v1/{security_health_analytics_custom_module.name=projects/*/securityHealthAnalyticsSettings/customModules/*}"
+        body: "security_health_analytics_custom_module"
+      }
+    };
+    option (google.api.method_signature) =
+        "security_health_analytics_custom_module,update_mask";
   }
 
   // Updates a source.
@@ -457,23 +681,84 @@ service SecurityCenter {
     };
     option (google.api.method_signature) = "security_marks";
   }
+
+  // Creates a BigQuery export.
+  rpc CreateBigQueryExport(CreateBigQueryExportRequest)
+      returns (BigQueryExport) {
+    option (google.api.http) = {
+      post: "/v1/{parent=organizations/*}/bigQueryExports"
+      body: "big_query_export"
+      additional_bindings {
+        post: "/v1/{parent=folders/*}/bigQueryExports"
+        body: "big_query_export"
+      }
+      additional_bindings {
+        post: "/v1/{parent=projects/*}/bigQueryExports"
+        body: "big_query_export"
+      }
+    };
+    option (google.api.method_signature) =
+        "parent,big_query_export,big_query_export_id";
+  }
+
+  // Deletes an existing BigQuery export.
+  rpc DeleteBigQueryExport(DeleteBigQueryExportRequest)
+      returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/v1/{name=organizations/*/bigQueryExports/*}"
+      additional_bindings { delete: "/v1/{name=folders/*/bigQueryExports/*}" }
+      additional_bindings { delete: "/v1/{name=projects/*/bigQueryExports/*}" }
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Updates a BigQuery export.
+  rpc UpdateBigQueryExport(UpdateBigQueryExportRequest)
+      returns (BigQueryExport) {
+    option (google.api.http) = {
+      patch: "/v1/{big_query_export.name=organizations/*/bigQueryExports/*}"
+      body: "big_query_export"
+      additional_bindings {
+        patch: "/v1/{big_query_export.name=folders/*/bigQueryExports/*}"
+        body: "big_query_export"
+      }
+      additional_bindings {
+        patch: "/v1/{big_query_export.name=projects/*/bigQueryExports/*}"
+        body: "big_query_export"
+      }
+    };
+    option (google.api.method_signature) = "big_query_export,update_mask";
+  }
+
+  // Lists BigQuery exports. Note that when requesting BigQuery exports at a
+  // given level all exports under that level are also returned e.g. if
+  // requesting BigQuery exports under a folder, then all BigQuery exports
+  // immediately under the folder plus the ones created under the projects
+  // within the folder are returned.
+  rpc ListBigQueryExports(ListBigQueryExportsRequest)
+      returns (ListBigQueryExportsResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=organizations/*}/bigQueryExports"
+      additional_bindings { get: "/v1/{parent=folders/*}/bigQueryExports" }
+      additional_bindings { get: "/v1/{parent=projects/*}/bigQueryExports" }
+    };
+    option (google.api.method_signature) = "parent";
+  }
 }
 
 // Request message for bulk findings update.
 //
 // Note:
-//     1. If multiple bulk update requests match the same resource, the order in
+// 1. If multiple bulk update requests match the same resource, the order in
 // which they get executed is not defined.
-//     2. Once a bulk operation is started, there is no way to stop it.
+// 2. Once a bulk operation is started, there is no way to stop it.
 message BulkMuteFindingsRequest {
-  // Required. The parent, at which bulk action needs to be applied. Its format is
-  // "organizations/[organization_id]", "folders/[folder_id]",
+  // Required. The parent, at which bulk action needs to be applied. Its format
+  // is "organizations/[organization_id]", "folders/[folder_id]",
   // "projects/[project_id]".
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = {
-      type: "*"
-    }
+    (google.api.resource_reference) = { type: "*" }
   ];
 
   // Expression that identifies findings that should be updated.
@@ -504,9 +789,7 @@ message BulkMuteFindingsRequest {
 }
 
 // The response to a BulkMute request. Contains the LRO information.
-message BulkMuteFindingsResponse {
-
-}
+message BulkMuteFindingsResponse {}
 
 // Request message for creating a finding.
 message CreateFindingRequest {
@@ -524,8 +807,8 @@ message CreateFindingRequest {
   // greater than 0 characters in length.
   string finding_id = 2 [(google.api.field_behavior) = REQUIRED];
 
-  // Required. The Finding being created. The name and security_marks will be ignored as
-  // they are both output only fields on this resource.
+  // Required. The Finding being created. The name and security_marks will be
+  // ignored as they are both output only fields on this resource.
   Finding finding = 3 [(google.api.field_behavior) = REQUIRED];
 }
 
@@ -545,32 +828,55 @@ message CreateMuteConfigRequest {
   MuteConfig mute_config = 2 [(google.api.field_behavior) = REQUIRED];
 
   // Required. Unique identifier provided by the client within the parent scope.
-  // It must consist of lower case letters, numbers, and hyphen, with the first
-  // character a letter, the last a letter or a number, and a 63 character
-  // maximum.
+  // It must consist of only lowercase letters, numbers, and hyphens, must start
+  // with a letter, must end with either a letter or a number, and must be 63
+  // characters or less.
   string mute_config_id = 3 [(google.api.field_behavior) = REQUIRED];
 }
 
 // Request message for creating a notification config.
 message CreateNotificationConfigRequest {
-  // Required. Resource name of the new notification config's parent. Its format is
-  // "organizations/[organization_id]".
+  // Required. Resource name of the new notification config's parent. Its format
+  // is "organizations/[organization_id]", "folders/[folder_id]", or
+  // "projects/[project_id]".
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
-      type: "cloudresourcemanager.googleapis.com/Organization"
+      child_type: "securitycenter.googleapis.com/NotificationConfig"
     }
   ];
 
   // Required.
   // Unique identifier provided by the client within the parent scope.
-  // It must be between 1 and 128 characters, and contains alphanumeric
-  // characters, underscores or hyphens only.
+  // It must be between 1 and 128 characters and contain alphanumeric
+  // characters, underscores, or hyphens only.
   string config_id = 2 [(google.api.field_behavior) = REQUIRED];
 
-  // Required. The notification config being created. The name and the service account
-  // will be ignored as they are both output only fields on this resource.
-  NotificationConfig notification_config = 3 [(google.api.field_behavior) = REQUIRED];
+  // Required. The notification config being created. The name and the service
+  // account will be ignored as they are both output only fields on this
+  // resource.
+  NotificationConfig notification_config = 3
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request message for creating Security Health Analytics custom modules.
+message CreateSecurityHealthAnalyticsCustomModuleRequest {
+  // Required. Resource name of the new custom module's parent. Its format is
+  // "organizations/{organization}/securityHealthAnalyticsSettings",
+  // "folders/{folder}/securityHealthAnalyticsSettings", or
+  // "projects/{project}/securityHealthAnalyticsSettings"
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "securitycenter.googleapis.com/SecurityHealthAnalyticsCustomModule"
+    }
+  ];
+
+  // Required. SecurityHealthAnalytics custom module to create. The provided
+  // name is ignored and reset with provided parent information and
+  // server-generated ID.
+  SecurityHealthAnalyticsCustomModule security_health_analytics_custom_module =
+      2 [(google.api.field_behavior) = REQUIRED];
 }
 
 // Request message for creating a source.
@@ -584,8 +890,8 @@ message CreateSourceRequest {
     }
   ];
 
-  // Required. The Source being created, only the display_name and description will be
-  // used. All other fields will be ignored.
+  // Required. The Source being created, only the display_name and description
+  // will be used. All other fields will be ignored.
   Source source = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
@@ -606,11 +912,42 @@ message DeleteMuteConfigRequest {
 // Request message for deleting a notification config.
 message DeleteNotificationConfigRequest {
   // Required. Name of the notification config to delete. Its format is
-  // "organizations/[organization_id]/notificationConfigs/[config_id]".
+  // "organizations/[organization_id]/notificationConfigs/[config_id]",
+  // "folders/[folder_id]/notificationConfigs/[config_id]",
+  // or "projects/[project_id]/notificationConfigs/[config_id]".
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
       type: "securitycenter.googleapis.com/NotificationConfig"
+    }
+  ];
+}
+
+// Request message for deleting Security Health Analytics custom modules.
+message DeleteSecurityHealthAnalyticsCustomModuleRequest {
+  // Required. Name of the custom module to delete. Its format is
+  // "organizations/{organization}/securityHealthAnalyticsSettings/customModules/{customModule}",
+  // "folders/{folder}/securityHealthAnalyticsSettings/customModules/{customModule}",
+  // or
+  // "projects/{project}/securityHealthAnalyticsSettings/customModules/{customModule}"
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "securitycenter.googleapis.com/SecurityHealthAnalyticsCustomModule"
+    }
+  ];
+}
+
+// Request message for retrieving a BigQuery export.
+message GetBigQueryExportRequest {
+  // Required. Name of the BigQuery export to retrieve. Its format is
+  // organizations/{organization}/bigQueryExports/{export_id},
+  // folders/{folder}/bigQueryExports/{export_id}, or
+  // projects/{project}/bigQueryExports/{export_id}
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "securitycenter.googleapis.com/BigQueryExport"
     }
   ];
 }
@@ -632,7 +969,9 @@ message GetMuteConfigRequest {
 // Request message for getting a notification config.
 message GetNotificationConfigRequest {
   // Required. Name of the notification config to get. Its format is
-  // "organizations/[organization_id]/notificationConfigs/[config_id]".
+  // "organizations/[organization_id]/notificationConfigs/[config_id]",
+  // "folders/[folder_id]/notificationConfigs/[config_id]",
+  // or "projects/[project_id]/notificationConfigs/[config_id]".
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -643,12 +982,43 @@ message GetNotificationConfigRequest {
 
 // Request message for getting organization settings.
 message GetOrganizationSettingsRequest {
-  // Required. Name of the organization to get organization settings for. Its format is
-  // "organizations/[organization_id]/organizationSettings".
+  // Required. Name of the organization to get organization settings for. Its
+  // format is "organizations/[organization_id]/organizationSettings".
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
       type: "securitycenter.googleapis.com/OrganizationSettings"
+    }
+  ];
+}
+
+// Request message for getting effective Security Health Analytics custom
+// modules.
+message GetEffectiveSecurityHealthAnalyticsCustomModuleRequest {
+  // Required. Name of the effective custom module to get. Its format is
+  // "organizations/{organization}/securityHealthAnalyticsSettings/effectiveCustomModules/{customModule}",
+  // "folders/{folder}/securityHealthAnalyticsSettings/effectiveCustomModules/{customModule}",
+  // or
+  // "projects/{project}/securityHealthAnalyticsSettings/effectiveCustomModules/{customModule}"
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "securitycenter.googleapis.com/EffectiveSecurityHealthAnalyticsCustomModule"
+    }
+  ];
+}
+
+// Request message for getting Security Health Analytics custom modules.
+message GetSecurityHealthAnalyticsCustomModuleRequest {
+  // Required. Name of the custom module to get. Its format is
+  // "organizations/{organization}/securityHealthAnalyticsSettings/customModules/{customModule}",
+  // "folders/{folder}/securityHealthAnalyticsSettings/customModules/{customModule}",
+  // or
+  // "projects/{project}/securityHealthAnalyticsSettings/customModules/{customModule}"
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "securitycenter.googleapis.com/SecurityHealthAnalyticsCustomModule"
     }
   ];
 }
@@ -667,9 +1037,9 @@ message GetSourceRequest {
 
 // Request message for grouping by assets.
 message GroupAssetsRequest {
-  // Required. Name of the organization to groupBy. Its format is
-  // "organizations/[organization_id], folders/[folder_id], or
-  // projects/[project_id]".
+  // Required. The name of the parent to group the assets by. Its format is
+  // "organizations/[organization_id]", "folders/[folder_id]", or
+  // "projects/[project_id]".
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -741,9 +1111,9 @@ message GroupAssetsRequest {
   // property not existing: `-resource_properties.my_property : ""`
   string filter = 2;
 
-  // Required. Expression that defines what assets fields to use for grouping. The string
-  // value should follow SQL syntax: comma separated list of fields. For
-  // example:
+  // Required. Expression that defines what assets fields to use for grouping.
+  // The string value should follow SQL syntax: comma separated list of fields.
+  // For example:
   // "security_center_properties.resource_project,security_center_properties.project".
   //
   // The following fields are supported when compare_duration is not set:
@@ -901,9 +1271,9 @@ message GroupFindingsRequest {
   //   * resource.type: `=`, `:`
   string filter = 2;
 
-  // Required. Expression that defines what assets fields to use for grouping (including
-  // `state_change`). The string value should follow SQL syntax: comma separated
-  // list of fields. For example: "parent,resource_name".
+  // Required. Expression that defines what assets fields to use for grouping
+  // (including `state_change`). The string value should follow SQL syntax:
+  // comma separated list of fields. For example: "parent,resource_name".
   //
   // The following fields are supported:
   //
@@ -995,11 +1365,45 @@ message GroupResult {
   int64 count = 2;
 }
 
+// Request message for listing descendant Security Health Analytics custom
+// modules.
+message ListDescendantSecurityHealthAnalyticsCustomModulesRequest {
+  // Required. Name of parent to list descendant custom modules. Its format is
+  // "organizations/{organization}/securityHealthAnalyticsSettings",
+  // "folders/{folder}/securityHealthAnalyticsSettings", or
+  // "projects/{project}/securityHealthAnalyticsSettings"
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "securitycenter.googleapis.com/SecurityHealthAnalyticsCustomModule"
+    }
+  ];
+
+  // The maximum number of results to return in a single response. Default is
+  // 10, minimum is 1, maximum is 1000.
+  int32 page_size = 2;
+
+  // The value returned by the last call indicating a continuation
+  string page_token = 3;
+}
+
+// Response message for listing descendant Security Health Analytics custom
+// modules.
+message ListDescendantSecurityHealthAnalyticsCustomModulesResponse {
+  // Custom modules belonging to the requested parent and its descendants.
+  repeated SecurityHealthAnalyticsCustomModule
+      security_health_analytics_custom_modules = 1;
+
+  // If not empty, indicates that there may be more custom modules to be
+  // returned.
+  string next_page_token = 2;
+}
+
 // Request message for listing  mute configs at a given scope e.g. organization,
 // folder or project.
 message ListMuteConfigsRequest {
-  // Required. The parent, which owns the collection of mute configs. Its format is
-  // "organizations/[organization_id]", "folders/[folder_id]",
+  // Required. The parent, which owns the collection of mute configs. Its format
+  // is "organizations/[organization_id]", "folders/[folder_id]",
   // "projects/[project_id]".
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
@@ -1034,12 +1438,13 @@ message ListMuteConfigsResponse {
 
 // Request message for listing notification configs.
 message ListNotificationConfigsRequest {
-  // Required. Name of the organization to list notification configs.
-  // Its format is "organizations/[organization_id]".
+  // Required. The name of the parent in which to list the notification
+  // configurations. Its format is "organizations/[organization_id]",
+  // "folders/[folder_id]", or "projects/[project_id]".
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
-      type: "cloudresourcemanager.googleapis.com/Organization"
+      child_type: "securitycenter.googleapis.com/NotificationConfig"
     }
   ];
 
@@ -1063,11 +1468,77 @@ message ListNotificationConfigsResponse {
   string next_page_token = 2;
 }
 
+// Request message for listing effective Security Health Analytics custom
+// modules.
+message ListEffectiveSecurityHealthAnalyticsCustomModulesRequest {
+  // Required. Name of parent to list effective custom modules. Its format is
+  // "organizations/{organization}/securityHealthAnalyticsSettings",
+  // "folders/{folder}/securityHealthAnalyticsSettings", or
+  // "projects/{project}/securityHealthAnalyticsSettings"
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "securitycenter.googleapis.com/SecurityHealthAnalyticsCustomModule"
+    }
+  ];
+
+  // The maximum number of results to return in a single response. Default is
+  // 10, minimum is 1, maximum is 1000.
+  int32 page_size = 2;
+
+  // The value returned by the last call indicating a continuation
+  string page_token = 3;
+}
+
+// Response message for listing effective Security Health Analytics custom
+// modules.
+message ListEffectiveSecurityHealthAnalyticsCustomModulesResponse {
+  // Effective custom modules belonging to the requested parent.
+  repeated EffectiveSecurityHealthAnalyticsCustomModule
+      effective_security_health_analytics_custom_modules = 1;
+
+  // If not empty, indicates that there may be more effective custom modules to
+  // be returned.
+  string next_page_token = 2;
+}
+
+// Request message for listing Security Health Analytics custom modules.
+message ListSecurityHealthAnalyticsCustomModulesRequest {
+  // Required. Name of parent to list custom modules. Its format is
+  // "organizations/{organization}/securityHealthAnalyticsSettings",
+  // "folders/{folder}/securityHealthAnalyticsSettings", or
+  // "projects/{project}/securityHealthAnalyticsSettings"
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "securitycenter.googleapis.com/SecurityHealthAnalyticsCustomModule"
+    }
+  ];
+
+  // The maximum number of results to return in a single response. Default is
+  // 10, minimum is 1, maximum is 1000.
+  int32 page_size = 2;
+
+  // The value returned by the last call indicating a continuation
+  string page_token = 3;
+}
+
+// Response message for listing Security Health Analytics custom modules.
+message ListSecurityHealthAnalyticsCustomModulesResponse {
+  // Custom modules belonging to the requested parent.
+  repeated SecurityHealthAnalyticsCustomModule
+      security_health_analytics_custom_modules = 1;
+
+  // If not empty, indicates that there may be more custom modules to be
+  // returned.
+  string next_page_token = 2;
+}
+
 // Request message for listing sources.
 message ListSourcesRequest {
-  // Required. Resource name of the parent of sources to list. Its format should be
-  // "organizations/[organization_id], folders/[folder_id], or
-  // projects/[project_id]".
+  // Required. Resource name of the parent of sources to list. Its format should
+  // be "organizations/[organization_id]", "folders/[folder_id]", or
+  // "projects/[project_id]".
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1097,9 +1568,11 @@ message ListSourcesResponse {
 
 // Request message for listing assets.
 message ListAssetsRequest {
-  // Required. Name of the organization assets should belong to. Its format is
-  // "organizations/[organization_id], folders/[folder_id], or
-  // projects/[project_id]".
+  // Required. The name of the parent resource that contains the assets. The
+  // value that you can specify on parent depends on the method in which you
+  // specify parent. You can specify one of the following values:
+  // "organizations/[organization_id]", "folders/[folder_id]", or
+  // "projects/[project_id]".
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1441,37 +1914,6 @@ message ListFindingsRequest {
 message ListFindingsResponse {
   // Result containing the Finding and its StateChange.
   message ListFindingsResult {
-    // Information related to the Google Cloud resource that is
-    // associated with this finding.
-    message Resource {
-      // The full resource name of the resource. See:
-      // https://cloud.google.com/apis/design/resource_names#full_resource_name
-      string name = 1;
-
-      // The full resource name of project that the resource belongs to.
-      string project_name = 2;
-
-      // The human readable name of project that the resource belongs to.
-      string project_display_name = 3;
-
-      // The full resource name of resource's parent.
-      string parent_name = 4;
-
-      // The human readable name of resource's parent.
-      string parent_display_name = 5;
-
-      // The full resource type of the resource.
-      string type = 6;
-
-      // Contains a Folder message for each folder in the assets ancestry.
-      // The first folder is the deepest nested folder, and the last folder is
-      // the folder directly under the Organization.
-      repeated Folder folders = 7;
-
-      // The human readable name of the resource.
-      string display_name = 8;
-    }
-
     // The change in state of the finding.
     //
     // When querying across two points in time this describes
@@ -1500,6 +1942,37 @@ message ListFindingsResponse {
       REMOVED = 4;
     }
 
+    // Information related to the Google Cloud resource that is
+    // associated with this finding.
+    message Resource {
+      // The full resource name of the resource. See:
+      // https://cloud.google.com/apis/design/resource_names#full_resource_name
+      string name = 1;
+
+      // The human readable name of the resource.
+      string display_name = 8;
+
+      // The full resource type of the resource.
+      string type = 6;
+
+      // The full resource name of project that the resource belongs to.
+      string project_name = 2;
+
+      // The project ID that the resource belongs to.
+      string project_display_name = 3;
+
+      // The full resource name of resource's parent.
+      string parent_name = 4;
+
+      // The human readable name of resource's parent.
+      string parent_display_name = 5;
+
+      // Contains a Folder message for each folder in the assets ancestry.
+      // The first folder is the deepest nested folder, and the last folder is
+      // the folder directly under the Organization.
+      repeated Folder folders = 7;
+    }
+
     // Finding matching the search request.
     Finding finding = 1;
 
@@ -1526,10 +1999,12 @@ message ListFindingsResponse {
 
 // Request message for updating a finding's state.
 message SetFindingStateRequest {
-  // Required. The relative resource name of the finding. See:
-  // https://cloud.google.com/apis/design/resource_names#relative_resource_name
-  // Example:
-  // "organizations/{organization_id}/sources/{source_id}/finding/{finding_id}".
+  // Required. The [relative resource
+  // name](https://cloud.google.com/apis/design/resource_names#relative_resource_name)
+  // of the finding. Example:
+  // "organizations/{organization_id}/sources/{source_id}/findings/{finding_id}",
+  // "folders/{folder_id}/sources/{source_id}/findings/{finding_id}",
+  // "projects/{project_id}/sources/{source_id}/findings/{finding_id}".
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1541,17 +2016,18 @@ message SetFindingStateRequest {
   Finding.State state = 2 [(google.api.field_behavior) = REQUIRED];
 
   // Required. The time at which the updated state takes effect.
-  google.protobuf.Timestamp start_time = 3 [(google.api.field_behavior) = REQUIRED];
+  google.protobuf.Timestamp start_time = 3
+      [(google.api.field_behavior) = REQUIRED];
 }
 
 // Request message for updating a finding's mute status.
 message SetMuteRequest {
-  // Required. The relative resource name of the finding. See:
-  // https://cloud.google.com/apis/design/resource_names#relative_resource_name
-  // Example:
-  // "organizations/{organization_id}/sources/{source_id}/finding/{finding_id}",
-  // "folders/{folder_id}/sources/{source_id}/finding/{finding_id}",
-  // "projects/{project_id}/sources/{source_id}/finding/{finding_id}".
+  // Required. The [relative resource
+  // name](https://cloud.google.com/apis/design/resource_names#relative_resource_name)
+  // of the finding. Example:
+  // "organizations/{organization_id}/sources/{source_id}/findings/{finding_id}",
+  // "folders/{folder_id}/sources/{source_id}/findings/{finding_id}",
+  // "projects/{project_id}/sources/{source_id}/findings/{finding_id}".
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1565,8 +2041,8 @@ message SetMuteRequest {
 
 // Request message for running asset discovery for an organization.
 message RunAssetDiscoveryRequest {
-  // Required. Name of the organization to run asset discovery for. Its format is
-  // "organizations/[organization_id]".
+  // Required. Name of the organization to run asset discovery for. Its format
+  // is "organizations/[organization_id]".
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1575,10 +2051,78 @@ message RunAssetDiscoveryRequest {
   ];
 }
 
+// Request message to simulate a CustomConfig against a given test resource.
+// Maximum size of the request is 4 MB by default.
+message SimulateSecurityHealthAnalyticsCustomModuleRequest {
+  // Manually constructed resource name. If the custom module evaluates against
+  // only the resource data, you can omit the `iam_policy_data` field. If it
+  // evaluates only the `iam_policy_data` field, you can omit the resource data.
+  message SimulatedResource {
+    // Required. The type of the resource, for example,
+    // `compute.googleapis.com/Disk`.
+    string resource_type = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. A representation of the Google Cloud resource. Should match the
+    // Google Cloud resource JSON format.
+    google.protobuf.Struct resource_data = 2
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. A representation of the IAM policy.
+    google.iam.v1.Policy iam_policy_data = 3
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Required. The relative resource name of the organization, project, or
+  // folder. For more information about relative resource names, see [Relative
+  // Resource
+  // Name](https://cloud.google.com/apis/design/resource_names#relative_resource_name)
+  // Example: `organizations/{organization_id}`
+  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The custom configuration that you need to test.
+  CustomConfig custom_config = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Resource data to simulate custom module against.
+  SimulatedResource resource = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response message for simulating a `SecurityHealthAnalyticsCustomModule`
+// against a given resource.
+message SimulateSecurityHealthAnalyticsCustomModuleResponse {
+  // Possible test result.
+  message SimulatedResult {
+    oneof result {
+      // Finding that would be published for the test case,
+      // if a violation is detected.
+      Finding finding = 1;
+
+      // Indicates that the test case does not trigger any violation.
+      google.protobuf.Empty no_violation = 2;
+
+      // Error encountered during the test.
+      google.rpc.Status error = 3;
+    }
+  }
+
+  // Result for test case in the corresponding request.
+  SimulatedResult result = 1;
+}
+
+// Request message for updating a ExternalSystem resource.
+message UpdateExternalSystemRequest {
+  // Required. The external system resource to update.
+  ExternalSystem external_system = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The FieldMask to use when updating the external system resource.
+  //
+  // If empty all mutable fields will be updated.
+  google.protobuf.FieldMask update_mask = 2;
+}
+
 // Request message for updating or creating a finding.
 message UpdateFindingRequest {
-  // Required. The finding resource to update or create if it does not already exist.
-  // parent, security_marks, and update_time will be ignored.
+  // Required. The finding resource to update or create if it does not already
+  // exist. parent, security_marks, and update_time will be ignored.
   //
   // In the case of creation, the finding id portion of the name must be
   // alphanumeric and less than or equal to 32 characters and greater than 0
@@ -1608,7 +2152,8 @@ message UpdateMuteConfigRequest {
 // Request message for updating a notification config.
 message UpdateNotificationConfigRequest {
   // Required. The notification config to update.
-  NotificationConfig notification_config = 1 [(google.api.field_behavior) = REQUIRED];
+  NotificationConfig notification_config = 1
+      [(google.api.field_behavior) = REQUIRED];
 
   // The FieldMask to use when updating the notification config.
   //
@@ -1619,11 +2164,22 @@ message UpdateNotificationConfigRequest {
 // Request message for updating an organization's settings.
 message UpdateOrganizationSettingsRequest {
   // Required. The organization settings resource to update.
-  OrganizationSettings organization_settings = 1 [(google.api.field_behavior) = REQUIRED];
+  OrganizationSettings organization_settings = 1
+      [(google.api.field_behavior) = REQUIRED];
 
   // The FieldMask to use when updating the settings resource.
   //
   // If empty all mutable fields will be updated.
+  google.protobuf.FieldMask update_mask = 2;
+}
+
+// Request message for updating Security Health Analytics custom modules.
+message UpdateSecurityHealthAnalyticsCustomModuleRequest {
+  // Required. The SecurityHealthAnalytics custom module to update.
+  SecurityHealthAnalyticsCustomModule security_health_analytics_custom_module =
+      1 [(google.api.field_behavior) = REQUIRED];
+
+  // The list of fields to update.
   google.protobuf.FieldMask update_mask = 2;
 }
 
@@ -1652,6 +2208,89 @@ message UpdateSecurityMarksRequest {
 
   // The time at which the updated SecurityMarks take effect.
   // If not set uses current server time.  Updates will be applied to the
-  // SecurityMarks that are active immediately preceding this time.
+  // SecurityMarks that are active immediately preceding this time. Must be
+  // earlier or equal to the server time.
   google.protobuf.Timestamp start_time = 3;
+}
+
+// Request message for creating a BigQuery export.
+message CreateBigQueryExportRequest {
+  // Required. The name of the parent resource of the new BigQuery export. Its
+  // format is "organizations/[organization_id]", "folders/[folder_id]", or
+  // "projects/[project_id]".
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "securitycenter.googleapis.com/BigQueryExport"
+    }
+  ];
+
+  // Required. The BigQuery export being created.
+  BigQueryExport big_query_export = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Unique identifier provided by the client within the parent scope.
+  // It must consist of only lowercase letters, numbers, and hyphens, must start
+  // with a letter, must end with either a letter or a number, and must be 63
+  // characters or less.
+  string big_query_export_id = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request message for updating a BigQuery export.
+message UpdateBigQueryExportRequest {
+  // Required. The BigQuery export being updated.
+  BigQueryExport big_query_export = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The list of fields to be updated.
+  // If empty all mutable fields will be updated.
+  google.protobuf.FieldMask update_mask = 2;
+}
+
+// Request message for listing BigQuery exports at a given scope e.g.
+// organization, folder or project.
+message ListBigQueryExportsRequest {
+  // Required. The parent, which owns the collection of BigQuery exports. Its
+  // format is "organizations/[organization_id]", "folders/[folder_id]",
+  // "projects/[project_id]".
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "securitycenter.googleapis.com/BigQueryExport"
+    }
+  ];
+
+  // The maximum number of configs to return. The service may return fewer than
+  // this value.
+  // If unspecified, at most 10 configs will be returned.
+  // The maximum value is 1000; values above 1000 will be coerced to 1000.
+  int32 page_size = 2;
+
+  // A page token, received from a previous `ListBigQueryExports` call.
+  // Provide this to retrieve the subsequent page.
+  // When paginating, all other parameters provided to `ListBigQueryExports`
+  // must match the call that provided the page token.
+  string page_token = 3;
+}
+
+// Response message for listing BigQuery exports.
+message ListBigQueryExportsResponse {
+  // The BigQuery exports from the specified parent.
+  repeated BigQueryExport big_query_exports = 1;
+
+  // A token, which can be sent as `page_token` to retrieve the next page.
+  // If this field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
+}
+
+// Request message for deleting a BigQuery export.
+message DeleteBigQueryExportRequest {
+  // Required. The name of the BigQuery export to delete. Its format is
+  // organizations/{organization}/bigQueryExports/{export_id},
+  // folders/{folder}/bigQueryExports/{export_id}, or
+  // projects/{project}/bigQueryExports/{export_id}
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "securitycenter.googleapis.com/BigQueryExport"
+    }
+  ];
 }

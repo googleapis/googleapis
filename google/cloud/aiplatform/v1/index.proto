@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,13 +19,12 @@ package google.cloud.aiplatform.v1;
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/aiplatform/v1/deployed_index_ref.proto";
-import "google/protobuf/duration.proto";
+import "google/cloud/aiplatform/v1/encryption_spec.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
-import "google/api/annotations.proto";
 
 option csharp_namespace = "Google.Cloud.AIPlatform.V1";
-option go_package = "google.golang.org/genproto/googleapis/cloud/aiplatform/v1;aiplatform";
+option go_package = "cloud.google.com/go/aiplatform/apiv1/aiplatformpb;aiplatformpb";
 option java_multiple_files = true;
 option java_outer_classname = "IndexProto";
 option java_package = "com.google.cloud.aiplatform.v1";
@@ -40,21 +39,36 @@ message Index {
     pattern: "projects/{project}/locations/{location}/indexes/{index}"
   };
 
+  // The update method of an Index.
+  enum IndexUpdateMethod {
+    // Should not be used.
+    INDEX_UPDATE_METHOD_UNSPECIFIED = 0;
+
+    // BatchUpdate: user can call UpdateIndex with files on Cloud Storage of
+    // Datapoints to update.
+    BATCH_UPDATE = 1;
+
+    // StreamUpdate: user can call UpsertDatapoints/DeleteDatapoints to update
+    // the Index and the updates will be applied in corresponding
+    // DeployedIndexes in nearly real-time.
+    STREAM_UPDATE = 2;
+  }
+
   // Output only. The resource name of the Index.
   string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Required. The display name of the Index.
-  // The name can be up to 128 characters long and can be consist of any UTF-8
+  // The name can be up to 128 characters long and can consist of any UTF-8
   // characters.
   string display_name = 2 [(google.api.field_behavior) = REQUIRED];
 
   // The description of the Index.
   string description = 3;
 
-  // Immutable. Points to a YAML file stored on Google Cloud Storage describing additional
-  // information about the Index, that is specific to it. Unset if the Index
-  // does not have any additional information.
-  // The schema is defined as an OpenAPI 3.0.2 [Schema
+  // Immutable. Points to a YAML file stored on Google Cloud Storage describing
+  // additional information about the Index, that is specific to it. Unset if
+  // the Index does not have any additional information. The schema is defined
+  // as an OpenAPI 3.0.2 [Schema
   // Object](https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.0.2.md#schemaObject).
   // Note: The URI given on output will be immutable and probably different,
   // including the URI scheme, than the one given on input. The output URI will
@@ -62,13 +76,15 @@ message Index {
   string metadata_schema_uri = 4 [(google.api.field_behavior) = IMMUTABLE];
 
   // An additional information about the Index; the schema of the metadata can
-  // be found in [metadata_schema][google.cloud.aiplatform.v1.Index.metadata_schema_uri].
+  // be found in
+  // [metadata_schema][google.cloud.aiplatform.v1.Index.metadata_schema_uri].
   google.protobuf.Value metadata = 6;
 
   // Output only. The pointers to DeployedIndexes created from this Index.
   // An Index can be only deleted if all its DeployedIndexes had been undeployed
   // first.
-  repeated DeployedIndexRef deployed_indexes = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+  repeated DeployedIndexRef deployed_indexes = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Used to perform consistent read-modify-write updates. If not set, a blind
   // "overwrite" update happens.
@@ -84,15 +100,138 @@ message Index {
   map<string, string> labels = 9;
 
   // Output only. Timestamp when this Index was created.
-  google.protobuf.Timestamp create_time = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp create_time = 10
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Timestamp when this Index was most recently updated.
   // This also includes any update to the contents of the Index.
   // Note that Operations working on this Index may have their
   // [Operations.metadata.generic_metadata.update_time]
-  // [google.cloud.aiplatform.v1.GenericOperationMetadata.update_time] a little after the value of this
-  // timestamp, yet that does not mean their results are not already reflected
-  // in the Index. Result of any successfully completed Operation on the Index
-  // is reflected in it.
-  google.protobuf.Timestamp update_time = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // [google.cloud.aiplatform.v1.GenericOperationMetadata.update_time] a little
+  // after the value of this timestamp, yet that does not mean their results are
+  // not already reflected in the Index. Result of any successfully completed
+  // Operation on the Index is reflected in it.
+  google.protobuf.Timestamp update_time = 11
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Stats of the index resource.
+  IndexStats index_stats = 14 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Immutable. The update method to use with this Index. If not set,
+  // BATCH_UPDATE will be used by default.
+  IndexUpdateMethod index_update_method = 16
+      [(google.api.field_behavior) = IMMUTABLE];
+
+  // Immutable. Customer-managed encryption key spec for an Index. If set, this
+  // Index and all sub-resources of this Index will be secured by this key.
+  EncryptionSpec encryption_spec = 17 [(google.api.field_behavior) = IMMUTABLE];
+}
+
+// A datapoint of Index.
+message IndexDatapoint {
+  // Restriction of a datapoint which describe its attributes(tokens) from each
+  // of several attribute categories(namespaces).
+  message Restriction {
+    // The namespace of this restriction. e.g.: color.
+    string namespace = 1;
+
+    // The attributes to allow in this namespace. e.g.: 'red'
+    repeated string allow_list = 2;
+
+    // The attributes to deny in this namespace. e.g.: 'blue'
+    repeated string deny_list = 3;
+  }
+
+  // This field allows restricts to be based on numeric comparisons rather
+  // than categorical tokens.
+  message NumericRestriction {
+    // Which comparison operator to use.  Should be specified for queries only;
+    // specifying this for a datapoint is an error.
+    //
+    // Datapoints for which Operator is true relative to the query's Value
+    // field will be allowlisted.
+    enum Operator {
+      // Default value of the enum.
+      OPERATOR_UNSPECIFIED = 0;
+
+      // Datapoints are eligible iff their value is < the query's.
+      LESS = 1;
+
+      // Datapoints are eligible iff their value is <= the query's.
+      LESS_EQUAL = 2;
+
+      // Datapoints are eligible iff their value is == the query's.
+      EQUAL = 3;
+
+      // Datapoints are eligible iff their value is >= the query's.
+      GREATER_EQUAL = 4;
+
+      // Datapoints are eligible iff their value is > the query's.
+      GREATER = 5;
+    }
+
+    // The type of Value must be consistent for all datapoints with a given
+    // namespace name. This is verified at runtime.
+    oneof Value {
+      // Represents 64 bit integer.
+      int64 value_int = 2;
+
+      // Represents 32 bit float.
+      float value_float = 3;
+
+      // Represents 64 bit float.
+      double value_double = 4;
+    }
+
+    // The namespace of this restriction. e.g.: cost.
+    string namespace = 1;
+
+    // This MUST be specified for queries and must NOT be specified for
+    // datapoints.
+    Operator op = 5;
+  }
+
+  // Crowding tag is a constraint on a neighbor list produced by nearest
+  // neighbor search requiring that no more than some value k' of the k
+  // neighbors returned have the same value of crowding_attribute.
+  message CrowdingTag {
+    // The attribute value used for crowding.  The maximum number of neighbors
+    // to return per crowding attribute value
+    // (per_crowding_attribute_num_neighbors) is configured per-query. This
+    // field is ignored if per_crowding_attribute_num_neighbors is larger than
+    // the total number of neighbors to return for a given query.
+    string crowding_attribute = 1;
+  }
+
+  // Required. Unique identifier of the datapoint.
+  string datapoint_id = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Feature embedding vector. An array of numbers with the length of
+  // [NearestNeighborSearchConfig.dimensions].
+  repeated float feature_vector = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. List of Restrict of the datapoint, used to perform "restricted
+  // searches" where boolean rule are used to filter the subset of the database
+  // eligible for matching. This uses categorical tokens. See:
+  // https://cloud.google.com/vertex-ai/docs/matching-engine/filtering
+  repeated Restriction restricts = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. List of Restrict of the datapoint, used to perform "restricted
+  // searches" where boolean rule are used to filter the subset of the database
+  // eligible for matching. This uses numeric comparisons.
+  repeated NumericRestriction numeric_restricts = 6
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. CrowdingTag of the datapoint, the number of neighbors to return
+  // in each crowding can be configured during query.
+  CrowdingTag crowding_tag = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Stats of the Index.
+message IndexStats {
+  // Output only. The number of vectors in the Index.
+  int64 vectors_count = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The number of shards in the Index.
+  int32 shards_count = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 }

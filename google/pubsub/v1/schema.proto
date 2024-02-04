@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,10 +21,11 @@ import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
 
 option cc_enable_arenas = true;
 option csharp_namespace = "Google.Cloud.PubSub.V1";
-option go_package = "google.golang.org/genproto/googleapis/pubsub/v1;pubsub";
+option go_package = "cloud.google.com/go/pubsub/apiv1/pubsubpb;pubsubpb";
 option java_multiple_files = true;
 option java_outer_classname = "SchemaProto";
 option java_package = "com.google.pubsub.v1";
@@ -61,6 +62,41 @@ service SchemaService {
       get: "/v1/{parent=projects/*}/schemas"
     };
     option (google.api.method_signature) = "parent";
+  }
+
+  // Lists all schema revisions for the named schema.
+  rpc ListSchemaRevisions(ListSchemaRevisionsRequest)
+      returns (ListSchemaRevisionsResponse) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/schemas/*}:listRevisions"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Commits a new schema revision to an existing schema.
+  rpc CommitSchema(CommitSchemaRequest) returns (Schema) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/schemas/*}:commit"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name,schema";
+  }
+
+  // Creates a new schema revision that is a copy of the provided revision_id.
+  rpc RollbackSchema(RollbackSchemaRequest) returns (Schema) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/schemas/*}:rollback"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name,revision_id";
+  }
+
+  // Deletes a specific schema revision.
+  rpc DeleteSchemaRevision(DeleteSchemaRevisionRequest) returns (Schema) {
+    option (google.api.http) = {
+      delete: "/v1/{name=projects/*/schemas/*}:deleteRevision"
+    };
+    option (google.api.method_signature) = "name,revision_id";
   }
 
   // Deletes a schema.
@@ -120,6 +156,29 @@ message Schema {
   // the full definition of the schema that is a valid schema definition of
   // the type specified in `type`.
   string definition = 3;
+
+  // Output only. Immutable. The revision ID of the schema.
+  string revision_id = 4 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
+
+  // Output only. The timestamp that the revision was created.
+  google.protobuf.Timestamp revision_create_time = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// View of Schema object fields to be returned by GetSchema and ListSchemas.
+enum SchemaView {
+  // The default / unset value.
+  // The API will default to the BASIC view.
+  SCHEMA_VIEW_UNSPECIFIED = 0;
+
+  // Include the name and type of the schema, but not the definition.
+  BASIC = 1;
+
+  // Include all Schema object fields.
+  FULL = 2;
 }
 
 // Request for the CreateSchema method.
@@ -143,22 +202,9 @@ message CreateSchemaRequest {
   // The ID to use for the schema, which will become the final component of
   // the schema's resource name.
   //
-  // See https://cloud.google.com/pubsub/docs/admin#resource_names for resource
-  // name constraints.
+  // See https://cloud.google.com/pubsub/docs/pubsub-basics#resource_names for
+  // resource name constraints.
   string schema_id = 3;
-}
-
-// View of Schema object fields to be returned by GetSchema and ListSchemas.
-enum SchemaView {
-  // The default / unset value.
-  // The API will default to the BASIC view.
-  SCHEMA_VIEW_UNSPECIFIED = 0;
-
-  // Include the name and type of the schema, but not the definition.
-  BASIC = 1;
-
-  // Include all Schema object fields.
-  FULL = 2;
 }
 
 // Request for the GetSchema method.
@@ -171,8 +217,7 @@ message GetSchemaRequest {
   ];
 
   // The set of fields to return in the response. If not set, returns a Schema
-  // with `name` and `type`, but not `definition`. Set to `FULL` to retrieve all
-  // fields.
+  // with all fields filled out. Set to `BASIC` to omit the `definition`.
   SchemaView view = 2;
 }
 
@@ -209,6 +254,83 @@ message ListSchemasResponse {
   // If not empty, indicates that there may be more schemas that match the
   // request; this value should be passed in a new `ListSchemasRequest`.
   string next_page_token = 2;
+}
+
+// Request for the `ListSchemaRevisions` method.
+message ListSchemaRevisionsRequest {
+  // Required. The name of the schema to list revisions for.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "pubsub.googleapis.com/Schema" }
+  ];
+
+  // The set of Schema fields to return in the response. If not set, returns
+  // Schemas with `name` and `type`, but not `definition`. Set to `FULL` to
+  // retrieve all fields.
+  SchemaView view = 2;
+
+  // The maximum number of revisions to return per page.
+  int32 page_size = 3;
+
+  // The page token, received from a previous ListSchemaRevisions call.
+  // Provide this to retrieve the subsequent page.
+  string page_token = 4;
+}
+
+// Response for the `ListSchemaRevisions` method.
+message ListSchemaRevisionsResponse {
+  // The revisions of the schema.
+  repeated Schema schemas = 1;
+
+  // A token that can be sent as `page_token` to retrieve the next page.
+  // If this field is empty, there are no subsequent pages.
+  string next_page_token = 2;
+}
+
+// Request for CommitSchema method.
+message CommitSchemaRequest {
+  // Required. The name of the schema we are revising.
+  // Format is `projects/{project}/schemas/{schema}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "pubsub.googleapis.com/Schema" }
+  ];
+
+  // Required. The schema revision to commit.
+  Schema schema = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request for the `RollbackSchema` method.
+message RollbackSchemaRequest {
+  // Required. The schema being rolled back with revision id.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "pubsub.googleapis.com/Schema" }
+  ];
+
+  // Required. The revision ID to roll back to.
+  // It must be a revision of the same schema.
+  //
+  //   Example: c7cfa2a8
+  string revision_id = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request for the `DeleteSchemaRevision` method.
+message DeleteSchemaRevisionRequest {
+  // Required. The name of the schema revision to be deleted, with a revision ID
+  // explicitly included.
+  //
+  // Example: `projects/123/schemas/my-schema@c7cfa2a8`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "pubsub.googleapis.com/Schema" }
+  ];
+
+  // Optional. This field is deprecated and should not be used for specifying
+  // the revision ID. The revision ID should be specified via the `name`
+  // parameter.
+  string revision_id = 2
+      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
 }
 
 // Request for the `DeleteSchema` method.

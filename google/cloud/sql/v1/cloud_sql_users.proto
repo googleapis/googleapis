@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,19 +17,16 @@ syntax = "proto3";
 package google.cloud.sql.v1;
 
 import "google/api/annotations.proto";
+import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/cloud/sql/v1/cloud_sql_resources.proto";
-import "google/api/client.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
 
-option go_package = "google.golang.org/genproto/googleapis/cloud/sql/v1;sql";
+option go_package = "cloud.google.com/go/sql/apiv1/sqlpb;sqlpb";
 option java_multiple_files = true;
 option java_outer_classname = "CloudSqlUsersProto";
 option java_package = "com.google.cloud.sql.v1";
-
-// NOTE: No sensitive PII logging is allowed. If you are adding a field/enum
-// value that is sensitive PII, please add corresponding datapol annotation to
-// it. For more information, please see
-// https://g3doc.corp.google.com/storage/speckle/g3doc/purple_team/data_pol_annotations.md?cl=head
 
 // Cloud SQL users service.
 service SqlUsersService {
@@ -42,6 +39,13 @@ service SqlUsersService {
   rpc Delete(SqlUsersDeleteRequest) returns (Operation) {
     option (google.api.http) = {
       delete: "/v1/projects/{project}/instances/{instance}/users"
+    };
+  }
+
+  // Retrieves a resource containing information about a user.
+  rpc Get(SqlUsersGetRequest) returns (User) {
+    option (google.api.http) = {
+      get: "/v1/projects/{project}/instances/{instance}/users/{name}"
     };
   }
 
@@ -83,6 +87,21 @@ message SqlUsersDeleteRequest {
   string project = 4;
 }
 
+// Request message for Users Get RPC
+message SqlUsersGetRequest {
+  // Database instance ID. This does not include the project ID.
+  string instance = 1;
+
+  // User of the instance.
+  string name = 2;
+
+  // Project ID of the project that contains the instance.
+  string project = 3;
+
+  // Host of a user of the instance.
+  string host = 4;
+}
+
 message SqlUsersInsertRequest {
   // Database instance ID. This does not include the project ID.
   string instance = 1;
@@ -117,6 +136,34 @@ message SqlUsersUpdateRequest {
   User body = 100;
 }
 
+// User level password validation policy.
+message UserPasswordValidationPolicy {
+  // Number of failed login attempts allowed before user get locked.
+  int32 allowed_failed_attempts = 1;
+
+  // Expiration duration after password is updated.
+  google.protobuf.Duration password_expiration_duration = 2;
+
+  // If true, failed login attempts check will be enabled.
+  bool enable_failed_attempts_check = 3;
+
+  // Output only. Read-only password status.
+  PasswordStatus status = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // If true, the user must specify the current password before changing the
+  // password. This flag is supported only for MySQL.
+  bool enable_password_verification = 5;
+}
+
+// Read-only password status.
+message PasswordStatus {
+  // If true, user does not have login privileges.
+  bool locked = 1;
+
+  // The expiration time of the current password.
+  google.protobuf.Timestamp password_expiration_time = 2;
+}
+
 // A Cloud SQL user resource.
 message User {
   // The user type.
@@ -129,9 +176,33 @@ message User {
 
     // Cloud IAM service account.
     CLOUD_IAM_SERVICE_ACCOUNT = 2;
+
+    // Cloud IAM group non-login user.
+    CLOUD_IAM_GROUP = 3;
+
+    // Cloud IAM group login user.
+    CLOUD_IAM_GROUP_USER = 4;
+
+    // Cloud IAM group login service account.
+    CLOUD_IAM_GROUP_SERVICE_ACCOUNT = 5;
   }
 
-  // This is always **sql#user**.
+  // The type of retained password.
+  enum DualPasswordType {
+    // The default value.
+    DUAL_PASSWORD_TYPE_UNSPECIFIED = 0;
+
+    // Do not update the user's dual password status.
+    NO_MODIFY_DUAL_PASSWORD = 1;
+
+    // No dual password usable for connecting using this user.
+    NO_DUAL_PASSWORD = 2;
+
+    // Dual password usable for connecting using this user.
+    DUAL_PASSWORD = 3;
+  }
+
+  // This is always `sql#user`.
   string kind = 1;
 
   // The password for the user.
@@ -142,22 +213,23 @@ message User {
   string etag = 3;
 
   // The name of the user in the Cloud SQL instance. Can be omitted for
-  // **update** since it is already specified in the URL.
+  // `update` because it is already specified in the URL.
   string name = 4;
 
-  // The host name from which the user can connect. For **insert**
-  // operations, host defaults to an empty string. For **update**
+  // Optional. The host from which the user can connect. For `insert`
+  // operations, host defaults to an empty string. For `update`
   // operations, host is specified as part of the request URL. The host name
-  // cannot be updated after insertion.
-  string host = 5;
+  // cannot be updated after insertion.  For a MySQL instance, it's required;
+  // for a PostgreSQL or SQL Server instance, it's optional.
+  string host = 5 [(google.api.field_behavior) = OPTIONAL];
 
   // The name of the Cloud SQL instance. This does not include the project ID.
-  // Can be omitted for **update** since it is already specified on the
+  // Can be omitted for `update` because it is already specified on the
   // URL.
   string instance = 6;
 
   // The project ID of the project containing the Cloud SQL database. The Google
-  // apps domain is prefixed if applicable. Can be omitted for **update** since
+  // apps domain is prefixed if applicable. Can be omitted for `update` because
   // it is already specified on the URL.
   string project = 7;
 
@@ -169,6 +241,12 @@ message User {
   oneof user_details {
     SqlServerUserDetails sqlserver_user_details = 9;
   }
+
+  // User level password validation policy.
+  UserPasswordValidationPolicy password_policy = 12;
+
+  // Dual password status for the user.
+  optional DualPasswordType dual_password_type = 13;
 }
 
 // Represents a Sql Server user on the Cloud SQL instance.
@@ -182,14 +260,12 @@ message SqlServerUserDetails {
 
 // User list response.
 message UsersListResponse {
-  // This is always **sql#usersList**.
+  // This is always `sql#usersList`.
   string kind = 1;
 
   // List of user resources in the instance.
   repeated User items = 2;
 
-  // An identifier that uniquely identifies the operation. You can use this
-  // identifier to retrieve the Operations resource that has information about
-  // the operation.
-  string next_page_token = 3;
+  // Unused.
+  string next_page_token = 3 [deprecated = true];
 }
