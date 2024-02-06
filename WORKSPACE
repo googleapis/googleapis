@@ -323,7 +323,7 @@ load("@rules_gapic//python:py_gapic_repositories.bzl", "py_gapic_repositories")
 
 py_gapic_repositories()
 
-_gapic_generator_python_version = "1.14.0"
+_gapic_generator_python_version = "1.14.1"
 
 http_archive(
     name = "gapic_generator_python",
@@ -360,9 +360,9 @@ gapic_generator_register_toolchains()
 # TypeScript
 ##############################################################################
 
-_gapic_generator_typescript_version = "4.3.0"
+_gapic_generator_typescript_version = "4.4.0"
 
-_gapic_generator_typescript_sha256 = "f96d55a93949c031a2cf6aae3df40c0105c524d8fb43e9ec21427e9a77159df3"
+_gapic_generator_typescript_sha256 = "bcd82e2c946d2bef457100009d05de38e113c73a6098dcfb162544360e123133"
 
 ### TypeScript generator
 http_archive(
@@ -476,7 +476,7 @@ gapic_generator_ruby_repositories()
 # Discovery
 ##############################################################################
 
-_disco_to_proto3_converter_version = "979cc115413104c249a72ed29bd4aea5c8431f0f"
+_disco_to_proto3_converter_version = "8163e5ea8d8dbcf0899534d2895819ab135ffab5"
 
 http_archive(
     name = "com_google_disco_to_proto3_converter",
