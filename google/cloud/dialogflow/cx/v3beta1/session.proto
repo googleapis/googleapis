@@ -22,10 +22,14 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/dialogflow/cx/v3beta1/advanced_settings.proto";
 import "google/cloud/dialogflow/cx/v3beta1/audio_config.proto";
+import "google/cloud/dialogflow/cx/v3beta1/example.proto";
+import "google/cloud/dialogflow/cx/v3beta1/flow.proto";
+import "google/cloud/dialogflow/cx/v3beta1/generative_settings.proto";
 import "google/cloud/dialogflow/cx/v3beta1/intent.proto";
 import "google/cloud/dialogflow/cx/v3beta1/page.proto";
 import "google/cloud/dialogflow/cx/v3beta1/response_message.proto";
 import "google/cloud/dialogflow/cx/v3beta1/session_entity_type.proto";
+import "google/cloud/dialogflow/cx/v3beta1/tool_call.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/struct.proto";
@@ -75,6 +79,23 @@ service Sessions {
       body: "*"
       additional_bindings {
         post: "/v3beta1/{session=projects/*/locations/*/agents/*/environments/*/sessions/*}:detectIntent"
+        body: "*"
+      }
+    };
+  }
+
+  // Processes a natural language query and returns structured, actionable data
+  // as a result through server-side streaming. Server-side streaming allows
+  // Dialogflow to send [partial
+  // responses](https://cloud.google.com/dialogflow/cx/docs/concept/fulfillment#partial-response)
+  // earlier in a single request.
+  rpc ServerStreamingDetectIntent(DetectIntentRequest)
+      returns (stream DetectIntentResponse) {
+    option (google.api.http) = {
+      post: "/v3beta1/{session=projects/*/locations/*/agents/*/sessions/*}:serverStreamingDetectIntent"
+      body: "*"
+      additional_bindings {
+        post: "/v3beta1/{session=projects/*/locations/*/agents/*/environments/*/sessions/*}:serverStreamingDetectIntent"
         body: "*"
       }
     };
@@ -508,9 +529,9 @@ message StreamingRecognitionResult {
     // Message contains a (possibly partial) transcript.
     TRANSCRIPT = 1;
 
-    // Event indicates that the server has detected the end of the user's speech
-    // utterance and expects no additional speech. Therefore, the server will
-    // not process additional audio (although it may subsequently return
+    // This event indicates that the server has detected the end of the user's
+    // speech utterance and expects no additional speech. Therefore, the server
+    // will not process additional audio (although it may subsequently return
     // additional results). The client should stop sending additional audio
     // data, half-close the gRPC connection, and wait for any additional results
     // until the server closes the gRPC connection. This message is only sent if
@@ -666,6 +687,24 @@ message QueryParameters {
     type: "dialogflow.googleapis.com/Version"
   }];
 
+  // Optional. Start the session with the specified
+  // [playbook][google.cloud.dialogflow.cx.v3beta1.Playbook]. You can only
+  // specify the playbook at the beginning of the session. Otherwise, an error
+  // will be thrown.
+  //
+  // Format: `projects/<Project ID>/locations/<Location ID>/agents/<Agent
+  // ID>/playbooks/<Playbook ID>`.
+  string current_playbook = 19 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "dialogflow.googleapis.com/Playbook"
+    }
+  ];
+
+  // Optional. Use the specified LLM model settings for processing the request.
+  LlmModelSettings llm_model_settings = 21
+      [(google.api.field_behavior) = OPTIONAL];
+
   // The channel which this query is for.
   //
   // If specified, only the
@@ -681,7 +720,7 @@ message QueryParameters {
   // unspecified channel will be returned.
   string channel = 15;
 
-  // Optional. Sets Dialogflow session life time.
+  // Optional. Configure lifetime of the Dialogflow session.
   // By default, a Dialogflow session remains active and its data is stored for
   // 30 minutes after the last request is sent for the session.
   // This value should be no longer than 1 day.
@@ -814,6 +853,8 @@ message FilterSpecs {
 // 4. An event to be triggered.
 //
 // 5. DTMF digits to invoke an intent and fill in parameter value.
+//
+// 6. The results of a tool executed by the client.
 message QueryInput {
   // Required. The input specification.
   oneof input {
@@ -831,6 +872,9 @@ message QueryInput {
 
     // The DTMF event to be handled.
     DtmfInput dtmf = 7;
+
+    // The results of a tool executed by the client.
+    google.cloud.dialogflow.cx.v3beta1.ToolCallResult tool_call_result = 11;
   }
 
   // Required. The language of the input. See [Language
@@ -838,6 +882,19 @@ message QueryInput {
   // for a list of the currently supported language codes. Note that queries in
   // the same session do not necessarily need to specify the same language.
   string language_code = 4 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Represents the information of a query if handled by generative agent
+// resources.
+message GenerativeInfo {
+  // The stack of [playbooks][google.cloud.dialogflow.cx.v3beta1.Playbook] that
+  // the conversation has currently entered, with the most recent one on the
+  // top.
+  repeated string current_playbooks = 1;
+
+  // The actions performed by the generative playbook for the current agent
+  // response.
+  Example action_tracing_info = 2;
 }
 
 // Represents the result of a conversational query.
@@ -899,6 +956,18 @@ message QueryResult {
   // to drive complex logic.
   repeated ResponseMessage response_messages = 4;
 
+  // The list of webhook ids in the order of call sequence.
+  repeated string webhook_ids = 25;
+
+  // The list of webhook display names in the order of call sequence.
+  repeated string webhook_display_names = 26;
+
+  // The list of webhook latencies in the order of call sequence.
+  repeated google.protobuf.Duration webhook_latencies = 27;
+
+  // The list of webhook tags in the order of call sequence.
+  repeated string webhook_tags = 29;
+
   // The list of webhook call status in the order of call sequence.
   repeated google.rpc.Status webhook_statuses = 13;
 
@@ -912,6 +981,11 @@ message QueryResult {
   // fields are filled in this message, including but not limited to `name` and
   // `display_name`.
   Page current_page = 7;
+
+  // The current [Flow][google.cloud.dialogflow.cx.v3beta1.Flow]. Some, not all
+  // fields are filled in this message, including but not limited to `name` and
+  // `display_name`.
+  Flow current_flow = 31;
 
   // The [Intent][google.cloud.dialogflow.cx.v3beta1.Intent] that matched the
   // conversational query. Some, not all fields are filled in this message,
@@ -954,6 +1028,9 @@ message QueryResult {
   //   input, but had a lower confidence score.
   google.protobuf.Struct diagnostic_info = 10;
 
+  // The information of a query if handled by generative agent resources.
+  GenerativeInfo generative_info = 33;
+
   // The sentiment analyss result, which depends on
   // [`analyze_query_text_sentiment`]
   // [google.cloud.dialogflow.cx.v3beta1.QueryParameters.analyze_query_text_sentiment],
@@ -974,8 +1051,7 @@ message QueryResult {
 
 // Represents the natural language text to be processed.
 message TextInput {
-  // Required. The UTF-8 encoded natural language text to be processed. Text
-  // length must not exceed 256 characters.
+  // Required. The UTF-8 encoded natural language text to be processed.
   string text = 1 [(google.api.field_behavior) = REQUIRED];
 }
 

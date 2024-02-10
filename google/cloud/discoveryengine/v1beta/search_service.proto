@@ -48,6 +48,10 @@ service SearchService {
         post: "/v1beta/{serving_config=projects/*/locations/*/collections/*/dataStores/*/servingConfigs/*}:search"
         body: "*"
       }
+      additional_bindings {
+        post: "/v1beta/{serving_config=projects/*/locations/*/collections/*/engines/*/servingConfigs/*}:search"
+        body: "*"
+      }
     };
   }
 }
@@ -317,6 +321,28 @@ message SearchRequest {
     // A specification for configuring a summary returned in a search
     // response.
     message SummarySpec {
+      // Specification of the prompt to use with the model.
+      message ModelPromptSpec {
+        // Text at the beginning of the prompt that instructs the assistant.
+        // Examples are available in the user guide.
+        string preamble = 1;
+      }
+
+      // Specification of the model.
+      message ModelSpec {
+        // The model version used to generate the summary.
+        //
+        // Supported values are:
+        //
+        // * `stable`: string. Default value when no value is specified. Uses a
+        //   generally available, fine-tuned version of the text-bison@001
+        //   model.
+        // * `preview`: string. (Public preview) Uses a fine-tuned version of
+        //   the text-bison@002 model. This model works only for summaries in
+        //   English.
+        string version = 1;
+      }
+
       // The number of top results to generate the summary from. If the number
       // of results returned is less than `summaryResultCount`, the summary is
       // generated from all of the results.
@@ -368,9 +394,18 @@ message SearchRequest {
       // fallback messages instead.
       bool ignore_non_summary_seeking_query = 4;
 
+      // If specified, the spec will be used to modify the prompt provided to
+      // the LLM.
+      ModelPromptSpec model_prompt_spec = 5;
+
       // Language code for Summary. Use language tags defined by
-      // [BCP47][https://www.rfc-editor.org/rfc/bcp/bcp47.txt].
+      // [BCP47](https://www.rfc-editor.org/rfc/bcp/bcp47.txt).
+      // Note: This is an experimental feature.
       string language_code = 6;
+
+      // If specified, the spec will be used to modify the model specification
+      // provided to the LLM.
+      ModelSpec model_spec = 7;
     }
 
     // A specification for configuring the extractive content in a search
@@ -387,7 +422,7 @@ message SearchRequest {
       // `max_extractive_answer_count`, return all of the answers. Otherwise,
       // return the `max_extractive_answer_count`.
       //
-      // At most one answer is returned for each
+      // At most five answers are returned for each
       // [SearchResult][google.cloud.discoveryengine.v1beta.SearchResponse.SearchResult].
       int32 max_extractive_answer_count = 1;
 
@@ -412,6 +447,9 @@ message SearchRequest {
 
       // Specifies whether to return the confidence score from the extractive
       // segments in each search result. The default value is `false`.
+      //
+      // Note: this is a priavte preview feature and only works for allowlisted
+      // users, please reach out to Cloud Support team if you want to use it.
       bool return_extractive_segment_score = 3;
 
       // Specifies whether to also include the adjacent from each selected
@@ -455,6 +493,8 @@ message SearchRequest {
   }
 
   // Required. The resource name of the Search serving config, such as
+  // `projects/*/locations/global/collections/default_collection/engines/*/servingConfigs/default_serving_config`,
+  // or
   // `projects/*/locations/global/collections/default_collection/dataStores/default_data_store/servingConfigs/default_serving_config`.
   // This field is used to identify the serving configuration name, set
   // of models used to make the search.
@@ -512,12 +552,37 @@ message SearchRequest {
   // expression is case-sensitive.
   //
   // If this field is unrecognizable, an  `INVALID_ARGUMENT`  is returned.
+  //
+  // Filtering in Vertex AI Search is done by mapping the LHS filter key to a
+  // key property defined in the Vertex AI Search backend -- this mapping is
+  // defined by the customer in their schema. For example a media customer might
+  // have a field 'name' in their schema. In this case the filter would look
+  // like this: filter --> name:'ANY("king kong")'
+  //
+  // For more information about filtering including syntax and filter
+  // operators, see
+  // [Filter](https://cloud.google.com/generative-ai-app-builder/docs/filter-search-metadata)
   string filter = 7;
+
+  // The default filter that is applied when a user performs a search without
+  // checking any filters on the search page.
+  //
+  // The filter applied to every search request when quality improvement such as
+  // query expansion is needed. In the case a query does not have a sufficient
+  // amount of results this filter will be used to determine whether or not to
+  // enable the query expansion flow. The original filter will still be used for
+  // the query expanded search.
+  // This field is strongly recommended to achieve high search quality.
+  //
+  // For more information about filter syntax, see
+  // [SearchRequest.filter][google.cloud.discoveryengine.v1beta.SearchRequest.filter].
+  string canonical_filter = 29;
 
   // The order in which documents are returned. Documents can be ordered by
   // a field in an [Document][google.cloud.discoveryengine.v1beta.Document]
   // object. Leave it unset if ordered by relevance. `order_by` expression is
-  // case-sensitive.
+  // case-sensitive. For more information on ordering, see
+  // [Ordering](https://cloud.google.com/retail/docs/filter-and-order#order)
   //
   // If this field is unrecognizable, an `INVALID_ARGUMENT` is returned.
   string order_by = 8;
@@ -535,6 +600,8 @@ message SearchRequest {
   repeated FacetSpec facet_specs = 9;
 
   // Boost specification to boost certain documents.
+  // For more information on boosting, see
+  // [Boosting](https://cloud.google.com/retail/docs/boosting#boost)
   BoostSpec boost_spec = 10;
 
   // Additional search parameters.
@@ -543,9 +610,17 @@ message SearchRequest {
   //
   // * `user_country_code`: string. Default empty. If set to non-empty, results
   //    are restricted or boosted based on the location provided.
+  //    Example:
+  //    user_country_code: "au"
+  //
+  //    For available codes see [Country
+  //    Codes](https://developers.google.com/custom-search/docs/json_api_reference#countryCodes)
+  //
   // * `search_type`: double. Default empty. Enables non-webpage searching
-  //   depending on the value. The only valid non-default value is 1,
-  //   which enables image searching.
+  //    depending on the value. The only valid non-default value is 1,
+  //    which enables image searching.
+  //    Example:
+  //    search_type: 1
   map<string, google.protobuf.Value> params = 11;
 
   // The query expansion specification that specifies the conditions under which
@@ -577,16 +652,18 @@ message SearchRequest {
 
   // Uses the provided embedding to do additional semantic document retrieval.
   // The retrieval is based on the dot product of
-  // [SearchRequest.embedding_spec.embedding_vectors.vector][] and the document
-  // embedding that is provided in
-  // [SearchRequest.embedding_spec.embedding_vectors.field_path][].
+  // [SearchRequest.EmbeddingSpec.EmbeddingVector.vector][google.cloud.discoveryengine.v1beta.SearchRequest.EmbeddingSpec.EmbeddingVector.vector]
+  // and the document embedding that is provided in
+  // [SearchRequest.EmbeddingSpec.EmbeddingVector.field_path][google.cloud.discoveryengine.v1beta.SearchRequest.EmbeddingSpec.EmbeddingVector.field_path].
   //
-  // If [SearchRequest.embedding_spec.embedding_vectors.field_path][] is not
-  // provided, it will use [ServingConfig.embedding_config.field_paths][].
+  // If
+  // [SearchRequest.EmbeddingSpec.EmbeddingVector.field_path][google.cloud.discoveryengine.v1beta.SearchRequest.EmbeddingSpec.EmbeddingVector.field_path]
+  // is not provided, it will use [ServingConfig.EmbeddingConfig.field_path][].
   EmbeddingSpec embedding_spec = 23;
 
   // The ranking expression controls the customized ranking on retrieval
-  // documents. This overrides [ServingConfig.ranking_expression][].
+  // documents. This overrides
+  // [ServingConfig.ranking_expression][google.cloud.discoveryengine.v1beta.ServingConfig.ranking_expression].
   // The ranking expression is a single function or multiple functions that are
   // joint by "+".
   //   * ranking_expression = function, { " + ", function };
@@ -710,6 +787,65 @@ message SearchResponse {
       repeated float scores = 2;
     }
 
+    // Citation metadata.
+    message CitationMetadata {
+      // Citations for segments.
+      repeated Citation citations = 1;
+    }
+
+    // Citation info for a segment.
+    message Citation {
+      // Index indicates the start of the segment, measured in bytes/unicode.
+      int64 start_index = 1;
+
+      // End of the attributed segment, exclusive.
+      int64 end_index = 2;
+
+      // Citation sources for the attributed segment.
+      repeated CitationSource sources = 3;
+    }
+
+    // Citation source.
+    message CitationSource {
+      // Document reference index from SummaryWithMetadata.references.
+      // It is 0-indexed and the value will be zero if the reference_index is
+      // not set explicitly.
+      int64 reference_index = 4;
+    }
+
+    // Document reference.
+    message Reference {
+      // Title of the document.
+      string title = 1;
+
+      // Required.
+      // [Document.name][google.cloud.discoveryengine.v1beta.Document.name] of
+      // the document. Full resource name of the referenced document, in the
+      // format
+      // `projects/*/locations/*/collections/*/dataStores/*/branches/*/documents/*`.
+      string document = 2 [
+        (google.api.field_behavior) = REQUIRED,
+        (google.api.resource_reference) = {
+          type: "discoveryengine.googleapis.com/Document"
+        }
+      ];
+
+      // Cloud Storage or HTTP uri for the document.
+      string uri = 3;
+    }
+
+    // Summary with metadata information.
+    message SummaryWithMetadata {
+      // Summary text with no citation information.
+      string summary = 1;
+
+      // Citation metadata for given summary.
+      CitationMetadata citation_metadata = 2;
+
+      // Document References.
+      repeated Reference references = 3;
+    }
+
     // An Enum for summary-skipped reasons.
     enum SummarySkippedReason {
       // Default value. The summary skipped reason is not specified.
@@ -758,6 +894,9 @@ message SearchResponse {
     // A collection of Safety Attribute categories and their associated
     // confidence scores.
     SafetyAttributes safety_attributes = 3;
+
+    // Summary with metadata information.
+    SummaryWithMetadata summary_with_metadata = 4;
   }
 
   // Information describing query expansion including whether expansion has
