@@ -360,9 +360,9 @@ gapic_generator_register_toolchains()
 # TypeScript
 ##############################################################################
 
-_gapic_generator_typescript_version = "4.4.1"
+_gapic_generator_typescript_version = "4.4.2"
 
-_gapic_generator_typescript_sha256 = "b2da814b6282c4612b5fa9854deda841ef5867788e26d09b8ff9401e6a349017"
+_gapic_generator_typescript_sha256 = "6cc1c90a0e5dfb7bbb4e58feb1fbb3c49290da7d064ae55e5a127408efaf101f"
 
 ### TypeScript generator
 http_archive(
@@ -457,9 +457,9 @@ gapic_generator_csharp_repositories()
 # Ruby
 ##############################################################################
 
-_gapic_generator_ruby_version = "v0.27.4"
+_gapic_generator_ruby_version = "v0.29.0"
 
-_gapic_generator_ruby_sha256 = "2e6986cf8ec4e4b20d6dfd38a2c47a98f88e5cf9248b52f614daae6d888e1493"
+_gapic_generator_ruby_sha256 = "21d8c448e99eef6a2d8182f0422c70f8adddf9fc333d6c739e47720702ce52df"
 
 http_archive(
     name = "gapic_generator_ruby",

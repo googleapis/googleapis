@@ -17,6 +17,7 @@ syntax = "proto3";
 package google.cloud.alloydb.v1beta;
 
 import "google/api/field_behavior.proto";
+import "google/api/field_info.proto";
 import "google/api/resource.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
@@ -386,14 +387,14 @@ message Cluster {
 
   // Metadata related to network configuration.
   message NetworkConfig {
-    // Required. The resource link for the VPC network in which cluster
+    // Optional. The resource link for the VPC network in which cluster
     // resources are created and from which they are accessible via Private IP.
     // The network must belong to the same project as the cluster. It is
     // specified in the form:
     // "projects/{project_number}/global/networks/{network_id}". This is
     // required to create a cluster.
     string network = 1 [
-      (google.api.field_behavior) = REQUIRED,
+      (google.api.field_behavior) = OPTIONAL,
       (google.api.resource_reference) = {
         type: "compute.googleapis.com/Network"
       }
@@ -404,8 +405,8 @@ message Cluster {
     // instance IPs for this cluster will be created in the allocated range. The
     // range name must comply with RFC 1035. Specifically, the name must be 1-63
     // characters long and match the regular expression
-    // [a-z]([-a-z0-9]*[a-z0-9])?.
-    // Field name is intended to be consistent with CloudSQL.
+    // `[a-z]([-a-z0-9]*[a-z0-9])?`.
+    // Field name is intended to be consistent with Cloud SQL.
     string allocated_ip_range = 2 [(google.api.field_behavior) = OPTIONAL];
   }
 
@@ -606,6 +607,9 @@ message Cluster {
 
   // Output only. Cross Region replication config specific to PRIMARY cluster.
   PrimaryConfig primary_config = 23 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Reserved for future use.
+  bool satisfies_pzs = 30 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // An Instance is a computing unit that an end customer can connect to.
@@ -696,6 +700,79 @@ message Instance {
 
     // Optional. SSL config option for this instance.
     SslConfig ssl_config = 2 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Configuration for setting up a PSC interface. This information needs to be
+  // provided by the customer.
+  // PSC interfaces will be created and added to VMs via SLM (adding a network
+  // interface will require recreating the VM). For HA instances this will be
+  // done via LDTM.
+  message PscInterfaceConfig {
+    // A list of endpoints in the consumer VPC the interface might initiate
+    // outbound connections to. This list has to be provided when the PSC
+    // interface is created.
+    repeated string consumer_endpoint_ips = 1;
+
+    // The NetworkAttachment resource created in the consumer VPC to which the
+    // PSC interface will be linked, in the form of:
+    // `projects/${CONSUMER_PROJECT}/regions/${REGION}/networkAttachments/${NETWORK_ATTACHMENT_NAME}`.
+    // NetworkAttachment has to be provided when the PSC interface is created.
+    string network_attachment = 2;
+  }
+
+  // PscInstanceConfig contains PSC related configuration at an
+  // instance level.
+  message PscInstanceConfig {
+    // Output only. The service attachment created when Private
+    // Service Connect (PSC) is enabled for the instance.
+    // The name of the resource will be in the format of
+    // `projects/<alloydb-tenant-project-number>/regions/<region-name>/serviceAttachments/<service-attachment-name>`
+    string service_attachment_link = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Optional. List of consumer projects that are allowed to create
+    // PSC endpoints to service-attachments to this instance.
+    repeated string allowed_consumer_projects = 2
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. List of consumer networks that are allowed to create
+    // PSC endpoints to service-attachments to this instance.
+    repeated string allowed_consumer_networks = 3
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Configurations for setting up PSC interfaces attached to the
+    // instance which are used for outbound connectivity. Only primary instances
+    // can have PSC interface attached. All the VMs created for the primary
+    // instance will share the same configurations. Currently we only support 0
+    // or 1 PSC interface.
+    repeated PscInterfaceConfig psc_interface_configs = 4
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. List of service attachments that this instance has created
+    // endpoints to connect with. Currently, only a single outgoing service
+    // attachment is supported per instance.
+    repeated string outgoing_service_attachment_links = 5
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Whether PSC connectivity is enabled for this instance.
+    // This is populated by referencing the value from the parent cluster.
+    bool psc_enabled = 6 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Metadata related to instance level network configuration.
+  message InstanceNetworkConfig {
+    // AuthorizedNetwork contains metadata for an authorized network.
+    message AuthorizedNetwork {
+      // CIDR range for one authorzied network of the instance.
+      string cidr_range = 1 [(google.api.field_info).format = IPV4];
+    }
+
+    // Optional. A list of external network authorized to access this instance.
+    repeated AuthorizedNetwork authorized_external_networks = 1
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Enabling public ip for the instance.
+    bool enable_public_ip = 2 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Instance State
@@ -857,12 +934,18 @@ message Instance {
   // Configuration for query insights.
   QueryInsightsInstanceConfig query_insights_config = 21;
 
-  // Read pool specific config.
+  // Read pool instance configuration.
+  // This is required if the value of instanceType is READ_POOL.
   ReadPoolConfig read_pool_config = 14;
 
   // Output only. The IP address for the Instance.
   // This is the connection endpoint for an end-user application.
   string ip_address = 15 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The public IP addresses for the Instance. This is available
+  // ONLY when enable_public_ip is set. This is the connection endpoint for an
+  // end-user application.
+  string public_ip_address = 27 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Reconciling (https://google.aip.dev/128#reconciliation).
   // Set to true if the current state of Instance does not match the user's
@@ -888,6 +971,18 @@ message Instance {
   // Optional. Client connection specific configurations
   ClientConnectionConfig client_connection_config = 23
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Reserved for future use.
+  bool satisfies_pzs = 24 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The configuration for Private Service Connect (PSC) for the
+  // instance.
+  PscInstanceConfig psc_instance_config = 28
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Instance level network configuration.
+  InstanceNetworkConfig network_config = 29
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // ConnectionInfo singleton resource.
@@ -908,6 +1003,14 @@ message ConnectionInfo {
   // is set). This is the connection endpoint for an end-user application.
   string ip_address = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  // Output only. The public IP addresses for the Instance. This is available
+  // ONLY when enable_public_ip is set. This is the connection endpoint for an
+  // end-user application.
+  string public_ip_address = 5 [
+    (google.api.field_info).format = IPV4,
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
+
   // Output only. The pem-encoded chain that may be used to verify the X.509
   // certificate. Expected to be in issuer-to-root order according to RFC 5246.
   repeated string pem_certificate_chain = 3
@@ -915,6 +1018,9 @@ message ConnectionInfo {
 
   // Output only. The unique ID of the Instance.
   string instance_uid = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The DNS name to use with PSC for the Instance.
+  string psc_dns_name = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Message describing Backup object
@@ -1077,6 +1183,9 @@ message Backup {
   QuantityBasedExpiry expiry_quantity = 20
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  // Output only. Reserved for future use.
+  bool satisfies_pzs = 21 [(google.api.field_behavior) = OUTPUT_ONLY];
+
   // Output only. The database engine major version of the cluster this backup
   // was created from. Any restored cluster created from this backup will have
   // the same database version.
@@ -1199,4 +1308,29 @@ message User {
 
   // Optional. Type of this user.
   UserType user_type = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Message describing Database object.
+message Database {
+  option (google.api.resource) = {
+    type: "alloydb.googleapis.com/Database"
+    pattern: "projects/{project}/locations/{location}/clusters/{cluster}/databases/{database}"
+    plural: "databases"
+    singular: "database"
+    style: DECLARATIVE_FRIENDLY
+  };
+
+  // Identifier. Name of the resource in the form of
+  // `projects/{project}/locations/{location}/clusters/{cluster}/databases/{database}`.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Optional. Charset for the database.
+  // This field can contain any PostgreSQL supported charset name.
+  // Example values include "UTF8", "SQL_ASCII", etc.
+  string charset = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Collation for the database.
+  // Name of the custom or native collation for postgres.
+  // Example values include "C", "POSIX", etc
+  string collation = 3 [(google.api.field_behavior) = OPTIONAL];
 }
