@@ -226,7 +226,7 @@ local_repository(
     path = ".",
 )
 
-_gapic_generator_go_version = "0.40.0"
+_gapic_generator_go_version = "0.41.0"
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
@@ -405,7 +405,7 @@ pnpm_repository(name = "pnpm")
 ##############################################################################
 
 # PHP micro-generator
-_gapic_generator_php_version = "1.10.0"
+_gapic_generator_php_version = "1.11.0"
 
 http_archive(
     name = "gapic_generator_php",
@@ -438,9 +438,8 @@ http_archive(
     urls = ["https://github.com/googleapis/gax-dotnet/archive/refs/tags/%s.tar.gz" % _gax_dotnet_version],
 )
 
-_gapic_generator_csharp_version = "1.4.24"
-
-_gapic_generator_csharp_sha256 = "e163e1a1289d052942c7c2bf6736fa57c08e082ecadc07b949cd1bded7502612"
+_gapic_generator_csharp_version = "1.4.25"
+_gapic_generator_csharp_sha256 = "3dbf2029a665ac1638f74d63a65b0eaa113a0d4a5a36b0d7d10436dfe08db879"
 
 http_archive(
     name = "gapic_generator_csharp",
