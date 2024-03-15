@@ -39,6 +39,10 @@ option (google.api.resource_definition) = {
   type: "bigquery.googleapis.com/Dataset"
   pattern: "projects/{project}/datasets/{dataset}"
 };
+option (google.api.resource_definition) = {
+  type: "bigquery.googleapis.com/Table"
+  pattern: "projects/{project}/datasets/{dataset}/tables/{table}"
+};
 
 // The `AnalyticsHubService` API facilitates data sharing within and across
 // organizations. It allows data providers to publish listings that reference
@@ -256,6 +260,10 @@ service AnalyticsHubService {
         post: "/v1/{resource=projects/*/locations/*/dataExchanges/*/listings/*}:getIamPolicy"
         body: "*"
       }
+      additional_bindings {
+        post: "/v1/{resource=projects/*/locations/*/subscriptions/*}:getIamPolicy"
+        body: "*"
+      }
     };
   }
 
@@ -267,6 +275,10 @@ service AnalyticsHubService {
       body: "*"
       additional_bindings {
         post: "/v1/{resource=projects/*/locations/*/dataExchanges/*/listings/*}:setIamPolicy"
+        body: "*"
+      }
+      additional_bindings {
+        post: "/v1/{resource=projects/*/locations/*/subscriptions/*}:setIamPolicy"
         body: "*"
       }
     };
@@ -341,7 +353,24 @@ message SharingEnvironmentConfig {
   message DefaultExchangeConfig {}
 
   // Data Clean Room (DCR), used for privacy-safe and secured data sharing.
-  message DcrExchangeConfig {}
+  message DcrExchangeConfig {
+    // Output only. If True, this DCR restricts the contributors to sharing
+    // only a single resource in a Listing. And no two resources should have the
+    // same IDs. So if a contributor adds a view with a conflicting name, the
+    // CreateListing API will reject the request. if False, the data contributor
+    // can publish an entire dataset (as before). This is not configurable, and
+    // by default, all new DCRs will have the restriction set to True.
+    optional bool single_selected_resource_sharing_restriction = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. If True, when subscribing to this DCR, it will create only
+    // one linked dataset containing all resources shared within the
+    // cleanroom. If False, when subscribing to this DCR, it will
+    // create 1 linked dataset per listing. This is not configurable, and by
+    // default, all new DCRs will have the restriction set to True.
+    optional bool single_linked_dataset_per_cleanroom = 2
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
 
   oneof environment {
     // Default Analytics Hub data exchange, used for secured data sharing.
@@ -428,11 +457,33 @@ message Listing {
   // the subscriber's project. A Linked dataset is an opaque, read-only BigQuery
   // dataset that serves as a _symbolic link_ to a shared dataset.
   message BigQueryDatasetSource {
+    // Resource in this dataset that are selectively shared.
+    message SelectedResource {
+      oneof resource {
+        // Optional. Format:
+        // For table:
+        // `projects/{projectId}/datasets/{datasetId}/tables/{tableId}`
+        // Example:"projects/test_project/datasets/test_dataset/tables/test_table"
+        string table = 1 [
+          (google.api.field_behavior) = OPTIONAL,
+          (google.api.resource_reference) = {
+            type: "bigquery.googleapis.com/Table"
+          }
+        ];
+      }
+    }
+
     // Resource name of the dataset source for this listing.
     // e.g. `projects/myproject/datasets/123`
     string dataset = 1 [(google.api.resource_reference) = {
       type: "bigquery.googleapis.com/Dataset"
     }];
+
+    // Optional. Resources in this dataset that are selectively shared.
+    // If this field is empty, then the entire dataset (all resources) are
+    // shared. This field is only valid for data clean room exchanges.
+    repeated SelectedResource selected_resources = 2
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Restricted export config, used to configure restricted export on linked
