@@ -16,16 +16,16 @@ syntax = "proto3";
 
 package google.cloud.config.v1;
 
-import "google/longrunning/operations.proto";
-import "google/protobuf/timestamp.proto";
-import "google/protobuf/struct.proto";
-import "google/protobuf/field_mask.proto";
 import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/field_info.proto";
 import "google/api/resource.proto";
+import "google/longrunning/operations.proto";
 import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 
 option csharp_namespace = "Google.Cloud.Config.V1";
@@ -268,6 +268,43 @@ service Config {
       body: "*"
     };
   }
+
+  // Lists [TerraformVersion][google.cloud.config.v1.TerraformVersion]s in a
+  // given project and location.
+  rpc ListTerraformVersions(ListTerraformVersionsRequest)
+      returns (ListTerraformVersionsResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*/locations/*}/terraformVersions"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Gets details about a
+  // [TerraformVersion][google.cloud.config.v1.TerraformVersion].
+  rpc GetTerraformVersion(GetTerraformVersionRequest)
+      returns (TerraformVersion) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/locations/*/terraformVersions/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+}
+
+// Enum values to control quota checks for resources in terraform
+// configuration files.
+enum QuotaValidation {
+  // The default value.
+  // QuotaValidation on terraform configuration files will be disabled in
+  // this case.
+  QUOTA_VALIDATION_UNSPECIFIED = 0;
+
+  // Enable computing quotas for resources in terraform configuration files to
+  // get visibility on resources with insufficient quotas.
+  ENABLED = 1;
+
+  // Enforce quota checks so deployment fails if there isn't sufficient quotas
+  // available to deploy resources in terraform configuration files.
+  ENFORCED = 2;
 }
 
 // A Deployment is a group of resources and configs managed and provisioned by
@@ -459,6 +496,21 @@ message Deployment {
 
   // Output only. Current lock state of the deployment.
   LockState lock_state = 20 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The user-specified Terraform version constraint.
+  // Example: "=1.3.10".
+  optional string tf_version_constraint = 21
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The current Terraform version set on the deployment.
+  // It is in the format of "Major.Minor.Patch", for example, "1.3.10".
+  string tf_version = 22 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Input to control quota checks for resources in terraform
+  // configuration files. There are limited resources on which quota validation
+  // applies.
+  QuotaValidation quota_validation = 23
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // TerraformBlueprint describes the source of a Terraform root module which
@@ -523,8 +575,8 @@ message ListDeploymentsRequest {
   ];
 
   // When requesting a page of resources, 'page_size' specifies number of
-  // resources to return. If unspecified or set to 0, all resources will be
-  // returned.
+  // resources to return. If unspecified, at most 500 will be returned. The
+  // maximum value is 1000.
   int32 page_size = 2;
 
   // Token returned by previous call to 'ListDeployments' which specifies the
@@ -594,8 +646,8 @@ message ListRevisionsRequest {
   ];
 
   // When requesting a page of resources, `page_size` specifies number of
-  // resources to return. If unspecified or set to 0, all resources will be
-  // returned.
+  // resources to return. If unspecified, at most 500 will be returned. The
+  // maximum value is 1000.
   int32 page_size = 2;
 
   // Token returned by previous call to 'ListRevisions' which specifies the
@@ -863,6 +915,10 @@ message Revision {
     // Cloud Build job associated with creating or updating a deployment was
     // started but failed.
     APPLY_BUILD_RUN_FAILED = 5;
+
+    // quota validation failed for one or more resources in terraform
+    // configuration files.
+    QUOTA_VALIDATION_FAILED = 7;
   }
 
   // Blueprint that was deployed.
@@ -949,6 +1005,26 @@ message Revision {
       type: "cloudbuild.googleapis.com/WorkerPool"
     }
   ];
+
+  // Output only. The user-specified Terraform version constraint.
+  // Example: "=1.3.10".
+  string tf_version_constraint = 18 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The version of Terraform used to create the Revision.
+  // It is in the format of "Major.Minor.Patch", for example, "1.3.10".
+  string tf_version = 19 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Cloud Storage path containing quota validation results. This
+  // field is set when a user sets Deployment.quota_validation field to ENABLED
+  // or ENFORCED. Format: `gs://{bucket}/{object}`.
+  string quota_validation_results = 29
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Input to control quota checks for resources in terraform
+  // configuration files. There are limited resources on which quota validation
+  // applies.
+  QuotaValidation quota_validation = 20
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Errors encountered during actuation using Terraform
@@ -1020,6 +1096,12 @@ message DeploymentOperationMetadata {
 
     // Operation failed
     FAILED = 10;
+
+    // Validating the provided repository.
+    VALIDATING_REPOSITORY = 11;
+
+    // Running quota validation
+    RUNNING_QUOTA_VALIDATION = 12;
   }
 
   // The current step the deployment operation is running.
@@ -1147,8 +1229,8 @@ message ListResourcesRequest {
   ];
 
   // When requesting a page of resources, 'page_size' specifies number of
-  // resources to return. If unspecified or set to 0, all resources will be
-  // returned.
+  // resources to return. If unspecified, at most 500 will be returned. The
+  // maximum value is 1000.
   int32 page_size = 2;
 
   // Token returned by previous call to 'ListResources' which specifies the
@@ -1433,9 +1515,9 @@ message Preview {
   // Optional. Current mode of preview.
   PreviewMode preview_mode = 15 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Optional service account. If omitted, the deployment resource
-  // reference must be provided, and the service account attached to the
-  // deployment will be used.
+  // Optional. User-specified Service Account (SA) credentials to be used when
+  // previewing resources.
+  // Format: `projects/{projectID}/serviceAccounts/{serviceAccount}`
   string service_account = 7 [
     (google.api.field_behavior) = OPTIONAL,
     (google.api.resource_reference) = {
@@ -1531,6 +1613,9 @@ message PreviewOperationMetadata {
 
     // Operation failed.
     FAILED = 9;
+
+    // Validating the provided repository.
+    VALIDATING_REPOSITORY = 10;
   }
 
   // The current step the preview operation is running.
@@ -1615,8 +1700,8 @@ message ListPreviewsRequest {
   ];
 
   // Optional. When requesting a page of resources, 'page_size' specifies number
-  // of resources to return. If unspecified or set to 0, all resources will be
-  // returned.
+  // of resources to return. If unspecified, at most 500 will be returned. The
+  // maximum value is 1000.
   int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Token returned by previous call to 'ListDeployments' which
@@ -1716,4 +1801,110 @@ message PreviewResult {
 
   // Output only. Plan JSON signed URL
   string json_signed_uri = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The request message for the GetTerraformVersion method.
+message GetTerraformVersionRequest {
+  // Required. The name of the TerraformVersion. Format:
+  // 'projects/{project_id}/locations/{location}/terraformVersions/{terraform_version}'
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "config.googleapis.com/TerraformVersion"
+    }
+  ];
+}
+
+// The request message for the ListTerraformVersions method.
+message ListTerraformVersionsRequest {
+  // Required. The parent in whose context the TerraformVersions are listed. The
+  // parent value is in the format:
+  // 'projects/{project_id}/locations/{location}'.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
+
+  // Optional. When requesting a page of resources, 'page_size' specifies number
+  // of resources to return. If unspecified, at most 500 will be returned. The
+  // maximum value is 1000.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Token returned by previous call to 'ListTerraformVersions' which
+  // specifies the position in the list from where to continue listing the
+  // resources.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Lists the TerraformVersions that match the filter expression. A
+  // filter expression filters the resources listed in the response. The
+  // expression must be of the form '{field} {operator} {value}' where
+  // operators: '<', '>',
+  // '<=', '>=', '!=', '=', ':' are supported (colon ':' represents a HAS
+  // operator which is roughly synonymous with equality). {field} can refer to a
+  // proto or JSON field, or a synthetic field. Field names can be camelCase or
+  // snake_case.
+  string filter = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Field to use to sort the list.
+  string order_by = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The response message for the `ListTerraformVersions` method.
+message ListTerraformVersionsResponse {
+  // List of [TerraformVersion][google.cloud.config.v1.TerraformVersion]s.
+  repeated TerraformVersion terraform_versions = 1;
+
+  // Token to be supplied to the next ListTerraformVersions request via
+  // `page_token` to obtain the next set of results.
+  string next_page_token = 2;
+
+  // Unreachable resources, if any.
+  repeated string unreachable = 3;
+}
+
+// A TerraformVersion represents the support state the corresponding
+// Terraform version.
+message TerraformVersion {
+  option (google.api.resource) = {
+    type: "config.googleapis.com/TerraformVersion"
+    pattern: "projects/{project}/locations/{location}/terraformVersions/{terraform_version}"
+    plural: "terraformVersions"
+    singular: "terraformVersion"
+  };
+
+  // Possible states of a TerraformVersion.
+  enum State {
+    // The default value. This value is used if the state is omitted.
+    STATE_UNSPECIFIED = 0;
+
+    // The version is actively supported.
+    ACTIVE = 1;
+
+    // The version is deprecated.
+    DEPRECATED = 2;
+
+    // The version is obsolete.
+    OBSOLETE = 3;
+  }
+
+  // Identifier. The version name is in the format:
+  // 'projects/{project_id}/locations/{location}/terraformVersions/{terraform_version}'.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Output only. The state of the version, ACTIVE, DEPRECATED or OBSOLETE.
+  State state = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. When the version is supported.
+  google.protobuf.Timestamp support_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. When the version is deprecated.
+  optional google.protobuf.Timestamp deprecate_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. When the version is obsolete.
+  optional google.protobuf.Timestamp obsolete_time = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
