@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package google.cloud.edgecontainer.v1;
 
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 
@@ -55,6 +56,244 @@ message Cluster {
     pattern: "projects/{project}/locations/{location}/clusters/{cluster}"
   };
 
+  // Configuration of the cluster control plane.
+  message ControlPlane {
+    // Configuration specific to clusters with a control plane hosted remotely.
+    message Remote {}
+
+    // Configuration specific to clusters with a control plane hosted locally.
+    //
+    // Warning: Local control plane clusters must be created in their own
+    // project. Local control plane clusters cannot coexist in the same
+    // project with any other type of clusters, including non-GDCE clusters.
+    // Mixing local control plane GDCE clusters with any other type of
+    // clusters in the same project can result in data loss.
+    message Local {
+      // Name of the Google Distributed Cloud Edge zones where this node pool
+      // will be created. For example: `us-central1-edge-customer-a`.
+      string node_location = 1;
+
+      // The number of nodes to serve as replicas of the Control Plane.
+      int32 node_count = 2;
+
+      // Only machines matching this filter will be allowed to host control
+      // plane nodes. The filtering language accepts strings like "name=<name>",
+      // and is documented here: [AIP-160](https://google.aip.dev/160).
+      string machine_filter = 3;
+
+      // Policy configuration about how user applications are deployed.
+      SharedDeploymentPolicy shared_deployment_policy = 4;
+    }
+
+    // Represents the policy configuration about how user applications are
+    // deployed.
+    enum SharedDeploymentPolicy {
+      // Unspecified.
+      SHARED_DEPLOYMENT_POLICY_UNSPECIFIED = 0;
+
+      // User applications can be deployed both on control plane and worker
+      // nodes.
+      ALLOWED = 1;
+
+      // User applications can not be deployed on control plane nodes and can
+      // only be deployed on worker nodes.
+      DISALLOWED = 2;
+    }
+
+    oneof config {
+      // Remote control plane configuration.
+      Remote remote = 1;
+
+      // Local control plane configuration.
+      //
+      // Warning: Local control plane clusters must be created in their own
+      // project. Local control plane clusters cannot coexist in the same
+      // project with any other type of clusters, including non-GDCE clusters.
+      // Mixing local control plane GDCE clusters with any other type of
+      // clusters in the same project can result in data loss.
+      Local local = 2;
+    }
+  }
+
+  // Config that customers are allowed to define for GDCE system add-ons.
+  message SystemAddonsConfig {
+    // Config for the Ingress add-on which allows customers to create an Ingress
+    // object to manage external access to the servers in a cluster. The add-on
+    // consists of istiod and istio-ingress.
+    message Ingress {
+      // Optional. Whether Ingress is disabled.
+      bool disabled = 1 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Ingress VIP.
+      string ipv4_vip = 2 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Optional. Config for Ingress.
+    Ingress ingress = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Configuration for Customer-managed KMS key support for remote control plane
+  // cluster disk encryption.
+  message ControlPlaneEncryption {
+    // Immutable. The Cloud KMS CryptoKey e.g.
+    // projects/{project}/locations/{location}/keyRings/{keyRing}/cryptoKeys/{cryptoKey}
+    // to use for protecting control plane disks. If not specified, a
+    // Google-managed key will be used instead.
+    string kms_key = 1 [
+      (google.api.field_behavior) = IMMUTABLE,
+      (google.api.resource_reference) = {
+        type: "cloudkms.googleapis.com/CryptoKey"
+      }
+    ];
+
+    // Output only. The Cloud KMS CryptoKeyVersion currently in use for
+    // protecting control plane disks. Only applicable if kms_key is set.
+    string kms_key_active_version = 2 [
+      (google.api.field_behavior) = OUTPUT_ONLY,
+      (google.api.resource_reference) = {
+        type: "cloudkms.googleapis.com/CryptoKeyVersion"
+      }
+    ];
+
+    // Output only. Availability of the Cloud KMS CryptoKey. If not
+    // `KEY_AVAILABLE`, then nodes may go offline as they cannot access their
+    // local data. This can be caused by a lack of permissions to use the key,
+    // or if the key is disabled or deleted.
+    KmsKeyState kms_key_state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Error status returned by Cloud KMS when using this key. This
+    // field may be populated only if `kms_key_state` is not
+    // `KMS_KEY_STATE_KEY_AVAILABLE`. If populated, this field contains the
+    // error status reported by Cloud KMS.
+    google.rpc.Status kms_status = 4
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // A Maintenance Event is an operation that could cause temporary disruptions
+  // to the cluster workloads, including Google-driven or user-initiated cluster
+  // upgrades, user-initiated cluster configuration changes that require
+  // restarting nodes, etc.
+  message MaintenanceEvent {
+    // Indicates the maintenance event type.
+    enum Type {
+      // Unspecified.
+      TYPE_UNSPECIFIED = 0;
+
+      // Upgrade initiated by users.
+      USER_INITIATED_UPGRADE = 1;
+
+      // Upgrade driven by Google.
+      GOOGLE_DRIVEN_UPGRADE = 2;
+    }
+
+    // Indicates when the maintenance event should be performed.
+    enum Schedule {
+      // Unspecified.
+      SCHEDULE_UNSPECIFIED = 0;
+
+      // Immediately after receiving the request.
+      IMMEDIATELY = 1;
+    }
+
+    // Indicates the maintenance event state.
+    enum State {
+      // Unspecified.
+      STATE_UNSPECIFIED = 0;
+
+      // The maintenance event is ongoing. The cluster might be unusable.
+      RECONCILING = 1;
+
+      // The maintenance event succeeded.
+      SUCCEEDED = 2;
+
+      // The maintenance event failed.
+      FAILED = 3;
+    }
+
+    // Output only. UUID of the maintenance event.
+    string uuid = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The target version of the cluster.
+    string target_version = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The operation for running the maintenance event. Specified
+    // in the format projects/*/locations/*/operations/*. If the maintenance
+    // event is split into multiple operations (e.g. due to maintenance
+    // windows), the latest one is recorded.
+    string operation = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The type of the maintenance event.
+    Type type = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The schedule of the maintenance event.
+    Schedule schedule = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The state of the maintenance event.
+    State state = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The time when the maintenance event request was created.
+    google.protobuf.Timestamp create_time = 7
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The time when the maintenance event started.
+    google.protobuf.Timestamp start_time = 8
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The time when the maintenance event ended, either
+    // successfully or not. If the maintenance event is split into multiple
+    // maintenance windows, end_time is only updated when the whole flow ends.
+    google.protobuf.Timestamp end_time = 9
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The time when the maintenance event message was updated.
+    google.protobuf.Timestamp update_time = 10
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Configuration of the cluster survivability, e.g., for the case when network
+  // connectivity is lost.
+  message SurvivabilityConfig {
+    // Optional. Time period that allows the cluster nodes to be rebooted and
+    // become functional without network connectivity to Google. The default 0
+    // means not allowed. The maximum is 7 days.
+    google.protobuf.Duration offline_reboot_ttl = 1
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Indicates the status of the cluster.
+  enum Status {
+    // Status unknown.
+    STATUS_UNSPECIFIED = 0;
+
+    // The cluster is being created.
+    PROVISIONING = 1;
+
+    // The cluster is created and fully usable.
+    RUNNING = 2;
+
+    // The cluster is being deleted.
+    DELETING = 3;
+
+    // The status indicates that some errors occurred while reconciling/deleting
+    // the cluster.
+    ERROR = 4;
+
+    // The cluster is undergoing some work such as version upgrades, etc.
+    RECONCILING = 5;
+  }
+
+  // The release channel a cluster is subscribed to.
+  enum ReleaseChannel {
+    // Unspecified release channel. This will default to the REGULAR channel.
+    RELEASE_CHANNEL_UNSPECIFIED = 0;
+
+    // No release channel.
+    NONE = 1;
+
+    // Regular release channel.
+    REGULAR = 2;
+  }
+
   // Required. The resource name of the cluster.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
@@ -64,16 +303,18 @@ message Cluster {
   ];
 
   // Output only. The time when the cluster was created.
-  google.protobuf.Timestamp create_time = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp create_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The time when the cluster was last updated.
-  google.protobuf.Timestamp update_time = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp update_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Labels associated with this resource.
   map<string, string> labels = 4;
 
-  // Optional. Fleet configuration.
-  Fleet fleet = 11 [(google.api.field_behavior) = OPTIONAL];
+  // Required. Fleet configuration.
+  Fleet fleet = 11 [(google.api.field_behavior) = REQUIRED];
 
   // Required. Cluster-wide networking configuration.
   ClusterNetworking networking = 7 [(google.api.field_behavior) = REQUIRED];
@@ -84,32 +325,89 @@ message Cluster {
     (google.api.field_behavior) = IMMUTABLE
   ];
 
-  // Optional. The default maximum number of pods per node used if a maximum value is not
-  // specified explicitly for a node pool in this cluster. If unspecified, the
-  // Kubernetes default value will be used.
+  // Optional. The default maximum number of pods per node used if a maximum
+  // value is not specified explicitly for a node pool in this cluster. If
+  // unspecified, the Kubernetes default value will be used.
   int32 default_max_pods_per_node = 8 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. The IP address of the Kubernetes API server.
   string endpoint = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  // Output only. The port number of the Kubernetes API server.
+  int32 port = 19 [(google.api.field_behavior) = OUTPUT_ONLY];
+
   // Output only. The PEM-encoded public certificate of the cluster's CA.
-  string cluster_ca_certificate = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string cluster_ca_certificate = 10
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Optional. Cluster-wide maintenance policy configuration.
-  MaintenancePolicy maintenance_policy = 12 [(google.api.field_behavior) = OPTIONAL];
+  MaintenancePolicy maintenance_policy = 12
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The control plane release version
+  string control_plane_version = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The lowest release version among all worker nodes. This field
+  // can be empty if the cluster does not have any worker nodes.
+  string node_version = 14 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The configuration of the cluster control plane.
+  ControlPlane control_plane = 15 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The configuration of the system add-ons.
+  SystemAddonsConfig system_addons_config = 16
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. IPv4 address pools for cluster data plane external load
+  // balancing.
+  repeated string external_load_balancer_ipv4_address_pools = 17
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Remote control plane disk encryption options. This field is only
+  // used when enabling CMEK support.
+  ControlPlaneEncryption control_plane_encryption = 18
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The current status of the cluster.
+  Status status = 20 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. All the maintenance events scheduled for the cluster,
+  // including the ones ongoing, planned for the future and done in the past (up
+  // to 90 days).
+  repeated MaintenanceEvent maintenance_events = 21
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The target cluster version. For example: "1.5.0".
+  string target_version = 22 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The release channel a cluster is subscribed to.
+  ReleaseChannel release_channel = 23 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Configuration of the cluster survivability, e.g., for the case
+  // when network connectivity is lost. Note: This only applies to local control
+  // plane clusters.
+  SurvivabilityConfig survivability_config = 24
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. IPv6 address pools for cluster data plane external load
+  // balancing.
+  repeated string external_load_balancer_ipv6_address_pools = 25
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Cluster-wide networking configuration.
 message ClusterNetworking {
-  // Required. All pods in the cluster are assigned an RFC1918 IPv4 address from these
-  // blocks. Only a single block is supported. This field cannot be changed
-  // after creation.
-  repeated string cluster_ipv4_cidr_blocks = 1 [(google.api.field_behavior) = REQUIRED];
+  // Required. All pods in the cluster are assigned an RFC1918 IPv4 address from
+  // these blocks. Only a single block is supported. This field cannot be
+  // changed after creation.
+  repeated string cluster_ipv4_cidr_blocks = 1
+      [(google.api.field_behavior) = REQUIRED];
 
-  // Required. All services in the cluster are assigned an RFC1918 IPv4 address from these
-  // blocks. Only a single block is supported. This field cannot be changed
-  // after creation.
-  repeated string services_ipv4_cidr_blocks = 2 [(google.api.field_behavior) = REQUIRED];
+  // Required. All services in the cluster are assigned an RFC1918 IPv4 address
+  // from these blocks. Only a single block is supported. This field cannot be
+  // changed after creation.
+  repeated string services_ipv4_cidr_blocks = 2
+      [(google.api.field_behavior) = REQUIRED];
 }
 
 // Fleet related configuration.
@@ -118,13 +416,15 @@ message ClusterNetworking {
 // letting you use and manage multi-cluster capabilities and apply
 // consistent policies across your systems.
 message Fleet {
-  // Required. The name of the Fleet host project where this cluster will be registered.
+  // Required. The name of the Fleet host project where this cluster will be
+  // registered.
   //
   // Project names are formatted as
   // `projects/<project-number>`.
   string project = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // Output only. The name of the managed Hub Membership resource associated to this cluster.
+  // Output only. The name of the managed Hub Membership resource associated to
+  // this cluster.
   //
   // Membership names are formatted as
   // `projects/<project-number>/locations/global/membership/<cluster-id>`.
@@ -139,9 +439,9 @@ message ClusterUser {
 
 // RBAC policy that will be applied and managed by GEC.
 message Authorization {
-  // Required. User that will be granted the cluster-admin role on the cluster, providing
-  // full access to the cluster. Currently, this is a singular field, but will
-  // be expanded to allow multiple admins in the future.
+  // Required. User that will be granted the cluster-admin role on the cluster,
+  // providing full access to the cluster. Currently, this is a singular field,
+  // but will be expanded to allow multiple admins in the future.
   ClusterUser admin_users = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
@@ -166,8 +466,8 @@ message NodePool {
       }
     ];
 
-    // Output only. The Cloud KMS CryptoKeyVersion currently in use for protecting node local
-    // disks. Only applicable if kms_key is set.
+    // Output only. The Cloud KMS CryptoKeyVersion currently in use for
+    // protecting node local disks. Only applicable if kms_key is set.
     string kms_key_active_version = 2 [
       (google.api.field_behavior) = OUTPUT_ONLY,
       (google.api.resource_reference) = {
@@ -175,16 +475,24 @@ message NodePool {
       }
     ];
 
-    // Output only. Availability of the Cloud KMS CryptoKey. If not `KEY_AVAILABLE`, then
-    // nodes may go offline as they cannot access their local data. This can be
-    // caused by a lack of permissions to use the key, or if the key is disabled
-    // or deleted.
+    // Output only. Availability of the Cloud KMS CryptoKey. If not
+    // `KEY_AVAILABLE`, then nodes may go offline as they cannot access their
+    // local data. This can be caused by a lack of permissions to use the key,
+    // or if the key is disabled or deleted.
     KmsKeyState kms_key_state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-    // Output only. Error status returned by Cloud KMS when using this key. This field may be
-    // populated only if `kms_key_state` is not `KMS_KEY_STATE_KEY_AVAILABLE`.
-    // If populated, this field contains the error status reported by Cloud KMS.
-    google.rpc.Status kms_status = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+    // Output only. Error status returned by Cloud KMS when using this key. This
+    // field may be populated only if `kms_key_state` is not
+    // `KMS_KEY_STATE_KEY_AVAILABLE`. If populated, this field contains the
+    // error status reported by Cloud KMS.
+    google.rpc.Status kms_status = 4
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Configuration for each node in the NodePool
+  message NodeConfig {
+    // Optional. The Kubernetes node labels
+    map<string, string> labels = 1 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Required. The resource name of the node pool.
@@ -196,10 +504,12 @@ message NodePool {
   ];
 
   // Output only. The time when the node pool was created.
-  google.protobuf.Timestamp create_time = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp create_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The time when the node pool was last updated.
-  google.protobuf.Timestamp update_time = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp update_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Labels associated with this resource.
   map<string, string> labels = 4;
@@ -216,9 +526,16 @@ message NodePool {
   // documented in more detail in [AIP-160](https://google.aip.dev/160).
   string machine_filter = 7;
 
-  // Optional. Local disk encryption options. This field is only used when enabling CMEK
-  // support.
-  LocalDiskEncryption local_disk_encryption = 9 [(google.api.field_behavior) = OPTIONAL];
+  // Optional. Local disk encryption options. This field is only used when
+  // enabling CMEK support.
+  LocalDiskEncryption local_disk_encryption = 9
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The lowest release version among all worker nodes.
+  string node_version = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Configuration for each node in the NodePool
+  NodeConfig node_config = 11 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // A Google Distributed Cloud Edge machine capable of acting as a Kubernetes
@@ -238,10 +555,12 @@ message Machine {
   ];
 
   // Output only. The time when the node pool was created.
-  google.protobuf.Timestamp create_time = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp create_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The time when the node pool was last updated.
-  google.protobuf.Timestamp update_time = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp update_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Labels associated with this resource.
   map<string, string> labels = 4;
@@ -250,13 +569,20 @@ message Machine {
   // hosting e.g.
   // projects/{project}/locations/{location}/clusters/{cluster_id}/nodePools/{pool_id}/{node},
   // Or empty if the machine is not assigned to assume the role of a node.
+  //
+  // For control plane nodes hosted on edge machines, this will return
+  // the following format:
+  //   "projects/{project}/locations/{location}/clusters/{cluster_id}/controlPlaneNodes/{node}".
   string hosted_node = 5;
 
   // The Google Distributed Cloud Edge zone of this machine.
   string zone = 6;
 
-  // Output only. Whether the machine is disabled. If disabled, the machine is unable to
-  // enter service.
+  // Output only. The software version of the machine.
+  string version = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Whether the machine is disabled. If disabled, the machine is
+  // unable to enter service.
   bool disabled = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
@@ -273,20 +599,21 @@ message VpnConnection {
     // the cluster project.
     string project_id = 1;
 
-    // Optional. The service account in the VPC project configured by user. It is used to
-    // create/delete Cloud Router and Cloud HA VPNs for VPN connection. If this
-    // SA is changed during/after a VPN connection is created, you need to
-    // remove the Cloud Router and Cloud VPN resources in |project_id|.
-    // It is in the form of
+    // Optional. The service account in the VPC project configured by user. It
+    // is used to create/delete Cloud Router and Cloud HA VPNs for VPN
+    // connection. If this SA is changed during/after a VPN connection is
+    // created, you need to remove the Cloud Router and Cloud VPN resources in
+    // |project_id|. It is in the form of
     // service-{project_number}@gcp-sa-edgecontainer.iam.gserviceaccount.com.
-    string service_account = 2 [(google.api.field_behavior) = OPTIONAL];
+    string service_account = 2
+        [deprecated = true, (google.api.field_behavior) = OPTIONAL];
   }
 
   // The created connection details.
   message Details {
     // The Cloud Router info.
     message CloudRouter {
-      // The created Cloud Router name.
+      // The associated Cloud Router name.
       string name = 1;
     }
 
@@ -345,10 +672,12 @@ message VpnConnection {
   ];
 
   // Output only. The time when the VPN connection was created.
-  google.protobuf.Timestamp create_time = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp create_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The time when the VPN connection was last updated.
-  google.protobuf.Timestamp update_time = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp update_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Labels associated with this resource.
   map<string, string> labels = 4;
@@ -364,25 +693,29 @@ message VpnConnection {
   // The canonical Cluster name to connect to. It is in the form of
   // projects/{project}/locations/{location}/clusters/{cluster}.
   string cluster = 7 [(google.api.resource_reference) = {
-                        type: "edgecontainer.googleapis.com/Cluster"
-                      }];
+    type: "edgecontainer.googleapis.com/Cluster"
+  }];
 
   // The network ID of VPC to connect to.
   string vpc = 8;
 
-  // Optional. Project detail of the VPC network. Required if VPC is in a different
-  // project than the cluster project.
+  // Optional. Project detail of the VPC network. Required if VPC is in a
+  // different project than the cluster project.
   VpcProject vpc_project = 11 [(google.api.field_behavior) = OPTIONAL];
 
   // Whether this VPN connection has HA enabled on cluster side. If enabled,
   // when creating VPN connection we will attempt to use 2 ANG floating IPs.
   bool enable_high_availability = 9;
 
+  // Optional. The VPN connection Cloud Router name.
+  string router = 12 [(google.api.field_behavior) = OPTIONAL];
+
   // Output only. The created connection details.
   Details details = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
-// Metadata for a given [google.cloud.location.Location][google.cloud.location.Location].
+// Metadata for a given
+// [google.cloud.location.Location][google.cloud.location.Location].
 message LocationMetadata {
   // The set of available Google Distributed Cloud Edge zones in the location.
   // The map is keyed by the lowercase ID of each zone.
@@ -391,8 +724,25 @@ message LocationMetadata {
 
 // A Google Distributed Cloud Edge zone where edge machines are located.
 message ZoneMetadata {
+  // Type of the rack.
+  enum RackType {
+    // Unspecified rack type, single rack also belongs to this type.
+    RACK_TYPE_UNSPECIFIED = 0;
+
+    // Base rack type, a pair of two modified Config-1 racks containing
+    // Aggregation switches.
+    BASE = 1;
+
+    // Expansion rack type, also known as standalone racks,
+    // added by customers on demand.
+    EXPANSION = 2;
+  }
+
   // Quota for resources in this zone.
   repeated Quota quota = 1;
+
+  // The map keyed by rack name and has value of RackType.
+  map<string, RackType> rack_types = 2;
 }
 
 // Represents quota for Edge Container resources.
@@ -438,4 +788,29 @@ message TimeWindow {
   // The time that the window ends. The end time must take place after the
   // start time.
   google.protobuf.Timestamp end_time = 2;
+}
+
+// Server configuration for supported versions and release channels.
+message ServerConfig {
+  // Output only. Mapping from release channel to channel config.
+  map<string, ChannelConfig> channels = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Supported versions, e.g.: ["1.4.0", "1.5.0"].
+  repeated Version versions = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Default version, e.g.: "1.4.0".
+  string default_version = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Configuration for a release channel.
+message ChannelConfig {
+  // Output only. Default version for this release channel, e.g.: "1.4.0".
+  string default_version = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Version of a cluster.
+message Version {
+  // Output only. Name of the version, e.g.: "1.4.0".
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
