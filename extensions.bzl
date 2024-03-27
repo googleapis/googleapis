@@ -27,10 +27,10 @@ def _switched_rules_impl(ctx):
 
         for t in module.tags.use_languages:
             if is_tag_set:
-                fail("Multiple use_language tags are set in the root module: '{}' and '{}'. Only one is allowed.".format(set_tag_name, t.name))
+                fail("Multiple use_language tags are set in the root module: '{}' and '{}'. Only one is allowed.".format(set_tag_name, module.name))
 
             is_tag_set = True
-            set_tag_name = t.name
+            set_tag_name = module.name
 
             attrs = {
                 "cc": t.cc,
