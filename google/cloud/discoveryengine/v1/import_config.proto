@@ -21,6 +21,7 @@ import "google/api/resource.proto";
 import "google/cloud/discoveryengine/v1/completion.proto";
 import "google/cloud/discoveryengine/v1/document.proto";
 import "google/cloud/discoveryengine/v1/user_event.proto";
+import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 import "google/type/date.proto";
@@ -59,11 +60,11 @@ message GcsSource {
   //   bits of SHA256(URI) encoded as a hex string.
   // * `custom`: One custom data JSON per row in arbitrary format that conforms
   //   to the defined [Schema][google.cloud.discoveryengine.v1.Schema] of the
-  //   data store. This can only be used by Gen App Builder.
+  //   data store. This can only be used by the GENERIC Data Store vertical.
   // * `csv`: A CSV file with header conforming to the defined
   // [Schema][google.cloud.discoveryengine.v1.Schema] of the
   //   data store. Each entry after the header is imported as a Document.
-  //   This can only be used by Gen App Builder.
+  //   This can only be used by the GENERIC Data Store vertical.
   //
   // Supported values for user even imports:
   //
@@ -117,8 +118,235 @@ message BigQuerySource {
   //   [Document.struct_data][google.cloud.discoveryengine.v1.Document.struct_data].
   // * `custom`: One custom data per row in arbitrary format that conforms to
   //   the defined [Schema][google.cloud.discoveryengine.v1.Schema] of the data
-  //   store. This can only be used by Gen App Builder.
+  //   store. This can only be used by the GENERIC Data Store vertical.
   string data_schema = 6;
+}
+
+// The Spanner source for importing data
+message SpannerSource {
+  // The project ID that the Spanner source is in with a length limit of 128
+  // characters. If not specified, inherits the project ID from the parent
+  // request.
+  string project_id = 1;
+
+  // Required. The instance ID of the source Spanner table.
+  string instance_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The database ID of the source Spanner table.
+  string database_id = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The table name of the Spanner database that needs to be imported.
+  string table_id = 4 [(google.api.field_behavior) = REQUIRED];
+
+  // Whether to apply data boost on Spanner export. Enabling this option will
+  // incur additional cost. More info can be found
+  // [here](https://cloud.google.com/spanner/docs/databoost/databoost-overview#billing_and_quotas).
+  bool enable_data_boost = 5;
+}
+
+// The Bigtable Options object that contains information to support
+// the import.
+message BigtableOptions {
+  // The column family of the Bigtable.
+  message BigtableColumnFamily {
+    // The field name to use for this column family in the document. The
+    // name has to match the pattern `[a-zA-Z0-9][a-zA-Z0-9-_]*`. If not set,
+    // it is parsed from the family name with best effort. However, due to
+    // different naming patterns, field name collisions could happen, where
+    // parsing behavior is undefined.
+    string field_name = 1;
+
+    // The encoding mode of the values when the type is not STRING.
+    // Acceptable encoding values are:
+    //
+    // * `TEXT`: indicates values are alphanumeric text strings.
+    // * `BINARY`: indicates values are encoded using `HBase Bytes.toBytes`
+    // family of functions. This can be overridden for a specific column
+    // by listing that column in `columns` and specifying an encoding for it.
+    Encoding encoding = 2;
+
+    // The type of values in this column family.
+    // The values are expected to be encoded using `HBase Bytes.toBytes`
+    // function when the encoding value is set to `BINARY`.
+    Type type = 3;
+
+    // The list of objects that contains column level information for each
+    // column. If a column is not present in this list it will be ignored.
+    repeated BigtableColumn columns = 4;
+  }
+
+  // The column of the Bigtable.
+  message BigtableColumn {
+    // Required. Qualifier of the column. If it cannot be decoded with utf-8,
+    // use a base-64 encoded string instead.
+    bytes qualifier = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // The field name to use for this column in the document. The name has to
+    // match the pattern `[a-zA-Z0-9][a-zA-Z0-9-_]*`.
+    // If not set, it is parsed from the qualifier bytes with best effort.
+    // However, due to different naming patterns, field name collisions could
+    // happen, where parsing behavior is undefined.
+    string field_name = 2;
+
+    // The encoding mode of the values when the type is not `STRING`.
+    // Acceptable encoding values are:
+    //
+    // * `TEXT`: indicates values are alphanumeric text strings.
+    // * `BINARY`: indicates values are encoded using `HBase Bytes.toBytes`
+    // family of functions. This can be overridden for a specific column
+    // by listing that column in `columns` and specifying an encoding for it.
+    Encoding encoding = 3;
+
+    // The type of values in this column family.
+    // The values are expected to be encoded using `HBase Bytes.toBytes`
+    // function when the encoding value is set to `BINARY`.
+    Type type = 4;
+  }
+
+  // The type of values in a Bigtable column or column family.
+  // The values are expected to be encoded using
+  // [HBase
+  // Bytes.toBytes](https://hbase.apache.org/apidocs/org/apache/hadoop/hbase/util/Bytes.html)
+  // function when the encoding value is set to `BINARY`.
+  enum Type {
+    // The type is unspecified.
+    TYPE_UNSPECIFIED = 0;
+
+    // String type.
+    STRING = 1;
+
+    // Numerical type.
+    NUMBER = 2;
+
+    // Integer type.
+    INTEGER = 3;
+
+    // Variable length integer type.
+    VAR_INTEGER = 4;
+
+    // BigDecimal type.
+    BIG_NUMERIC = 5;
+
+    // Boolean type.
+    BOOLEAN = 6;
+
+    // JSON type.
+    JSON = 7;
+  }
+
+  // The encoding mode of a Bigtable column or column family.
+  enum Encoding {
+    // The encoding is unspecified.
+    ENCODING_UNSPECIFIED = 0;
+
+    // Text encoding.
+    TEXT = 1;
+
+    // Binary encoding.
+    BINARY = 2;
+  }
+
+  // The field name used for saving row key value in the document. The name has
+  // to match the pattern `[a-zA-Z0-9][a-zA-Z0-9-_]*`.
+  string key_field_name = 1;
+
+  // The mapping from family names to an object that contains column families
+  // level information for the given column family. If a family is not present
+  // in this map it will be ignored.
+  map<string, BigtableColumnFamily> families = 2;
+}
+
+// The Cloud Bigtable source for importing data.
+message BigtableSource {
+  // The project ID that the Bigtable source is in with a length limit of 128
+  // characters. If not specified, inherits the project ID from the parent
+  // request.
+  string project_id = 1;
+
+  // Required. The instance ID of the Cloud Bigtable that needs to be imported.
+  string instance_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The table ID of the Cloud Bigtable that needs to be imported.
+  string table_id = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Bigtable options that contains information needed when parsing
+  // data into typed structures. For example, column type annotations.
+  BigtableOptions bigtable_options = 4 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Cloud FhirStore source import data from.
+message FhirStoreSource {
+  // Required. The full resource name of the FHIR store to import data from, in
+  // the format of
+  // `projects/{project}/locations/{location}/datasets/{dataset}/fhirStores/{fhir_store}`.
+  string fhir_store = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "healthcare.googleapis.com/FhirStore"
+    }
+  ];
+
+  // Intermediate Cloud Storage directory used for the import with a length
+  // limit of 2,000 characters. Can be specified if one wants to have the
+  // FhirStore export to a specific Cloud Storage directory.
+  string gcs_staging_dir = 2;
+}
+
+// Cloud SQL source import data from.
+message CloudSqlSource {
+  // The project ID that the Cloud SQL source is in with a length limit of 128
+  // characters. If not specified, inherits the project ID from the parent
+  // request.
+  string project_id = 1;
+
+  // Required. The Cloud SQL instance to copy the data from with a length limit
+  // of 256 characters.
+  string instance_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The Cloud SQL database to copy the data from with a length limit
+  // of 256 characters.
+  string database_id = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The Cloud SQL table to copy the data from with a length limit of
+  // 256 characters.
+  string table_id = 4 [(google.api.field_behavior) = REQUIRED];
+
+  // Intermediate Cloud Storage directory used for the import with a length
+  // limit of 2,000 characters. Can be specified if one wants to have the
+  // Cloud SQL export to a specific Cloud Storage directory.
+  //
+  // Ensure that the Cloud SQL service account has the necessary Cloud
+  // Storage Admin permissions to access the specified Cloud Storage directory.
+  string gcs_staging_dir = 5;
+
+  // Option for serverless export. Enabling this option will incur additional
+  // cost. More info can be found
+  // [here](https://cloud.google.com/sql/pricing#serverless).
+  bool offload = 6;
+}
+
+// Firestore source import data from.
+message FirestoreSource {
+  // The project ID that the Cloud SQL source is in with a length limit of 128
+  // characters. If not specified, inherits the project ID from the parent
+  // request.
+  string project_id = 1;
+
+  // Required. The Firestore database to copy the data from with a length limit
+  // of 256 characters.
+  string database_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The Firestore collection to copy the data from with a length
+  // limit of 1,500 characters.
+  string collection_id = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Intermediate Cloud Storage directory used for the import with a length
+  // limit of 2,000 characters. Can be specified if one wants to have the
+  // Firestore export to a specific Cloud Storage directory.
+  //
+  // Ensure that the Firestore service account has the necessary Cloud
+  // Storage Admin permissions to access the specified Cloud Storage directory.
+  string gcs_staging_dir = 4;
 }
 
 // Configuration of destination for Import related errors.
@@ -218,6 +446,9 @@ message ImportDocumentsMetadata {
 
   // Count of entries that encountered errors while processing.
   int64 failure_count = 4;
+
+  // Total count of entries that were processed.
+  int64 total_count = 5;
 }
 
 // Request message for Import methods.
@@ -254,6 +485,21 @@ message ImportDocumentsRequest {
 
     // BigQuery input source.
     BigQuerySource bigquery_source = 4;
+
+    // FhirStore input source.
+    FhirStoreSource fhir_store_source = 10;
+
+    // Spanner input source.
+    SpannerSource spanner_source = 11;
+
+    // Cloud SQL input source.
+    CloudSqlSource cloud_sql_source = 12;
+
+    // Firestore input source.
+    FirestoreSource firestore_source = 13;
+
+    // Cloud Bigtable input source.
+    BigtableSource bigtable_source = 15;
   }
 
   // Required. The parent branch resource name, such as
@@ -274,6 +520,10 @@ message ImportDocumentsRequest {
   // [ReconciliationMode.INCREMENTAL][google.cloud.discoveryengine.v1.ImportDocumentsRequest.ReconciliationMode.INCREMENTAL].
   ReconciliationMode reconciliation_mode = 6;
 
+  // Indicates which fields in the provided imported documents to update. If
+  // not set, the default is to update all fields.
+  google.protobuf.FieldMask update_mask = 7;
+
   // Whether to automatically generate IDs for the documents if absent.
   //
   // If set to `true`,
@@ -287,42 +537,54 @@ message ImportDocumentsRequest {
   // [id_field][google.cloud.discoveryengine.v1.ImportDocumentsRequest.id_field],
   // otherwise, documents without IDs fail to be imported.
   //
-  // Only set this field when using
-  // [GcsSource][google.cloud.discoveryengine.v1.GcsSource] or
-  // [BigQuerySource][google.cloud.discoveryengine.v1.BigQuerySource], and when
+  // Supported data sources:
+  //
+  // * [GcsSource][google.cloud.discoveryengine.v1.GcsSource].
   // [GcsSource.data_schema][google.cloud.discoveryengine.v1.GcsSource.data_schema]
-  // or
+  // must be `custom` or `csv`. Otherwise, an INVALID_ARGUMENT error is thrown.
+  // * [BigQuerySource][google.cloud.discoveryengine.v1.BigQuerySource].
   // [BigQuerySource.data_schema][google.cloud.discoveryengine.v1.BigQuerySource.data_schema]
-  // is `custom` or `csv`. Otherwise, an INVALID_ARGUMENT error is thrown.
+  // must be `custom` or `csv`. Otherwise, an INVALID_ARGUMENT error is thrown.
+  // * [SpannerSource][google.cloud.discoveryengine.v1.SpannerSource].
+  // * [CloudSqlSource][google.cloud.discoveryengine.v1.CloudSqlSource].
+  // * [FirestoreSource][google.cloud.discoveryengine.v1.FirestoreSource].
+  // * [BigtableSource][google.cloud.discoveryengine.v1.BigtableSource].
   bool auto_generate_ids = 8;
 
-  // The field in the Cloud Storage and BigQuery sources that indicates the
-  // unique IDs of the documents.
+  // The field indicates the ID field or column to be used as unique IDs of
+  // the documents.
   //
   // For [GcsSource][google.cloud.discoveryengine.v1.GcsSource] it is the key of
   // the JSON field. For instance, `my_id` for JSON `{"my_id": "some_uuid"}`.
-  // For [BigQuerySource][google.cloud.discoveryengine.v1.BigQuerySource] it is
-  // the column name of the BigQuery table where the unique ids are stored.
+  // For others, it may be the column name of the table where the unique ids are
+  // stored.
   //
-  // The values of the JSON field or the BigQuery column are used as the
+  // The values of the JSON field or the table column are used as the
   // [Document.id][google.cloud.discoveryengine.v1.Document.id]s. The JSON field
-  // or the BigQuery column must be of string type, and the values must be set
-  // as valid strings conform to [RFC-1034](https://tools.ietf.org/html/rfc1034)
+  // or the table column must be of string type, and the values must be set as
+  // valid strings conform to [RFC-1034](https://tools.ietf.org/html/rfc1034)
   // with 1-63 characters. Otherwise, documents without valid IDs fail to be
   // imported.
   //
-  // Only set this field when using
-  // [GcsSource][google.cloud.discoveryengine.v1.GcsSource] or
-  // [BigQuerySource][google.cloud.discoveryengine.v1.BigQuerySource], and when
-  // [GcsSource.data_schema][google.cloud.discoveryengine.v1.GcsSource.data_schema]
-  // or
-  // [BigQuerySource.data_schema][google.cloud.discoveryengine.v1.BigQuerySource.data_schema]
-  // is `custom`. And only set this field when
+  // Only set this field when
   // [auto_generate_ids][google.cloud.discoveryengine.v1.ImportDocumentsRequest.auto_generate_ids]
   // is unset or set as `false`. Otherwise, an INVALID_ARGUMENT error is thrown.
   //
   // If it is unset, a default value `_id` is used when importing from the
   // allowed data sources.
+  //
+  // Supported data sources:
+  //
+  // * [GcsSource][google.cloud.discoveryengine.v1.GcsSource].
+  // [GcsSource.data_schema][google.cloud.discoveryengine.v1.GcsSource.data_schema]
+  // must be `custom` or `csv`. Otherwise, an INVALID_ARGUMENT error is thrown.
+  // * [BigQuerySource][google.cloud.discoveryengine.v1.BigQuerySource].
+  // [BigQuerySource.data_schema][google.cloud.discoveryengine.v1.BigQuerySource.data_schema]
+  // must be `custom` or `csv`. Otherwise, an INVALID_ARGUMENT error is thrown.
+  // * [SpannerSource][google.cloud.discoveryengine.v1.SpannerSource].
+  // * [CloudSqlSource][google.cloud.discoveryengine.v1.CloudSqlSource].
+  // * [FirestoreSource][google.cloud.discoveryengine.v1.FirestoreSource].
+  // * [BigtableSource][google.cloud.discoveryengine.v1.BigtableSource].
   string id_field = 9;
 }
 
