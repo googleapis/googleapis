@@ -28,6 +28,10 @@ option java_outer_classname = "UptimeProto";
 option java_package = "com.google.monitoring.v3";
 option php_namespace = "Google\\Cloud\\Monitoring\\V3";
 option ruby_package = "Google::Cloud::Monitoring::V3";
+option (google.api.resource_definition) = {
+  type: "cloudfunctions.googleapis.com/Function"
+  pattern: "projects/{project}/locations/{location}/functions/{function}"
+};
 
 // An internal checker allows Uptime checks to run on private/internal GCP
 // resources.
@@ -83,6 +87,35 @@ message InternalChecker {
 
   // The current operational state of the internal checker.
   State state = 7;
+}
+
+// Describes a Synthetic Monitor to be invoked by Uptime.
+message SyntheticMonitorTarget {
+  // A Synthetic Monitor deployed to a Cloud Functions V2 instance.
+  message CloudFunctionV2Target {
+    // Required. Fully qualified GCFv2 resource name
+    // i.e. `projects/{project}/locations/{location}/functions/{function}`
+    // Required.
+    string name = 1 [
+      (google.api.field_behavior) = REQUIRED,
+      (google.api.resource_reference) = {
+        type: "cloudfunctions.googleapis.com/Function"
+      }
+    ];
+
+    // Output only. The `cloud_run_revision` Monitored Resource associated with
+    // the GCFv2. The Synthetic Monitor execution results (metrics, logs, and
+    // spans) are reported against this Monitored Resource. This field is output
+    // only.
+    google.api.MonitoredResource cloud_run_revision = 2
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Specifies a Synthetic Monitor's execution stack.
+  oneof target {
+    // Target a Synthetic Monitor GCFv2 instance.
+    CloudFunctionV2Target cloud_function_v2 = 1;
+  }
 }
 
 // This message configures which resources and services to monitor for
@@ -194,6 +227,25 @@ message UptimeCheckConfig {
       }
     }
 
+    // Contains information needed for generating an
+    // [OpenID Connect
+    // token](https://developers.google.com/identity/protocols/OpenIDConnect).
+    // The OIDC token will be generated for the Monitoring service agent service
+    // account.
+    message ServiceAgentAuthentication {
+      // Type of authentication.
+      enum ServiceAgentAuthenticationType {
+        // Default value, will result in OIDC Authentication.
+        SERVICE_AGENT_AUTHENTICATION_TYPE_UNSPECIFIED = 0;
+
+        // OIDC Authentication
+        OIDC_TOKEN = 1;
+      }
+
+      // Type of authentication.
+      ServiceAgentAuthenticationType type = 1;
+    }
+
     // The HTTP request method to use for the check. If set to
     // `METHOD_UNSPECIFIED` then `request_method` defaults to `GET`.
     RequestMethod request_method = 8;
@@ -216,6 +268,7 @@ message UptimeCheckConfig {
 
     // The authentication information. Optional when creating an HTTP check;
     // defaults to empty.
+    // Do not set both `auth_method` and `auth_info`.
     BasicAuthentication auth_info = 4;
 
     // Boolean specifying whether to encrypt the header information.
@@ -278,6 +331,16 @@ message UptimeCheckConfig {
 
     // Contains information needed to add pings to an HTTP check.
     PingConfig ping_config = 12;
+
+    // This field is optional and should be set only by users interested in
+    // an authenticated uptime check.
+    // Do not set both `auth_method` and `auth_info`.
+    oneof auth_method {
+      // If specified, Uptime will generate and attach an OIDC JWT token for the
+      // Monitoring service agent service account as an `Authorization` header
+      // in the HTTP request when probing.
+      ServiceAgentAuthentication service_agent_authentication = 14;
+    }
   }
 
   // Information required for a TCP Uptime check request.
@@ -399,7 +462,8 @@ message UptimeCheckConfig {
     VPC_CHECKERS = 3;
   }
 
-  // A unique resource name for this Uptime check configuration. The format is:
+  // Identifier. A unique resource name for this Uptime check configuration. The
+  // format is:
   //
   //      projects/[PROJECT_ID_OR_NUMBER]/uptimeCheckConfigs/[UPTIME_CHECK_ID]
   //
@@ -409,7 +473,7 @@ message UptimeCheckConfig {
   // This field should be omitted when creating the Uptime check configuration;
   // on create, the resource name is assigned by the server and included in the
   // response.
-  string name = 1;
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
   // A human-friendly name for the Uptime check configuration. The display name
   // should be unique within a Cloud Monitoring Workspace in order to make it
@@ -434,6 +498,9 @@ message UptimeCheckConfig {
 
     // The group resource associated with the configuration.
     ResourceGroup resource_group = 4;
+
+    // Specifies a Synthetic Monitor to invoke.
+    SyntheticMonitorTarget synthetic_monitor = 21;
   }
 
   // The type of Uptime check request.
