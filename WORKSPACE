@@ -93,18 +93,29 @@ load("@rules_pkg//:deps.bzl", "rules_pkg_dependencies")
 
 rules_pkg_dependencies()
 
-# This must be above the download of gRPC (in C++ section) and 
-# rules_gapic_repositories because both depend on rules_go and we need to manage
-# our version of rules_go explicitly rather than depend on the version those
-# bring in transitively.
-_io_bazel_rules_go_version = "0.44.2"
+# This and gazelle must be above the download of gRPC (in C++ section) and
+# rules_gapic_repositories because both depend on them and we need to manage
+# our versions explicitly rather than depend on the version those bring in
+# transitively.
+_io_bazel_rules_go_version = "0.46.0"
 
 http_archive(
     name = "io_bazel_rules_go",
-    sha256 = "7c76d6236b28ff695aa28cf35f95de317a9472fd1fb14ac797c9bf684f09b37c",
+    sha256 = "80a98277ad1311dacd837f9b16db62887702e9f1d1c4c9f796d0121a46c8e184",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v{0}/rules_go-v{0}.zip".format(_io_bazel_rules_go_version),
         "https://github.com/bazelbuild/rules_go/releases/download/v{0}/rules_go-v{0}.zip".format(_io_bazel_rules_go_version),
+    ],
+)
+
+_bazel_gazelle_version = "0.36.0"
+
+http_archive(
+    name = "bazel_gazelle",
+    sha256 = "75df288c4b31c81eb50f51e2e14f4763cb7548daae126817247064637fd9ea62",
+    urls = [
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v{0}/bazel-gazelle-v{0}.tar.gz".format(_bazel_gazelle_version),
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v{0}/bazel-gazelle-v{0}.tar.gz".format(_bazel_gazelle_version),
     ],
 )
 
@@ -204,29 +215,7 @@ http_archive(
     urls = ["https://github.com/googleapis/rules_gapic/archive/v%s.tar.gz" % _rules_gapic_version],
 )
 
-# Gazelle dependency version should match gazelle dependency expected by gRPC
-_bazel_gazelle_version = "0.24.0"
-
-http_archive(
-    name = "bazel_gazelle",
-    sha256 = "de69a09dc70417580aabf20a28619bb3ef60d038470c7cf8442fafcf627c21cb",
-    urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v{0}/bazel-gazelle-v{0}.tar.gz".format(_bazel_gazelle_version),
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v{0}/bazel-gazelle-v{0}.tar.gz".format(_bazel_gazelle_version),
-    ],
-)
-
-# This overrides the package name @go_googleapis to point at this package,
-# @com_google_googleapis, which has the latest versions of all protos and is the
-# source of truth for those protos. This prevents rules_go from loading its own,
-# conflicting copy of googleapis under this package name, which would create
-# package collisions during compilation.
-local_repository(
-    name = "go_googleapis",
-    path = ".",
-)
-
-_gapic_generator_go_version = "0.41.2"
+_gapic_generator_go_version = "0.41.3"
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
