@@ -317,6 +317,23 @@ service SqlInstancesService {
       get: "/v1/projects/{project}/instances/{instance}/getLatestRecoveryTime"
     };
   }
+
+  // Acquire a lease for the setup of SQL Server Reporting Services (SSRS).
+  rpc AcquireSsrsLease(SqlInstancesAcquireSsrsLeaseRequest)
+      returns (SqlInstancesAcquireSsrsLeaseResponse) {
+    option (google.api.http) = {
+      post: "/v1/projects/{project}/instances/{instance}/acquireSsrsLease"
+      body: "body"
+    };
+  }
+
+  // Release a lease for the setup of SQL Server Reporting Services (SSRS).
+  rpc ReleaseSsrsLease(SqlInstancesReleaseSsrsLeaseRequest)
+      returns (SqlInstancesReleaseSsrsLeaseResponse) {
+    option (google.api.http) = {
+      post: "/v1/projects/{project}/instances/{instance}/releaseSsrsLease"
+    };
+  }
 }
 
 // Instance add server CA request.
@@ -680,6 +697,19 @@ message SqlInstancesVerifyExternalSyncSettingsRequest {
     OFFLINE = 2;
   }
 
+  // MigrationType decides if the migration is a physical file based migration
+  // or logical migration
+  enum MigrationType {
+    // Default value is logical migration
+    MIGRATION_TYPE_UNSPECIFIED = 0;
+
+    // Logical Migrations
+    LOGICAL = 1;
+
+    // Physical file based Migrations
+    PHYSICAL = 2;
+  }
+
   // Cloud SQL instance ID. This does not include the project ID.
   string instance = 1;
 
@@ -700,6 +730,15 @@ message SqlInstancesVerifyExternalSyncSettingsRequest {
     MySqlSyncConfig mysql_sync_config = 6
         [(google.api.field_behavior) = OPTIONAL];
   }
+
+  // Optional. MigrationType decides if the migration is a physical file based
+  // migration or logical migration
+  MigrationType migration_type = 7 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Parallel level for initial data sync. Currently only applicable
+  // for PostgreSQL.
+  ExternalSyncParallelLevel sync_parallel_level = 8
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Instance start external sync request.
@@ -724,6 +763,11 @@ message SqlInstancesStartExternalSyncRequest {
   // Optional. Parallel level for initial data sync. Currently only applicable
   // for MySQL.
   ExternalSyncParallelLevel sync_parallel_level = 7
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. MigrationType decides if the migration is a physical file based
+  // migration or logical migration.
+  SqlInstancesVerifyExternalSyncSettingsRequest.MigrationType migration_type = 8
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -836,6 +880,12 @@ message InstancesRotateServerCaRequest {
 message InstancesTruncateLogRequest {
   // Contains details about the truncate log operation.
   TruncateLogContext truncate_log_context = 1;
+}
+
+// Request to acquire a lease for SSRS.
+message InstancesAcquireSsrsLeaseRequest {
+  // Contains details about the acquire SSRS lease operation.
+  AcquireSsrsLeaseContext acquire_ssrs_lease_context = 1;
 }
 
 // Instance verify external sync settings response.
@@ -1196,6 +1246,56 @@ message DatabaseInstance {
   // Output only. The dns name of the primary instance in a replication group.
   optional string write_endpoint = 52
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The pair of a primary instance and disaster recovery (DR)
+  // replica. A DR replica is a cross-region replica that you designate for
+  // failover in the event that the primary instance has regional failure.
+  ReplicationCluster replication_cluster = 54
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Gemini configuration.
+  optional GeminiInstanceConfig gemini_config = 55;
+}
+
+// Gemini configuration.
+message GeminiInstanceConfig {
+  // Output only. Whether gemini is enabled.
+  optional bool entitled = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Whether vacuum management is enabled.
+  optional bool google_vacuum_mgmt_enabled = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Whether oom session cancel is enabled.
+  optional bool oom_session_cancel_enabled = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Whether active query is enabled.
+  optional bool active_query_enabled = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Whether index advisor is enabled.
+  optional bool index_advisor_enabled = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Whether flag recommender is enabled.
+  optional bool flag_recommender_enabled = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Primary-DR replica pair
+message ReplicationCluster {
+  // Optional. If the instance is a primary instance, then this field identifies
+  // the disaster recovery (DR) replica. A DR replica is an optional
+  // configuration for Enterprise Plus edition instances. If the instance is a
+  // read replica, then the field is not set. Users can set this field to set a
+  // designated DR replica for a primary. Removing this field removes the DR
+  // replica.
+  string failover_dr_replica_name = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. read-only field that indicates if the replica is a dr_replica;
+  // not set for a primary.
+  bool dr_replica = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Reschedule options for maintenance windows.
@@ -1444,6 +1544,22 @@ message SqlExternalSyncSettingError {
     // If a time out occurs while the subscription counts are calculated, then
     // this value is set to 1. Otherwise, this value is set to 2.
     SUBSCRIPTION_CALCULATION_STATUS = 40;
+
+    // Count of subscriptions needed to sync source data for PostgreSQL
+    // database.
+    PG_SUBSCRIPTION_COUNT = 41;
+
+    // Final parallel level that is used to do migration.
+    PG_SYNC_PARALLEL_LEVEL = 42;
+
+    // The disk size of the replica instance is smaller than the data size of
+    // the source instance.
+    INSUFFICIENT_DISK_SIZE = 43;
+
+    // The data size of the source instance is greater than 1 TB, the number of
+    // cores of the replica instance is less than 8, and the memory of the
+    // replica is less than 32 GB.
+    INSUFFICIENT_MACHINE_TIER = 44;
   }
 
   // Can be `sql#externalSyncSettingError` or
@@ -1513,6 +1629,47 @@ message ReplicaConfiguration {
   // replica(s) under it.
   google.protobuf.BoolValue cascadable_replica = 5
       [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request to acquire a lease for SSRS.
+message SqlInstancesAcquireSsrsLeaseRequest {
+  // Required. Cloud SQL instance ID. This doesn't include the project ID. It's
+  // composed of lowercase letters, numbers, and hyphens, and it must start with
+  // a letter. The total length must be 98 characters or less (Example:
+  // instance-id).
+  string instance = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Project ID of the project that contains the instance (Example:
+  // project-id).
+  string project = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The request body.
+  InstancesAcquireSsrsLeaseRequest body = 100
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response for the acquire SSRS lease request.
+message SqlInstancesAcquireSsrsLeaseResponse {
+  // The unique identifier for this operation.
+  string operation_id = 1;
+}
+
+// Request to release a lease for SSRS.
+message SqlInstancesReleaseSsrsLeaseRequest {
+  // Required. The Cloud SQL instance ID. This doesn't include the project ID.
+  // The instance ID contains lowercase letters, numbers, and hyphens, and it
+  // must start with a letter. This ID can have a maximum length of 98
+  // characters.
+  string instance = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The project ID that contains the instance.
+  string project = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response for the release SSRS lease request.
+message SqlInstancesReleaseSsrsLeaseResponse {
+  // The unique identifier for this operation.
+  string operation_id = 1;
 }
 
 enum SqlInstanceType {
