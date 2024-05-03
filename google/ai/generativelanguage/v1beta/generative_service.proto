@@ -1,4 +1,4 @@
-// Copyright 2023 Google LLC
+// Copyright 2024 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -37,6 +37,11 @@ service GenerativeService {
 
   // Generates a response from the model given an input
   // `GenerateContentRequest`.
+  //
+  // Input capabilities differ between models, including tuned models. See the
+  // [model guide](https://ai.google.dev/models/gemini) and
+  // [tuning guide](https://ai.google.dev/docs/model_tuning_guidance) for
+  // details.
   rpc GenerateContent(GenerateContentRequest)
       returns (GenerateContentResponse) {
     option (google.api.http) = {
@@ -245,6 +250,16 @@ message GenerationConfig {
   // `text/plain`: (default) Text output.
   // `application/json`: JSON response in the candidates.
   string response_mime_type = 13 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Output response schema of the generated candidate text when
+  // response mime type can have schema. Schema can be objects, primitives or
+  // arrays and is a subset of [OpenAPI
+  // schema](https://spec.openapis.org/oas/v3.0.3#schema).
+  //
+  // If set, a compatible response_mime_type must also be set.
+  // Compatible mimetypes:
+  // `application/json`: Schema for JSON response.
+  Schema response_schema = 14 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Configuration for retrieving grounding content from a `Corpus` or
@@ -307,11 +322,26 @@ message GenerateContentResponse {
     repeated SafetyRating safety_ratings = 2;
   }
 
+  // Metadata on the generation request's token usage.
+  message UsageMetadata {
+    // Number of tokens in the prompt.
+    int32 prompt_token_count = 1;
+
+    // Total number of tokens across the generated candidates.
+    int32 candidates_token_count = 2;
+
+    // Total token count for the generation request (prompt + candidates).
+    int32 total_token_count = 3;
+  }
+
   // Candidate responses from the model.
   repeated Candidate candidates = 1;
 
   // Returns the prompt's feedback related to the content filters.
   PromptFeedback prompt_feedback = 2;
+
+  // Output only. Metadata on the generation requests' token usage.
+  UsageMetadata usage_metadata = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A response candidate generated from the model.
@@ -593,7 +623,8 @@ message EmbedContentRequest {
 
   // Optional. Optional reduced dimension for the output embedding. If set,
   // excessive values in the output embedding are truncated from the end.
-  // Supported by `models/text-embedding-latest`.
+  // Supported by newer models since 2024, and the earlier model
+  // (`models/embedding-001`) cannot specify this value.
   optional int32 output_dimensionality = 5
       [(google.api.field_behavior) = OPTIONAL];
 }
@@ -657,8 +688,13 @@ message CountTokensRequest {
     }
   ];
 
-  // Required. The input given to the model as a prompt.
-  repeated Content contents = 2 [(google.api.field_behavior) = REQUIRED];
+  // Optional. The input given to the model as a prompt.
+  repeated Content contents = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The overall input given to the model. CountTokens will count
+  // prompt, function calling, etc.
+  GenerateContentRequest generate_content_request = 3
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // A response from `CountTokens`.
