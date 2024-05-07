@@ -1,4 +1,4 @@
-// Copyright 2023 Google LLC
+// Copyright 2024 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -117,6 +117,43 @@ message DimensionExpression {
     // For example, dimension "country, city": concatenate(country, ", ", city).
     ConcatenateExpression concatenate = 6;
   }
+}
+
+// The quantitative measurements of a report. For example, the metric
+// `eventCount` is the total number of events. Requests are allowed up to 10
+// metrics.
+message Metric {
+  // The name of the metric. See the [API
+  // Metrics](https://developers.google.com/analytics/devguides/reporting/data/v1/api-schema#metrics)
+  // for the list of metric names supported by core reporting methods such
+  // as `runReport` and `batchRunReports`. See
+  // [Realtime
+  // Metrics](https://developers.google.com/analytics/devguides/reporting/data/v1/realtime-api-schema#metrics)
+  // for the list of metric names supported by the `runRealtimeReport`
+  // method. See
+  // [Funnel
+  // Metrics](https://developers.google.com/analytics/devguides/reporting/data/v1/exploration-api-schema#metrics)
+  // for the list of metric names supported by the `runFunnelReport`
+  // method.
+  //
+  // If `expression` is specified, `name` can be any string that you would like
+  // within the allowed character set. For example if `expression` is
+  // `screenPageViews/sessions`, you could call that metric's name =
+  // `viewsPerSession`. Metric names that you choose must match the regular
+  // expression `^[a-zA-Z0-9_]$`.
+  //
+  // Metrics are referenced by `name` in `metricFilter`, `orderBys`, and metric
+  // `expression`.
+  string name = 1;
+
+  // A mathematical expression for derived metrics. For example, the metric
+  // Event count per user is `eventCount/totalUsers`.
+  string expression = 2;
+
+  // Indicates if a metric is invisible in the report response. If a metric is
+  // invisible, the metric will not produce a column in the response, but can be
+  // used in `metricFilter`, `orderBys`, or a metric `expression`.
+  bool invisible = 3;
 }
 
 // To express dimension or metric filters. The fields in the same
@@ -243,6 +280,58 @@ message NumericFilter {
   NumericValue value = 2;
 }
 
+// Order bys define how rows will be sorted in the response. For example,
+// ordering rows by descending event count is one ordering, and ordering rows by
+// the event name string is a different ordering.
+message OrderBy {
+  // Sorts by metric values.
+  message MetricOrderBy {
+    // A metric name in the request to order by.
+    string metric_name = 1;
+  }
+
+  // Sorts by dimension values.
+  message DimensionOrderBy {
+    // Rule to order the string dimension values by.
+    enum OrderType {
+      // Unspecified.
+      ORDER_TYPE_UNSPECIFIED = 0;
+
+      // Alphanumeric sort by Unicode code point. For example, "2" < "A" < "X" <
+      // "b" < "z".
+      ALPHANUMERIC = 1;
+
+      // Case insensitive alphanumeric sort by lower case Unicode code point.
+      // For example, "2" < "A" < "b" < "X" < "z".
+      CASE_INSENSITIVE_ALPHANUMERIC = 2;
+
+      // Dimension values are converted to numbers before sorting. For example
+      // in NUMERIC sort, "25" < "100", and in `ALPHANUMERIC` sort, "100" <
+      // "25". Non-numeric dimension values all have equal ordering value below
+      // all numeric values.
+      NUMERIC = 3;
+    }
+
+    // A dimension name in the request to order by.
+    string dimension_name = 1;
+
+    // Controls the rule for dimension value ordering.
+    OrderType order_type = 2;
+  }
+
+  // Specify one type of order by for `OrderBy`.
+  oneof one_order_by {
+    // Sorts results by a metric's values.
+    MetricOrderBy metric = 1;
+
+    // Sorts results by a dimension's values.
+    DimensionOrderBy dimension = 2;
+  }
+
+  // If true, sorts by descending order.
+  bool desc = 4;
+}
+
 // To express that the result needs to be between two numbers (inclusive).
 message BetweenFilter {
   // Begins with this number.
@@ -262,6 +351,209 @@ message NumericValue {
     // Double value
     double double_value = 2;
   }
+}
+
+// The specification of cohorts for a cohort report.
+//
+// Cohort reports create a time series of user retention for the cohort. For
+// example, you could select the cohort of users that were acquired in the first
+// week of September and follow that cohort for the next six weeks. Selecting
+// the users acquired in the first week of September cohort is specified in the
+// `cohort` object. Following that cohort for the next six weeks is specified in
+// the `cohortsRange` object.
+//
+// For examples, see [Cohort Report
+// Examples](https://developers.google.com/analytics/devguides/reporting/data/v1/advanced#cohort_report_examples).
+//
+// The report response could show a weekly time series where say your app has
+// retained 60% of this cohort after three weeks and 25% of this cohort after
+// six weeks. These two percentages can be calculated by the metric
+// `cohortActiveUsers/cohortTotalUsers` and will be separate rows in the report.
+message CohortSpec {
+  // Defines the selection criteria to group users into cohorts.
+  //
+  // Most cohort reports define only a single cohort. If multiple cohorts are
+  // specified, each cohort can be recognized in the report by their name.
+  repeated Cohort cohorts = 1;
+
+  // Cohort reports follow cohorts over an extended reporting date range. This
+  // range specifies an offset duration to follow the cohorts over.
+  CohortsRange cohorts_range = 2;
+
+  // Optional settings for a cohort report.
+  CohortReportSettings cohort_report_settings = 3;
+}
+
+// Defines a cohort selection criteria. A cohort is a group of users who share
+// a common characteristic. For example, users with the same `firstSessionDate`
+// belong to the same cohort.
+message Cohort {
+  // Assigns a name to this cohort. The dimension `cohort` is valued to this
+  // name in a report response. If set, cannot begin with `cohort_` or
+  // `RESERVED_`. If not set, cohorts are named by their zero based index
+  // `cohort_0`, `cohort_1`, etc.
+  string name = 1;
+
+  // Dimension used by the cohort. Required and only supports
+  // `firstSessionDate`.
+  string dimension = 2;
+
+  // The cohort selects users whose first touch date is between start date and
+  // end date defined in the `dateRange`. This `dateRange` does not specify the
+  // full date range of event data that is present in a cohort report. In a
+  // cohort report, this `dateRange` is extended by the granularity and offset
+  // present in the `cohortsRange`; event data for the extended reporting date
+  // range is present in a cohort report.
+  //
+  // In a cohort request, this `dateRange` is required and the `dateRanges` in
+  // the `RunReportRequest` or `RunPivotReportRequest` must be unspecified.
+  //
+  // This `dateRange` should generally be aligned with the cohort's granularity.
+  // If `CohortsRange` uses daily granularity, this `dateRange` can be a single
+  // day. If `CohortsRange` uses weekly granularity, this `dateRange` can be
+  // aligned to a week boundary, starting at Sunday and ending Saturday. If
+  // `CohortsRange` uses monthly granularity, this `dateRange` can be aligned to
+  // a month, starting at the first and ending on the last day of the month.
+  DateRange date_range = 3;
+}
+
+// Configures the extended reporting date range for a cohort report. Specifies
+// an offset duration to follow the cohorts over.
+message CohortsRange {
+  // The granularity used to interpret the `startOffset` and `endOffset` for the
+  // extended reporting date range for a cohort report.
+  enum Granularity {
+    // Should never be specified.
+    GRANULARITY_UNSPECIFIED = 0;
+
+    // Daily granularity. Commonly used if the cohort's `dateRange` is a single
+    // day and the request contains `cohortNthDay`.
+    DAILY = 1;
+
+    // Weekly granularity. Commonly used if the cohort's `dateRange` is a week
+    // in duration (starting on Sunday and ending on Saturday) and the request
+    // contains `cohortNthWeek`.
+    WEEKLY = 2;
+
+    // Monthly granularity. Commonly used if the cohort's `dateRange` is a month
+    // in duration and the request contains `cohortNthMonth`.
+    MONTHLY = 3;
+  }
+
+  // Required. The granularity used to interpret the `startOffset` and
+  // `endOffset` for the extended reporting date range for a cohort report.
+  Granularity granularity = 1;
+
+  // `startOffset` specifies the start date of the extended reporting date range
+  // for a cohort report. `startOffset` is commonly set to 0 so that reports
+  // contain data from the acquisition of the cohort forward.
+  //
+  // If `granularity` is `DAILY`, the `startDate` of the extended reporting date
+  // range is `startDate` of the cohort plus `startOffset` days.
+  //
+  // If `granularity` is `WEEKLY`, the `startDate` of the extended reporting
+  // date range is `startDate` of the cohort plus `startOffset * 7` days.
+  //
+  // If `granularity` is `MONTHLY`, the `startDate` of the extended reporting
+  // date range is `startDate` of the cohort plus `startOffset * 30` days.
+  int32 start_offset = 2;
+
+  // Required. `endOffset` specifies the end date of the extended reporting date
+  // range for a cohort report. `endOffset` can be any positive integer but is
+  // commonly set to 5 to 10 so that reports contain data on the cohort for the
+  // next several granularity time periods.
+  //
+  // If `granularity` is `DAILY`, the `endDate` of the extended reporting date
+  // range is `endDate` of the cohort plus `endOffset` days.
+  //
+  // If `granularity` is `WEEKLY`, the `endDate` of the extended reporting date
+  // range is `endDate` of the cohort plus `endOffset * 7` days.
+  //
+  // If `granularity` is `MONTHLY`, the `endDate` of the extended reporting date
+  // range is `endDate` of the cohort plus `endOffset * 30` days.
+  int32 end_offset = 3;
+}
+
+// Optional settings of a cohort report.
+message CohortReportSettings {
+  // If true, accumulates the result from first touch day to the end day. Not
+  // supported in `RunReportRequest`.
+  bool accumulate = 1;
+}
+
+// Response's metadata carrying additional information about the report content.
+message ResponseMetaData {
+  // The schema restrictions actively enforced in creating this report. To learn
+  // more, see [Access and data-restriction
+  // management](https://support.google.com/analytics/answer/10851388).
+  message SchemaRestrictionResponse {
+    // A metric actively restricted in creating the report.
+    message ActiveMetricRestriction {
+      // The name of the restricted metric.
+      optional string metric_name = 1;
+
+      // The reason for this metric's restriction.
+      repeated RestrictedMetricType restricted_metric_types = 2;
+    }
+
+    // All restrictions actively enforced in creating the report. For example,
+    // `purchaseRevenue` always has the restriction type `REVENUE_DATA`.
+    // However, this active response restriction is only populated if the user's
+    // custom role disallows access to `REVENUE_DATA`.
+    repeated ActiveMetricRestriction active_metric_restrictions = 1;
+  }
+
+  // If true, indicates some buckets of dimension combinations are rolled into
+  // "(other)" row. This can happen for high cardinality reports.
+  //
+  // The metadata parameter dataLossFromOtherRow is populated based on the
+  // aggregated data table used in the report. The parameter will be accurately
+  // populated regardless of the filters and limits in the report.
+  //
+  // For example, the (other) row could be dropped from the report because the
+  // request contains a filter on sessionSource = google. This parameter will
+  // still be populated if data loss from other row was present in the input
+  // aggregate data used to generate this report.
+  //
+  // To learn more, see [About the (other) row and data
+  // sampling](https://support.google.com/analytics/answer/13208658#reports).
+  bool data_loss_from_other_row = 3;
+
+  // Describes the schema restrictions actively enforced in creating this
+  // report. To learn more, see [Access and data-restriction
+  // management](https://support.google.com/analytics/answer/10851388).
+  optional SchemaRestrictionResponse schema_restriction_response = 4;
+
+  // The currency code used in this report. Intended to be used in formatting
+  // currency metrics like `purchaseRevenue` for visualization. If currency_code
+  // was specified in the request, this response parameter will echo the request
+  // parameter; otherwise, this response parameter is the property's current
+  // currency_code.
+  //
+  // Currency codes are string encodings of currency types from the ISO 4217
+  // standard (https://en.wikipedia.org/wiki/ISO_4217); for example "USD",
+  // "EUR", "JPY". To learn more, see
+  // https://support.google.com/analytics/answer/9796179.
+  optional string currency_code = 5;
+
+  // The property's current timezone. Intended to be used to interpret
+  // time-based dimensions like `hour` and `minute`. Formatted as strings from
+  // the IANA Time Zone database (https://www.iana.org/time-zones); for example
+  // "America/New_York" or "Asia/Tokyo".
+  optional string time_zone = 6;
+
+  // If empty reason is specified, the report is empty for this reason.
+  optional string empty_reason = 7;
+
+  // If `subjectToThresholding` is true, this report is subject to thresholding
+  // and only returns data that meets the minimum aggregation thresholds. It is
+  // possible for a request to be subject to thresholding thresholding and no
+  // data is absent from the report, and this happens when all data is above the
+  // thresholds. To learn more, see [Data
+  // thresholds](https://support.google.com/analytics/answer/9383630) and [About
+  // Demographics and
+  // Interests](https://support.google.com/analytics/answer/2799357).
+  optional bool subject_to_thresholding = 8;
 }
 
 // Describes a dimension column in the report. Dimensions requested in a report
@@ -1209,6 +1501,24 @@ message SamplingMetadata {
   int64 sampling_space_size = 2;
 }
 
+// Represents aggregation of metrics.
+enum MetricAggregation {
+  // Unspecified operator.
+  METRIC_AGGREGATION_UNSPECIFIED = 0;
+
+  // SUM operator.
+  TOTAL = 1;
+
+  // Minimum operator.
+  MINIMUM = 5;
+
+  // Maximum operator.
+  MAXIMUM = 6;
+
+  // Count operator.
+  COUNT = 4;
+}
+
 // A metric's value type.
 enum MetricType {
   // Unspecified type.
@@ -1249,4 +1559,17 @@ enum MetricType {
 
   // A length in kilometers; a special floating point type.
   TYPE_KILOMETERS = 13;
+}
+
+// Categories of data that you may be restricted from viewing on certain GA4
+// properties.
+enum RestrictedMetricType {
+  // Unspecified type.
+  RESTRICTED_METRIC_TYPE_UNSPECIFIED = 0;
+
+  // Cost metrics such as `adCost`.
+  COST_DATA = 1;
+
+  // Revenue metrics such as `purchaseRevenue`.
+  REVENUE_DATA = 2;
 }
