@@ -522,6 +522,15 @@ message LinuxNodeConfig {
     CGROUP_MODE_V2 = 2;
   }
 
+  // Hugepages amount in both 2m and 1g size
+  message HugepagesConfig {
+    // Optional. Amount of 2M hugepages
+    optional int32 hugepage_size2m = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Amount of 1G hugepages
+    optional int32 hugepage_size1g = 2 [(google.api.field_behavior) = OPTIONAL];
+  }
+
   // The Linux kernel parameters to be applied to the nodes and all pods running
   // on the nodes.
   //
@@ -542,6 +551,10 @@ message LinuxNodeConfig {
 
   // cgroup_mode specifies the cgroup mode to be used on the node.
   CgroupMode cgroup_mode = 2;
+
+  // Optional. Amounts for 2M and 1G hugepages
+  optional HugepagesConfig hugepages = 3
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Parameters that can be configured on Windows nodes.
@@ -827,6 +840,9 @@ message NodeConfig {
   // Parameters for node pools to be backed by shared sole tenant node groups.
   SoleTenantConfig sole_tenant_config = 42;
 
+  // Parameters for containerd customization.
+  ContainerdConfig containerd_config = 43;
+
   // HostMaintenancePolicy contains the desired maintenance policy for the
   // Google Compute Engine hosts.
   HostMaintenancePolicy host_maintenance_policy = 44;
@@ -852,6 +868,9 @@ message AdvancedMachineFeatures {
   // multithreading (SMT) set this to 1. If unset, the maximum number of threads
   // supported per core by the underlying processor is assumed.
   optional int64 threads_per_core = 1;
+
+  // Whether or not to enable nested virtualization (defaults to false).
+  optional bool enable_nested_virtualization = 2;
 }
 
 // Parameters for node pool-level network config.
@@ -1153,6 +1172,53 @@ message SoleTenantConfig {
 
   // NodeAffinities used to match to a shared sole tenant node group.
   repeated NodeAffinity node_affinities = 1;
+}
+
+// ContainerdConfig contains configuration to customize containerd.
+message ContainerdConfig {
+  // PrivateRegistryAccessConfig contains access configuration for
+  // private container registries.
+  message PrivateRegistryAccessConfig {
+    // CertificateAuthorityDomainConfig configures one or more fully qualified
+    // domain names (FQDN) to a specific certificate.
+    message CertificateAuthorityDomainConfig {
+      // GCPSecretManagerCertificateConfig configures a secret from
+      // [Google Secret Manager](https://cloud.google.com/secret-manager).
+      message GCPSecretManagerCertificateConfig {
+        // Secret URI, in the form
+        // "projects/$PROJECT_ID/secrets/$SECRET_NAME/versions/$VERSION".
+        // Version can be fixed (e.g. "2") or "latest"
+        string secret_uri = 1;
+      }
+
+      // List of fully qualified domain names (FQDN).
+      // Specifying port is supported.
+      // Wilcards are NOT supported.
+      // Examples:
+      // - my.customdomain.com
+      // - 10.0.1.2:5000
+      repeated string fqdns = 1;
+
+      // Certificate access config. The following are supported:
+      // - GCPSecretManagerCertificateConfig
+      oneof certificate_config {
+        // Google Secret Manager (GCP) certificate configuration.
+        GCPSecretManagerCertificateConfig
+            gcp_secret_manager_certificate_config = 2;
+      }
+    }
+
+    // Private registry access is enabled.
+    bool enabled = 1;
+
+    // Private registry access configuration.
+    repeated CertificateAuthorityDomainConfig
+        certificate_authority_domain_config = 2;
+  }
+
+  // PrivateRegistryAccessConfig is used to configure access configuration
+  // for private container registries.
+  PrivateRegistryAccessConfig private_registry_access_config = 1;
 }
 
 // HostMaintenancePolicy contains the maintenance policy for the hosts on which
@@ -1827,8 +1893,8 @@ message BinaryAuthorization {
 
   // Binauthz policy that applies to this cluster.
   message PolicyBinding {
-    // The relative resource name of the binauthz platform policy to audit. GKE
-    // platform policies have the following format:
+    // The relative resource name of the binauthz platform policy to evaluate.
+    // GKE platform policies have the following format:
     // `projects/{project_number}/platforms/gke/policies/{policy_id}`.
     optional string name = 1;
   }
@@ -2291,6 +2357,43 @@ message Cluster {
 
   // Secret CSI driver configuration.
   SecretManagerConfig secret_manager_config = 150;
+
+  // Enable/Disable Compliance Posture features for the cluster.
+  CompliancePostureConfig compliance_posture_config = 151;
+
+  // Output only. Reserved for future use.
+  optional bool satisfies_pzs = 152 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Reserved for future use.
+  optional bool satisfies_pzi = 153 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// CompliancePostureConfig defines the settings needed to enable/disable
+// features for the Compliance Posture.
+message CompliancePostureConfig {
+  // Mode defines enablement mode for Compliance Posture.
+  enum Mode {
+    // Default value not specified.
+    MODE_UNSPECIFIED = 0;
+
+    // Disables Compliance Posture features on the cluster.
+    DISABLED = 1;
+
+    // Enables Compliance Posture features on the cluster.
+    ENABLED = 2;
+  }
+
+  // Defines the details of a compliance standard.
+  message ComplianceStandard {
+    // Name of the compliance standard.
+    optional string standard = 1;
+  }
+
+  // Defines the enablement mode for Compliance Posture.
+  optional Mode mode = 1;
+
+  // List of enabled compliance standards.
+  repeated ComplianceStandard compliance_standards = 2;
 }
 
 // Kubernetes open source beta apis enabled on the cluster.
@@ -2363,6 +2466,9 @@ message SecurityPostureConfig {
 
     // Applies Security Posture features on the cluster.
     BASIC = 2;
+
+    // Applies the Security Posture off cluster Enterprise level features.
+    ENTERPRISE = 3;
   }
 
   // VulnerabilityMode defines enablement mode for vulnerability scanning.
@@ -2402,9 +2508,17 @@ message NodeConfigDefaults {
   // Logging configuration for node pools.
   NodePoolLoggingConfig logging_config = 3;
 
+  // Parameters for containerd customization.
+  ContainerdConfig containerd_config = 4;
+
   // HostMaintenancePolicy contains the desired maintenance policy for the
   // Google Compute Engine hosts.
   HostMaintenancePolicy host_maintenance_policy = 5;
+
+  // NodeKubeletConfig controls the defaults for new node-pools.
+  //
+  // Currently only `insecure_kubelet_readonly_port_enabled` can be set here.
+  NodeKubeletConfig node_kubelet_config = 6;
 }
 
 // node pool configs that apply to all auto-provisioned node pools
@@ -2419,6 +2533,11 @@ message NodePoolAutoConfig {
   // Resource manager tag keys and values to be attached to the nodes
   // for managing Compute Engine firewalls using Network Firewall Policies.
   ResourceManagerTags resource_manager_tags = 2;
+
+  // NodeKubeletConfig controls the defaults for autoprovisioned node-pools.
+  //
+  // Currently only `insecure_kubelet_readonly_port_enabled` can be set here.
+  NodeKubeletConfig node_kubelet_config = 3;
 }
 
 // ClusterUpdate describes an update to the cluster. Exactly one update can
@@ -2511,7 +2630,12 @@ message ClusterUpdate {
   // Cluster-level Vertical Pod Autoscaling configuration.
   VerticalPodAutoscaling desired_vertical_pod_autoscaling = 22;
 
-  // The desired private cluster configuration.
+  // The desired private cluster configuration. master_global_access_config is
+  // the only field that can be changed via this field.
+  // See also
+  // [ClusterUpdate.desired_enable_private_endpoint][google.container.v1beta1.ClusterUpdate.desired_enable_private_endpoint]
+  // for modifying other fields within
+  // [PrivateClusterConfig][google.container.v1beta1.PrivateClusterConfig].
   PrivateClusterConfig desired_private_cluster_config = 25;
 
   // The desired config of Intra-node visibility.
@@ -2525,6 +2649,11 @@ message ClusterUpdate {
 
   // The desired release channel configuration.
   ReleaseChannel desired_release_channel = 31;
+
+  // The desired private cluster configuration. Has no effect. Use
+  // [desired_private_cluster_config][google.container.v1beta1.ClusterUpdate.desired_private_cluster_config]
+  // instead.
+  PrivateClusterConfig private_cluster_config = 37 [deprecated = true];
 
   // The desired Cloud TPU configuration.
   TpuConfig desired_tpu_config = 38;
@@ -2665,6 +2794,9 @@ message ClusterUpdate {
   // Google Compute Engine hosts.
   HostMaintenancePolicy desired_host_maintenance_policy = 132;
 
+  // The desired containerd config for the cluster.
+  ContainerdConfig desired_containerd_config = 134;
+
   // Enable/Disable Multi-Networking for the cluster
   optional bool desired_enable_multi_networking = 135;
 
@@ -2673,6 +2805,7 @@ message ClusterUpdate {
   ResourceManagerTags desired_node_pool_auto_config_resource_manager_tags = 136;
 
   // Specify the details of in-transit encryption.
+  // Now named inter-node transparent encryption.
   optional InTransitEncryptionConfig desired_in_transit_encryption_config = 137;
 
   // Enable/Disable Cilium Clusterwide Network Policy for the cluster.
@@ -2680,6 +2813,13 @@ message ClusterUpdate {
 
   // Enable/Disable Secret Manager Config.
   optional SecretManagerConfig desired_secret_manager_config = 139;
+
+  // The desired node kubelet config for the cluster.
+  NodeKubeletConfig desired_node_kubelet_config = 141;
+
+  // The desired node kubelet config for all auto-provisioned node pools
+  // in autopilot clusters and node auto-provisioning enabled clusters.
+  NodeKubeletConfig desired_node_pool_auto_config_kubelet_config = 142;
 }
 
 // AdditionalPodRangesConfig is the configuration for additional pod secondary
@@ -3148,6 +3288,11 @@ message UpdateNodePoolRequest {
   // Parameters that can be configured on Windows nodes.
   WindowsNodeConfig windows_node_config = 34;
 
+  // A list of hardware accelerators to be attached to each node.
+  // See https://cloud.google.com/compute/docs/gpus for more information about
+  // support for GPUs.
+  repeated AcceleratorConfig accelerators = 35;
+
   // Optional. The desired machine type for nodes in the node pool.
   // Initiates an upgrade operation that migrates the nodes in the
   // node pool to the specified machine type.
@@ -3167,6 +3312,11 @@ message UpdateNodePoolRequest {
   // for managing Compute Engine firewalls using Network Firewall Policies.
   // Existing tags will be replaced with new values.
   ResourceManagerTags resource_manager_tags = 39;
+
+  // The desired containerd config for nodes in the node pool.
+  // Initiates an upgrade operation that recreates the nodes with the new
+  // config.
+  ContainerdConfig containerd_config = 40;
 
   // Specifies the configuration of queued provisioning.
   NodePool.QueuedProvisioning queued_provisioning = 42;
@@ -4685,6 +4835,9 @@ message GPUSharingConfig {
 
     // GPUs are time-shared between containers.
     TIME_SHARING = 1;
+
+    // GPUs are shared between containers with NVIDIA MPS.
+    MPS = 2;
   }
 
   // The max number of containers that can share a physical GPU.
@@ -5190,6 +5343,10 @@ message DNSConfig {
 
   // cluster_dns_domain is the suffix used for all cluster service records.
   string cluster_dns_domain = 3;
+
+  // Optional. The domain used in Additive VPC scope.
+  string additive_vpc_scope_dns_domain = 5
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Constraints applied to pods.
@@ -5932,6 +6089,12 @@ message MonitoringComponentConfig {
 
     // Statefulset
     STATEFULSET = 12;
+
+    // CADVISOR
+    CADVISOR = 13;
+
+    // KUBELET
+    KUBELET = 14;
   }
 
   // Select components to collect metrics. An empty set would disable all
