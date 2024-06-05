@@ -134,6 +134,15 @@ service CloudRedisCluster {
       metadata_type: "google.protobuf.Any"
     };
   }
+
+  // Gets the details of certificate authority information for Redis cluster.
+  rpc GetClusterCertificateAuthority(GetClusterCertificateAuthorityRequest)
+      returns (CertificateAuthority) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/locations/*/clusters/*/certificateAuthority}"
+    };
+    option (google.api.method_signature) = "name";
+  }
 }
 
 // Available authorization mode of a Redis cluster.
@@ -146,6 +155,23 @@ enum AuthorizationMode {
 
   // Authorization disabled mode
   AUTH_MODE_DISABLED = 2;
+}
+
+// NodeType of a redis cluster node,
+enum NodeType {
+  NODE_TYPE_UNSPECIFIED = 0;
+
+  // Redis shared core nano node_type.
+  REDIS_SHARED_CORE_NANO = 1;
+
+  // Redis highmem medium node_type.
+  REDIS_HIGHMEM_MEDIUM = 2;
+
+  // Redis highmem xlarge node_type.
+  REDIS_HIGHMEM_XLARGE = 3;
+
+  // Redis standard small node_type.
+  REDIS_STANDARD_SMALL = 4;
 }
 
 // Available mode of in-transit encryption.
@@ -282,6 +308,20 @@ message DeleteClusterRequest {
   string request_id = 2;
 }
 
+// Request for
+// [GetClusterCertificateAuthorityRequest][CloudRedis.GetClusterCertificateAuthorityRequest].
+message GetClusterCertificateAuthorityRequest {
+  // Required. Redis cluster certificate authority resource name using the form:
+  //     `projects/{project_id}/locations/{location_id}/clusters/{cluster_id}/certificateAuthority`
+  // where `location_id` refers to a GCP region.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "redis.googleapis.com/CertificateAuthority"
+    }
+  ];
+}
+
 // A cluster instance.
 message Cluster {
   option (google.api.resource) = {
@@ -353,7 +393,8 @@ message Cluster {
   TransitEncryptionMode transit_encryption_mode = 12
       [(google.api.field_behavior) = OPTIONAL];
 
-  // Output only. Redis memory size in GB for the entire cluster.
+  // Output only. Redis memory size in GB for the entire cluster rounded up to
+  // the next integer.
   optional int32 size_gb = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Required. Number of shards for the Redis cluster.
@@ -376,6 +417,32 @@ message Cluster {
 
   // Output only. Additional information about the current state of the cluster.
   StateInfo state_info = 18 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The type of a redis node in the cluster. NodeType determines the
+  // underlying machine-type of a redis node.
+  NodeType node_type = 19 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Persistence config (RDB, AOF) for the cluster.
+  ClusterPersistenceConfig persistence_config = 20
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Key/Value pairs of customer overrides for mutable Redis Configs
+  map<string, string> redis_configs = 21
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Precise value of redis memory size in GB for the entire
+  // cluster.
+  optional double precise_size_gb = 22
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. This config will be used to determine how the customer wants us
+  // to distribute cluster resources within the region.
+  ZoneDistributionConfig zone_distribution_config = 23
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The delete operation will fail when the value is set to true.
+  optional bool deletion_protection_enabled = 25
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 message PscConfig {
@@ -451,4 +518,144 @@ message OperationMetadata {
 
   // Output only. API version used to start the operation.
   string api_version = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Redis cluster certificate authority
+message CertificateAuthority {
+  option (google.api.resource) = {
+    type: "redis.googleapis.com/CertificateAuthority"
+    pattern: "projects/{project}/locations/{location}/clusters/{cluster}/certificateAuthority"
+  };
+
+  message ManagedCertificateAuthority {
+    message CertChain {
+      // The certificates that form the CA chain, from leaf to root order.
+      repeated string certificates = 1;
+    }
+
+    // The PEM encoded CA certificate chains for redis managed
+    // server authentication
+    repeated CertChain ca_certs = 1;
+  }
+
+  // server ca information
+  oneof server_ca {
+    ManagedCertificateAuthority managed_server_ca = 1;
+  }
+
+  // Identifier. Unique name of the resource in this scope including project,
+  // location and cluster using the form:
+  //     `projects/{project}/locations/{location}/clusters/{cluster}/certificateAuthority`
+  string name = 2 [(google.api.field_behavior) = IDENTIFIER];
+}
+
+// Configuration of the persistence functionality.
+message ClusterPersistenceConfig {
+  // Configuration of the RDB based persistence.
+  message RDBConfig {
+    // Available snapshot periods.
+    enum SnapshotPeriod {
+      // Not set.
+      SNAPSHOT_PERIOD_UNSPECIFIED = 0;
+
+      // One hour.
+      ONE_HOUR = 1;
+
+      // Six hours.
+      SIX_HOURS = 2;
+
+      // Twelve hours.
+      TWELVE_HOURS = 3;
+
+      // Twenty four hours.
+      TWENTY_FOUR_HOURS = 4;
+    }
+
+    // Optional. Period between RDB snapshots.
+    SnapshotPeriod rdb_snapshot_period = 1
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The time that the first snapshot was/will be attempted, and to
+    // which future snapshots will be aligned. If not provided, the current time
+    // will be used.
+    google.protobuf.Timestamp rdb_snapshot_start_time = 2
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Configuration of the AOF based persistence.
+  message AOFConfig {
+    // Available fsync modes.
+    enum AppendFsync {
+      // Not set. Default: EVERYSEC
+      APPEND_FSYNC_UNSPECIFIED = 0;
+
+      // Never fsync. Normally Linux will flush data every 30 seconds with this
+      // configuration, but it's up to the kernel's exact tuning.
+      NO = 1;
+
+      // fsync every second. Fast enough, and you may lose 1 second of data if
+      // there is a disaster
+      EVERYSEC = 2;
+
+      // fsync every time new commands are appended to the AOF. It has the best
+      // data loss protection at the cost of performance
+      ALWAYS = 3;
+    }
+
+    // Optional. fsync configuration.
+    AppendFsync append_fsync = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Available persistence modes.
+  enum PersistenceMode {
+    // Not set.
+    PERSISTENCE_MODE_UNSPECIFIED = 0;
+
+    // Persistence is disabled, and any snapshot data is deleted.
+    DISABLED = 1;
+
+    // RDB based persistence is enabled.
+    RDB = 2;
+
+    // AOF based persistence is enabled.
+    AOF = 3;
+  }
+
+  // Optional. The mode of persistence.
+  PersistenceMode mode = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. RDB configuration. This field will be ignored if mode is not RDB.
+  RDBConfig rdb_config = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. AOF configuration. This field will be ignored if mode is not AOF.
+  AOFConfig aof_config = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Zone distribution config for allocation of cluster resources.
+message ZoneDistributionConfig {
+  // Defines various modes of zone distribution.
+  // Currently supports two modes, can be expanded in future to support more
+  // types of distribution modes.
+  // design doc: go/same-zone-cluster
+  enum ZoneDistributionMode {
+    // Not Set. Default: MULTI_ZONE
+    ZONE_DISTRIBUTION_MODE_UNSPECIFIED = 0;
+
+    // Distribute all resources across 3 zones picked at random, within the
+    // region.
+    MULTI_ZONE = 1;
+
+    // Distribute all resources in a single zone. The zone field must be
+    // specified, when this mode is selected.
+    SINGLE_ZONE = 2;
+  }
+
+  // Optional. The mode of zone distribution. Defaults to MULTI_ZONE, when not
+  // specified.
+  ZoneDistributionMode mode = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. When SINGLE ZONE distribution is selected, zone field would be
+  // used to allocate all resources in that zone. This is not applicable to
+  // MULTI_ZONE, and would be ignored for MULTI_ZONE clusters.
+  string zone = 2 [(google.api.field_behavior) = OPTIONAL];
 }
