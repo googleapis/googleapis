@@ -39,15 +39,15 @@ enum DeploymentState {
 
   // Deployment was attempted to be installed, but has errors
   ERROR = 3;
+
+  // Deployment is installing or terminating
+  PENDING = 4;
 }
 
 // **Anthos Config Management**: State for a single cluster.
 message MembershipState {
-  // The user-defined name for the cluster used by ClusterSelectors to group
-  // clusters together. This should match Membership's membership_name,
-  // unless the user installed ACM on the cluster manually prior to enabling
-  // the ACM hub feature.
-  // Unique within a Anthos Config Management installation.
+  // This field is set to the `cluster_name` field of the Membership Spec if it
+  // is not empty. Otherwise, it is set to the cluster's fleet membership name.
   string cluster_name = 1;
 
   // Membership configuration in the cluster. This represents the actual state
@@ -71,6 +71,18 @@ message MembershipState {
 // **Anthos Config Management**: Configuration for a single cluster.
 // Intended to parallel the ConfigManagement CR.
 message MembershipSpec {
+  // Whether to automatically manage the Feature.
+  enum Management {
+    // Unspecified
+    MANAGEMENT_UNSPECIFIED = 0;
+
+    // Google will manage the Feature for the cluster.
+    MANAGEMENT_AUTOMATIC = 1;
+
+    // User will manually manage the Feature for the cluster.
+    MANAGEMENT_MANUAL = 2;
+  }
+
   // Config Sync configuration for the cluster.
   ConfigSync config_sync = 1;
 
@@ -82,6 +94,18 @@ message MembershipSpec {
 
   // Version of ACM installed.
   string version = 10;
+
+  // The user-specified cluster name used by Config Sync cluster-name-selector
+  // annotation or ClusterSelector, for applying configs to only a subset
+  // of clusters.
+  // Omit this field if the cluster's fleet membership name is used by Config
+  // Sync cluster-name-selector annotation or ClusterSelector.
+  // Set this field if a name different from the cluster's fleet membership name
+  // is used by Config Sync cluster-name-selector annotation or ClusterSelector.
+  string cluster = 11;
+
+  // Enables automatic Feature management.
+  Management management = 12;
 }
 
 // Configuration for Config Sync
@@ -90,8 +114,33 @@ message ConfigSync {
   GitConfig git = 7;
 
   // Specifies whether the Config Sync Repo is
-  // in “hierarchical” or “unstructured” mode.
+  // in "hierarchical" or "unstructured" mode.
   string source_format = 8;
+
+  // Enables the installation of ConfigSync.
+  // If set to true, ConfigSync resources will be created and the other
+  // ConfigSync fields will be applied if exist.
+  // If set to false, all other ConfigSync fields will be ignored, ConfigSync
+  // resources will be deleted.
+  // If omitted, ConfigSync resources will be managed depends on the presence
+  // of the git or oci field.
+  optional bool enabled = 10;
+
+  // Set to true to enable the Config Sync admission webhook to prevent drifts.
+  // If set to `false`, disables the Config Sync admission webhook and does not
+  // prevent drifts.
+  bool prevent_drift = 11;
+
+  // OCI repo configuration for the cluster
+  OciConfig oci = 12;
+
+  // The Email of the Google Cloud Service Account (GSA) used for exporting
+  // Config Sync metrics to Cloud Monitoring when Workload Identity is enabled.
+  // The GSA should have the Monitoring Metric Writer
+  // (roles/monitoring.metricWriter) IAM role.
+  // The Kubernetes ServiceAccount `default` in the namespace
+  // `config-management-monitoring` should be bound to the GSA.
+  string metrics_gcp_service_account_email = 15;
 }
 
 // Git repo configuration for a single cluster.
@@ -112,15 +161,38 @@ message GitConfig {
   // Git revision (tag or hash) to check out. Default HEAD.
   string sync_rev = 5;
 
-  // Type of secret configured for access to the Git repo.
+  // Type of secret configured for access to the Git repo. Must be one of ssh,
+  // cookiefile, gcenode, token, gcpserviceaccount or none. The
+  // validation of this is case-sensitive. Required.
   string secret_type = 6;
 
   // URL for the HTTPS proxy to be used when communicating with the Git repo.
   string https_proxy = 7;
 
-  // The GCP Service Account Email used for auth when secret_type is
+  // The Google Cloud Service Account Email used for auth when secret_type is
   // gcpServiceAccount.
   string gcp_service_account_email = 8;
+}
+
+// OCI repo configuration for a single cluster
+message OciConfig {
+  // The OCI image repository URL for the package to sync from.
+  // e.g. `LOCATION-docker.pkg.dev/PROJECT_ID/REPOSITORY_NAME/PACKAGE_NAME`.
+  string sync_repo = 1;
+
+  // The absolute path of the directory that contains
+  // the local resources.  Default: the root directory of the image.
+  string policy_dir = 2;
+
+  // Period in seconds between consecutive syncs. Default: 15.
+  int64 sync_wait_secs = 3;
+
+  // Type of secret configured for access to the Git repo.
+  string secret_type = 4;
+
+  // The Google Cloud Service Account Email used for auth when secret_type is
+  // gcpServiceAccount.
+  string gcp_service_account_email = 5;
 }
 
 // Configuration for Policy Controller
@@ -208,6 +280,41 @@ message InstallError {
 
 // State information for ConfigSync
 message ConfigSyncState {
+  // CRDState representing the state of a CRD
+  enum CRDState {
+    // CRD's state cannot be determined
+    CRD_STATE_UNSPECIFIED = 0;
+
+    // CRD is not installed
+    NOT_INSTALLED = 1;
+
+    // CRD is installed
+    INSTALLED = 2;
+
+    // CRD is terminating (i.e., it has been deleted and is cleaning up)
+    TERMINATING = 3;
+
+    // CRD is installing
+    INSTALLING = 4;
+  }
+
+  enum State {
+    // CS's state cannot be determined.
+    STATE_UNSPECIFIED = 0;
+
+    // CS is not installed.
+    CONFIG_SYNC_NOT_INSTALLED = 1;
+
+    // The expected CS version is installed successfully.
+    CONFIG_SYNC_INSTALLED = 2;
+
+    // CS encounters errors.
+    CONFIG_SYNC_ERROR = 3;
+
+    // CS is installing or terminating.
+    CONFIG_SYNC_PENDING = 4;
+  }
+
   // The version of ConfigSync deployed
   ConfigSyncVersion version = 1;
 
@@ -217,6 +324,25 @@ message ConfigSyncState {
 
   // The state of ConfigSync's process to sync configs to a cluster
   SyncState sync_state = 3;
+
+  // Errors pertaining to the installation of Config Sync.
+  repeated ConfigSyncError errors = 4;
+
+  // The state of the RootSync CRD
+  CRDState rootsync_crd = 5;
+
+  // The state of the Reposync CRD
+  CRDState reposync_crd = 6;
+
+  // The state of CS
+  // This field summarizes the other fields in this message.
+  State state = 7;
+}
+
+// Errors pertaining to the installation of Config Sync
+message ConfigSyncError {
+  // A string representing the user facing error message
+  string error_message = 1;
 }
 
 // Specific versioning information pertaining to ConfigSync's Pods
@@ -238,6 +364,9 @@ message ConfigSyncVersion {
 
   // Version of the deployed reconciler container in root-reconciler pod
   string root_reconciler = 6;
+
+  // Version of the deployed admission_webhook pod
+  string admission_webhook = 7;
 }
 
 // The state of ConfigSync's deployment on a cluster
@@ -259,29 +388,31 @@ message ConfigSyncDeploymentState {
 
   // Deployment state of root-reconciler
   DeploymentState root_reconciler = 6;
+
+  // Deployment state of admission-webhook
+  DeploymentState admission_webhook = 7;
 }
 
 // State indicating an ACM's progress syncing configurations to a cluster
 message SyncState {
-  // An enum representing an ACM's status syncing configs to a cluster
+  // An enum representing Config Sync's status of syncing configs to a cluster.
   enum SyncCode {
-    // ACM cannot determine a sync code
+    // Config Sync cannot determine a sync code
     SYNC_CODE_UNSPECIFIED = 0;
 
-    // ACM successfully synced the git Repo with the cluster
+    // Config Sync successfully synced the git Repo with the cluster
     SYNCED = 1;
 
-    // ACM is in the progress of syncing a new change
+    // Config Sync is in the progress of syncing a new change
     PENDING = 2;
 
-    // Indicates an error configuring ACM, and user action is required
+    // Indicates an error configuring Config Sync, and user action is required
     ERROR = 3;
 
-    // ACM has been installed (operator manifest deployed),
-    // but not configured.
+    // Config Sync has been installed but not configured
     NOT_CONFIGURED = 4;
 
-    // ACM has not been installed (no operator pod found)
+    // Config Sync has not been installed
     NOT_INSTALLED = 5;
 
     // Error authorizing with the cluster
