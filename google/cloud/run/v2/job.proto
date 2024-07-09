@@ -23,7 +23,6 @@ import "google/api/launch_stage.proto";
 import "google/api/resource.proto";
 import "google/api/routing.proto";
 import "google/cloud/run/v2/condition.proto";
-import "google/cloud/run/v2/execution.proto";
 import "google/cloud/run/v2/execution_template.proto";
 import "google/cloud/run/v2/k8s.min.proto";
 import "google/cloud/run/v2/vendor_settings.proto";
@@ -77,7 +76,7 @@ service Jobs {
     option (google.api.method_signature) = "name";
   }
 
-  // Lists Jobs.
+  // Lists Jobs. Results are sorted by creation time, descending.
   rpc ListJobs(ListJobsRequest) returns (ListJobsResponse) {
     option (google.api.http) = {
       get: "/v2/{parent=projects/*/locations/*}/jobs"
@@ -220,10 +219,10 @@ message UpdateJobRequest {
   // populated, without persisting the request or updating any resources.
   bool validate_only = 3;
 
-  // If set to true, and if the Job does not exist, it will create a new
-  // one. Caller must have both create and update permissions for this call if
-  // this is set to true.
-  bool allow_missing = 4;
+  // Optional. If set to true, and if the Job does not exist, it will create a
+  // new one. Caller must have both create and update permissions for this call
+  // if this is set to true.
+  bool allow_missing = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request message for retrieving a list of Jobs.
@@ -391,7 +390,8 @@ message Job {
   google.protobuf.Timestamp update_time = 7
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. The deletion time.
+  // Output only. The deletion time. It is only populated as a response to a
+  // Delete request.
   google.protobuf.Timestamp delete_time = 8
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
@@ -478,6 +478,18 @@ message Job {
   // Output only. Reserved for future use.
   bool satisfies_pzs = 25 [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  oneof create_execution {
+    // A unique string used as a suffix creating a new execution. The Job will
+    // become ready when the execution is successfully started.
+    // The sum of job name and token length must be fewer than 63 characters.
+    string start_execution_token = 26;
+
+    // A unique string used as a suffix for creating a new execution. The Job
+    // will become ready when the execution is successfully completed.
+    // The sum of job name and token length must be fewer than 63 characters.
+    string run_execution_token = 27;
+  }
+
   // Output only. A system-generated fingerprint for this version of the
   // resource. May be used to detect modification conflict during updates.
   string etag = 99 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -486,6 +498,27 @@ message Job {
 // Reference to an Execution. Use /Executions.GetExecution with the given name
 // to get full execution including the latest status.
 message ExecutionReference {
+  // Possible execution completion status.
+  enum CompletionStatus {
+    // The default value. This value is used if the state is omitted.
+    COMPLETION_STATUS_UNSPECIFIED = 0;
+
+    // Job execution has succeeded.
+    EXECUTION_SUCCEEDED = 1;
+
+    // Job execution has failed.
+    EXECUTION_FAILED = 2;
+
+    // Job execution is running normally.
+    EXECUTION_RUNNING = 3;
+
+    // Waiting for backing resources to be provisioned.
+    EXECUTION_PENDING = 4;
+
+    // Job execution has been cancelled by the user.
+    EXECUTION_CANCELLED = 5;
+  }
+
   // Name of the execution.
   string name = 1 [
     (google.api.resource_reference) = { type: "run.googleapis.com/Execution" }
@@ -496,4 +529,11 @@ message ExecutionReference {
 
   // Creation timestamp of the execution.
   google.protobuf.Timestamp completion_time = 3;
+
+  // The deletion time of the execution. It is only
+  // populated as a response to a Delete request.
+  google.protobuf.Timestamp delete_time = 5;
+
+  // Status for the execution completion.
+  CompletionStatus completion_status = 4;
 }
