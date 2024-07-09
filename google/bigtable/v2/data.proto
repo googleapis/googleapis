@@ -17,6 +17,9 @@ syntax = "proto3";
 package google.bigtable.v2;
 
 import "google/api/field_behavior.proto";
+import "google/bigtable/v2/types.proto";
+import "google/protobuf/timestamp.proto";
+import "google/type/date.proto";
 
 option csharp_namespace = "Google.Cloud.Bigtable.V2";
 option go_package = "google.golang.org/genproto/googleapis/bigtable/v2;bigtable";
@@ -92,6 +95,21 @@ message Cell {
 // value (which may be of a more complex type). See the documentation of the
 // `Type` message for more details.
 message Value {
+  // The verified `Type` of this `Value`, if it cannot be inferred.
+  //
+  // Read results will never specify the encoding for `type` since the value
+  // will already have been decoded by the server. Furthermore, the `type` will
+  // be omitted entirely if it can be inferred from a previous response. The
+  // exact semantics for inferring `type` will vary, and are therefore
+  // documented separately for each read method.
+  //
+  // When using composite types (Struct, Array, Map) only the outermost `Value`
+  // will specify the `type`. This top-level `type` will define the types for
+  // any nested `Struct' fields, `Array` elements, or `Map` key/value pairs.
+  // If a nested `Value` provides a `type` on write, the request will be
+  // rejected with INVALID_ARGUMENT.
+  Type type = 7;
+
   // Options for transporting values within the protobuf type system. A given
   // `kind` may support more than one `type` and vice versa. On write, this is
   // roughly analogous to a GoogleSQL literal.
@@ -107,10 +125,40 @@ message Value {
     // The `type` field must be omitted.
     int64 raw_timestamp_micros = 9;
 
+    // Represents a typed value transported as a byte sequence.
+    bytes bytes_value = 2;
+
+    // Represents a typed value transported as a string.
+    string string_value = 3;
+
     // Represents a typed value transported as an integer.
-    // Default type for writes: `Int64`
     int64 int_value = 6;
+
+    // Represents a typed value transported as a boolean.
+    bool bool_value = 10;
+
+    // Represents a typed value transported as a floating point number.
+    double float_value = 11;
+
+    // Represents a typed value transported as a timestamp.
+    google.protobuf.Timestamp timestamp_value = 12;
+
+    // Represents a typed value transported as a date.
+    google.type.Date date_value = 13;
+
+    // Represents a typed value transported as a sequence of values.
+    // To differentiate between `Struct`, `Array`, and `Map`, the outermost
+    // `Value` must provide an explicit `type` on write. This `type` will
+    // apply recursively to the nested `Struct` fields, `Array` elements,
+    // or `Map` key/value pairs, which *must not* supply their own `type`.
+    ArrayValue array_value = 4;
   }
+}
+
+// `ArrayValue` is an ordered list of `Value`.
+message ArrayValue {
+  // The ordered elements in the array.
+  repeated Value values = 1;
 }
 
 // Specifies a contiguous range of rows.
@@ -608,4 +656,85 @@ message StreamContinuationToken {
 
   // An encoded position in the stream to restart reading from.
   string token = 2;
+}
+
+// Protocol buffers format descriptor, as described by Messages ProtoSchema and
+// ProtoRows
+message ProtoFormat {}
+
+// Describes a column in a Bigtable Query Language result set.
+message ColumnMetadata {
+  // The name of the column.
+  string name = 1;
+
+  // The type of the column.
+  Type type = 2;
+}
+
+// ResultSet schema in proto format
+message ProtoSchema {
+  // The columns in the result set.
+  repeated ColumnMetadata columns = 1;
+}
+
+// Describes the structure of a Bigtable result set.
+message ResultSetMetadata {
+  // The schema of the ResultSet, contains ordered list of column names
+  // with types
+  oneof schema {
+    // Schema in proto format
+    ProtoSchema proto_schema = 1;
+  }
+}
+
+// Batch of serialized ProtoRows.
+message ProtoRowsBatch {
+  // Merge partial results by concatenating these bytes, then parsing the
+  // overall value as a `ProtoRows` message.
+  bytes batch_data = 1;
+}
+
+// A partial result set from the streaming query API.
+// CBT client will buffer partial_rows from result_sets until it gets a
+// resumption_token.
+message PartialResultSet {
+  // Partial Rows in one of the supported formats. It may require many
+  // PartialResultSets to stream a batch of rows that can decoded on the client.
+  // The client should buffer partial_rows until it gets a `resume_token`,
+  // at which point the batch is complete and can be decoded and yielded to the
+  // user. Each sub-message documents the appropriate way to combine results.
+  oneof partial_rows {
+    // Partial rows in serialized ProtoRows format.
+    ProtoRowsBatch proto_rows_batch = 3;
+  }
+
+  // An opaque token sent by the server to allow query resumption and signal
+  // the client to accumulate `partial_rows` since the last non-empty
+  // `resume_token`. On resumption, the resumed query will return the remaining
+  // rows for this query.
+  //
+  // If there is a batch in progress, a non-empty `resume_token`
+  // means that that the batch of `partial_rows` will be complete after merging
+  // the `partial_rows` from this response. The client must only yield
+  // completed batches to the application, and must ensure that any future
+  // retries send the latest token to avoid returning duplicate data.
+  //
+  // The server may set 'resume_token' without a 'partial_rows'. If there is a
+  // batch in progress the client should yield it.
+  //
+  // The server will also send a sentinel `resume_token` when last batch of
+  // `partial_rows` is sent. If the client retries the ExecuteQueryRequest with
+  // the sentinel `resume_token`, the server will emit it again without any
+  // `partial_rows`, then return OK.
+  bytes resume_token = 5;
+
+  // Estimated size of a new batch. The server will always set this when
+  // returning the first `partial_rows` of a batch, and will not set it at any
+  // other time.
+  //
+  // The client can use this estimate to allocate an initial buffer for the
+  // batched results. This helps minimize the number of allocations required,
+  // though the buffer size may still need to be increased if the estimate is
+  // too low.
+  int32 estimated_batch_size = 4;
 }
