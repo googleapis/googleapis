@@ -20,6 +20,7 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/cloud/discoveryengine/v1beta/chunk.proto";
 import "google/cloud/discoveryengine/v1beta/common.proto";
 import "google/cloud/discoveryengine/v1beta/document.proto";
 import "google/protobuf/struct.proto";
@@ -70,8 +71,8 @@ message SearchRequest {
   }
 
   // A struct to define data stores to filter on in a search call and
-  // configurations for those data stores. A maximum of 1 DataStoreSpec per
-  // data_store is allowed. Otherwise, an `INVALID_ARGUMENT` error is returned.
+  // configurations for those data stores. Otherwise, an `INVALID_ARGUMENT`
+  // error is returned.
   message DataStoreSpec {
     // Required. Full resource name of
     // [DataStore][google.cloud.discoveryengine.v1beta.DataStore], such as
@@ -150,6 +151,9 @@ message SearchRequest {
     // Maximum facet values that are returned for this facet. If
     // unspecified, defaults to 20. The maximum allowed value is 300. Values
     // above 300 are coerced to 300.
+    // For aggregation in healthcare search, when the [FacetKey.key] is
+    // "healthcare_aggregation_key", the limit will be overridden to
+    // 10,000 internally, regardless of the value set here.
     //
     // If this field is negative, an  `INVALID_ARGUMENT`  is returned.
     int32 limit = 2;
@@ -445,8 +449,9 @@ message SearchRequest {
       //
       // At most 10 results for documents mode, or 50 for chunks mode, can be
       // used to generate a summary. The chunks mode is used when
-      // [SearchRequest.ContentSearchSpec.search_result_mode][] is set to
-      // [CHUNKS][SearchRequest.ContentSearchSpec.SearchResultMode.CHUNKS].
+      // [SearchRequest.ContentSearchSpec.search_result_mode][google.cloud.discoveryengine.v1beta.SearchRequest.ContentSearchSpec.search_result_mode]
+      // is set to
+      // [CHUNKS][google.cloud.discoveryengine.v1beta.SearchRequest.ContentSearchSpec.SearchResultMode.CHUNKS].
       int32 summary_result_count = 1;
 
       // Specifies whether to include citations in the summary. The default
@@ -569,6 +574,37 @@ message SearchRequest {
       int32 num_next_segments = 5;
     }
 
+    // Specifies the chunk spec to be returned from the search response.
+    // Only available if the
+    // [SearchRequest.ContentSearchSpec.search_result_mode][google.cloud.discoveryengine.v1beta.SearchRequest.ContentSearchSpec.search_result_mode]
+    // is set to
+    // [CHUNKS][google.cloud.discoveryengine.v1beta.SearchRequest.ContentSearchSpec.SearchResultMode.CHUNKS]
+    message ChunkSpec {
+      // The number of previous chunks to be returned of the current chunk. The
+      // maximum allowed value is 3.
+      // If not specified, no previous chunks will be returned.
+      int32 num_previous_chunks = 1;
+
+      // The number of next chunks to be returned of the current chunk. The
+      // maximum allowed value is 3.
+      // If not specified, no next chunks will be returned.
+      int32 num_next_chunks = 2;
+    }
+
+    // Specifies the search result mode. If unspecified, the
+    // search result mode defaults to `DOCUMENTS`.
+    enum SearchResultMode {
+      // Default value.
+      SEARCH_RESULT_MODE_UNSPECIFIED = 0;
+
+      // Returns documents in the search result.
+      DOCUMENTS = 1;
+
+      // Returns chunks in the search result. Only available if the
+      // [DataStore.DocumentProcessingConfig.chunking_config][] is specified.
+      CHUNKS = 2;
+    }
+
     // If `snippetSpec` is not specified, snippets are not included in the
     // search response.
     SnippetSpec snippet_spec = 1;
@@ -580,6 +616,17 @@ message SearchRequest {
     // If there is no extractive_content_spec provided, there will be no
     // extractive answer in the search response.
     ExtractiveContentSpec extractive_content_spec = 3;
+
+    // Specifies the search result mode. If unspecified, the
+    // search result mode defaults to `DOCUMENTS`.
+    SearchResultMode search_result_mode = 4;
+
+    // Specifies the chunk spec to be returned from the search response.
+    // Only available if the
+    // [SearchRequest.ContentSearchSpec.search_result_mode][google.cloud.discoveryengine.v1beta.SearchRequest.ContentSearchSpec.search_result_mode]
+    // is set to
+    // [CHUNKS][google.cloud.discoveryengine.v1beta.SearchRequest.ContentSearchSpec.SearchResultMode.CHUNKS]
+    ChunkSpec chunk_spec = 5;
   }
 
   // The specification that uses customized query embedding vector to do
@@ -782,20 +829,26 @@ message SearchRequest {
   // documents. This overrides
   // [ServingConfig.ranking_expression][google.cloud.discoveryengine.v1beta.ServingConfig.ranking_expression].
   // The ranking expression is a single function or multiple functions that are
-  // joint by "+".
+  // joined by "+".
+  //
   //   * ranking_expression = function, { " + ", function };
+  //
   // Supported functions:
+  //
   //   * double * relevance_score
   //   * double * dotProduct(embedding_field_path)
+  //
   // Function variables:
-  //   `relevance_score`: pre-defined keywords, used for measure relevance
+  //
+  //   * `relevance_score`: pre-defined keywords, used for measure relevance
   //   between query and document.
-  //   `embedding_field_path`: the document embedding field
+  //   * `embedding_field_path`: the document embedding field
   //   used with query embedding vector.
-  //   `dotProduct`: embedding function between embedding_field_path and query
+  //   * `dotProduct`: embedding function between embedding_field_path and query
   //   embedding vector.
   //
   //  Example ranking expression:
+  //
   //    If document has an embedding field doc_embedding, the ranking expression
   //    could be `0.5 * relevance_score + 0.3 * dotProduct(doc_embedding)`.
   string ranking_expression = 26;
@@ -837,6 +890,12 @@ message SearchResponse {
     // The document data snippet in the search response. Only fields that are
     // marked as `retrievable` are populated.
     Document document = 2;
+
+    // The chunk data in the search response if the
+    // [SearchRequest.ContentSearchSpec.search_result_mode][google.cloud.discoveryengine.v1beta.SearchRequest.ContentSearchSpec.search_result_mode]
+    // is set to
+    // [CHUNKS][google.cloud.discoveryengine.v1beta.SearchRequest.ContentSearchSpec.SearchResultMode.CHUNKS].
+    Chunk chunk = 18;
 
     // Google provided available scores.
     map<string, DoubleList> model_scores = 4;
