@@ -217,6 +217,27 @@ service FirestoreAdmin {
     };
   }
 
+  // Bulk deletes a subset of documents from Google Cloud Firestore.
+  // Documents created or updated after the underlying system starts to process
+  // the request will not be deleted. The bulk delete occurs in the background
+  // and its progress can be monitored and managed via the Operation resource
+  // that is created.
+  //
+  // For more details on bulk delete behavior, refer to:
+  // https://cloud.google.com/firestore/docs/manage-data/bulk-delete
+  rpc BulkDeleteDocuments(BulkDeleteDocumentsRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/databases/*}:bulkDeleteDocuments"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+    option (google.longrunning.operation_info) = {
+      response_type: "BulkDeleteDocumentsResponse"
+      metadata_type: "BulkDeleteDocumentsMetadata"
+    };
+  }
+
   // Create a database.
   rpc CreateDatabase(CreateDatabaseRequest)
       returns (google.longrunning.Operation) {
@@ -302,7 +323,7 @@ service FirestoreAdmin {
   //
   // The new database must be in the same cloud region or multi-region location
   // as the existing backup. This behaves similar to
-  // [FirestoreAdmin.CreateDatabase][google.firestore.admin.v1.CreateDatabase]
+  // [FirestoreAdmin.CreateDatabase][google.firestore.admin.v1.FirestoreAdmin.CreateDatabase]
   // except instead of creating a new empty database, a new database is created
   // with the database type, index configuration, and documents from an existing
   // backup.
@@ -709,7 +730,8 @@ message ExportDocumentsRequest {
     }
   ];
 
-  // Which collection ids to export. Unspecified means all collections.
+  // Which collection ids to export. Unspecified means all collections. Each
+  // collection id in this list must be unique.
   repeated string collection_ids = 2;
 
   // The output URI. Currently only supports Google Cloud Storage URIs of the
@@ -753,7 +775,7 @@ message ImportDocumentsRequest {
   ];
 
   // Which collection ids to import. Unspecified means all collections included
-  // in the import.
+  // in the import. Each collection id in this list must be unique.
   repeated string collection_ids = 2;
 
   // Location of the exported files.
@@ -771,6 +793,49 @@ message ImportDocumentsRequest {
   // to include them. Each namespace in this list must be unique.
   repeated string namespace_ids = 4;
 }
+
+// The request for
+// [FirestoreAdmin.BulkDeleteDocuments][google.firestore.admin.v1.FirestoreAdmin.BulkDeleteDocuments].
+//
+// When both collection_ids and namespace_ids are set, only documents satisfying
+// both conditions will be deleted.
+//
+// Requests with namespace_ids and collection_ids both empty will be rejected.
+// Please use
+// [FirestoreAdmin.DeleteDatabase][google.firestore.admin.v1.FirestoreAdmin.DeleteDatabase]
+// instead.
+message BulkDeleteDocumentsRequest {
+  // Required. Database to operate. Should be of the form:
+  // `projects/{project_id}/databases/{database_id}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "firestore.googleapis.com/Database"
+    }
+  ];
+
+  // Optional. IDs of the collection groups to delete. Unspecified means all
+  // collection groups.
+  //
+  // Each collection group in this list must be unique.
+  repeated string collection_ids = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Namespaces to delete.
+  //
+  // An empty list means all namespaces. This is the recommended
+  // usage for databases that don't use namespaces.
+  //
+  // An empty string element represents the default namespace. This should be
+  // used if the database has data in non-default namespaces, but doesn't want
+  // to delete from them.
+  //
+  // Each namespace in this list must be unique.
+  repeated string namespace_ids = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The response for
+// [FirestoreAdmin.BulkDeleteDocuments][google.firestore.admin.v1.FirestoreAdmin.BulkDeleteDocuments].
+message BulkDeleteDocumentsResponse {}
 
 // The request for
 // [FirestoreAdmin.GetBackup][google.firestore.admin.v1.FirestoreAdmin.GetBackup].
@@ -833,7 +898,7 @@ message DeleteBackupRequest {
 }
 
 // The request message for
-// [FirestoreAdmin.RestoreDatabase][google.firestore.admin.v1.RestoreDatabase].
+// [FirestoreAdmin.RestoreDatabase][google.firestore.admin.v1.FirestoreAdmin.RestoreDatabase].
 message RestoreDatabaseRequest {
   // Required. The project to restore the database in. Format is
   // `projects/{project_id}`.
@@ -865,4 +930,33 @@ message RestoreDatabaseRequest {
       type: "firestore.googleapis.com/Backup"
     }
   ];
+
+  // Encryption configuration for the restored database.
+  //
+  // If this field is not specified, the restored database will use
+  // the same encryption configuration as the backup, namely
+  // [use_backup_encryption][google.firestore.admin.v1.RestoreDatabaseRequest.use_backup_encryption].
+  oneof encryption_config {
+    // Use Google default encryption.
+    google.protobuf.Empty use_google_default_encryption = 6;
+
+    // The restored database will use the same encryption configuration as
+    // the backup. This is the default option when no `encryption_config` is
+    // specified.
+    google.protobuf.Empty use_backup_encryption = 7;
+
+    // Use Customer Managed Encryption Keys (CMEK) for encryption.
+    //
+    // Only keys in the same location as the restored database are allowed to be
+    // used for encryption.
+    //
+    // For Firestore's nam5 multi-region, this corresponds to Cloud KMS
+    // multi-region us. For Firestore's eur3 multi-region, this corresponds to
+    // Cloud KMS multi-region europe. See
+    // https://cloud.google.com/kms/docs/locations.
+    //
+    // The expected format is
+    // `projects/{project_id}/locations/{kms_location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}`.
+    string kms_key_name = 8;
+  }
 }
