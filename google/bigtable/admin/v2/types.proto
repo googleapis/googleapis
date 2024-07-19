@@ -32,27 +32,22 @@ option ruby_package = "Google::Cloud::Bigtable::Admin::V2";
 //
 // For compatibility with Bigtable's existing untyped APIs, each `Type` includes
 // an `Encoding` which describes how to convert to/from the underlying data.
-// This might involve composing a series of steps into an "encoding chain," for
-// example to convert from INT64 -> STRING -> raw bytes. In most cases, a "link"
-// in the encoding chain will be based an on existing GoogleSQL conversion
-// function like `CAST`.
 //
-// Each link in the encoding chain also defines the following properties:
-//  * Natural sort: Does the encoded value sort consistently with the original
-//    typed value? Note that Bigtable will always sort data based on the raw
-//    encoded value, *not* the decoded type.
+// Each encoding also defines the following properties:
+//
+//  * Order-preserving: Does the encoded value sort consistently with the
+//    original typed value? Note that Bigtable will always sort data based on
+//    the raw encoded value, *not* the decoded type.
 //     - Example: BYTES values sort in the same order as their raw encodings.
-//     - Counterexample: Encoding INT64 to a fixed-width STRING does *not*
-//       preserve sort order when dealing with negative numbers.
-//       INT64(1) > INT64(-1), but STRING("-00001") > STRING("00001).
-//     - The overall encoding chain has this property if *every* link does.
+//     - Counterexample: Encoding INT64 as a fixed-width decimal string does
+//       *not* preserve sort order when dealing with negative numbers.
+//       `INT64(1) > INT64(-1)`, but `STRING("-00001") > STRING("00001)`.
 //  * Self-delimiting: If we concatenate two encoded values, can we always tell
 //    where the first one ends and the second one begins?
 //     - Example: If we encode INT64s to fixed-width STRINGs, the first value
 //       will always contain exactly N digits, possibly preceded by a sign.
 //     - Counterexample: If we concatenate two UTF-8 encoded STRINGs, we have
 //       no way to tell where the first one ends.
-//     - The overall encoding chain has this property if *any* link does.
 //  * Compatibility: Which other systems have matching encoding schemes? For
 //    example, does this encoding have a GoogleSQL equivalent? HBase? Java?
 message Type {
@@ -62,7 +57,7 @@ message Type {
     // Rules used to convert to/from lower level types.
     message Encoding {
       // Leaves the value "as-is"
-      // * Natural sort? Yes
+      // * Order-preserving? Yes
       // * Self-delimiting? No
       // * Compatibility? N/A
       message Raw {}
@@ -83,19 +78,27 @@ message Type {
   message String {
     // Rules used to convert to/from lower level types.
     message Encoding {
+      // Deprecated: prefer the equivalent `Utf8Bytes`.
+      message Utf8Raw {
+        option deprecated = true;
+      }
+
       // UTF-8 encoding
-      // * Natural sort? No (ASCII characters only)
+      // * Order-preserving? Yes (code point order)
       // * Self-delimiting? No
       // * Compatibility?
       //    - BigQuery Federation `TEXT` encoding
       //    - HBase `Bytes.toBytes`
       //    - Java `String#getBytes(StandardCharsets.UTF_8)`
-      message Utf8Raw {}
+      message Utf8Bytes {}
 
       // Which encoding to use.
       oneof encoding {
-        // Use `Utf8Raw` encoding.
-        Utf8Raw utf8_raw = 1;
+        // Deprecated: if set, converts to an empty `utf8_bytes`.
+        Utf8Raw utf8_raw = 1 [deprecated = true];
+
+        // Use `Utf8Bytes` encoding.
+        Utf8Bytes utf8_bytes = 2;
       }
     }
 
@@ -110,14 +113,14 @@ message Type {
     message Encoding {
       // Encodes the value as an 8-byte big endian twos complement `Bytes`
       // value.
-      // * Natural sort? No (positive values only)
+      // * Order-preserving? No (positive values only)
       // * Self-delimiting? Yes
       // * Compatibility?
       //    - BigQuery Federation `BINARY` encoding
       //    - HBase `Bytes.toBytes`
       //    - Java `ByteBuffer.putLong()` with `ByteOrder.BIG_ENDIAN`
       message BigEndianBytes {
-        // The underlying `Bytes` type, which may be able to encode further.
+        // Deprecated: ignored if set.
         Bytes bytes_type = 1;
       }
 
@@ -132,6 +135,68 @@ message Type {
     Encoding encoding = 1;
   }
 
+  // bool
+  // Values of type `Bool` are stored in `Value.bool_value`.
+  message Bool {}
+
+  // Float32
+  // Values of type `Float32` are stored in `Value.float_value`.
+  message Float32 {}
+
+  // Float64
+  // Values of type `Float64` are stored in `Value.float_value`.
+  message Float64 {}
+
+  // Timestamp
+  // Values of type `Timestamp` are stored in `Value.timestamp_value`.
+  message Timestamp {}
+
+  // Date
+  // Values of type `Date` are stored in `Value.date_value`.
+  message Date {}
+
+  // A structured data value, consisting of fields which map to dynamically
+  // typed values.
+  // Values of type `Struct` are stored in `Value.array_value` where entries are
+  // in the same order and number as `field_types`.
+  message Struct {
+    // A struct field and its type.
+    message Field {
+      // The field name (optional). Fields without a `field_name` are considered
+      // anonymous and cannot be referenced by name.
+      string field_name = 1;
+
+      // The type of values in this field.
+      Type type = 2;
+    }
+
+    // The names and types of the fields in this struct.
+    repeated Field fields = 1;
+  }
+
+  // An ordered list of elements of a given type.
+  // Values of type `Array` are stored in `Value.array_value`.
+  message Array {
+    // The type of the elements in the array. This must not be `Array`.
+    Type element_type = 1;
+  }
+
+  // A mapping of keys to values of a given type.
+  // Values of type `Map` are stored in a `Value.array_value` where each entry
+  // is another `Value.array_value` with two elements (the key and the value,
+  // in that order).
+  // Normally encoded Map values won't have repeated keys, however, clients are
+  // expected to handle the case in which they do. If the same key appears
+  // multiple times, the _last_ value takes precedence.
+  message Map {
+    // The type of a map key.
+    // Only `Bytes`, `String`, and `Int64` are allowed as key types.
+    Type key_type = 1;
+
+    // The type of the values in a map.
+    Type value_type = 2;
+  }
+
   // A value that combines incremental updates into a summarized value.
   //
   // Data is never directly written or read using type `Aggregate`. Writes will
@@ -142,6 +207,25 @@ message Type {
     // Allowed input: `Int64`
     // State: same as input
     message Sum {}
+
+    // Computes the max of the input values.
+    // Allowed input: `Int64`
+    // State: same as input
+    message Max {}
+
+    // Computes the min of the input values.
+    // Allowed input: `Int64`
+    // State: same as input
+    message Min {}
+
+    // Computes an approximate unique count over the input values. When using
+    // raw data as input, be careful to use a consistent encoding. Otherwise
+    // the same value encoded differently could count more than once, or two
+    // distinct values could count as identical.
+    // Input: Any, or omit for Raw
+    // State: TBD
+    // Special state conversions: `Int64` (the unique count estimate)
+    message HyperLogLogPlusPlusUniqueCount {}
 
     // Type of the inputs that are accumulated by this `Aggregate`, which must
     // specify a full encoding.
@@ -157,6 +241,15 @@ message Type {
     oneof aggregator {
       // Sum aggregator.
       Sum sum = 4;
+
+      // HyperLogLogPlusPlusUniqueCount aggregator.
+      HyperLogLogPlusPlusUniqueCount hllpp_unique_count = 5;
+
+      // Max aggregator.
+      Max max = 6;
+
+      // Min aggregator.
+      Min min = 7;
     }
   }
 
@@ -171,7 +264,31 @@ message Type {
     // Int64
     Int64 int64_type = 5;
 
+    // Float32
+    Float32 float32_type = 12;
+
+    // Float64
+    Float64 float64_type = 9;
+
+    // Bool
+    Bool bool_type = 8;
+
+    // Timestamp
+    Timestamp timestamp_type = 10;
+
+    // Date
+    Date date_type = 11;
+
     // Aggregate
     Aggregate aggregate_type = 6;
+
+    // Struct
+    Struct struct_type = 7;
+
+    // Array
+    Array array_type = 3;
+
+    // Map
+    Map map_type = 4;
   }
 }
