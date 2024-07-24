@@ -49,6 +49,9 @@ message TuningJob {
   oneof tuning_spec {
     // Tuning Spec for Supervised Fine Tuning.
     SupervisedTuningSpec supervised_tuning_spec = 5;
+
+    // Tuning Spec for Distillation.
+    DistillationSpec distillation_spec = 17;
   }
 
   // Output only. Identifier. Resource name of a TuningJob. Format:
@@ -127,6 +130,16 @@ message TuningJob {
   TuningDataStats tuning_data_stats = 15
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  // Output only. The resource name of the PipelineJob associated with the
+  // [TuningJob][google.cloud.aiplatform.v1.TuningJob]. Format:
+  // `projects/{project}/locations/{location}/pipelineJobs/{pipeline_job}`.
+  string pipeline_job = 18 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/PipelineJob"
+    }
+  ];
+
   // Customer-managed encryption key options for a TuningJob. If this is set,
   // then all resources created by the TuningJob will be encrypted with the
   // provided encryption key.
@@ -173,6 +186,9 @@ message SupervisedTuningDatasetDistribution {
   // Output only. Sum of a given population of values.
   int64 sum = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  // Output only. Sum of a given population of values that are billable.
+  int64 billable_sum = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+
   // Output only. The minimum of the population values.
   double min = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 
@@ -208,6 +224,10 @@ message SupervisedTuningDataStats {
 
   // Output only. Number of billable characters in the tuning dataset.
   int64 total_billable_character_count = 3
+      [deprecated = true, (google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Number of billable tokens in the tuning dataset.
+  int64 total_billable_token_count = 9
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Number of tuning steps for this Tuning Job.
@@ -230,12 +250,98 @@ message SupervisedTuningDataStats {
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
+// Distribution computed over a tuning dataset.
+message DatasetDistribution {
+  // Dataset bucket used to create a histogram for the distribution given a
+  // population of values.
+  message DistributionBucket {
+    // Output only. Number of values in the bucket.
+    int64 count = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Left bound of the bucket.
+    double left = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Right bound of the bucket.
+    double right = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Output only. Sum of a given population of values.
+  double sum = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The minimum of the population values.
+  double min = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The maximum of the population values.
+  double max = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The arithmetic mean of the values in the population.
+  double mean = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The median of the values in the population.
+  double median = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The 5th percentile of the values in the population.
+  double p5 = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The 95th percentile of the values in the population.
+  double p95 = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Defines the histogram bucket.
+  repeated DistributionBucket buckets = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Statistics computed over a tuning dataset.
+message DatasetStats {
+  // Output only. Number of examples in the tuning dataset.
+  int64 tuning_dataset_example_count = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Number of tuning characters in the tuning dataset.
+  int64 total_tuning_character_count = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Number of billable characters in the tuning dataset.
+  int64 total_billable_character_count = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Number of tuning steps for this Tuning Job.
+  int64 tuning_step_count = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Dataset distributions for the user input tokens.
+  DatasetDistribution user_input_token_distribution = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Dataset distributions for the user output tokens.
+  optional DatasetDistribution user_output_token_distribution = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Dataset distributions for the messages per example.
+  DatasetDistribution user_message_per_example_distribution = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Sample user messages in the training dataset uri.
+  repeated Content user_dataset_examples = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Statistics computed for datasets used for distillation.
+message DistillationDataStats {
+  // Output only. Statistics computed for the training dataset.
+  DatasetStats training_dataset_stats = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
 // The tuning data statistic values for
 // [TuningJob][google.cloud.aiplatform.v1.TuningJob].
 message TuningDataStats {
   oneof tuning_data_stats {
     // The SFT Tuning data stats.
     SupervisedTuningDataStats supervised_tuning_data_stats = 1;
+
+    // Output only. Statistics for distillation.
+    DistillationDataStats distillation_data_stats = 3
+        [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 }
 
@@ -282,5 +388,57 @@ message SupervisedTuningSpec {
 
   // Optional. Hyperparameters for SFT.
   SupervisedHyperParameters hyper_parameters = 3
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Tuning Spec for Distillation.
+message DistillationSpec {
+  // The teacher model that is being distilled from, e.g., "gemini-1.0-pro-002".
+  oneof teacher_model {
+    // The base teacher model that is being distilled, e.g.,
+    // "gemini-1.0-pro-002".
+    string base_teacher_model = 5;
+
+    // The resource name of the Tuned teacher model. Format:
+    // `projects/{project}/locations/{location}/models/{model}`.
+    string tuned_teacher_model_source = 6 [(google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/Model"
+    }];
+  }
+
+  // Required. Cloud Storage path to file containing training dataset for
+  // tuning. The dataset must be formatted as a JSONL file.
+  string training_dataset_uri = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Cloud Storage path to file containing validation dataset for
+  // tuning. The dataset must be formatted as a JSONL file.
+  optional string validation_dataset_uri = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Hyperparameters for Distillation.
+  DistillationHyperParameters hyper_parameters = 3
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // The student model that is being tuned, e.g., "google/gemma-2b-1.1-it".
+  string student_model = 4;
+
+  // Required. A path in a Cloud Storage bucket, which will be treated as the
+  // root output directory of the distillation pipeline. It is used by the
+  // system to generate the paths of output artifacts.
+  string pipeline_root_directory = 7 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Hyperparameters for Distillation.
+message DistillationHyperParameters {
+  // Optional. Number of complete passes the model makes over the entire
+  // training dataset during training.
+  optional int64 epoch_count = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Multiplier for adjusting the default learning rate.
+  optional double learning_rate_multiplier = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Adapter size for distillation.
+  SupervisedHyperParameters.AdapterSize adapter_size = 3
       [(google.api.field_behavior) = OPTIONAL];
 }
