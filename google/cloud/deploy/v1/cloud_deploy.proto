@@ -807,6 +807,10 @@ message KubernetesConfig {
     // cutback time.
     google.protobuf.Duration stable_cutback_duration = 5
         [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The label to use when selecting Pods for the Deployment and
+    // Service resources. This label must already be present in both resources.
+    string pod_selector_label = 6 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Information about the Kubernetes Service networking configuration.
@@ -824,6 +828,10 @@ message KubernetesConfig {
     // Deployment has on the cluster.
     bool disable_pod_overprovisioning = 3
         [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The label to use when selecting Pods for the Deployment
+    // resource. This label must already be present in the Deployment.
+    string pod_selector_label = 4 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // The service definition configuration.
@@ -4134,14 +4142,6 @@ message RepairRolloutRule {
   // `[a-z]([a-z0-9-]{0,61}[a-z0-9])?`.
   string id = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. Phases within which jobs are subject to automatic repair actions
-  // on failure. Proceeds only after phase name matched any one in the list, or
-  // for all phases if unspecified. This value must consist of lower-case
-  // letters, numbers, and hyphens, start with a letter and end with a letter or
-  // a number, and have a max length of 63 characters. In other words, it must
-  // match the following regex: `^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$`.
-  repeated string source_phases = 2 [(google.api.field_behavior) = OPTIONAL];
-
   // Optional. Jobs to repair. Proceeds only after job name matched any one in
   // the list, or for all jobs if unspecified or empty. The phase that includes
   // the job must match the phase ID specified in `source_phase`. This value
@@ -4151,46 +4151,9 @@ message RepairRolloutRule {
   // `^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$`.
   repeated string jobs = 3 [(google.api.field_behavior) = OPTIONAL];
 
-  // Required. Defines the types of automatic repair actions for failed jobs.
-  repeated RepairMode repair_modes = 4 [(google.api.field_behavior) = REQUIRED];
-
   // Output only. Information around the state of the 'Automation' rule.
   AutomationRuleCondition condition = 6
       [(google.api.field_behavior) = OUTPUT_ONLY];
-}
-
-// Configuration of the repair action.
-message RepairMode {
-  // The repair action to perform.
-  oneof mode {
-    // Optional. Retries a failed job.
-    Retry retry = 1 [(google.api.field_behavior) = OPTIONAL];
-
-    // Optional. Rolls back a `Rollout`.
-    Rollback rollback = 2 [(google.api.field_behavior) = OPTIONAL];
-  }
-}
-
-// Retries the failed job.
-message Retry {
-  // Required. Total number of retries. Retry is skipped if set to 0; The
-  // minimum value is 1, and the maximum value is 10.
-  int64 attempts = 1 [(google.api.field_behavior) = REQUIRED];
-
-  // Optional. How long to wait for the first retry. Default is 0, and the
-  // maximum value is 14d.
-  google.protobuf.Duration wait = 2 [(google.api.field_behavior) = OPTIONAL];
-
-  // Optional. The pattern of how wait time will be increased. Default is
-  // linear. Backoff mode will be ignored if `wait` is 0.
-  BackoffMode backoff_mode = 3 [(google.api.field_behavior) = OPTIONAL];
-}
-
-// Rolls back a `Rollout`.
-message Rollback {
-  // Optional. The starting phase ID for the `Rollout`. If unspecified, the
-  // `Rollout` will start in the stable phase.
-  string destination_phase = 1 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // `AutomationRuleCondition` contains conditions relevant to an
@@ -4522,19 +4485,23 @@ message RepairRolloutOperation {
   // Output only. The name of the rollout that initiates the `AutomationRun`.
   string rollout = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. The index of the current repair action in the repair sequence.
-  int64 current_repair_mode_index = 2
-      [(google.api.field_behavior) = OUTPUT_ONLY];
-
   // Output only. Records of the repair attempts. Each repair phase may have
   // multiple retry attempts or single rollback attempt.
   repeated RepairPhase repair_phases = 3
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The phase ID of the phase that includes the job being
+  // repaired.
+  string phase_id = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The job ID for the Job to repair.
+  string job_id = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // RepairPhase tracks the repair attempts that have been made for
 // each `RepairPhaseConfig` specified in the `Automation` resource.
 message RepairPhase {
+  // The `RepairPhase` type and the information for that type.
   oneof repair_phase {
     // Output only. Records of the retry attempts for retry repair mode.
     RetryPhase retry = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -4553,12 +4520,6 @@ message RetryPhase {
   // Output only. The pattern of how the wait time of the retry attempt is
   // calculated.
   BackoffMode backoff_mode = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
-
-  // Output only. The phase ID of the phase that includes the job being retried.
-  string phase_id = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
-
-  // Output only. The job ID for the Job to retry.
-  string job_id = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Detail of a retry action.
   repeated RetryAttempt attempts = 5
@@ -4715,6 +4676,6 @@ enum RepairState {
   // The `repair` action is pending.
   REPAIR_STATE_PENDING = 5;
 
-  // The `repair` action was skipped.
-  REPAIR_STATE_SKIPPED = 6;
+  // The `repair` action was aborted.
+  REPAIR_STATE_ABORTED = 7;
 }
