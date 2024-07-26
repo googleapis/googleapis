@@ -255,32 +255,12 @@ rules_gapic_repositories()
 
 load("@rules_jvm_external//:defs.bzl", "maven_install")
 
-maven_install(
-    artifacts = PROTOBUF_MAVEN_ARTIFACTS,
-    generate_compat_repositories = True,
-    repositories = [
-        "https://repo.maven.apache.org/maven2/",
-    ],
-)
-
-_gapic_generator_java_version = "2.42.0"
-
-maven_install(
-    artifacts = [
-        "com.google.api:gapic-generator-java:" + _gapic_generator_java_version,
-    ],
-    #Update this False for local development
-    fail_on_missing_checksum = True,
-    repositories = [
-        "m2Local",
-        "https://repo.maven.apache.org/maven2/",
-    ]
-)
+_gapic_generator_java_version = "2.43.0"
 
 http_archive(
     name = "gapic_generator_java",
-    strip_prefix = "sdk-platform-java-%s" % _gapic_generator_java_version,
-    urls = ["https://github.com/googleapis/sdk-platform-java/archive/v%s.zip" % _gapic_generator_java_version],
+    strip_prefix = "sdk-platform-java-test-grpc",
+    urls = ["https://github.com/googleapis/sdk-platform-java/archive/refs/heads/test-grpc.zip"],
 )
 
 # gax-java is part of sdk-platform-java repository
@@ -302,9 +282,33 @@ load("@com_google_api_gax_java//:repositories.bzl", "com_google_api_gax_java_rep
 com_google_api_gax_java_repositories()
 
 load("@io_grpc_grpc_java//:repositories.bzl", "grpc_java_repositories")
+load("@io_grpc_grpc_java//:repositories.bzl", "IO_GRPC_GRPC_JAVA_ARTIFACTS")
+load("@io_grpc_grpc_java//:repositories.bzl", "IO_GRPC_GRPC_JAVA_OVERRIDE_TARGETS")
 
 grpc_java_repositories()
 
+load("@envoy_api//bazel:repositories.bzl", "api_dependencies")
+api_dependencies()
+
+maven_install(
+    artifacts = [
+      "com.google.api:gapic-generator-java:" + _gapic_generator_java_version,
+      "com.google.protobuf:protobuf-javalite:3." + _protobuf_version,
+      ] + PROTOBUF_MAVEN_ARTIFACTS +
+      IO_GRPC_GRPC_JAVA_ARTIFACTS,
+    generate_compat_repositories = True,
+    override_targets = IO_GRPC_GRPC_JAVA_OVERRIDE_TARGETS,
+    #Update this False for local development
+    fail_on_missing_checksum = True,
+    repositories = [
+        "m2Local",
+        "https://repo.maven.apache.org/maven2/",
+    ]
+)
+
+load("@maven//:compat.bzl", "compat_repositories")
+
+compat_repositories()
 ##############################################################################
 # Python
 ##############################################################################
