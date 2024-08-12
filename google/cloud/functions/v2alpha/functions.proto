@@ -25,6 +25,7 @@ import "google/protobuf/any.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
+import "google/type/date.proto";
 
 option go_package = "cloud.google.com/go/functions/apiv2alpha/functionspb;functionspb";
 option java_multiple_files = true;
@@ -156,11 +157,11 @@ service FunctionService {
   //   attached, the identity from the credentials would be used, but that
   //   identity does not have permissions to upload files to the URL.
   //
-  // When making a HTTP PUT request, these two headers need to be specified:
+  // When making a HTTP PUT request, specify this header:
   //
   // * `content-type: application/zip`
   //
-  // And this header SHOULD NOT be specified:
+  // Do not specify this header:
   //
   // * `Authorization: Bearer YOUR_TOKEN`
   rpc GenerateUploadUrl(GenerateUploadUrlRequest)
@@ -191,6 +192,21 @@ service FunctionService {
     };
     option (google.api.method_signature) = "parent";
   }
+}
+
+// The type of the long running operation.
+enum OperationType {
+  // Unspecified
+  OPERATIONTYPE_UNSPECIFIED = 0;
+
+  // CreateFunction
+  CREATE_FUNCTION = 1;
+
+  // UpdateFunction
+  UPDATE_FUNCTION = 2;
+
+  // DeleteFunction
+  DELETE_FUNCTION = 3;
 }
 
 // The environment the function is hosted on.
@@ -284,6 +300,14 @@ message Function {
   string kms_key_name = 25 [(google.api.resource_reference) = {
     type: "cloudkms.googleapis.com/CryptoKey"
   }];
+
+  // Output only. Reserved for future use.
+  bool satisfies_pzs = 27 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The create timestamp of a Cloud Function. This is only
+  // applicable to 2nd Gen functions.
+  google.protobuf.Timestamp create_time = 28
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Informational messages about the state of the Cloud Function or Operation.
@@ -329,6 +353,11 @@ message StorageSource {
   // Google Cloud Storage generation for the object. If the generation is
   // omitted, the latest generation will be used.
   int64 generation = 3;
+
+  // When the specified storage bucket is a 1st gen function uploard url bucket,
+  // this field should be set as the generated upload url for 1st gen
+  // deployment.
+  string source_upload_url = 4;
 }
 
 // Location of the source in a Google Cloud Source Repository.
@@ -382,6 +411,11 @@ message Source {
     // If provided, get the source from this location in a Cloud Source
     // Repository.
     RepoSource repo_source = 2;
+
+    // If provided, get the source from GitHub repository. This option is valid
+    // only for GCF 1st Gen function.
+    // Example: https://github.com/<user>/<repo>/blob/<commit>/<path-to-code>
+    string git_uri = 3;
   }
 }
 
@@ -395,6 +429,10 @@ message SourceProvenance {
   // A copy of the build's `source.repo_source`, if exists, with any
   // revisions resolved.
   RepoSource resolved_repo_source = 2;
+
+  // A copy of the build's `source.git_uri`, if exists, with any commits
+  // resolved.
+  string git_uri = 3;
 }
 
 // Describes the Build step of the function that builds a container from the
@@ -415,6 +453,13 @@ message BuildConfig {
     // use can also be specified by the user using the `docker_repository`
     // field.
     ARTIFACT_REGISTRY = 2;
+  }
+
+  // This controls when security patches are applied to the runtime environment.
+  oneof runtime_update_policy {
+    AutomaticUpdatePolicy automatic_update_policy = 40;
+
+    OnDeployUpdatePolicy on_deploy_update_policy = 41;
   }
 
   // Output only. The Cloud Build name of the latest successful deployment of
@@ -471,16 +516,15 @@ message BuildConfig {
   // applicable to 1st Gen functions, 2nd Gen functions can only use Artifact
   // Registry.
   //
-  // If `docker_repository` field is specified, this field will be automatically
-  // set as `ARTIFACT_REGISTRY`.
-  // If unspecified, it currently defaults to `CONTAINER_REGISTRY`.
-  // This field may be overridden by the backend for eligible deployments.
+  // If unspecified, it defaults to `ARTIFACT_REGISTRY`.
+  // If `docker_repository` field is specified, this field should either be left
+  // unspecified or set to `ARTIFACT_REGISTRY`.
   DockerRegistry docker_registry = 10;
 
-  // User managed repository created in Artifact Registry optionally
-  // with a customer managed encryption key. This is the repository to which the
-  // function docker image will be pushed after it is built by Cloud Build.
-  // If unspecified, GCF will create and use a repository named 'gcf-artifacts'
+  // Repository in Artifact Registry to which the function docker image will be
+  // pushed after it is built by Cloud Build. If specified by user, it is
+  // created and managed by user with a customer managed encryption key.
+  // Otherwise, GCF will create and use a repository named 'gcf-artifacts'
   // for every deployed region.
   //
   // It must match the pattern
@@ -492,6 +536,10 @@ message BuildConfig {
   string docker_repository = 7 [(google.api.resource_reference) = {
     type: "artifactregistry.googleapis.com/Repository"
   }];
+
+  // Service account to be used for building the container. The format of this
+  // field is `projects/{projectId}/serviceAccounts/{serviceAccountEmail}`.
+  string service_account = 27;
 }
 
 // Describes the Service being deployed.
@@ -574,7 +622,7 @@ message ServiceConfig {
   // a full description.
   string available_memory = 13;
 
-  // [Preview] The number of CPUs used in a single container instance.
+  // The number of CPUs used in a single container instance.
   // Default value is calculated from available memory.
   // Supports the same values as Cloud Run, see
   // https://cloud.google.com/run/docs/reference/rest/v1/Container#resourcerequirements
@@ -646,7 +694,7 @@ message ServiceConfig {
   // Output only. The name of service revision.
   string revision = 18 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // [Preview] Sets the maximum number of concurrent requests that each instance
+  // Sets the maximum number of concurrent requests that each instance
   // can receive. Defaults to 1.
   int32 max_instance_request_concurrency = 20;
 
@@ -655,6 +703,11 @@ message ServiceConfig {
   // trigger. By default https is optional for 1st Gen functions; 2nd Gen
   // functions are https ONLY.
   SecurityLevel security_level = 21;
+
+  // Optional. The binary authorization policy to be checked when deploying the
+  // Cloud Run service.
+  string binary_authorization_policy = 23
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Configuration for a secret environment variable. It has the information
@@ -790,6 +843,16 @@ message EventTrigger {
       type: "eventarc.googleapis.com/Channel"
     }
   ];
+
+  // Optional. The hostname of the service that 1st Gen function should be
+  // observed.
+  //
+  // If no string is provided, the default service implementing the API will
+  // be used. For example, `storage.googleapis.com` is the default for all
+  // event types in the `google.storage` namespace.
+  //
+  // The field is only applicable to 1st Gen functions.
+  string service = 9 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Filters events based on exact matches on the CloudEvents attributes.
@@ -816,6 +879,14 @@ message GetFunctionRequest {
       type: "cloudfunctions.googleapis.com/Function"
     }
   ];
+
+  // Optional. The optional version of the 1st gen function whose details should
+  // be obtained. The version of a 1st gen function is an integer that starts
+  // from 1 and gets incremented on redeployments. GCF may keep historical
+  // configs for old versions of 1st gen function. This field can be specified
+  // to fetch the historical configs. This field is valid only for GCF 1st gen
+  // function.
+  string revision = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request for the `ListFunctions` method.
@@ -897,8 +968,7 @@ message UpdateFunctionRequest {
   Function function = 1 [(google.api.field_behavior) = REQUIRED];
 
   // The list of fields to be updated.
-  // If no field mask is provided, all provided fields in the request will be
-  // updated.
+  // If no field mask is provided, all fields will be updated.
   google.protobuf.FieldMask update_mask = 2;
 }
 
@@ -942,6 +1012,12 @@ message GenerateUploadUrlRequest {
   string kms_key_name = 2 [(google.api.resource_reference) = {
     type: "cloudkms.googleapis.com/CryptoKey"
   }];
+
+  // The function environment the generated upload url will be used for.
+  // The upload url for 2nd Gen functions can also be used for 1st gen
+  // functions, but not vice versa. If not specified, 2nd generation-style
+  // upload URLs are generated.
+  Environment environment = 3;
 }
 
 // Response of `GenerateSourceUploadUrl` method.
@@ -1016,6 +1092,12 @@ message ListRuntimesResponse {
 
     // The environment for the runtime.
     Environment environment = 4;
+
+    // Deprecation date for the runtime.
+    google.type.Date deprecation_date = 6;
+
+    // Decommission date for the runtime.
+    google.type.Date decommission_date = 7;
   }
 
   // The various stages that a runtime can be in.
@@ -1046,6 +1128,17 @@ message ListRuntimesResponse {
   repeated Runtime runtimes = 1;
 }
 
+// Security patches are applied automatically to the runtime without requiring
+// the function to be redeployed.
+message AutomaticUpdatePolicy {}
+
+// Security patches are only applied when a function is redeployed.
+message OnDeployUpdatePolicy {
+  // Output only. contains the runtime version which was used during latest
+  // function deployment.
+  string runtime_version = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
 // Represents the metadata of the long-running operation.
 message OperationMetadata {
   // The time the operation was created.
@@ -1065,9 +1158,10 @@ message OperationMetadata {
 
   // Identifies whether the user has requested cancellation
   // of the operation. Operations that have successfully been cancelled
-  // have [Operation.error][] value with a
-  // [google.rpc.Status.code][google.rpc.Status.code] of 1, corresponding to
-  // `Code.CANCELLED`.
+  // have
+  // [google.longrunning.Operation.error][google.longrunning.Operation.error]
+  // value with a [google.rpc.Status.code][google.rpc.Status.code] of 1,
+  // corresponding to `Code.CANCELLED`.
   bool cancel_requested = 6;
 
   // API version used to start the operation.
@@ -1078,6 +1172,12 @@ message OperationMetadata {
 
   // Mechanism for reporting in-progress stages
   repeated Stage stages = 9;
+
+  // The build name of the function for create and update operations.
+  string build_name = 13;
+
+  // The operation type.
+  OperationType operation_type = 11;
 }
 
 // Extra GCF specific location information.
