@@ -215,7 +215,7 @@ http_archive(
     urls = ["https://github.com/googleapis/rules_gapic/archive/v%s.tar.gz" % _rules_gapic_version],
 )
 
-_gapic_generator_go_version = "0.44.0"
+_gapic_generator_go_version = "0.46.1"
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
