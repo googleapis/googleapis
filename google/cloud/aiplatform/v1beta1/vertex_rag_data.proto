@@ -18,6 +18,7 @@ package google.cloud.aiplatform.v1beta1;
 
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/cloud/aiplatform/v1beta1/api_auth.proto";
 import "google/cloud/aiplatform/v1beta1/io.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -61,14 +62,145 @@ message RagEmbeddingModelConfig {
     string model_version_id = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
+  // Configuration for sparse emebdding generation.
+  message SparseEmbeddingConfig {
+    // Message for BM25 parameters.
+    message Bm25 {
+      // Optional. Use multilingual tokenizer if set to true.
+      bool multilingual = 1 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The parameter to control term frequency saturation. It
+      // determines the scaling between the matching term frequency and final
+      // score. k1 is in the range of [1.2, 3]. The default value is 1.2.
+      optional float k1 = 2 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The parameter to control document length normalization. It
+      // determines how much the document length affects the final score. b is
+      // in the range of [0, 1]. The default value is 0.75.
+      optional float b = 3 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // The model to use for sparse embedding generation.
+    oneof model {
+      // Use BM25 scoring algorithm.
+      Bm25 bm25 = 1;
+    }
+  }
+
+  // Config for hybrid search.
+  message HybridSearchConfig {
+    // Optional. The configuration for sparse embedding generation. This field
+    // is optional the default behavior depends on the vector database choice on
+    // the RagCorpus.
+    SparseEmbeddingConfig sparse_embedding_config = 1
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Required. The Vertex AI Prediction Endpoint that hosts the embedding
+    // model for dense embedding generations.
+    VertexPredictionEndpoint dense_embedding_model_prediction_endpoint = 2
+        [(google.api.field_behavior) = REQUIRED];
+  }
+
   // The model config to use.
   oneof model_config {
     // The Vertex AI Prediction Endpoint that either refers to a publisher model
     // or an endpoint that is hosting a 1P fine-tuned text embedding model.
     // Endpoints hosting non-1P fine-tuned text embedding models are
     // currently not supported.
+    // This is used for dense vector search.
     VertexPredictionEndpoint vertex_prediction_endpoint = 1;
+
+    // Configuration for hybrid search.
+    HybridSearchConfig hybrid_search_config = 2;
   }
+}
+
+// Config for the Vector DB to use for RAG.
+message RagVectorDbConfig {
+  // The config for the default RAG-managed Vector DB.
+  message RagManagedDb {}
+
+  // The config for the Weaviate.
+  message Weaviate {
+    // Weaviate DB instance HTTP endpoint. e.g. 34.56.78.90:8080
+    // Vertex RAG only supports HTTP connection to Weaviate.
+    // This value cannot be changed after it's set.
+    string http_endpoint = 1;
+
+    // The corresponding collection this corpus maps to.
+    // This value cannot be changed after it's set.
+    string collection_name = 2;
+  }
+
+  // The config for the Vertex Feature Store.
+  message VertexFeatureStore {
+    // The resource name of the FeatureView.
+    // Format:
+    // `projects/{project}/locations/{location}/featureOnlineStores/{feature_online_store}/featureViews/{feature_view}`
+    string feature_view_resource_name = 1;
+  }
+
+  // The config for the Vector DB.
+  oneof vector_db {
+    // The config for the RAG-managed Vector DB.
+    RagManagedDb rag_managed_db = 1;
+
+    // The config for the Weaviate.
+    Weaviate weaviate = 2;
+
+    // The config for the Vertex Feature Store.
+    VertexFeatureStore vertex_feature_store = 4;
+  }
+
+  // Authentication config for the chosen Vector DB.
+  ApiAuth api_auth = 5;
+}
+
+// RagFile status.
+message FileStatus {
+  // RagFile state.
+  enum State {
+    // RagFile state is unspecified.
+    STATE_UNSPECIFIED = 0;
+
+    // RagFile resource has been created and indexed successfully.
+    ACTIVE = 1;
+
+    // RagFile resource is in a problematic state.
+    // See `error_message` field for details.
+    ERROR = 2;
+  }
+
+  // Output only. RagFile state.
+  State state = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Only when the `state` field is ERROR.
+  string error_status = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// RagCorpus status.
+message CorpusStatus {
+  // RagCorpus life state.
+  enum State {
+    // This state is not supposed to happen.
+    UNKNOWN = 0;
+
+    // RagCorpus resource entry is initialized, but hasn't done validation.
+    INITIALIZED = 1;
+
+    // RagCorpus is provisioned successfully and is ready to serve.
+    ACTIVE = 2;
+
+    // RagCorpus is in a problematic situation.
+    // See `error_message` field for details.
+    ERROR = 3;
+  }
+
+  // Output only. RagCorpus life state.
+  State state = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Only when the `state` field is ERROR.
+  string error_status = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A RagCorpus is a RagFile container and a project can have multiple
@@ -98,6 +230,12 @@ message RagCorpus {
     (google.api.field_behavior) = IMMUTABLE
   ];
 
+  // Optional. Immutable. The Vector DB config of the RagCorpus.
+  RagVectorDbConfig rag_vector_db_config = 7 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
   // Output only. Timestamp when this RagCorpus was created.
   google.protobuf.Timestamp create_time = 4
       [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -105,6 +243,9 @@ message RagCorpus {
   // Output only. Timestamp when this RagCorpus was last updated.
   google.protobuf.Timestamp update_time = 5
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. RagCorpus state.
+  CorpusStatus corpus_status = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A RagFile contains user data for chunking, embedding and indexing.
@@ -176,6 +317,9 @@ message RagFile {
   // Output only. Timestamp when this RagFile was last updated.
   google.protobuf.Timestamp update_time = 7
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. State of the RagFile.
+  FileStatus file_status = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Specifies the size and overlap of chunks for RagFiles.
