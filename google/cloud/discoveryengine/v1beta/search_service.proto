@@ -498,6 +498,14 @@ message SearchRequest {
       // fallback messages instead.
       bool ignore_non_summary_seeking_query = 4;
 
+      // Specifies whether to filter out queries that have low relevance. The
+      // default value is `false`.
+      //
+      // If this field is set to `false`, all search results are used regardless
+      // of relevance to generate answers. If set to `true`, only queries with
+      // high relevance search results will generate answers.
+      bool ignore_low_relevant_content = 9;
+
       // If specified, the spec will be used to modify the prompt provided to
       // the LLM.
       ModelPromptSpec model_prompt_spec = 5;
@@ -737,6 +745,27 @@ message SearchRequest {
     optional int32 search_result_persistence_count = 2;
   }
 
+  // The relevance threshold of the search results. The higher relevance
+  // threshold is, the higher relevant results are shown and the less number of
+  // results are returned.
+  enum RelevanceThreshold {
+    // Default value. In this case, server behavior defaults to Google defined
+    // threshold.
+    RELEVANCE_THRESHOLD_UNSPECIFIED = 0;
+
+    // Lowest relevance threshold.
+    LOWEST = 1;
+
+    // Low relevance threshold.
+    LOW = 2;
+
+    // Medium relevance threshold.
+    MEDIUM = 3;
+
+    // High relevance threshold.
+    HIGH = 4;
+  }
+
   // Required. The resource name of the Search serving config, such as
   // `projects/*/locations/global/collections/default_collection/engines/*/servingConfigs/default_serving_config`,
   // or
@@ -838,9 +867,12 @@ message SearchRequest {
   // object. Leave it unset if ordered by relevance. `order_by` expression is
   // case-sensitive.
   //
-  // For more information on ordering for retail search, see
-  // [Ordering](https://cloud.google.com/retail/docs/filter-and-order#order)
-  //
+  // For more information on ordering the website search results, see
+  // [Order web search
+  // results](https://cloud.google.com/generative-ai-app-builder/docs/order-web-search-results).
+  // For more information on ordering the healthcare search results, see
+  // [Order healthcare search
+  // results](https://cloud.google.com/generative-ai-app-builder/docs/order-hc-results).
   // If this field is unrecognizable, an `INVALID_ARGUMENT` is returned.
   string order_by = 8;
 
@@ -1025,6 +1057,13 @@ message SearchRequest {
   //
   // Can be used only when `session` is set.
   SessionSpec session_spec = 42;
+
+  // The relevance threshold of the search results.
+  //
+  // Default to Google defined threshold, leveraging a balance of
+  // precision and recall to deliver both highly accurate results and
+  // comprehensive coverage of relevant information.
+  RelevanceThreshold relevance_threshold = 44;
 }
 
 // Response message for
@@ -1191,14 +1230,14 @@ message SearchResponse {
 
       // The adversarial query ignored case.
       //
-      // Only populated when
+      // Only used when
       // [SummarySpec.ignore_adversarial_query][google.cloud.discoveryengine.v1beta.SearchRequest.ContentSearchSpec.SummarySpec.ignore_adversarial_query]
       // is set to `true`.
       ADVERSARIAL_QUERY_IGNORED = 1;
 
       // The non-summary seeking query ignored case.
       //
-      // Only populated when
+      // Only used when
       // [SummarySpec.ignore_non_summary_seeking_query][google.cloud.discoveryengine.v1beta.SearchRequest.ContentSearchSpec.SummarySpec.ignore_non_summary_seeking_query]
       // is set to `true`.
       NON_SUMMARY_SEEKING_QUERY_IGNORED = 2;
@@ -1226,6 +1265,20 @@ message SearchResponse {
       // Google skips the summary if there is no relevant content in the
       // retrieved search results.
       NO_RELEVANT_CONTENT = 6;
+
+      // The jail-breaking query ignored case.
+      //
+      // For example, "Reply in the tone of a competing company's CEO".
+      // Only used when
+      // [SearchRequest.ContentSearchSpec.SummarySpec.ignore_jail_breaking_query]
+      // is set to `true`.
+      JAIL_BREAKING_QUERY_IGNORED = 7;
+
+      // The customer policy violation case.
+      //
+      // Google skips the summary if there is a customer policy violation
+      // detected. The policy is defined by the customer.
+      CUSTOMER_POLICY_VIOLATION = 8;
     }
 
     // The summary content.
@@ -1280,6 +1333,9 @@ message SearchResponse {
         // Values of the string field. The record will only be returned if the
         // field value matches one of the values specified here.
         repeated string values = 2;
+
+        // Identifies the keywords within the search query that match a filter.
+        string query_segment = 3;
       }
 
       // Constraint expression of a number field. Example: price < 100.
@@ -1314,6 +1370,9 @@ message SearchResponse {
 
         // The value specified in the numerical constraint.
         double value = 3;
+
+        // Identifies the keywords within the search query that match a filter.
+        string query_segment = 4;
       }
 
       // Constraint of a geolocation field.
@@ -1326,6 +1385,12 @@ message SearchResponse {
         // proximity of the reference address to the geolocation field will be
         // used to filter the results.
         string address = 2;
+
+        // The latitude of the geolocation inferred from the input query.
+        double latitude = 4;
+
+        // The longitude of the geolocation inferred from the input query.
+        double longitude = 5;
 
         // The radius in meters around the address. The record is returned if
         // the location of the geolocation field is within the radius.
@@ -1402,6 +1467,31 @@ message SearchResponse {
     string query_id = 2;
   }
 
+  // OneBoxResult is a holder for all results of specific type that we want
+  // to display in UI differently.
+  message OneBoxResult {
+    // The type of One Box result.
+    enum OneBoxType {
+      // Default value. Should not be used.
+      ONE_BOX_TYPE_UNSPECIFIED = 0;
+
+      // One Box result contains people results.
+      PEOPLE = 1;
+
+      // One Box result contains organization results.
+      ORGANIZATION = 2;
+
+      // One Box result contains slack results.
+      SLACK = 3;
+    }
+
+    // The type of One Box result.
+    OneBoxType one_box_type = 1;
+
+    // The search results for this One Box.
+    repeated SearchResult search_results = 2;
+  }
+
   // A list of matched documents. The order represents the ranking.
   repeated SearchResult results = 1;
 
@@ -1422,7 +1512,8 @@ message SearchResponse {
   // A unique search token. This should be included in the
   // [UserEvent][google.cloud.discoveryengine.v1beta.UserEvent] logs resulting
   // from this search, which enables accurate attribution of search model
-  // performance.
+  // performance. This also helps to identify a request during the customer
+  // support scenarios.
   string attribution_token = 4;
 
   // The URI of a customer-defined redirect page. If redirect action is
@@ -1468,4 +1559,8 @@ message SearchResponse {
   // [SearchRequest.session][google.cloud.discoveryengine.v1beta.SearchRequest.session]
   // is provided. See its description for more details.
   SessionInfo session_info = 19;
+
+  // A list of One Box results. There can be multiple One Box results of
+  // different types.
+  repeated OneBoxResult one_box_results = 20;
 }
