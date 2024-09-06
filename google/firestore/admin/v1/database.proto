@@ -29,6 +29,10 @@ option java_package = "com.google.firestore.admin.v1";
 option objc_class_prefix = "GCFS";
 option php_namespace = "Google\\Cloud\\Firestore\\Admin\\V1";
 option ruby_package = "Google::Cloud::Firestore::Admin::V1";
+option (google.api.resource_definition) = {
+  type: "firestore.googleapis.com/Operation"
+  pattern: "projects/{project}/databases/{database}/operations/{operation}"
+};
 
 // A Cloud Firestore Database.
 message Database {
@@ -44,7 +48,7 @@ message Database {
   //
   // Mode changes are only allowed if the database is empty.
   enum DatabaseType {
-    // The default value. This value is used if the database type is omitted.
+    // Not used.
     DATABASE_TYPE_UNSPECIFIED = 0;
 
     // Firestore Native Mode
@@ -128,6 +132,101 @@ message Database {
     DELETE_PROTECTION_ENABLED = 2;
   }
 
+  // The CMEK (Customer Managed Encryption Key) configuration for a Firestore
+  // database. If not present, the database is secured by the default Google
+  // encryption key.
+  message CmekConfig {
+    // Required. Only keys in the same location as this database are allowed to
+    // be used for encryption.
+    //
+    // For Firestore's nam5 multi-region, this corresponds to Cloud KMS
+    // multi-region us. For Firestore's eur3 multi-region, this corresponds to
+    // Cloud KMS multi-region europe. See
+    // https://cloud.google.com/kms/docs/locations.
+    //
+    // The expected format is
+    // `projects/{project_id}/locations/{kms_location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}`.
+    string kms_key_name = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Output only. Currently in-use [KMS key
+    // versions](https://cloud.google.com/kms/docs/resource-hierarchy#key_versions).
+    // During [key rotation](https://cloud.google.com/kms/docs/key-rotation),
+    // there can be multiple in-use key versions.
+    //
+    // The expected format is
+    // `projects/{project_id}/locations/{kms_location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}/cryptoKeyVersions/{key_version}`.
+    repeated string active_key_version = 2
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Information about the provenance of this database.
+  message SourceInfo {
+    // Information about a backup that was used to restore a database.
+    message BackupSource {
+      // The resource name of the backup that was used to restore this
+      // database. Format:
+      // `projects/{project}/locations/{location}/backups/{backup}`.
+      string backup = 1 [(google.api.resource_reference) = {
+        type: "firestore.googleapis.com/Backup"
+      }];
+    }
+
+    // The source from which this database is derived.
+    oneof source {
+      // If set, this database was restored from the specified backup (or a
+      // snapshot thereof).
+      BackupSource backup = 1;
+    }
+
+    // The associated long-running operation. This field may not be set after
+    // the operation has completed. Format:
+    // `projects/{project}/databases/{database}/operations/{operation}`.
+    string operation = 3 [(google.api.resource_reference) = {
+      type: "firestore.googleapis.com/Operation"
+    }];
+  }
+
+  // Encryption configuration for a new database being created from another
+  // source.
+  //
+  // The source could be a [Backup][google.firestore.admin.v1.Backup] .
+  message EncryptionConfig {
+    // The configuration options for using Google default encryption.
+    message GoogleDefaultEncryptionOptions {}
+
+    // The configuration options for using the same encryption method as the
+    // source.
+    message SourceEncryptionOptions {}
+
+    // The configuration options for using CMEK (Customer Managed Encryption
+    // Key) encryption.
+    message CustomerManagedEncryptionOptions {
+      // Required. Only keys in the same location as the database are allowed to
+      // be used for encryption.
+      //
+      // For Firestore's nam5 multi-region, this corresponds to Cloud KMS
+      // multi-region us. For Firestore's eur3 multi-region, this corresponds to
+      // Cloud KMS multi-region europe. See
+      // https://cloud.google.com/kms/docs/locations.
+      //
+      // The expected format is
+      // `projects/{project_id}/locations/{kms_location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}`.
+      string kms_key_name = 1 [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // The method for encrypting the database.
+    oneof encryption_type {
+      // Use Google default encryption.
+      GoogleDefaultEncryptionOptions google_default_encryption = 1;
+
+      // The database will use the same encryption configuration as the source.
+      SourceEncryptionOptions use_source_encryption = 2;
+
+      // Use Customer Managed Encryption Keys (CMEK) for encryption.
+      CustomerManagedEncryptionOptions customer_managed_encryption = 3;
+    }
+  }
+
   // The resource name of the Database.
   // Format: `projects/{project}/databases/{database}`
   string name = 1;
@@ -144,6 +243,11 @@ message Database {
   // updated. Note this only includes updates to the database resource and not
   // data contained by the database.
   google.protobuf.Timestamp update_time = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The timestamp at which this database was deleted. Only set if
+  // the database has been deleted.
+  google.protobuf.Timestamp delete_time = 7
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // The location of the database. Available locations are listed at
@@ -189,8 +293,8 @@ message Database {
   AppEngineIntegrationMode app_engine_integration_mode = 19;
 
   // Output only. The key_prefix for this database. This key_prefix is used, in
-  // combination with the project id ("<key prefix>~<project id>") to construct
-  // the application id that is returned from the Cloud Datastore APIs in Google
+  // combination with the project ID ("<key prefix>~<project id>") to construct
+  // the application ID that is returned from the Cloud Datastore APIs in Google
   // App Engine first generation runtimes.
   //
   // This value may be empty in which case the appid to use for URL-encoded keys
@@ -199,6 +303,16 @@ message Database {
 
   // State of delete protection for the database.
   DeleteProtectionState delete_protection_state = 22;
+
+  // Optional. Presence indicates CMEK is enabled for this database.
+  CmekConfig cmek_config = 23 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The database resource's prior database ID. This field is only
+  // populated for deleted databases.
+  string previous_id = 25 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Information about the provenance of this database.
+  SourceInfo source_info = 26 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // This checksum is computed by the server based on the value of other
   // fields, and may be sent on update and delete requests to ensure the
