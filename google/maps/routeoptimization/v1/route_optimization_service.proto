@@ -90,6 +90,18 @@ service RouteOptimization {
   // contains a `ShipmentModel` and returns an `OptimizeToursResponse`
   // containing `ShipmentRoute`s, which are a set of routes to be performed by
   // vehicles minimizing the overall cost.
+  //
+  // The user can poll `operations.get` to check the status of the LRO:
+  //
+  // If the LRO's `done` field is false, then at least one request is still
+  // being processed. Other requests may have completed successfully and their
+  // results are available in GCS.
+  //
+  // If the LRO's `done` field is true, then all requests have been processed.
+  // Any successfully processed requests will have their results available in
+  // GCS. Any requests that failed will not have their results available in
+  // GCS. If the LRO's `error` field is set, then it contains the error from
+  // one of the failed requests.
   rpc BatchOptimizeTours(BatchOptimizeToursRequest)
       returns (google.longrunning.Operation) {
     option (google.api.http) = {
@@ -157,7 +169,8 @@ message OptimizeToursRequest {
   // [max_validation_errors][google.maps.routeoptimization.v1.OptimizeToursRequest.max_validation_errors]
   // to cap the number of errors returned.
   enum SolvingMode {
-    // Solve the model.
+    // Solve the model. Warnings may be issued in
+    // [OptimizeToursResponse.validation_errors][google.cloud.optimization.v1.OptimizeToursResponse.validation_errors].
     DEFAULT_SOLVE = 0;
 
     // Only validates the model without solving it: populates as many
@@ -456,7 +469,8 @@ message OptimizeToursResponse {
   // List of all the validation errors that we were able to detect
   // independently. See the "MULTIPLE ERRORS" explanation for the
   // [OptimizeToursValidationError][google.maps.routeoptimization.v1.OptimizeToursValidationError]
-  // message.
+  // message. Instead of errors, this will include warnings in the case
+  // `solving_mode` is `DEFAULT_SOLVE`.
   repeated OptimizeToursValidationError validation_errors = 5;
 
   // Duration, distance and usage metrics for this solution.
@@ -1008,6 +1022,32 @@ message ShipmentTypeRequirement {
   RequirementMode requirement_mode = 3;
 }
 
+// Encapsulates a set of optional conditions to satisfy when calculating
+// vehicle routes. This is similar to `RouteModifiers` in the Google Maps
+// Platform Routes Preferred API; see:
+// https://developers.google.com/maps/documentation/routes/reference/rest/v2/RouteModifiers.
+message RouteModifiers {
+  // Specifies whether to avoid toll roads where reasonable. Preference will be
+  // given to routes not containing toll roads. Applies only to motorized travel
+  // modes.
+  bool avoid_tolls = 2;
+
+  // Specifies whether to avoid highways where reasonable. Preference will be
+  // given to routes not containing highways. Applies only to motorized travel
+  // modes.
+  bool avoid_highways = 3;
+
+  // Specifies whether to avoid ferries where reasonable. Preference will be
+  // given to routes not containing travel by ferries. Applies only to motorized
+  // travel modes.
+  bool avoid_ferries = 4;
+
+  // Optional. Specifies whether to avoid navigating indoors where reasonable.
+  // Preference will be given to routes not containing indoor navigation.
+  // Applies only to the `WALKING` travel mode.
+  bool avoid_indoor = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
 // Models a vehicle in a shipment problem. Solving a shipment problem will
 // build a route starting from `start_location` and ending at `end_location`
 // for this vehicle. A route is a sequence of visits (see `ShipmentRoute`).
@@ -1151,6 +1191,10 @@ message Vehicle {
   // The travel mode which affects the roads usable by the vehicle and its
   // speed. See also `travel_duration_multiple`.
   TravelMode travel_mode = 1;
+
+  // A set of conditions to satisfy that affect the way routes are calculated
+  // for the given vehicle.
+  RouteModifiers route_modifiers = 2;
 
   // Geographic location where the vehicle starts before picking up any
   // shipments. If not specified, the vehicle starts at its first pickup.
@@ -1353,8 +1397,9 @@ message Vehicle {
 // [ShipmentModel.global_end_time][google.maps.routeoptimization.v1.ShipmentModel.global_end_time])
 // and should respect:
 // ```
-//   0 <= `start_time` <= `soft_start_time` <= `end_time` and
-//   0 <= `start_time` <= `soft_end_time` <= `end_time`.
+//   0 <= `start_time` <= `end_time` and
+//   0 <= `start_time` <= `soft_start_time` and
+//   0 <= `soft_end_time` <= `end_time`.
 // ```
 message TimeWindow {
   // The hard time window start time. If unspecified it will be set to
@@ -1415,6 +1460,15 @@ message DistanceLimit {
   // If defined soft_max_meters must be less than max_meters and must be
   // nonnegative.
   optional int64 soft_max_meters = 2;
+
+  // Cost per kilometer incurred, increasing up to `soft_max_meters`, with
+  // formula:
+  // ```
+  //   min(distance_meters, soft_max_meters) / 1000.0 *
+  //   cost_per_kilometer_below_soft_max.
+  // ```
+  // This cost is not supported in `route_distance_limit`.
+  optional double cost_per_kilometer_below_soft_max = 4;
 
   // Cost per kilometer incurred if distance is above `soft_max_meters` limit.
   // The additional cost is 0 if the distance is under the limit, otherwise the
@@ -1947,8 +2001,7 @@ message SkippedShipment {
     // particular, it gives no indication of whether a given reason will
     // appear before another in the solution, if both apply.
     enum Code {
-      // This should never be used. If we are unable to understand why a
-      // shipment was skipped, we simply return an empty set of reasons.
+      // This should never be used.
       CODE_UNSPECIFIED = 0;
 
       // There is no vehicle in the model making all shipments infeasible.
@@ -2011,7 +2064,8 @@ message SkippedShipment {
   string label = 2;
 
   // A list of reasons that explain why the shipment was skipped. See comment
-  // above `Reason`.
+  // above `Reason`. If we are unable to understand why a shipment was skipped,
+  // reasons will not be set.
   repeated Reason reasons = 3;
 }
 
@@ -2127,7 +2181,8 @@ message InjectedSolutionConstraint {
         RELAX_VISIT_TIMES_AFTER_THRESHOLD = 1;
 
         // Same as `RELAX_VISIT_TIMES_AFTER_THRESHOLD`, but the visit sequence
-        // is also relaxed: visits remain simply bound to their vehicle.
+        // is also relaxed: visits can only be performed by this vehicle, but
+        // can potentially become unperformed.
         RELAX_VISIT_TIMES_AND_SEQUENCE_AFTER_THRESHOLD = 2;
 
         // Same as `RELAX_VISIT_TIMES_AND_SEQUENCE_AFTER_THRESHOLD`, but the
@@ -2188,7 +2243,8 @@ message InjectedSolutionConstraint {
   repeated ConstraintRelaxation constraint_relaxations = 3;
 }
 
-// Describes an error encountered when validating an `OptimizeToursRequest`.
+// Describes an error or warning encountered when validating an
+// `OptimizeToursRequest`.
 message OptimizeToursValidationError {
   // Specifies a context for the validation error. A `FieldReference` always
   // refers to a given field in this file and follows the same hierarchical
@@ -2294,8 +2350,8 @@ message OptimizeToursValidationError {
   //     * TIME_WINDOW_SOFT_END_TIME_WITHOUT_COST_AFTER_SOFT_END_TIME = 2811;
   //     * TIME_WINDOW_OVERLAPPING_ADJACENT_OR_EARLIER_THAN_PREVIOUS = 2812;
   //     * TIME_WINDOW_START_TIME_AFTER_SOFT_START_TIME = 2813;
-  //     * TIME_WINDOW_SOFT_START_TIME_AFTER_END_TIME = 2814;
-  //     * TIME_WINDOW_START_TIME_AFTER_SOFT_END_TIME = 2815;
+  //     * TIME_WINDOW_SOFT_START_TIME_OUTSIDE_GLOBAL_TIME_WINDOW = 2819;
+  //     * TIME_WINDOW_SOFT_END_TIME_OUTSIDE_GLOBAL_TIME_WINDOW = 2820;
   //     * TIME_WINDOW_SOFT_END_TIME_AFTER_END_TIME = 2816;
   //     * TIME_WINDOW_COST_BEFORE_SOFT_START_TIME_SET_AND_MULTIPLE_WINDOWS
   //       = 2817;
@@ -2407,6 +2463,13 @@ message OptimizeToursValidationError {
   //     * VISIT_REQUEST_DURATION_NEGATIVE_OR_NAN = 4404;
   //     * VISIT_REQUEST_DURATION_EXCEEDS_GLOBAL_DURATION = 4405;
   // * PRECEDENCE_ERROR = 46;
+  //     * PRECEDENCE_RULE_MISSING_FIRST_INDEX = 4600;
+  //     * PRECEDENCE_RULE_MISSING_SECOND_INDEX = 4601;
+  //     * PRECEDENCE_RULE_FIRST_INDEX_OUT_OF_BOUNDS = 4602;
+  //     * PRECEDENCE_RULE_SECOND_INDEX_OUT_OF_BOUNDS = 4603;
+  //     * PRECEDENCE_RULE_DUPLICATE_INDEX = 4604;
+  //     * PRECEDENCE_RULE_INEXISTENT_FIRST_VISIT_REQUEST = 4605;
+  //     * PRECEDENCE_RULE_INEXISTENT_SECOND_VISIT_REQUEST = 4606;
   // * BREAK_ERROR = 48;
   //     * BREAK_RULE_EMPTY = 4800;
   //     * BREAK_REQUEST_UNSPECIFIED_DURATION = 4801;
@@ -2452,6 +2515,12 @@ message OptimizeToursValidationError {
   // * DURATION_SECONDS_MATRIX_ERROR = 56;
   //     * DURATION_SECONDS_MATRIX_DURATION_NEGATIVE_OR_NAN = 5600;
   //     * DURATION_SECONDS_MATRIX_DURATION_EXCEEDS_GLOBAL_DURATION = 5601;
+  // * WARNING = 9;
+  //     * WARNING_INJECTED_FIRST_SOLUTION = 90;
+  //         * WARNING_INJECTED_FIRST_SOLUTION_INFEASIBLE_SHIPMENTS_REMOVED
+  //           = 9000;
+  //         * WARNING_INJECTED_FIRST_SOLUTION_INFEASIBLE_AFTER_GETTING_TRAVEL_TIMES
+  //           = 9001;
   int32 code = 1;
 
   // The error display name.
