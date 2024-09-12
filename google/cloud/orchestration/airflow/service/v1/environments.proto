@@ -133,6 +133,20 @@ service Environments {
     option (google.api.method_signature) = "parent";
   }
 
+  // Check if an upgrade operation on the environment will succeed.
+  //
+  // In case of problems detailed info can be found in the returned Operation.
+  rpc CheckUpgrade(CheckUpgradeRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{environment=projects/*/locations/*/environments/*}:checkUpgrade"
+      body: "*"
+    };
+    option (google.longrunning.operation_info) = {
+      response_type: "google.cloud.orchestration.airflow.service.v1.CheckUpgradeResponse"
+      metadata_type: "google.cloud.orchestration.airflow.service.v1.OperationMetadata"
+    };
+  }
+
   // Creates a user workloads Secret.
   //
   // This method is supported for Cloud Composer environments in versions
@@ -1091,8 +1105,9 @@ message EnvironmentConfig {
   // This may be split into multiple chunks, each with a size of
   // at least 4 hours.
   //
-  // If this value is omitted, the default value for maintenance window will be
-  // applied. The default value is Saturday and Sunday 00-06 GMT.
+  // If this value is omitted, the default value for maintenance window is
+  // applied. By default, maintenance windows are from 00:00:00 to 04:00:00
+  // (GMT) on Friday, Saturday, and Sunday every week.
   MaintenanceWindow maintenance_window = 12
       [(google.api.field_behavior) = OPTIONAL];
 
@@ -1771,6 +1786,9 @@ message WorkloadsConfig {
   }
 
   // Configuration for resources used by Airflow DAG processors.
+  //
+  // This field is supported for Cloud Composer environments in versions
+  // composer-3.*.*-airflow-*.*.* and newer.
   message DagProcessorResource {
     // Optional. CPU request and limit for a single Airflow DAG processor
     // replica.
@@ -1929,8 +1947,45 @@ message Environment {
   // Output only. Reserved for future use.
   bool satisfies_pzs = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  // Output only. Reserved for future use.
+  bool satisfies_pzi = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+
   // Optional. Storage configuration for this environment.
   StorageConfig storage_config = 9 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request to check whether image upgrade will succeed.
+message CheckUpgradeRequest {
+  // Required. The resource name of the environment to check upgrade for, in the
+  // form:
+  // "projects/{projectId}/locations/{locationId}/environments/{environmentId}"
+  string environment = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The version of the software running in the environment.
+  // This encapsulates both the version of Cloud Composer functionality and the
+  // version of Apache Airflow. It must match the regular expression
+  // `composer-([0-9]+(\.[0-9]+\.[0-9]+(-preview\.[0-9]+)?)?|latest)-airflow-([0-9]+(\.[0-9]+(\.[0-9]+)?)?)`.
+  // When used as input, the server also checks if the provided version is
+  // supported and denies the request for an unsupported version.
+  //
+  // The Cloud Composer portion of the image version is a full
+  // [semantic version](https://semver.org), or an alias in the form of major
+  // version number or `latest`. When an alias is provided, the server replaces
+  // it with the current Cloud Composer version that satisfies the alias.
+  //
+  // The Apache Airflow portion of the image version is a full semantic version
+  // that points to one of the supported Apache Airflow versions, or an alias in
+  // the form of only major or major.minor versions specified. When an alias is
+  // provided, the server replaces it with the latest Apache Airflow version
+  // that satisfies the alias and is supported in the given Cloud Composer
+  // version.
+  //
+  // In all cases, the resolved image version is stored in the same field.
+  //
+  // See also [version
+  // list](/composer/docs/concepts/versioning/composer-versions) and [versioning
+  // overview](/composer/docs/concepts/versioning/composer-versioning-overview).
+  string image_version = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Message containing information about the result of an upgrade check
@@ -1970,6 +2025,10 @@ message CheckUpgradeResponse {
 
 // The configuration setting for Airflow database data retention mechanism.
 message DataRetentionConfig {
+  // Optional. The retention policy for airflow metadata database.
+  AirflowMetadataRetentionPolicyConfig airflow_metadata_retention_config = 1
+      [(google.api.field_behavior) = OPTIONAL];
+
   // Optional. The configuration settings for task logs retention
   TaskLogsRetentionConfig task_logs_retention_config = 2
       [(google.api.field_behavior) = OPTIONAL];
@@ -1990,7 +2049,27 @@ message TaskLogsRetentionConfig {
     CLOUD_LOGGING_ONLY = 2;
   }
 
-  // Optional. The mode of storage for Airflow workers task logs. For details,
-  // see go/composer-store-task-logs-in-cloud-logging-only-design-doc
+  // Optional. The mode of storage for Airflow workers task logs.
   TaskLogsStorageMode storage_mode = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The policy for airflow metadata database retention.
+message AirflowMetadataRetentionPolicyConfig {
+  // Describes retention policy.
+  enum RetentionMode {
+    // Default mode doesn't change environment parameters.
+    RETENTION_MODE_UNSPECIFIED = 0;
+
+    // Retention policy is enabled.
+    RETENTION_MODE_ENABLED = 1;
+
+    // Retention policy is disabled.
+    RETENTION_MODE_DISABLED = 2;
+  }
+
+  // Optional. Retention can be either enabled or disabled.
+  RetentionMode retention_mode = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. How many days data should be retained for.
+  int32 retention_days = 2 [(google.api.field_behavior) = OPTIONAL];
 }
