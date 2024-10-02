@@ -803,6 +803,34 @@ message InstanceConfig {
   State state = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
+// ReplicaComputeCapacity describes the amount of server resources that are
+// allocated to each replica identified by the replica selection.
+message ReplicaComputeCapacity {
+  // Required. Identifies replicas by specified properties.
+  // All replicas in the selection have the same amount of compute capacity.
+  ReplicaSelection replica_selection = 1
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Compute capacity allocated to each replica identified by the specified
+  // selection.
+  // The unit is selected based on the unit used to specify the instance size
+  // for non-autoscaling instances, or the unit used in autoscaling limit for
+  // autoscaling instances.
+  oneof compute_capacity {
+    // The number of nodes allocated to each replica.
+    //
+    // This may be zero in API responses for instances that are not yet in
+    // state `READY`.
+    int32 node_count = 2;
+
+    // The number of processing units allocated to each replica.
+    //
+    // This may be zero in API responses for instances that are not yet in
+    // state `READY`.
+    int32 processing_units = 3;
+  }
+}
+
 // Autoscaling configuration for an instance.
 message AutoscalingConfig {
   // The autoscaling limits for the instance. Users can define the minimum and
@@ -854,6 +882,37 @@ message AutoscalingConfig {
         [(google.api.field_behavior) = REQUIRED];
   }
 
+  // AsymmetricAutoscalingOption specifies the scaling of replicas identified by
+  // the given selection.
+  message AsymmetricAutoscalingOption {
+    // Overrides the top-level autoscaling configuration for the replicas
+    // identified by `replica_selection`. All fields in this message are
+    // optional. Any unspecified fields will use the corresponding values from
+    // the top-level autoscaling configuration.
+    message AutoscalingConfigOverrides {
+      // Optional. If specified, overrides the min/max limit in the top-level
+      // autoscaling configuration for the selected replicas.
+      AutoscalingLimits autoscaling_limits = 1
+          [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. If specified, overrides the autoscaling target
+      // high_priority_cpu_utilization_percent in the top-level autoscaling
+      // configuration for the selected replicas.
+      int32 autoscaling_target_high_priority_cpu_utilization_percent = 2
+          [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Required. Selects the replicas to which this AsymmetricAutoscalingOption
+    // applies. Only read-only replicas are supported.
+    ReplicaSelection replica_selection = 1
+        [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. Overrides applied to the top-level autoscaling configuration
+    // for the selected replicas.
+    AutoscalingConfigOverrides overrides = 2
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
   // Required. Autoscaling limits for an instance.
   AutoscalingLimits autoscaling_limits = 1
       [(google.api.field_behavior) = REQUIRED];
@@ -861,6 +920,18 @@ message AutoscalingConfig {
   // Required. The autoscaling targets for an instance.
   AutoscalingTargets autoscaling_targets = 2
       [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Optional asymmetric autoscaling options.
+  // Replicas matching the replica selection criteria will be autoscaled
+  // independently from other replicas. The autoscaler will scale the replicas
+  // based on the utilization of replicas identified by the replica selection.
+  // Replica selections should not overlap with each other.
+  //
+  // Other replicas (those do not match any replica selection) will be
+  // autoscaled together and will have the same compute capacity allocated to
+  // them.
+  repeated AsymmetricAutoscalingOption asymmetric_autoscaling_options = 3
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // An isolated set of Cloud Spanner resources on which databases can be hosted.
@@ -922,33 +993,55 @@ message Instance {
   // Must be unique per project and between 4 and 30 characters in length.
   string display_name = 3 [(google.api.field_behavior) = REQUIRED];
 
-  // The number of nodes allocated to this instance. At most one of either
-  // node_count or processing_units should be present in the message.
+  // The number of nodes allocated to this instance. At most, one of either
+  // `node_count` or `processing_units` should be present in the message.
   //
-  // Users can set the node_count field to specify the target number of nodes
+  // Users can set the `node_count` field to specify the target number of nodes
   // allocated to the instance.
   //
-  // This may be zero in API responses for instances that are not yet in state
-  // `READY`.
+  // If autoscaling is enabled, `node_count` is treated as an `OUTPUT_ONLY`
+  // field and reflects the current number of nodes allocated to the instance.
   //
-  // See [the
-  // documentation](https://cloud.google.com/spanner/docs/compute-capacity)
-  // for more information about nodes and processing units.
+  // This might be zero in API responses for instances that are not yet in the
+  // `READY` state.
+  //
+  // If the instance has varying node count across replicas (achieved by
+  // setting asymmetric_autoscaling_options in autoscaling config), the
+  // node_count here is the maximum node count across all replicas.
+  //
+  // For more information, see
+  // [Compute capacity, nodes, and processing
+  // units](https://cloud.google.com/spanner/docs/compute-capacity).
   int32 node_count = 5;
 
-  // The number of processing units allocated to this instance. At most one of
-  // processing_units or node_count should be present in the message.
+  // The number of processing units allocated to this instance. At most, one of
+  // either `processing_units` or `node_count` should be present in the message.
   //
-  // Users can set the processing_units field to specify the target number of
+  // Users can set the `processing_units` field to specify the target number of
   // processing units allocated to the instance.
   //
-  // This may be zero in API responses for instances that are not yet in state
-  // `READY`.
+  // If autoscaling is enabled, `processing_units` is treated as an
+  // `OUTPUT_ONLY` field and reflects the current number of processing units
+  // allocated to the instance.
   //
-  // See [the
-  // documentation](https://cloud.google.com/spanner/docs/compute-capacity)
-  // for more information about nodes and processing units.
+  // This might be zero in API responses for instances that are not yet in the
+  // `READY` state.
+  //
+  // If the instance has varying processing units per replica
+  // (achieved by setting asymmetric_autoscaling_options in autoscaling config),
+  // the processing_units here is the maximum processing units across all
+  // replicas.
+  //
+  // For more information, see
+  // [Compute capacity, nodes and processing
+  // units](https://cloud.google.com/spanner/docs/compute-capacity).
   int32 processing_units = 9;
+
+  // Output only. Lists the compute capacity per ReplicaSelection. A replica
+  // selection identifies a set of replicas with common properties. Replicas
+  // identified by a ReplicaSelection are scaled with the same compute capacity.
+  repeated ReplicaComputeCapacity replica_compute_capacity = 19
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Optional. The autoscaling configuration. Autoscaling is enabled if this
   // field is set. When autoscaling is enabled, node_count and processing_units
