@@ -43,6 +43,8 @@ service ContactCenterInsights {
       "https://www.googleapis.com/auth/cloud-platform";
 
   // Creates a conversation.
+  // Note that this method does not support audio transcription or redaction.
+  // Use `conversations.upload` instead.
   rpc CreateConversation(CreateConversationRequest) returns (Conversation) {
     option (google.api.http) = {
       post: "/v1/{parent=projects/*/locations/*}/conversations"
@@ -52,8 +54,8 @@ service ContactCenterInsights {
         "parent,conversation,conversation_id";
   }
 
-  // Create a longrunning conversation upload operation. This method differs
-  // from CreateConversation by allowing audio transcription and optional DLP
+  // Create a long-running conversation upload operation. This method differs
+  // from `CreateConversation` by allowing audio transcription and optional DLP
   // redaction.
   rpc UploadConversation(UploadConversationRequest)
       returns (google.longrunning.Operation) {
@@ -281,6 +283,34 @@ service ContactCenterInsights {
     };
   }
 
+  // Exports an issue model to the provided destination.
+  rpc ExportIssueModel(ExportIssueModelRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/issueModels/*}:export"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+    option (google.longrunning.operation_info) = {
+      response_type: "ExportIssueModelResponse"
+      metadata_type: "ExportIssueModelMetadata"
+    };
+  }
+
+  // Imports an issue model from a Cloud Storage bucket.
+  rpc ImportIssueModel(ImportIssueModelRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/locations/*}/issueModels:import"
+      body: "*"
+    };
+    option (google.api.method_signature) = "parent";
+    option (google.longrunning.operation_info) = {
+      response_type: "ImportIssueModelResponse"
+      metadata_type: "ImportIssueModelMetadata"
+    };
+  }
+
   // Gets an issue.
   rpc GetIssue(GetIssueRequest) returns (Issue) {
     option (google.api.http) = {
@@ -390,6 +420,32 @@ service ContactCenterInsights {
       body: "settings"
     };
     option (google.api.method_signature) = "settings,update_mask";
+  }
+
+  // Gets location-level encryption key specification.
+  rpc GetEncryptionSpec(GetEncryptionSpecRequest) returns (EncryptionSpec) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/locations/*/encryptionSpec}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Initializes a location-level encryption key specification.  An error will
+  // be thrown if the location has resources already created before the
+  // initialization. Once the encryption specification is initialized at a
+  // location, it is immutable and all newly created resources under the
+  // location will be encrypted with the existing specification.
+  rpc InitializeEncryptionSpec(InitializeEncryptionSpecRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{encryption_spec.name=projects/*/locations/*/encryptionSpec}:initialize"
+      body: "*"
+    };
+    option (google.api.method_signature) = "encryption_spec";
+    option (google.longrunning.operation_info) = {
+      response_type: "InitializeEncryptionSpecResponse"
+      metadata_type: "InitializeEncryptionSpecMetadata"
+    };
   }
 
   // Creates a view.
@@ -596,7 +652,7 @@ message UploadConversationRequest {
   SpeechConfig speech_config = 11 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// The metadata for an UploadConversation operation.
+// The metadata for an `UploadConversation` operation.
 message UploadConversationMetadata {
   // Output only. The time the operation was created.
   google.protobuf.Timestamp create_time = 1
@@ -630,7 +686,7 @@ message ListConversationsRequest {
   ];
 
   // The maximum number of conversations to return in the response. A valid page
-  // size ranges from 0 to 1,000 inclusive. If the page size is zero or
+  // size ranges from 0 to 100,000 inclusive. If the page size is zero or
   // unspecified, a default page size of 100 will be chosen. Note that a call
   // might return fewer results than the requested page size.
   int32 page_size = 2;
@@ -643,6 +699,23 @@ message ListConversationsRequest {
   // A filter to reduce results to a specific subset. Useful for querying
   // conversations with specific properties.
   string filter = 4;
+
+  // Optional. The attribute by which to order conversations in the response.
+  // If empty, conversations will be ordered by descending creation time.
+  // Supported values are one of the following:
+  //
+  // * create_time
+  // * customer_satisfaction_rating
+  // * duration
+  // * latest_analysis
+  // * start_time
+  // * turn_count
+  //
+  // The default sort order is ascending. To specify order, append `asc` or
+  // `desc` (`create_time desc`).
+  // For more details, see [Google AIPs
+  // Ordering](https://google.aip.dev/132#ordering).
+  string order_by = 7 [(google.api.field_behavior) = OPTIONAL];
 
   // The level of details of the conversation. Default is `BASIC`.
   ConversationView view = 5;
@@ -678,7 +751,20 @@ message UpdateConversationRequest {
   // Required. The new values for the conversation.
   Conversation conversation = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // The list of fields to be updated.
+  // The list of fields to be updated. All possible fields can be updated by
+  // passing `*`, or a subset of the following updateable fields can be
+  // provided:
+  //
+  // * `agent_id`
+  // * `language_code`
+  // * `labels`
+  // * `metadata`
+  // * `quality_metadata`
+  // * `call_metadata`
+  // * `start_time`
+  // * `expire_time` or `ttl`
+  // * `data_source.gcs_source.audio_uri` or
+  // `data_source.dialogflow_source.audio_uri`
   google.protobuf.FieldMask update_mask = 2;
 }
 
@@ -719,6 +805,23 @@ message IngestConversationsRequest {
     // Optional. Specifies the type of the objects in `bucket_uri`.
     BucketObjectType bucket_object_type = 2
         [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The Cloud Storage path to the conversation metadata. Note that:
+    // [1] Metadata files are expected to be in JSON format.
+    // [2] Metadata and source files (transcripts or audio) must be in
+    //     separate buckets.
+    // [3] A source file and its corresponding metadata file must share the same
+    // name to
+    //     be properly ingested, E.g. `gs://bucket/audio/conversation1.mp3` and
+    //     `gs://bucket/metadata/conversation1.json`.
+    optional string metadata_bucket_uri = 3
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Custom keys to extract as conversation labels from metadata
+    // files in `metadata_bucket_uri`. Keys not included in this field will be
+    // ignored. Note that there is a limit of 20 labels per conversation.
+    repeated string custom_metadata_keys = 12
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Configuration for processing transcript objects.
@@ -729,9 +832,11 @@ message IngestConversationsRequest {
 
   // Configuration that applies to all conversations.
   message ConversationConfig {
-    // An opaque, user-specified string representing the human agent who handled
-    // the conversations.
-    string agent_id = 1;
+    // Optional. An opaque, user-specified string representing a human agent who
+    // handled all conversations in the import. Note that this will be
+    // overridden if per-conversation metadata is provided through the
+    // `metadata_bucket_uri`.
+    string agent_id = 1 [(google.api.field_behavior) = OPTIONAL];
 
     // Optional. Indicates which of the channels, 1 or 2, contains the agent.
     // Note that this must be set for conversations to be properly displayed and
@@ -776,6 +881,12 @@ message IngestConversationsRequest {
   // Optional. Default Speech-to-Text configuration. Optional, will default to
   // the config specified in Settings.
   SpeechConfig speech_config = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If set, this fields indicates the number of objects to ingest
+  // from the Cloud Storage bucket. If empty, the entire bucket will be
+  // ingested. Unless they are first deleted, conversations produced through
+  // sampling won't be ingested by subsequent ingest requests.
+  optional int32 sample_size = 7 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // The metadata for an IngestConversations operation.
@@ -1226,6 +1337,85 @@ message UndeployIssueModelMetadata {
   UndeployIssueModelRequest request = 3;
 }
 
+// Request to export an issue model.
+message ExportIssueModelRequest {
+  // Google Cloud Storage Object URI to save the issue model to.
+  message GcsDestination {
+    // Required. Format: `gs://<bucket-name>/<object-name>`
+    string object_uri = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  oneof Destination {
+    // Google Cloud Storage URI to export the issue model to.
+    GcsDestination gcs_destination = 2;
+  }
+
+  // Required. The issue model to export.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "contactcenterinsights.googleapis.com/IssueModel"
+    }
+  ];
+}
+
+// Response from export issue model
+message ExportIssueModelResponse {}
+
+// Metadata used for export issue model.
+message ExportIssueModelMetadata {
+  // The time the operation was created.
+  google.protobuf.Timestamp create_time = 1;
+
+  // The time the operation finished running.
+  google.protobuf.Timestamp end_time = 2;
+
+  // The original export request.
+  ExportIssueModelRequest request = 3;
+}
+
+// Request to import an issue model.
+message ImportIssueModelRequest {
+  // Google Cloud Storage Object URI to get the issue model file from.
+  message GcsSource {
+    // Required. Format: `gs://<bucket-name>/<object-name>`
+    string object_uri = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  oneof Source {
+    // Google Cloud Storage source message.
+    GcsSource gcs_source = 2;
+  }
+
+  // Required. The parent resource of the issue model.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
+
+  // Optional. If set to true, will create an issue model from the imported file
+  // with randomly generated IDs for the issue model and corresponding issues.
+  // Otherwise, replaces an existing model with the same ID as the file.
+  bool create_new_model = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response from import issue model
+message ImportIssueModelResponse {}
+
+// Metadata used for import issue model.
+message ImportIssueModelMetadata {
+  // The time the operation was created.
+  google.protobuf.Timestamp create_time = 1;
+
+  // The time the operation finished running.
+  google.protobuf.Timestamp end_time = 2;
+
+  // The original import request.
+  ImportIssueModelRequest request = 3;
+}
+
 // The request to get an issue.
 message GetIssueRequest {
   // Required. The name of the issue to get.
@@ -1395,6 +1585,48 @@ message UpdateSettingsRequest {
   // Required. The list of fields to be updated.
   google.protobuf.FieldMask update_mask = 2
       [(google.api.field_behavior) = REQUIRED];
+}
+
+// The request to get location-level encryption specification.
+message GetEncryptionSpecRequest {
+  // Required. The name of the encryption spec resource to get.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "contactcenterinsights.googleapis.com/EncryptionSpec"
+    }
+  ];
+}
+
+// The request to initialize a location-level encryption specification.
+message InitializeEncryptionSpecRequest {
+  // Required. The encryption spec used for CMEK encryption. It is required that
+  // the kms key is in the same region as the endpoint. The same key will be
+  // used for all provisioned resources, if encryption is available. If the
+  // kms_key_name is left empty, no encryption will be enforced.
+  EncryptionSpec encryption_spec = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The response to initialize a location-level encryption specification.
+message InitializeEncryptionSpecResponse {}
+
+// Metadata for initializing a location-level encryption specification.
+message InitializeEncryptionSpecMetadata {
+  // Output only. The time the operation was created.
+  google.protobuf.Timestamp create_time = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time the operation finished running.
+  google.protobuf.Timestamp end_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The original request for initialization.
+  InitializeEncryptionSpecRequest request = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Partial errors during initialising operation that might cause the operation
+  // output to be incomplete.
+  repeated google.rpc.Status partial_errors = 4;
 }
 
 // The request to create a view.
