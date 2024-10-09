@@ -63,6 +63,43 @@ service SearchService {
   }
 }
 
+// Product attribute which structured by an attribute name and value. This
+// structure is used in conversational search filters and answers. For example,
+// if we have `name=color` and `value=red`, this means that the color is `red`.
+message ProductAttributeValue {
+  // The attribute name.
+  string name = 1;
+
+  // The attribute value.
+  string value = 2;
+}
+
+// Product attribute name and numeric interval.
+message ProductAttributeInterval {
+  // The attribute name (e.g. "length")
+  string name = 1;
+
+  // The numeric interval (e.g. [10, 20))
+  Interval interval = 2;
+}
+
+// This field specifies the tile information including an attribute key,
+// attribute value. More fields will be added in the future, eg: product id
+// or product counts, etc.
+message Tile {
+  // The attribute key and value for the tile.
+  oneof product_attribute {
+    // The product attribute key-value.
+    ProductAttributeValue product_attribute_value = 1;
+
+    // The product attribute key-numeric interval.
+    ProductAttributeInterval product_attribute_interval = 2;
+  }
+
+  // The representative product id for this tile.
+  string representative_product_id = 3;
+}
+
 // Request message for
 // [SearchService.Search][google.cloud.retail.v2alpha.SearchService.Search]
 // method.
@@ -448,6 +485,69 @@ message SearchRequest {
     Mode mode = 1;
   }
 
+  // This field specifies all conversational related parameters addition to
+  // traditional retail search.
+  message ConversationalSearchSpec {
+    // This field specifies the current user answer during the conversational
+    // search. This can be either user selected from suggested answers or user
+    // input plain text.
+    message UserAnswer {
+      // This field specifies the selected answers during the conversational
+      // search.
+      message SelectedAnswer {
+        // This field is deprecated and should not be set.
+        repeated ProductAttributeValue product_attribute_values = 1
+            [deprecated = true];
+
+        // This field specifies the selected answer which is a attribute
+        // key-value.
+        ProductAttributeValue product_attribute_value = 2;
+      }
+
+      // This field specifies the type of user answer.
+      oneof type {
+        // This field specifies the incremental input text from the user during
+        // the conversational search.
+        string text_answer = 1;
+
+        // This field specifies the selected attributes during the
+        // conversational search. This should be a subset of
+        // [ConversationalSearchResult.suggested_answers][].
+        SelectedAnswer selected_answer = 2;
+      }
+    }
+
+    // This field specifies whether the customer would like to do conversational
+    // search. If this field is set to true, conversational related extra
+    // information will be returned from server side, including follow-up
+    // question, answer options, etc.
+    bool followup_conversation_requested = 1;
+
+    // This field specifies the conversation id, which maintains the state of
+    // the conversation between client side and server side. Use the value from
+    // the previous [ConversationalSearchResult.conversation_id][]. For the
+    // initial request, this should be empty.
+    string conversation_id = 2;
+
+    // This field specifies the current user answer during the conversational
+    // search. This can be either user selected from suggested answers or user
+    // input plain text.
+    UserAnswer user_answer = 3;
+  }
+
+  // This field specifies tile navigation related parameters.
+  message TileNavigationSpec {
+    // This field specifies whether the customer would like to request tile
+    // navigation.
+    bool tile_navigation_requested = 1;
+
+    // This field specifies the tiles which are already clicked in client side.
+    // NOTE: This field is not being used for filtering search products. Client
+    // side should also put all the applied tiles in
+    // [SearchRequest.filter][google.cloud.retail.v2alpha.SearchRequest.filter].
+    repeated Tile applied_tiles = 2;
+  }
+
   // The relevance threshold of the search results. The higher relevance
   // threshold is, the higher relevant results are shown and the less number of
   // results are returned.
@@ -788,6 +888,15 @@ message SearchRequest {
   // [UserEvent.entity][google.cloud.retail.v2alpha.UserEvent.entity] to get
   // search results boosted by entity.
   string entity = 38;
+
+  // Optional. This field specifies all conversational related parameters
+  // addition to traditional retail search.
+  ConversationalSearchSpec conversational_search_spec = 40
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. This field specifies tile navigation related parameters.
+  TileNavigationSpec tile_navigation_spec = 41
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Response message for
@@ -939,6 +1048,67 @@ message SearchResponse {
     int64 pinned_result_count = 2;
   }
 
+  // This field specifies all related information that is needed on client
+  // side for UI rendering of conversational retail search.
+  message ConversationalSearchResult {
+    // Suggested answers to the follow-up question.
+    message SuggestedAnswer {
+      // Product attribute value, including an attribute key and an
+      // attribute value. Other types can be added here in the future.
+      ProductAttributeValue product_attribute_value = 1;
+    }
+
+    // Additional filter that client side need to apply.
+    message AdditionalFilter {
+      // Product attribute value, including an attribute key and an
+      // attribute value. Other types can be added here in the future.
+      ProductAttributeValue product_attribute_value = 1;
+    }
+
+    // Conversation UUID. This field will be stored in client side storage to
+    // maintain the conversation session with server and will be used for next
+    // search request's
+    // [SearchRequest.ConversationalSearchSpec.conversation_id][google.cloud.retail.v2alpha.SearchRequest.ConversationalSearchSpec.conversation_id]
+    // to restore conversation state in server.
+    string conversation_id = 1;
+
+    // The current refined query for the conversational search. This field
+    // will be used in customer UI that the query in the search bar should be
+    // replaced with the refined query. For example, if
+    // [SearchRequest.query][google.cloud.retail.v2alpha.SearchRequest.query] is
+    // `dress` and next
+    // [SearchRequest.ConversationalSearchSpec.UserAnswer.text_answer][google.cloud.retail.v2alpha.SearchRequest.ConversationalSearchSpec.UserAnswer.text_answer]
+    // is `red color`, which does not match any product attribute value filters,
+    // the refined query will be `dress, red color`.
+    string refined_query = 2;
+
+    // This field is deprecated but will be kept for backward compatibility.
+    // There is expected to have only one additional filter and the value will
+    // be the same to the same as field `additional_filter`.
+    repeated AdditionalFilter additional_filters = 3 [deprecated = true];
+
+    // The follow-up question. e.g., `What is the color?`
+    string followup_question = 4;
+
+    // The answer options provided to client for the follow-up question.
+    repeated SuggestedAnswer suggested_answers = 5;
+
+    // This is the incremental additional filters implied from the current
+    // user answer. User should add the suggested addition filters to the
+    // previous
+    // [SearchRequest.filter][google.cloud.retail.v2alpha.SearchRequest.filter],
+    // and use the merged filter in the follow up search request.
+    AdditionalFilter additional_filter = 6;
+  }
+
+  // This field specifies all related information for tile navigation that will
+  // be used in client side.
+  message TileNavigationResult {
+    // The current tiles that are used for tile navigation, sorted by
+    // engagement.
+    repeated Tile tiles = 1;
+  }
+
   // A list of matched items. The order represents the ranking.
   repeated SearchResult results = 1;
 
@@ -992,6 +1162,14 @@ message SearchResponse {
   // [Experiment][google.cloud.retail.v2alpha.Experiment] associated with this
   // response. Only exists when an experiment is triggered.
   repeated ExperimentInfo experiment_info = 17;
+
+  // This field specifies all related information that is needed on client
+  // side for UI rendering of conversational retail search.
+  ConversationalSearchResult conversational_search_result = 18;
+
+  // This field specifies all related information for tile navigation that will
+  // be used in client side.
+  TileNavigationResult tile_navigation_result = 19;
 }
 
 // Metadata for active A/B testing
