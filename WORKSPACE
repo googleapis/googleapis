@@ -160,12 +160,12 @@ http_archive(
     urls = ["https://github.com/protocolbuffers/protobuf/archive/v%s.tar.gz" % _protobuf_version],
 )
 
-
 load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
 
 grpc_deps()
 
-load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps", "PROTOBUF_MAVEN_ARTIFACTS")
+load("@com_google_protobuf//:protobuf_deps.bzl", "PROTOBUF_MAVEN_ARTIFACTS", "protobuf_deps")
+
 # This is actually already done within grpc_deps but calling this for Bazel convention.
 protobuf_deps()
 
@@ -281,33 +281,33 @@ load("@com_google_api_gax_java//:repositories.bzl", "com_google_api_gax_java_rep
 
 com_google_api_gax_java_repositories()
 
-load("@io_grpc_grpc_java//:repositories.bzl", "grpc_java_repositories")
-load("@io_grpc_grpc_java//:repositories.bzl", "IO_GRPC_GRPC_JAVA_ARTIFACTS")
-load("@io_grpc_grpc_java//:repositories.bzl", "IO_GRPC_GRPC_JAVA_OVERRIDE_TARGETS")
+load("@io_grpc_grpc_java//:repositories.bzl", "IO_GRPC_GRPC_JAVA_ARTIFACTS", "IO_GRPC_GRPC_JAVA_OVERRIDE_TARGETS", "grpc_java_repositories")
 
 grpc_java_repositories()
 
 load("@envoy_api//bazel:repositories.bzl", "api_dependencies")
+
 api_dependencies()
 
 maven_install(
     artifacts = [
-      "com.google.api:gapic-generator-java:" + _gapic_generator_java_version,
-      ] + PROTOBUF_MAVEN_ARTIFACTS +
-      IO_GRPC_GRPC_JAVA_ARTIFACTS,
-    generate_compat_repositories = True,
-    override_targets = IO_GRPC_GRPC_JAVA_OVERRIDE_TARGETS,
+                    "com.google.api:gapic-generator-java:" + _gapic_generator_java_version,
+                ] + PROTOBUF_MAVEN_ARTIFACTS +
+                IO_GRPC_GRPC_JAVA_ARTIFACTS,
     #Update this False for local development
     fail_on_missing_checksum = True,
+    generate_compat_repositories = True,
+    override_targets = IO_GRPC_GRPC_JAVA_OVERRIDE_TARGETS,
     repositories = [
         "m2Local",
         "https://repo.maven.apache.org/maven2/",
-    ]
+    ],
 )
 
 load("@maven//:compat.bzl", "compat_repositories")
 
 compat_repositories()
+
 ##############################################################################
 # Python
 ##############################################################################
@@ -315,8 +315,9 @@ load("@rules_gapic//python:py_gapic_repositories.bzl", "py_gapic_repositories")
 
 py_gapic_repositories()
 
-_gapic_generator_python_version = "1.18.5"
-_gapic_generator_python_sha256 = "b2c4c1c43c6d0e90fdefa130eed6d89b4f78439e1f5966a035da79056f5c4236"
+_gapic_generator_python_version = "1.19.1"
+
+_gapic_generator_python_sha256 = "bf8ca01d6527d5159710b9c03db85d18d1ecc3155feaaaabdb3026d406b3dd4c"
 
 http_archive(
     name = "gapic_generator_python",
@@ -330,7 +331,6 @@ load(
     "gapic_generator_python",
     "gapic_generator_register_toolchains",
 )
-
 load("@rules_python//python:repositories.bzl", "py_repositories")
 
 py_repositories()
@@ -366,32 +366,39 @@ http_archive(
     urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v%s.tar.gz" % _gapic_generator_typescript_version],
 )
 
-load("@gapic_generator_typescript//:repositories.bzl", "gapic_generator_typescript_repositories", "NODE_VERSION")
+load("@gapic_generator_typescript//:repositories.bzl", "NODE_VERSION", "gapic_generator_typescript_repositories")
+
 gapic_generator_typescript_repositories()
 
 load("@aspect_rules_js//js:repositories.bzl", "rules_js_dependencies")
+
 rules_js_dependencies()
 
 load("@aspect_rules_ts//ts:repositories.bzl", "rules_ts_dependencies")
+
 rules_ts_dependencies(
     ts_version_from = "@gapic_generator_typescript//:package.json",
 )
 
 load("@rules_nodejs//nodejs:repositories.bzl", "nodejs_register_toolchains")
+
 nodejs_register_toolchains(
-  name = "nodejs",
-  node_version = NODE_VERSION,
+    name = "nodejs",
+    node_version = NODE_VERSION,
 )
 
 load("@aspect_rules_js//npm:npm_import.bzl", "npm_translate_lock", "pnpm_repository")
+
 npm_translate_lock(
-  name = "npm",
-  pnpm_lock = "@gapic_generator_typescript//:pnpm-lock.yaml",
-  data = ["@gapic_generator_typescript//:package.json"],
+    name = "npm",
+    data = ["@gapic_generator_typescript//:package.json"],
+    pnpm_lock = "@gapic_generator_typescript//:pnpm-lock.yaml",
 )
 
 load("@npm//:repositories.bzl", "npm_repositories")
+
 npm_repositories()
+
 pnpm_repository(name = "pnpm")
 
 ##############################################################################
@@ -433,6 +440,7 @@ http_archive(
 )
 
 _gapic_generator_csharp_version = "1.4.32"
+
 _gapic_generator_csharp_sha256 = "b29078c87d6c0e15ba34ece8365ec5fda90c66e9c7f5ab51fa14a067f3685012"
 
 http_archive(
