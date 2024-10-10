@@ -273,9 +273,9 @@ service ConversationalSearchService {
 // method.
 message ConverseConversationRequest {
   // Required. The resource name of the Conversation to get. Format:
-  // `projects/{project_number}/locations/{location_id}/collections/{collection}/dataStores/{data_store_id}/conversations/{conversation_id}`.
+  // `projects/{project}/locations/{location}/collections/{collection}/dataStores/{data_store_id}/conversations/{conversation_id}`.
   // Use
-  // `projects/{project_number}/locations/{location_id}/collections/{collection}/dataStores/{data_store_id}/conversations/-`
+  // `projects/{project}/locations/{location}/collections/{collection}/dataStores/{data_store_id}/conversations/-`
   // to activate auto session mode, which automatically creates a new
   // conversation inside a ConverseConversation session.
   string name = 1 [
@@ -289,7 +289,7 @@ message ConverseConversationRequest {
   TextInput query = 2 [(google.api.field_behavior) = REQUIRED];
 
   // The resource name of the Serving Config to use. Format:
-  // `projects/{project_number}/locations/{location_id}/collections/{collection}/dataStores/{data_store_id}/servingConfigs/{serving_config_id}`
+  // `projects/{project}/locations/{location}/collections/{collection}/dataStores/{data_store_id}/servingConfigs/{serving_config_id}`
   // If this is not set, the default serving config will be used.
   string serving_config = 3 [(google.api.resource_reference) = {
     type: "discoveryengine.googleapis.com/ServingConfig"
@@ -366,7 +366,7 @@ message ConverseConversationResponse {
 // Request for CreateConversation method.
 message CreateConversationRequest {
   // Required. Full resource name of parent data store. Format:
-  // `projects/{project_number}/locations/{location_id}/collections/{collection}/dataStores/{data_store_id}`
+  // `projects/{project}/locations/{location}/collections/{collection}/dataStores/{data_store_id}`
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -396,7 +396,7 @@ message UpdateConversationRequest {
 // Request for DeleteConversation method.
 message DeleteConversationRequest {
   // Required. The resource name of the Conversation to delete. Format:
-  // `projects/{project_number}/locations/{location_id}/collections/{collection}/dataStores/{data_store_id}/conversations/{conversation_id}`
+  // `projects/{project}/locations/{location}/collections/{collection}/dataStores/{data_store_id}/conversations/{conversation_id}`
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -408,7 +408,7 @@ message DeleteConversationRequest {
 // Request for GetConversation method.
 message GetConversationRequest {
   // Required. The resource name of the Conversation to get. Format:
-  // `projects/{project_number}/locations/{location_id}/collections/{collection}/dataStores/{data_store_id}/conversations/{conversation_id}`
+  // `projects/{project}/locations/{location}/collections/{collection}/dataStores/{data_store_id}/conversations/{conversation_id}`
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -420,7 +420,7 @@ message GetConversationRequest {
 // Request for ListConversations method.
 message ListConversationsRequest {
   // Required. The data store resource name. Format:
-  // `projects/{project_number}/locations/{location_id}/collections/{collection}/dataStores/{data_store_id}`
+  // `projects/{project}/locations/{location}/collections/{collection}/dataStores/{data_store_id}`
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -540,6 +540,20 @@ message AnswerQueryRequest {
     // of relevance to generate answers. If set to `true` or unset, the behavior
     // will be determined automatically by the service.
     optional bool ignore_low_relevant_content = 7;
+
+    // Optional. Specifies whether to filter out jail-breaking queries. The
+    // default value is `false`.
+    //
+    // Google employs search-query classification to detect jail-breaking
+    // queries. No summary is returned if the search query is classified as a
+    // jail-breaking query. A user might add instructions to the query to
+    // change the tone, style, language, content of the answer, or ask the
+    // model to act as a different entity, e.g. "Reply in the tone of a
+    // competing company's CEO". If this field is set to `true`, we skip
+    // generating summaries for jail-breaking queries and return fallback
+    // messages instead.
+    bool ignore_jail_breaking_query = 8
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Search specification.
@@ -607,12 +621,14 @@ message AnswerQueryRequest {
             // Page identifier.
             string page_identifier = 1;
 
-            // Document content.
+            // Document content to be used for answer generation.
             string content = 2;
           }
 
           // Extractive segment.
           // [Guide](https://cloud.google.com/generative-ai-app-builder/docs/snippets#extractive-segments)
+          // Answer generation will only use it if document_contexts is empty.
+          // This is supposed to be shorter snippets.
           message ExtractiveSegment {
             // Page identifier.
             string page_identifier = 1;
@@ -642,18 +658,33 @@ message AnswerQueryRequest {
           // Title.
           string title = 3;
 
-          // List of document contexts.
+          // List of document contexts. The content will be used for Answer
+          // Generation. This is supposed to be the main content of the document
+          // that can be long and comprehensive.
           repeated DocumentContext document_contexts = 4;
 
           // List of extractive segments.
           repeated ExtractiveSegment extractive_segments = 5;
 
+          // Deprecated: This field is deprecated and will have no effect on
+          // the Answer generation.
+          // Please use document_contexts and extractive_segments fields.
           // List of extractive answers.
-          repeated ExtractiveAnswer extractive_answers = 6;
+          repeated ExtractiveAnswer extractive_answers = 6 [deprecated = true];
         }
 
         // Chunk information.
         message ChunkInfo {
+          // Document metadata contains the information of the document of the
+          // current chunk.
+          message DocumentMetadata {
+            // Uri of the document.
+            string uri = 1;
+
+            // Title of the document.
+            string title = 2;
+          }
+
           // Chunk resource name.
           string chunk = 1 [(google.api.resource_reference) = {
             type: "discoveryengine.googleapis.com/Chunk"
@@ -661,6 +692,9 @@ message AnswerQueryRequest {
 
           // Chunk textual content.
           string content = 2;
+
+          // Metadata of the document from the current chunk.
+          DocumentMetadata document_metadata = 4;
         }
 
         // Search result content.
@@ -700,11 +734,14 @@ message AnswerQueryRequest {
         // Adversarial query classification type.
         ADVERSARIAL_QUERY = 1;
 
-        // Non-answer-seeking query classification type.
+        // Non-answer-seeking query classification type, for chit chat.
         NON_ANSWER_SEEKING_QUERY = 2;
 
         // Jail-breaking query classification type.
         JAIL_BREAKING_QUERY = 3;
+
+        // Non-answer-seeking query classification type, for no clear intent.
+        NON_ANSWER_SEEKING_QUERY_V2 = 4;
       }
 
       // Enabled query classification types.
@@ -770,6 +807,9 @@ message AnswerQueryRequest {
   // Query understanding specification.
   QueryUnderstandingSpec query_understanding_spec = 9;
 
+  // Deprecated: This field is deprecated. Streaming Answer API will be
+  // supported.
+  //
   // Asynchronous mode control.
   //
   // If enabled, the response will be returned with answer/session resource
@@ -779,7 +819,7 @@ message AnswerQueryRequest {
   // or
   // [ConversationalSearchService.GetSession][google.cloud.discoveryengine.v1.ConversationalSearchService.GetSession]
   // method.
-  bool asynchronous_mode = 10;
+  bool asynchronous_mode = 10 [deprecated = true];
 
   // A unique identifier for tracking visitors. For example, this could be
   // implemented with an HTTP cookie, which should be able to uniquely identify
@@ -839,7 +879,7 @@ message AnswerQueryResponse {
 // Request for GetAnswer method.
 message GetAnswerRequest {
   // Required. The resource name of the Answer to get. Format:
-  // `projects/{project_number}/locations/{location_id}/collections/{collection}/engines/{engine_id}/sessions/{session_id}/answers/{answer_id}`
+  // `projects/{project}/locations/{location}/collections/{collection}/engines/{engine_id}/sessions/{session_id}/answers/{answer_id}`
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -851,7 +891,7 @@ message GetAnswerRequest {
 // Request for CreateSession method.
 message CreateSessionRequest {
   // Required. Full resource name of parent data store. Format:
-  // `projects/{project_number}/locations/{location_id}/collections/{collection}/dataStores/{data_store_id}`
+  // `projects/{project}/locations/{location}/collections/{collection}/dataStores/{data_store_id}`
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -881,7 +921,7 @@ message UpdateSessionRequest {
 // Request for DeleteSession method.
 message DeleteSessionRequest {
   // Required. The resource name of the Session to delete. Format:
-  // `projects/{project_number}/locations/{location_id}/collections/{collection}/dataStores/{data_store_id}/sessions/{session_id}`
+  // `projects/{project}/locations/{location}/collections/{collection}/dataStores/{data_store_id}/sessions/{session_id}`
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -893,7 +933,7 @@ message DeleteSessionRequest {
 // Request for GetSession method.
 message GetSessionRequest {
   // Required. The resource name of the Session to get. Format:
-  // `projects/{project_number}/locations/{location_id}/collections/{collection}/dataStores/{data_store_id}/sessions/{session_id}`
+  // `projects/{project}/locations/{location}/collections/{collection}/dataStores/{data_store_id}/sessions/{session_id}`
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -905,7 +945,7 @@ message GetSessionRequest {
 // Request for ListSessions method.
 message ListSessionsRequest {
   // Required. The data store resource name. Format:
-  // `projects/{project_number}/locations/{location_id}/collections/{collection}/dataStores/{data_store_id}`
+  // `projects/{project}/locations/{location}/collections/{collection}/dataStores/{data_store_id}`
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {

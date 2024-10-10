@@ -83,6 +83,11 @@ message SearchRequest {
         type: "discoveryengine.googleapis.com/DataStore"
       }
     ];
+
+    // Optional. Filter specification to filter documents in the data store
+    // specified by data_store field. For more information on filtering, see
+    // [Filtering](https://cloud.google.com/generative-ai-app-builder/docs/filter-search-metadata)
+    string filter = 5 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // A facet specification to perform faceted search.
@@ -223,6 +228,80 @@ message SearchRequest {
   message BoostSpec {
     // Boost applies to documents which match a condition.
     message ConditionBoostSpec {
+      // Specification for custom ranking based on customer specified attribute
+      // value. It provides more controls for customized ranking than the simple
+      // (condition, boost) combination above.
+      message BoostControlSpec {
+        // The control points used to define the curve. The curve defined
+        // through these control points can only be monotonically increasing
+        // or decreasing(constant values are acceptable).
+        message ControlPoint {
+          // Can be one of:
+          // 1. The numerical field value.
+          // 2. The duration spec for freshness:
+          // The value must be formatted as an XSD `dayTimeDuration` value (a
+          // restricted subset of an ISO 8601 duration value). The pattern for
+          // this is: `[nD][T[nH][nM][nS]]`.
+          string attribute_value = 1;
+
+          // The value between -1 to 1 by which to boost the score if the
+          // attribute_value evaluates to the value specified above.
+          float boost_amount = 2;
+        }
+
+        // The attribute(or function) for which the custom ranking is to be
+        // applied.
+        enum AttributeType {
+          // Unspecified AttributeType.
+          ATTRIBUTE_TYPE_UNSPECIFIED = 0;
+
+          // The value of the numerical field will be used to dynamically update
+          // the boost amount. In this case, the attribute_value (the x value)
+          // of the control point will be the actual value of the numerical
+          // field for which the boost_amount is specified.
+          NUMERICAL = 1;
+
+          // For the freshness use case the attribute value will be the duration
+          // between the current time and the date in the datetime field
+          // specified. The value must be formatted as an XSD `dayTimeDuration`
+          // value (a restricted subset of an ISO 8601 duration value). The
+          // pattern for this is: `[nD][T[nH][nM][nS]]`.
+          // For example, `5D`, `3DT12H30M`, `T24H`.
+          FRESHNESS = 2;
+        }
+
+        // The interpolation type to be applied. Default will be linear
+        // (Piecewise Linear).
+        enum InterpolationType {
+          // Interpolation type is unspecified. In this case, it defaults to
+          // Linear.
+          INTERPOLATION_TYPE_UNSPECIFIED = 0;
+
+          // Piecewise linear interpolation will be applied.
+          LINEAR = 1;
+        }
+
+        // The name of the field whose value will be used to determine the
+        // boost amount.
+        string field_name = 1;
+
+        // The attribute type to be used to determine the boost amount. The
+        // attribute value can be derived from the field value of the specified
+        // field_name. In the case of numerical it is straightforward i.e.
+        // attribute_value = numerical_field_value. In the case of freshness
+        // however, attribute_value = (time.now() - datetime_field_value).
+        AttributeType attribute_type = 2;
+
+        // The interpolation type to be applied to connect the control points
+        // listed below.
+        InterpolationType interpolation_type = 3;
+
+        // The control points used to define the curve. The monotonic function
+        // (defined through the interpolation_type above) passes through the
+        // control points listed here.
+        repeated ControlPoint control_points = 4;
+      }
+
       // An expression which specifies a boost condition. The syntax and
       // supported fields are the same as a filter expression. See
       // [SearchRequest.filter][google.cloud.discoveryengine.v1.SearchRequest.filter]
@@ -255,6 +334,10 @@ message SearchRequest {
       // boost_control_spec below are set. If both are set then the global boost
       // is ignored and the more fine-grained boost_control_spec is applied.
       float boost = 2;
+
+      // Complex specification for custom ranking based on customer defined
+      // attribute value.
+      BoostControlSpec boost_control_spec = 3;
     }
 
     // Condition boost specifications. If a document matches multiple conditions
@@ -427,6 +510,20 @@ message SearchRequest {
       // of relevance to generate answers. If set to `true`, only queries with
       // high relevance search results will generate answers.
       bool ignore_low_relevant_content = 9;
+
+      // Optional. Specifies whether to filter out jail-breaking queries. The
+      // default value is `false`.
+      //
+      // Google employs search-query classification to detect jail-breaking
+      // queries. No summary is returned if the search query is classified as a
+      // jail-breaking query. A user might add instructions to the query to
+      // change the tone, style, language, content of the answer, or ask the
+      // model to act as a different entity, e.g. "Reply in the tone of a
+      // competing company's CEO". If this field is set to `true`, we skip
+      // generating summaries for jail-breaking queries and return fallback
+      // messages instead.
+      bool ignore_jail_breaking_query = 10
+          [(google.api.field_behavior) = OPTIONAL];
 
       // If specified, the spec will be used to modify the prompt provided to
       // the LLM.
@@ -681,6 +778,11 @@ message SearchRequest {
   //
   // If this field is negative, an  `INVALID_ARGUMENT`  is returned.
   int32 offset = 6;
+
+  // The maximum number of results to return for OneBox.
+  // This applies to each OneBox type individually.
+  // Default number is 10.
+  int32 one_box_page_size = 47;
 
   // Specs defining dataStores to filter on in a search call and configurations
   // for those dataStores. This is only considered for engines with multiple
@@ -1013,6 +1115,7 @@ message SearchResponse {
 
       // The non-summary seeking query ignored case.
       //
+      // Google skips the summary if the query is chit chat.
       // Only used when
       // [SummarySpec.ignore_non_summary_seeking_query][google.cloud.discoveryengine.v1.SearchRequest.ContentSearchSpec.SummarySpec.ignore_non_summary_seeking_query]
       // is set to `true`.
@@ -1055,6 +1158,14 @@ message SearchResponse {
       // Google skips the summary if there is a customer policy violation
       // detected. The policy is defined by the customer.
       CUSTOMER_POLICY_VIOLATION = 8;
+
+      // The non-answer seeking query ignored case.
+      //
+      // Google skips the summary if the query doesn't have clear intent.
+      // Only used when
+      // [SearchRequest.ContentSearchSpec.SummarySpec.ignore_non_answer_seeking_query]
+      // is set to `true`.
+      NON_SUMMARY_SEEKING_QUERY_IGNORED_V2 = 9;
     }
 
     // The summary content.
