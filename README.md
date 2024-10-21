@@ -1,4 +1,4 @@
-# Google APIs
+docker pull ghcr.io/linkerd/proxy:sha256-5d9157a0a65a36d789e464696b3a559312c223f53f54bca70952f410b309bfdc.sig# Google APIs
 
 This repository contains the original interface definitions of public
 Google APIs that support both REST and gRPC protocols. Reading the
