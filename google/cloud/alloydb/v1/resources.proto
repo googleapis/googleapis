@@ -17,6 +17,7 @@ syntax = "proto3";
 package google.cloud.alloydb.v1;
 
 import "google/api/field_behavior.proto";
+import "google/api/field_info.proto";
 import "google/api/resource.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
@@ -83,6 +84,27 @@ enum DatabaseVersion {
 
   // The database version is Postgres 14.
   POSTGRES_14 = 2;
+
+  // The database version is Postgres 15.
+  POSTGRES_15 = 3;
+
+  // The database version is Postgres 16.
+  POSTGRES_16 = 4;
+}
+
+// Subscription_type added to distinguish between Standard and Trial
+// subscriptions. By default, a subscription type is considered STANDARD unless
+// explicitly specified.
+enum SubscriptionType {
+  // This is an unknown subscription type. By default, the subscription type is
+  // STANDARD.
+  SUBSCRIPTION_TYPE_UNSPECIFIED = 0;
+
+  // Standard subscription.
+  STANDARD = 1;
+
+  // Trial subscription.
+  TRIAL = 2;
 }
 
 // The username/password for a database user. Used for specifying initial
@@ -162,7 +184,7 @@ message EncryptionInfo {
 message SslConfig {
   // SSL mode options.
   enum SslMode {
-    // SSL mode not specified. Defaults to ENCRYPTED_ONLY.
+    // SSL mode is not specified. Defaults to ENCRYPTED_ONLY.
     SSL_MODE_UNSPECIFIED = 0;
 
     // SSL connections are optional. CA verification not enforced.
@@ -174,7 +196,7 @@ message SslConfig {
     SSL_MODE_REQUIRE = 2 [deprecated = true];
 
     // SSL connections are required. CA verification enforced.
-    // Clients must have certificates signed by a Cluster CA, e.g. via
+    // Clients must have certificates signed by a Cluster CA, for example, using
     // GenerateClientCertificate.
     SSL_MODE_VERIFY_CA = 3 [deprecated = true];
 
@@ -371,6 +393,33 @@ message ContinuousBackupSource {
       [(google.api.field_behavior) = REQUIRED];
 }
 
+// MaintenanceUpdatePolicy defines the policy for system updates.
+message MaintenanceUpdatePolicy {
+  // MaintenanceWindow specifies a preferred day and time for maintenance.
+  message MaintenanceWindow {
+    // Preferred day of the week for maintenance, e.g. MONDAY, TUESDAY, etc.
+    google.type.DayOfWeek day = 1;
+
+    // Preferred time to start the maintenance operation on the specified day.
+    // Maintenance will start within 1 hour of this time.
+    google.type.TimeOfDay start_time = 2;
+  }
+
+  // Preferred windows to perform maintenance. Currently limited to 1.
+  repeated MaintenanceWindow maintenance_windows = 1;
+}
+
+// MaintenanceSchedule stores the maintenance schedule generated from
+// the MaintenanceUpdatePolicy, once a maintenance rollout is triggered, if
+// MaintenanceWindow is set, and if there is no conflicting DenyPeriod.
+// The schedule is cleared once the update takes place. This field cannot be
+// manually changed; modify the MaintenanceUpdatePolicy instead.
+message MaintenanceSchedule {
+  // Output only. The scheduled start time for the maintenance.
+  google.protobuf.Timestamp start_time = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
 // A cluster is a collection of regional AlloyDB resources. It can include a
 // primary instance and one or more read pool instances.
 // All cluster resources share a storage layer, which scales as needed.
@@ -378,19 +427,21 @@ message Cluster {
   option (google.api.resource) = {
     type: "alloydb.googleapis.com/Cluster"
     pattern: "projects/{project}/locations/{location}/clusters/{cluster}"
+    plural: "clusters"
+    singular: "cluster"
     style: DECLARATIVE_FRIENDLY
   };
 
   // Metadata related to network configuration.
   message NetworkConfig {
-    // Required. The resource link for the VPC network in which cluster
+    // Optional. The resource link for the VPC network in which cluster
     // resources are created and from which they are accessible via Private IP.
     // The network must belong to the same project as the cluster. It is
     // specified in the form:
-    // "projects/{project_number}/global/networks/{network_id}". This is
+    // `projects/{project_number}/global/networks/{network_id}`. This is
     // required to create a cluster.
     string network = 1 [
-      (google.api.field_behavior) = REQUIRED,
+      (google.api.field_behavior) = OPTIONAL,
       (google.api.resource_reference) = {
         type: "compute.googleapis.com/Network"
       }
@@ -422,6 +473,28 @@ message Cluster {
     // cluster.
     repeated string secondary_cluster_names = 1
         [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // PscConfig contains PSC related configuration at a cluster level.
+  message PscConfig {
+    // Optional. Create an instance that allows connections from Private Service
+    // Connect endpoints to the instance.
+    bool psc_enabled = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Contains information and all metadata related to TRIAL clusters.
+  message TrialMetadata {
+    // start time of the trial cluster.
+    google.protobuf.Timestamp start_time = 1;
+
+    // End time of the trial cluster.
+    google.protobuf.Timestamp end_time = 2;
+
+    // Upgrade time of trial cluster to Standard cluster.
+    google.protobuf.Timestamp upgrade_time = 3;
+
+    // grace end time of the cluster.
+    google.protobuf.Timestamp grace_end_time = 4;
   }
 
   // Cluster State
@@ -539,7 +612,7 @@ message Cluster {
   // Required. The resource link for the VPC network in which cluster resources
   // are created and from which they are accessible via Private IP. The network
   // must belong to the same project as the cluster. It is specified in the
-  // form: "projects/{project}/global/networks/{network_id}". This is required
+  // form: `projects/{project}/global/networks/{network_id}`. This is required
   // to create a cluster. Deprecated, use network_config.network instead.
   string network = 10 [
     deprecated = true,
@@ -603,6 +676,42 @@ message Cluster {
 
   // Output only. Cross Region replication config specific to PRIMARY cluster.
   PrimaryConfig primary_config = 23 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Reserved for future use.
+  bool satisfies_pzs = 30 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The configuration for Private Service Connect (PSC) for the
+  // cluster.
+  PscConfig psc_config = 31 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The maintenance update policy determines when to allow or deny
+  // updates.
+  MaintenanceUpdatePolicy maintenance_update_policy = 32
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The maintenance schedule for the cluster, generated for a
+  // specific rollout if a maintenance window is set.
+  MaintenanceSchedule maintenance_schedule = 37
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Subscription type of the cluster.
+  SubscriptionType subscription_type = 38
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Metadata for free trial clusters
+  TrialMetadata trial_metadata = 39 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Input only. Immutable. Tag keys/values directly bound to this
+  // resource. For example:
+  // ```
+  // "123/environment": "production",
+  // "123/costCenter": "marketing"
+  // ```
+  map<string, string> tags = 41 [
+    (google.api.field_behavior) = INPUT_ONLY,
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = OPTIONAL
+  ];
 }
 
 // An Instance is a computing unit that an end customer can connect to.
@@ -611,6 +720,8 @@ message Instance {
   option (google.api.resource) = {
     type: "alloydb.googleapis.com/Instance"
     pattern: "projects/{project}/locations/{location}/clusters/{cluster}/instances/{instance}"
+    plural: "instances"
+    singular: "instance"
     style: DECLARATIVE_FRIENDLY
   };
 
@@ -672,8 +783,48 @@ message Instance {
     // connections to the database.
     bool require_connectors = 1 [(google.api.field_behavior) = OPTIONAL];
 
-    // Optional. SSL config option for this instance.
+    // Optional. SSL configuration option for this instance.
     SslConfig ssl_config = 2 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // PscInstanceConfig contains PSC related configuration at an
+  // instance level.
+  message PscInstanceConfig {
+    // Output only. The service attachment created when Private
+    // Service Connect (PSC) is enabled for the instance.
+    // The name of the resource will be in the format of
+    // `projects/<alloydb-tenant-project-number>/regions/<region-name>/serviceAttachments/<service-attachment-name>`
+    string service_attachment_link = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Optional. List of consumer projects that are allowed to create
+    // PSC endpoints to service-attachments to this instance.
+    repeated string allowed_consumer_projects = 2
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Output only. The DNS name of the instance for PSC connectivity.
+    // Name convention: <uid>.<uid>.<region>.alloydb-psc.goog
+    string psc_dns_name = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Metadata related to instance-level network configuration.
+  message InstanceNetworkConfig {
+    // AuthorizedNetwork contains metadata for an authorized network.
+    message AuthorizedNetwork {
+      // CIDR range for one authorzied network of the instance.
+      string cidr_range = 1 [(google.api.field_info).format = IPV4];
+    }
+
+    // Optional. A list of external network authorized to access this instance.
+    repeated AuthorizedNetwork authorized_external_networks = 1
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Enabling public ip for the instance.
+    bool enable_public_ip = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Enabling an outbound public IP address to support a database
+    // server sending requests out into the internet.
+    bool enable_outbound_public_ip = 3 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Instance State
@@ -843,6 +994,14 @@ message Instance {
   // This is the connection endpoint for an end-user application.
   string ip_address = 15 [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  // Output only. The public IP addresses for the Instance. This is available
+  // ONLY when enable_public_ip is set. This is the connection endpoint for an
+  // end-user application.
+  string public_ip_address = 27 [
+    (google.api.field_info).format = IPV4,
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
+
   // Output only. Reconciling (https://google.aip.dev/128#reconciliation).
   // Set to true if the current state of Instance does not match the user's
   // intended state, and the service is actively updating the resource to
@@ -861,6 +1020,24 @@ message Instance {
   // Optional. Client connection specific configurations
   ClientConnectionConfig client_connection_config = 23
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Reserved for future use.
+  bool satisfies_pzs = 24 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The configuration for Private Service Connect (PSC) for the
+  // instance.
+  PscInstanceConfig psc_instance_config = 28
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Instance-level network configuration.
+  InstanceNetworkConfig network_config = 29
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. All outbound public IP addresses configured for the instance.
+  repeated string outbound_public_ip_addresses = 34 [
+    (google.api.field_info).format = IPV4,
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
 }
 
 // ConnectionInfo singleton resource.
@@ -869,6 +1046,8 @@ message ConnectionInfo {
   option (google.api.resource) = {
     type: "alloydb.googleapis.com/ConnectionInfo"
     pattern: "projects/{project}/locations/{location}/clusters/{cluster}/instances/{instance}/connectionInfo"
+    plural: "connectionInfos"
+    singular: "connectionInfo"
   };
 
   // The name of the ConnectionInfo singleton resource, e.g.:
@@ -881,6 +1060,14 @@ message ConnectionInfo {
   // is set). This is the connection endpoint for an end-user application.
   string ip_address = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  // Output only. The public IP addresses for the Instance. This is available
+  // ONLY when enable_public_ip is set. This is the connection endpoint for an
+  // end-user application.
+  string public_ip_address = 5 [
+    (google.api.field_info).format = IPV4,
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
+
   // Output only. The unique ID of the Instance.
   string instance_uid = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
@@ -890,6 +1077,8 @@ message Backup {
   option (google.api.resource) = {
     type: "alloydb.googleapis.com/Backup"
     pattern: "projects/{project}/locations/{location}/backups/{backup}"
+    plural: "backups"
+    singular: "backup"
     style: DECLARATIVE_FRIENDLY
   };
 
@@ -1045,11 +1234,26 @@ message Backup {
   QuantityBasedExpiry expiry_quantity = 20
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  // Output only. Reserved for future use.
+  bool satisfies_pzs = 21 [(google.api.field_behavior) = OUTPUT_ONLY];
+
   // Output only. The database engine major version of the cluster this backup
   // was created from. Any restored cluster created from this backup will have
   // the same database version.
   DatabaseVersion database_version = 22
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Input only. Immutable. Tag keys/values directly bound to this
+  // resource. For example:
+  // ```
+  // "123/environment": "production",
+  // "123/costCenter": "marketing"
+  // ```
+  map<string, string> tags = 25 [
+    (google.api.field_behavior) = INPUT_ONLY,
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = OPTIONAL
+  ];
 }
 
 // SupportedDatabaseFlag gives general information about a database flag,
@@ -1061,6 +1265,8 @@ message SupportedDatabaseFlag {
   option (google.api.resource) = {
     type: "alloydb.googleapis.com/SupportedDatabaseFlag"
     pattern: "projects/{project}/locations/{location}/flags/{flag}"
+    plural: "supportedDatabaseFlags"
+    singular: "supportedDatabaseFlag"
   };
 
   // Restrictions on STRING type values
@@ -1138,6 +1344,8 @@ message User {
   option (google.api.resource) = {
     type: "alloydb.googleapis.com/User"
     pattern: "projects/{project}/locations/{location}/clusters/{cluster}/users/{user}"
+    plural: "users"
+    singular: "user"
     style: DECLARATIVE_FRIENDLY
   };
 
@@ -1167,4 +1375,33 @@ message User {
 
   // Optional. Type of this user.
   UserType user_type = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Input only. If the user already exists and it has additional roles, keep
+  // them granted.
+  bool keep_extra_roles = 6 [(google.api.field_behavior) = INPUT_ONLY];
+}
+
+// Message describing Database object.
+message Database {
+  option (google.api.resource) = {
+    type: "alloydb.googleapis.com/Database"
+    pattern: "projects/{project}/locations/{location}/clusters/{cluster}/databases/{database}"
+    plural: "databases"
+    singular: "database"
+    style: DECLARATIVE_FRIENDLY
+  };
+
+  // Identifier. Name of the resource in the form of
+  // `projects/{project}/locations/{location}/clusters/{cluster}/databases/{database}`.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Optional. Charset for the database.
+  // This field can contain any PostgreSQL supported charset name.
+  // Example values include "UTF8", "SQL_ASCII", etc.
+  string charset = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Collation for the database.
+  // Name of the custom or native collation for postgres.
+  // Example values include "C", "POSIX", etc
+  string collation = 3 [(google.api.field_behavior) = OPTIONAL];
 }
