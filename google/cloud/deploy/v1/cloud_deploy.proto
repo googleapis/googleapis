@@ -785,6 +785,23 @@ message CustomCanaryDeployment {
 message KubernetesConfig {
   // Information about the Kubernetes Gateway API service mesh configuration.
   message GatewayServiceMesh {
+    // Information about route destinations for the Gateway API service mesh.
+    message RouteDestinations {
+      // Required. The clusters where the Gateway API HTTPRoute resource will be
+      // deployed to. Valid entries include the associated entities IDs
+      // configured in the Target resource and "@self" to include the Target
+      // cluster.
+      repeated string destination_ids = 1
+          [(google.api.field_behavior) = REQUIRED];
+
+      // Optional. Whether to propagate the Kubernetes Service to the route
+      // destination clusters. The Service will always be deployed to the Target
+      // cluster even if the HTTPRoute is not. This option may be used to
+      // facilitiate successful DNS lookup in the route destination clusters.
+      // Can only be set to true if destinations are specified.
+      bool propagate_service = 2 [(google.api.field_behavior) = OPTIONAL];
+    }
+
     // Required. Name of the Gateway API HTTPRoute.
     string http_route = 1 [(google.api.field_behavior) = REQUIRED];
 
@@ -811,6 +828,14 @@ message KubernetesConfig {
     // Optional. The label to use when selecting Pods for the Deployment and
     // Service resources. This label must already be present in both resources.
     string pod_selector_label = 6 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Route destinations allow configuring the Gateway API HTTPRoute
+    // to be deployed to additional clusters. This option is available for
+    // multi-cluster service mesh set ups that require the route to exist in the
+    // clusters that call the service. If unspecified, the HTTPRoute will only
+    // be deployed to the Target cluster.
+    RouteDestinations route_destinations = 8
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Information about the Kubernetes Service networking configuration.
@@ -1247,6 +1272,17 @@ message Target {
     CustomTarget custom_target = 21 [(google.api.field_behavior) = OPTIONAL];
   }
 
+  // Optional. Map of entity IDs to their associated entities. Associated
+  // entities allows specifying places other than the deployment target for
+  // specific features. For example, the Gateway API canary can be configured to
+  // deploy the HTTPRoute to a different cluster(s) than the deployment cluster
+  // using associated entities. An entity ID must consist of lower-case letters,
+  // numbers, and hyphens, start with a letter and end with a letter or a
+  // number, and have a max length of 63 characters. In other words, it must
+  // match the following regex: `^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$`.
+  map<string, AssociatedEntities> associated_entities = 23
+      [(google.api.field_behavior) = OPTIONAL];
+
   // Optional. This checksum is computed by the server based on the value of
   // other fields, and may be sent on update and delete requests to ensure the
   // client has an up-to-date value before proceeding.
@@ -1440,6 +1476,16 @@ message CustomTarget {
       type: "clouddeploy.googleapis.com/CustomTargetType"
     }
   ];
+}
+
+// Information about entities associated with a `Target`.
+message AssociatedEntities {
+  // Optional. Information specifying GKE clusters as associated entities.
+  repeated GkeCluster gke_clusters = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Information specifying Anthos clusters as associated entities.
+  repeated AnthosCluster anthos_clusters = 3
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // The request object for `ListTargets`.
@@ -3000,6 +3046,10 @@ message Rollout {
   // Output only. Names of `Rollouts` that rolled back this `Rollout`.
   repeated string rolled_back_by_rollouts = 27
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The AutomationRun actively repairing the rollout.
+  string active_repair_automation_run = 28
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Metadata includes information associated with a `Rollout`.
@@ -4163,6 +4213,14 @@ message RepairRolloutRule {
   // `[a-z]([a-z0-9-]{0,61}[a-z0-9])?`.
   string id = 1 [(google.api.field_behavior) = REQUIRED];
 
+  // Optional. Phases within which jobs are subject to automatic repair actions
+  // on failure. Proceeds only after phase name matched any one in the list, or
+  // for all phases if unspecified. This value must consist of lower-case
+  // letters, numbers, and hyphens, start with a letter and end with a letter or
+  // a number, and have a max length of 63 characters. In other words, it must
+  // match the following regex: `^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$`.
+  repeated string phases = 7 [(google.api.field_behavior) = OPTIONAL];
+
   // Optional. Jobs to repair. Proceeds only after job name matched any one in
   // the list, or for all jobs if unspecified or empty. The phase that includes
   // the job must match the phase ID specified in `source_phase`. This value
@@ -4175,6 +4233,49 @@ message RepairRolloutRule {
   // Output only. Information around the state of the 'Automation' rule.
   AutomationRuleCondition condition = 6
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Required. Defines the types of automatic repair phases for failed jobs.
+  repeated RepairPhaseConfig repair_phases = 8
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// Configuration of the repair phase.
+message RepairPhaseConfig {
+  // The repair phase to perform.
+  oneof repair_phase {
+    // Optional. Retries a failed job.
+    Retry retry = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Rolls back a `Rollout`.
+    Rollback rollback = 2 [(google.api.field_behavior) = OPTIONAL];
+  }
+}
+
+// Retries the failed job.
+message Retry {
+  // Required. Total number of retries. Retry is skipped if set to 0; The
+  // minimum value is 1, and the maximum value is 10.
+  int64 attempts = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. How long to wait for the first retry. Default is 0, and the
+  // maximum value is 14d.
+  google.protobuf.Duration wait = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The pattern of how wait time will be increased. Default is
+  // linear. Backoff mode will be ignored if `wait` is 0.
+  BackoffMode backoff_mode = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Rolls back a `Rollout`.
+message Rollback {
+  // Optional. The starting phase ID for the `Rollout`. If unspecified, the
+  // `Rollout` will start in the stable phase.
+  string destination_phase = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If pending rollout exists on the target, the rollback operation
+  // will be aborted.
+  bool disable_rollback_if_rollout_pending = 2
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // `AutomationRuleCondition` contains conditions relevant to an
@@ -4506,6 +4607,10 @@ message RepairRolloutOperation {
   // Output only. The name of the rollout that initiates the `AutomationRun`.
   string rollout = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  // Output only. The index of the current repair action in the repair sequence.
+  int64 current_repair_phase_index = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
   // Output only. Records of the repair attempts. Each repair phase may have
   // multiple retry attempts or single rollback attempt.
   repeated RepairPhase repair_phases = 3
@@ -4575,6 +4680,10 @@ message RollbackAttempt {
 
   // Output only. Description of the state of the Rollback.
   string state_desc = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. If active rollout exists on the target, abort this rollback.
+  bool disable_rollback_if_rollout_pending = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // The request object for `ListAutomationRuns`.
