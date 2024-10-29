@@ -415,7 +415,7 @@ new_local_repository(
 ##############################################################################
 
 # PHP micro-generator
-_gapic_generator_php_version = "1.8.4"
+_gapic_generator_php_version = "1.9.0"
 
 http_archive(
     name = "gapic_generator_php",
