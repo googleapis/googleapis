@@ -7,8 +7,8 @@ Google APIs and help you to utilize them more efficiently. You can also
 use these definitions with open source tools to generate client
 libraries, documentation, and other artifacts.
 
-## Building
-### Bazel
+## New Building
+
 
 The recommended way to build the API client libraries is through
 [Bazel](https://bazel.build/) >= 4.2.2.
