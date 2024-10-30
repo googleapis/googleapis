@@ -55,6 +55,34 @@ service SearchService {
       }
     };
   }
+
+  // Performs a search. Similar to the
+  // [SearchService.Search][google.cloud.discoveryengine.v1beta.SearchService.Search]
+  // method, but a lite version that allows API key for authentication, where
+  // OAuth and IAM checks are not required.
+  //
+  // Only public website search is supported by this method. If data stores and
+  // engines not associated with public website search are specified, a
+  // `FAILED_PRECONDITION` error is returned.
+  //
+  // This method can be used for easy onboarding without having to implement an
+  // authentication backend. However, it is strongly recommended to use
+  // [SearchService.Search][google.cloud.discoveryengine.v1beta.SearchService.Search]
+  // instead with required OAuth and IAM checks to provide better data security.
+  rpc SearchLite(SearchRequest) returns (SearchResponse) {
+    option (google.api.http) = {
+      post: "/v1beta/{serving_config=projects/*/locations/*/dataStores/*/servingConfigs/*}:searchLite"
+      body: "*"
+      additional_bindings {
+        post: "/v1beta/{serving_config=projects/*/locations/*/collections/*/dataStores/*/servingConfigs/*}:searchLite"
+        body: "*"
+      }
+      additional_bindings {
+        post: "/v1beta/{serving_config=projects/*/locations/*/collections/*/engines/*/servingConfigs/*}:searchLite"
+        body: "*"
+      }
+    };
+  }
 }
 
 // Request message for
@@ -83,6 +111,11 @@ message SearchRequest {
         type: "discoveryengine.googleapis.com/DataStore"
       }
     ];
+
+    // Optional. Filter specification to filter documents in the data store
+    // specified by data_store field. For more information on filtering, see
+    // [Filtering](https://cloud.google.com/generative-ai-app-builder/docs/filter-search-metadata)
+    string filter = 5 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // A facet specification to perform faceted search.
@@ -506,6 +539,20 @@ message SearchRequest {
       // high relevance search results will generate answers.
       bool ignore_low_relevant_content = 9;
 
+      // Optional. Specifies whether to filter out jail-breaking queries. The
+      // default value is `false`.
+      //
+      // Google employs search-query classification to detect jail-breaking
+      // queries. No summary is returned if the search query is classified as a
+      // jail-breaking query. A user might add instructions to the query to
+      // change the tone, style, language, content of the answer, or ask the
+      // model to act as a different entity, e.g. "Reply in the tone of a
+      // competing company's CEO". If this field is set to `true`, we skip
+      // generating summaries for jail-breaking queries and return fallback
+      // messages instead.
+      bool ignore_jail_breaking_query = 10
+          [(google.api.field_behavior) = OPTIONAL];
+
       // If specified, the spec will be used to modify the prompt provided to
       // the LLM.
       ModelPromptSpec model_prompt_spec = 5;
@@ -745,6 +792,27 @@ message SearchRequest {
     optional int32 search_result_persistence_count = 2;
   }
 
+  // The specification for personalization.
+  message PersonalizationSpec {
+    // The personalization mode of each search request.
+    enum Mode {
+      // Default value. In this case, server behavior defaults to
+      // [Mode.AUTO][google.cloud.discoveryengine.v1beta.SearchRequest.PersonalizationSpec.Mode.AUTO].
+      MODE_UNSPECIFIED = 0;
+
+      // Personalization is enabled if data quality requirements are met.
+      AUTO = 1;
+
+      // Disable personalization.
+      DISABLED = 2;
+    }
+
+    // The personalization mode of the search request.
+    // Defaults to
+    // [Mode.AUTO][google.cloud.discoveryengine.v1beta.SearchRequest.PersonalizationSpec.Mode.AUTO].
+    Mode mode = 1;
+  }
+
   // The relevance threshold of the search results. The higher relevance
   // threshold is, the higher relevant results are shown and the less number of
   // results are returned.
@@ -824,6 +892,11 @@ message SearchRequest {
   //
   // If this field is negative, an  `INVALID_ARGUMENT`  is returned.
   int32 offset = 6;
+
+  // The maximum number of results to return for OneBox.
+  // This applies to each OneBox type individually.
+  // Default number is 10.
+  int32 one_box_page_size = 47;
 
   // Specs defining dataStores to filter on in a search call and configurations
   // for those dataStores. This is only considered for engines with multiple
@@ -1064,6 +1137,18 @@ message SearchRequest {
   // precision and recall to deliver both highly accurate results and
   // comprehensive coverage of relevant information.
   RelevanceThreshold relevance_threshold = 44;
+
+  // The specification for personalization.
+  //
+  // Notice that if both
+  // [ServingConfig.personalization_spec][google.cloud.discoveryengine.v1beta.ServingConfig.personalization_spec]
+  // and
+  // [SearchRequest.personalization_spec][google.cloud.discoveryengine.v1beta.SearchRequest.personalization_spec]
+  // are set,
+  // [SearchRequest.personalization_spec][google.cloud.discoveryengine.v1beta.SearchRequest.personalization_spec]
+  // overrides
+  // [ServingConfig.personalization_spec][google.cloud.discoveryengine.v1beta.ServingConfig.personalization_spec].
+  PersonalizationSpec personalization_spec = 46;
 }
 
 // Response message for
@@ -1237,6 +1322,7 @@ message SearchResponse {
 
       // The non-summary seeking query ignored case.
       //
+      // Google skips the summary if the query is chit chat.
       // Only used when
       // [SummarySpec.ignore_non_summary_seeking_query][google.cloud.discoveryengine.v1beta.SearchRequest.ContentSearchSpec.SummarySpec.ignore_non_summary_seeking_query]
       // is set to `true`.
@@ -1279,6 +1365,14 @@ message SearchResponse {
       // Google skips the summary if there is a customer policy violation
       // detected. The policy is defined by the customer.
       CUSTOMER_POLICY_VIOLATION = 8;
+
+      // The non-answer seeking query ignored case.
+      //
+      // Google skips the summary if the query doesn't have clear intent.
+      // Only used when
+      // [SearchRequest.ContentSearchSpec.SummarySpec.ignore_non_answer_seeking_query]
+      // is set to `true`.
+      NON_SUMMARY_SEEKING_QUERY_IGNORED_V2 = 9;
     }
 
     // The summary content.
@@ -1483,6 +1577,9 @@ message SearchResponse {
 
       // One Box result contains slack results.
       SLACK = 3;
+
+      // One Box result contains Knowledge Graph search responses.
+      KNOWLEDGE_GRAPH = 4;
     }
 
     // The type of One Box result.
