@@ -565,6 +565,9 @@ message LinuxNodeConfig {
   // net.ipv4.tcp_rmem
   // net.ipv4.tcp_wmem
   // net.ipv4.tcp_tw_reuse
+  // kernel.shmmni
+  // kernel.shmmax
+  // kernel.shmall
   map<string, string> sysctls = 1;
 
   // cgroup_mode specifies the cgroup mode to be used on the node.
@@ -647,6 +650,26 @@ message NodeKubeletConfig {
 // [AutoprovisioningNodePoolDefaults][google.container.v1.AutoprovisioningNodePoolDefaults]
 // instead.
 message NodeConfig {
+  // LocalSsdEncryptionMode specifies the method used for encrypting the Local
+  // SSDs attached to the node.
+  enum LocalSsdEncryptionMode {
+    // The given node will be encrypted using keys managed by Google
+    // infrastructure and the keys will be deleted when the node is
+    // deleted.
+    LOCAL_SSD_ENCRYPTION_MODE_UNSPECIFIED = 0;
+
+    // The given node will be encrypted using keys managed by Google
+    // infrastructure and the keys will be deleted when the node is
+    // deleted.
+    STANDARD_ENCRYPTION = 1;
+
+    // The given node will opt-in for using ephemeral key for
+    // encryption of Local SSDs.
+    // The Local SSDs will not be able to recover data in case of node
+    // crash.
+    EPHEMERAL_KEY_ENCRYPTION = 2;
+  }
+
   // Possible effective cgroup modes for the node.
   enum EffectiveCgroupMode {
     // EFFECTIVE_CGROUP_MODE_UNSPECIFIED means the cgroup configuration for the
@@ -886,6 +909,10 @@ message NodeConfig {
   // Secondary boot disk update strategy.
   optional SecondaryBootDiskUpdateStrategy secondary_boot_disk_update_strategy =
       50;
+
+  // Specifies which method should be used for encrypting the
+  // Local SSDs attahced to the node.
+  optional LocalSsdEncryptionMode local_ssd_encryption_mode = 54;
 
   // Output only. effective_cgroup_mode is the cgroup mode actually used by the
   // node pool. It is determined by the cgroup mode specified in the
@@ -2358,6 +2385,10 @@ message NodePoolAutoConfig {
   //
   // Currently only `insecure_kubelet_readonly_port_enabled` can be set here.
   NodeKubeletConfig node_kubelet_config = 3;
+
+  // Output only. Configuration options for Linux nodes.
+  LinuxNodeConfig linux_node_config = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Subset of Nodepool message that has defaults.
@@ -2662,6 +2693,15 @@ message ClusterUpdate {
   // RBACBindingConfig allows user to restrict ClusterRoleBindings an
   // RoleBindings that can be created.
   optional RBACBindingConfig desired_rbac_binding_config = 144;
+
+  // The desired enterprise configuration for the cluster.
+  DesiredEnterpriseConfig desired_enterprise_config = 147;
+
+  // The desired Linux node config for all auto-provisioned node pools
+  // in autopilot clusters and node auto-provisioning enabled clusters.
+  //
+  // Currently only `cgroup_mode` can be set here.
+  LinuxNodeConfig desired_node_pool_auto_config_linux_node_config = 150;
 }
 
 // AdditionalPodRangesConfig is the configuration for additional pod secondary
@@ -2682,6 +2722,12 @@ message RangeInfo {
 
   // Output only. The utilization of the range.
   double utilization = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// DesiredEnterpriseConfig is a wrapper used for updating enterprise_config.
+message DesiredEnterpriseConfig {
+  // desired_tier specifies the desired tier of the cluster.
+  EnterpriseConfig.ClusterTier desired_tier = 1;
 }
 
 // This operation resource represents operations that may have happened or are
@@ -4402,11 +4448,11 @@ message NodePoolAutoscaling {
   // Is autoscaling enabled for this node pool.
   bool enabled = 1;
 
-  // Minimum number of nodes for one location in the NodePool. Must be >= 1 and
-  // <= max_node_count.
+  // Minimum number of nodes for one location in the node pool. Must be greater
+  // than or equal to 0 and less than or equal to max_node_count.
   int32 min_node_count = 2;
 
-  // Maximum number of nodes for one location in the NodePool. Must be >=
+  // Maximum number of nodes for one location in the node pool. Must be >=
   // min_node_count. There has to be enough quota to scale up the cluster.
   int32 max_node_count = 3;
 
@@ -4416,13 +4462,13 @@ message NodePoolAutoscaling {
   // Location policy used when scaling up a nodepool.
   LocationPolicy location_policy = 5;
 
-  // Minimum number of nodes in the node pool. Must be greater than 1 less than
-  // total_max_node_count.
+  // Minimum number of nodes in the node pool. Must be greater than or equal
+  // to 0 and less than or equal to total_max_node_count.
   // The total_*_node_count fields are mutually exclusive with the *_node_count
   // fields.
   int32 total_min_node_count = 6;
 
-  // Maximum number of nodes in the node pool. Must be greater than
+  // Maximum number of nodes in the node pool. Must be greater than or equal to
   // total_min_node_count. There has to be enough quota to scale up the cluster.
   // The total_*_node_count fields are mutually exclusive with the *_node_count
   // fields.
@@ -5451,6 +5497,56 @@ message UpgradeEvent {
   string resource = 6;
 }
 
+// UpgradeInfoEvent is a notification sent to customers about the upgrade
+// information of a resource.
+message UpgradeInfoEvent {
+  // The state of the upgrade.
+  enum State {
+    // STATE_UNSPECIFIED indicates the state is unspecified.
+    STATE_UNSPECIFIED = 0;
+
+    // STARTED indicates the upgrade has started.
+    STARTED = 3;
+
+    // SUCCEEDED indicates the upgrade has completed successfully.
+    SUCCEEDED = 4;
+
+    // FAILED indicates the upgrade has failed.
+    FAILED = 5;
+
+    // CANCELED indicates the upgrade has canceled.
+    CANCELED = 6;
+  }
+
+  // The resource type associated with the upgrade.
+  UpgradeResourceType resource_type = 1;
+
+  // The operation associated with this upgrade.
+  string operation = 2;
+
+  // The time when the operation was started.
+  google.protobuf.Timestamp start_time = 3;
+
+  // The time when the operation ended.
+  google.protobuf.Timestamp end_time = 4;
+
+  // The current version before the upgrade.
+  string current_version = 5;
+
+  // The target version for the upgrade.
+  string target_version = 6;
+
+  // Optional relative path to the resource. For example in node pool upgrades,
+  // the relative path of the node pool.
+  string resource = 7;
+
+  // Output only. The state of the upgrade.
+  State state = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // A brief description of the event.
+  string description = 11;
+}
+
 // UpgradeAvailableEvent is a notification sent to customers when a new
 // available version is released.
 message UpgradeAvailableEvent {
@@ -5915,6 +6011,9 @@ message EnterpriseConfig {
 
   // Output only. cluster_tier indicates the effective tier of the cluster.
   ClusterTier cluster_tier = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // desired_tier specifies the desired tier of the cluster.
+  ClusterTier desired_tier = 2;
 }
 
 // SecretManagerConfig is config for secret manager enablement.
