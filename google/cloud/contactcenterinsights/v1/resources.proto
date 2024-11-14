@@ -42,11 +42,35 @@ option (google.api.resource_definition) = {
   pattern: "projects/{project}/locations/{location}/recognizers/{recognizer}"
 };
 
+// Enum for the different types of issues a tuning dataset can have.
+// These warnings are currentlyraised when trying to validate a dataset for
+// tuning a scorecard.
+enum DatasetValidationWarning {
+  // Unspecified data validation warning.
+  DATASET_VALIDATION_WARNING_UNSPECIFIED = 0;
+
+  // A non-trivial percentage of the feedback labels are invalid.
+  TOO_MANY_INVALID_FEEDBACK_LABELS = 1;
+
+  // The quantity of valid feedback labels provided is less than the
+  // recommended minimum.
+  INSUFFICIENT_FEEDBACK_LABELS = 2;
+
+  // One or more of the answers have less than the recommended minimum of
+  // feedback labels.
+  INSUFFICIENT_FEEDBACK_LABELS_PER_ANSWER = 3;
+
+  // All the labels in the dataset come from a single answer choice.
+  ALL_FEEDBACK_LABELS_HAVE_THE_SAME_ANSWER = 4;
+}
+
 // The conversation resource.
 message Conversation {
   option (google.api.resource) = {
     type: "contactcenterinsights.googleapis.com/Conversation"
     pattern: "projects/{project}/locations/{location}/conversations/{conversation}"
+    plural: "conversations"
+    singular: "conversation"
   };
 
   // Call-specific metadata.
@@ -215,16 +239,16 @@ message Conversation {
   // the conversation.
   string agent_id = 5;
 
-  // A map for the user to specify any custom fields. A maximum of 20 labels per
-  // conversation is allowed, with a maximum of 256 characters per entry.
+  // A map for the user to specify any custom fields. A maximum of 100 labels
+  // per conversation is allowed, with a maximum of 256 characters per entry.
   map<string, string> labels = 6;
 
   // Conversation metadata related to quality management.
   QualityMetadata quality_metadata = 24;
 
-  // Input only. JSON Metadata encoded as a string.
+  // Input only. JSON metadata encoded as a string.
   // This field is primarily used by Insights integrations with various telphony
-  // systems and must be in one of Insights' supported formats.
+  // systems and must be in one of Insight's supported formats.
   string metadata_json = 25 [(google.api.field_behavior) = INPUT_ONLY];
 
   // Output only. The conversation transcript.
@@ -268,6 +292,8 @@ message Analysis {
   option (google.api.resource) = {
     type: "contactcenterinsights.googleapis.com/Analysis"
     pattern: "projects/{project}/locations/{location}/conversations/{conversation}/analyses/{analysis}"
+    plural: "analyses"
+    singular: "analysis"
   };
 
   // Immutable. The resource name of the analysis.
@@ -354,6 +380,9 @@ message AnalysisResult {
 
     // Overall conversation-level issue modeling result.
     IssueModelResult issue_model_result = 8;
+
+    // Results of scoring QaScorecards.
+    repeated QaScorecardResult qa_scorecard_results = 10;
   }
 
   // Metadata discovered during analysis.
@@ -376,6 +405,41 @@ message IssueModelResult {
 
   // All the matched issues.
   repeated IssueAssignment issues = 2;
+}
+
+// Represents a conversation, resource, and label provided by the user.
+message FeedbackLabel {
+  option (google.api.resource) = {
+    type: "contactcenterinsights.googleapis.com/FeedbackLabel"
+    pattern: "projects/{project}/locations/{location}/conversations/{conversation}/feedbackLabels/{feedback_label}"
+    plural: "feedbackLabels"
+    singular: "feedbackLabel"
+  };
+
+  // Label type.
+  oneof label_type {
+    // String label.
+    string label = 4;
+
+    // QaAnswer label.
+    QaAnswer.AnswerValue qa_answer_label = 7;
+  }
+
+  // Immutable. Resource name of the FeedbackLabel.
+  // Format:
+  // projects/{project}/locations/{location}/conversations/{conversation}/feedbackLabels/{feedback_label}
+  string name = 1 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Resource name of the resource to be labeled.
+  string labeled_resource = 3;
+
+  // Output only. Create time of the label.
+  google.protobuf.Timestamp create_time = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Update time of the label.
+  google.protobuf.Timestamp update_time = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // One channel of conversation-level sentiment data.
@@ -1024,8 +1088,58 @@ message Settings {
   SpeechConfig speech_config = 11 [(google.api.field_behavior) = OPTIONAL];
 }
 
+// The CCAI Insights project wide analysis rule. This rule will be applied to
+// all conversations that match the filter defined in the rule. For a
+// conversation matches the filter, the annotators specified in the rule will be
+// run. If a conversation matches multiple rules, a union of all the annotators
+// will be run. One project can have multiple analysis rules.
+message AnalysisRule {
+  option (google.api.resource) = {
+    type: "contactcenterinsights.googleapis.com/AnalysisRule"
+    pattern: "projects/{project}/locations/{location}/analysisRules/{analysis_rule}"
+    plural: "analysisRules"
+    singular: "analysisRule"
+  };
+
+  // Identifier. The resource name of the analysis rule.
+  // Format:
+  // projects/{project}/locations/{location}/analysisRules/{analysis_rule}
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Output only. The time at which this analysis rule was created.
+  google.protobuf.Timestamp create_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The most recent time at which this analysis rule was updated.
+  google.protobuf.Timestamp update_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Display Name of the analysis rule.
+  optional string display_name = 4;
+
+  // Filter for the conversations that should apply this analysis
+  // rule. An empty filter means this analysis rule applies to all
+  // conversations.
+  string conversation_filter = 5;
+
+  // Selector of annotators to run and the phrase matchers to use for
+  // conversations that matches the conversation_filter. If not specified, NO
+  // annotators will be run.
+  AnnotatorSelector annotator_selector = 6;
+
+  // Percentage of conversations that we should apply this analysis setting
+  // automatically, between [0, 1]. For example, 0.1 means 10%. Conversations
+  // are sampled in a determenestic way. The original runtime_percentage &
+  // upload percentage will be replaced by defining filters on the conversation.
+  double analysis_percentage = 7;
+
+  // If true, apply this rule to conversations. Otherwise, this rule is
+  // inactive and saved as a draft.
+  bool active = 8;
+}
+
 // A customer-managed encryption key specification that can be applied to all
-// created resources (e.g. Conversation).
+// created resources (e.g. `Conversation`).
 message EncryptionSpec {
   option (google.api.resource) = {
     type: "contactcenterinsights.googleapis.com/EncryptionSpec"
@@ -1039,8 +1153,8 @@ message EncryptionSpec {
 
   // Required. The name of customer-managed encryption key that is used to
   // secure a resource and its sub-resources. If empty, the resource is secured
-  // by the default Google encryption key. Only the key in the same location as
-  // this resource is allowed to be used for encryption. Format:
+  // by our default encryption key. Only the key in the same location as this
+  // resource is allowed to be used for encryption. Format:
   // `projects/{project}/locations/{location}/keyRings/{keyRing}/cryptoKeys/{key}`
   string kms_key = 2 [(google.api.field_behavior) = REQUIRED];
 }
@@ -1415,6 +1529,24 @@ message AnnotatorSelector {
     }
   }
 
+  // Configuration for the QA feature.
+  message QaConfig {
+    // Container for a list of scorecards.
+    message ScorecardList {
+      // List of QaScorecardRevisions.
+      repeated string qa_scorecard_revisions = 1
+          [(google.api.resource_reference) = {
+            type: "contactcenterinsights.googleapis.com/QaScorecardRevision"
+          }];
+    }
+
+    // Which scorecards should be scored.
+    oneof scorecard_source {
+      // A manual list of scorecards to score.
+      ScorecardList scorecard_list = 1;
+    }
+  }
+
   // Whether to run the interruption annotator.
   bool run_interruption_annotator = 1;
 
@@ -1460,4 +1592,394 @@ message AnnotatorSelector {
 
   // Configuration for the summarization annotator.
   SummarizationConfig summarization_config = 11;
+
+  // Whether to run the QA annotator.
+  bool run_qa_annotator = 12;
+
+  // Configuration for the QA annotator.
+  QaConfig qa_config = 13;
+}
+
+// A single question to be scored by the Insights QA feature.
+message QaQuestion {
+  option (google.api.resource) = {
+    type: "contactcenterinsights.googleapis.com/QaQuestion"
+    pattern: "projects/{project}/locations/{location}/qaScorecards/{qa_scorecard}/revisions/{revision}/qaQuestions/{qa_question}"
+    plural: "qaQuestions"
+    singular: "qaQuestion"
+  };
+
+  // Message representing a possible answer to the question.
+  message AnswerChoice {
+    // The answer value may be one of a few different types.
+    oneof value {
+      // String value.
+      string str_value = 2;
+
+      // Numerical value.
+      double num_value = 3;
+
+      // Boolean value.
+      bool bool_value = 4;
+
+      // A value of "Not Applicable (N/A)". If provided, this field may only
+      // be set to `true`. If a question receives this answer, it will be
+      // excluded from any score calculations.
+      bool na_value = 5;
+    }
+
+    // A short string used as an identifier.
+    string key = 1;
+
+    // Numerical score of the answer, used for generating the overall score of
+    // a QaScorecardResult. If the answer uses na_value, this field is unused.
+    optional double score = 6;
+  }
+
+  // A wrapper representing metrics calculated against a test-set on a LLM that
+  // was fine tuned for this question.
+  message Metrics {
+    // Output only. Accuracy of the model. Measures the percentage of correct
+    // answers the model gave on the test set.
+    double accuracy = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Metadata about the tuning operation for the question. Will only be set if a
+  // scorecard containing this question has been tuned.
+  message TuningMetadata {
+    // Total number of valid labels provided for the question at the time of
+    // tuining.
+    int64 total_valid_label_count = 1;
+
+    // A list of any applicable data validation warnings about the question's
+    // feedback labels.
+    repeated DatasetValidationWarning dataset_validation_warnings = 2;
+
+    // Error status of the tuning operation for the question. Will only be set
+    // if the tuning operation failed.
+    string tuning_error = 3;
+  }
+
+  // Identifier. The resource name of the question.
+  // Format:
+  // projects/{project}/locations/{location}/qaScorecards/{qa_scorecard}/revisions/{revision}/qaQuestions/{qa_question}
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Short, descriptive string, used in the UI where it's not practical
+  // to display the full question body. E.g., "Greeting".
+  string abbreviation = 2;
+
+  // Output only. The time at which this question was created.
+  google.protobuf.Timestamp create_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The most recent time at which the question was updated.
+  google.protobuf.Timestamp update_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Question text. E.g., "Did the agent greet the customer?"
+  string question_body = 5;
+
+  // Instructions describing how to determine the answer.
+  string answer_instructions = 9;
+
+  // A list of valid answers to the question, which the LLM must choose from.
+  repeated AnswerChoice answer_choices = 6;
+
+  // User-defined list of arbitrary tags for the question. Used for
+  // grouping/organization and for weighting the score of each question.
+  repeated string tags = 7;
+
+  // Defines the order of the question within its parent scorecard revision.
+  int32 order = 8;
+
+  // Metrics of the underlying tuned LLM over a holdout/test set while fine
+  // tuning the underlying LLM for the given question. This field will only be
+  // populated if and only if the question is part of a scorecard revision that
+  // has been tuned.
+  Metrics metrics = 10;
+
+  // Metadata about the tuning operation for the question.This field will only
+  // be populated if and only if the question is part of a scorecard revision
+  // that has been tuned.
+  TuningMetadata tuning_metadata = 11;
+}
+
+// A QaScorecard represents a collection of questions to be scored during
+// analysis.
+message QaScorecard {
+  option (google.api.resource) = {
+    type: "contactcenterinsights.googleapis.com/QaScorecard"
+    pattern: "projects/{project}/locations/{location}/qaScorecards/{qa_scorecard}"
+    plural: "qaScorecards"
+    singular: "qaScorecard"
+  };
+
+  // Identifier. The scorecard name.
+  // Format:
+  // projects/{project}/locations/{location}/qaScorecards/{qa_scorecard}
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // The user-specified display name of the scorecard.
+  string display_name = 7;
+
+  // A text description explaining the intent of the scorecard.
+  string description = 2;
+
+  // Output only. The time at which this scorecard was created.
+  google.protobuf.Timestamp create_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The most recent time at which the scorecard was updated.
+  google.protobuf.Timestamp update_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A revision of a QaScorecard.
+//
+// Modifying published scorecard fields would invalidate existing scorecard
+// results — the questions may have changed, or the score weighting will make
+// existing scores impossible to understand. So changes must create a new
+// revision, rather than modifying the existing resource.
+message QaScorecardRevision {
+  option (google.api.resource) = {
+    type: "contactcenterinsights.googleapis.com/QaScorecardRevision"
+    pattern: "projects/{project}/locations/{location}/qaScorecards/{qa_scorecard}/revisions/{revision}"
+    plural: "qaScorecardRevisions"
+    singular: "qaScorecardRevision"
+  };
+
+  // Enum representing the set of states a scorecard revision may be in.
+  enum State {
+    // Unspecified.
+    STATE_UNSPECIFIED = 0;
+
+    // The scorecard revision can be edited.
+    EDITABLE = 12;
+
+    // Scorecard model training is in progress.
+    TRAINING = 2;
+
+    // Scorecard revision model training failed.
+    TRAINING_FAILED = 9;
+
+    // The revision can be used in analysis.
+    READY = 11;
+
+    // Scorecard is being deleted.
+    DELETING = 7;
+
+    // Scorecard model training was explicitly cancelled by the user.
+    TRAINING_CANCELLED = 14;
+  }
+
+  // Identifier. The name of the scorecard revision.
+  // Format:
+  // projects/{project}/locations/{location}/qaScorecards/{qa_scorecard}/revisions/{revision}
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // The snapshot of the scorecard at the time of this revision's creation.
+  QaScorecard snapshot = 2;
+
+  // Output only. The timestamp that the revision was created.
+  google.protobuf.Timestamp create_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Alternative IDs for this revision of the scorecard, e.g.,
+  // `latest`.
+  repeated string alternate_ids = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. State of the scorecard revision, indicating whether it's ready
+  // to be used in analysis.
+  State state = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// An answer to a QaQuestion.
+message QaAnswer {
+  // Message for holding the value of a
+  // [QaAnswer][google.cloud.contactcenterinsights.v1.QaAnswer].
+  // [QaQuestion.AnswerChoice][google.cloud.contactcenterinsights.v1.QaQuestion.AnswerChoice]
+  // defines the possible answer values for a question.
+  message AnswerValue {
+    // The answer value may be one of a few different types.
+    oneof value {
+      // String value.
+      string str_value = 2;
+
+      // Numerical value.
+      double num_value = 3;
+
+      // Boolean value.
+      bool bool_value = 4;
+
+      // A value of "Not Applicable (N/A)". Should only ever be `true`.
+      bool na_value = 5;
+    }
+
+    // A short string used as an identifier. Matches the value used in
+    // QaQuestion.AnswerChoice.key.
+    string key = 1;
+
+    // Output only. Numerical score of the answer.
+    optional double score = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The maximum potential score of the question.
+    optional double potential_score = 7
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Normalized score of the questions. Calculated as score /
+    // potential_score.
+    optional double normalized_score = 8
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // A question may have multiple answers from varying sources, one of which
+  // becomes the "main" answer above. AnswerSource represents each individual
+  // answer.
+  message AnswerSource {
+    // What created the answer.
+    enum SourceType {
+      // Source type is unspecified.
+      SOURCE_TYPE_UNSPECIFIED = 0;
+
+      // Answer was system-generated; created during an Insights analysis.
+      SYSTEM_GENERATED = 1;
+
+      // Answer was created by a human via manual edit.
+      MANUAL_EDIT = 2;
+    }
+
+    // What created the answer.
+    SourceType source_type = 1;
+
+    // The answer value from this source.
+    AnswerValue answer_value = 2;
+  }
+
+  // The QaQuestion answered by this answer.
+  string qa_question = 7 [(google.api.resource_reference) = {
+    type: "contactcenterinsights.googleapis.com/QaQuestion"
+  }];
+
+  // The conversation the answer applies to.
+  string conversation = 2 [(google.api.resource_reference) = {
+    type: "contactcenterinsights.googleapis.com/Conversation"
+  }];
+
+  // Question text. E.g., "Did the agent greet the customer?"
+  string question_body = 6;
+
+  // The main answer value, incorporating any manual edits if they exist.
+  AnswerValue answer_value = 3;
+
+  // User-defined list of arbitrary tags. Matches the value from
+  // QaScorecard.ScorecardQuestion.tags. Used for grouping/organization and
+  // for weighting the score of each answer.
+  repeated string tags = 5;
+
+  // List of all individual answers given to the question.
+  repeated AnswerSource answer_sources = 8;
+}
+
+// The results of scoring a single conversation against a QaScorecard. Contains
+// a collection of QaAnswers and aggregate score.
+message QaScorecardResult {
+  option (google.api.resource) = {
+    type: "contactcenterinsights.googleapis.com/QaScorecardResult"
+    pattern: "projects/{project}/locations/{location}/qaScorecardResults/{qa_scorecard_result}"
+    plural: "qaScorecardResults"
+    singular: "qaScorecardResult"
+  };
+
+  // Tags and their corresponding results.
+  message QaTagResult {
+    // The tag the score applies to.
+    string tag = 1;
+
+    // The score the tag applies to.
+    optional double score = 2;
+
+    // The potential score the tag applies to.
+    optional double potential_score = 3;
+
+    // The normalized score the tag applies to.
+    optional double normalized_score = 4;
+  }
+
+  // A scorecard result may have multiple sets of scores from varying sources,
+  // one of which becomes the "main" answer above. A ScoreSource represents
+  // each individual set of scores.
+  message ScoreSource {
+    // What created the score.
+    enum SourceType {
+      // Source type is unspecified.
+      SOURCE_TYPE_UNSPECIFIED = 0;
+
+      // Score is derived only from system-generated answers.
+      SYSTEM_GENERATED_ONLY = 1;
+
+      // Score is derived from both system-generated answers, and includes
+      // any manual edits if they exist.
+      INCLUDES_MANUAL_EDITS = 2;
+    }
+
+    // What created the score.
+    SourceType source_type = 1;
+
+    // The overall numerical score of the result.
+    optional double score = 2;
+
+    // The maximum potential overall score of the scorecard. Any questions
+    // answered using `na_value` are excluded from this calculation.
+    optional double potential_score = 3;
+
+    // The normalized score, which is the score divided by the potential score.
+    optional double normalized_score = 4;
+
+    // Collection of tags and their scores.
+    repeated QaTagResult qa_tag_results = 5;
+  }
+
+  // Identifier. The name of the scorecard result.
+  // Format:
+  // projects/{project}/locations/{location}/qaScorecardResults/{qa_scorecard_result}
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // The QaScorecardRevision scored by this result.
+  string qa_scorecard_revision = 2 [(google.api.resource_reference) = {
+    type: "contactcenterinsights.googleapis.com/QaScorecardRevision"
+  }];
+
+  // The conversation scored by this result.
+  string conversation = 3 [(google.api.resource_reference) = {
+    type: "contactcenterinsights.googleapis.com/Conversation"
+  }];
+
+  // Output only. The timestamp that the revision was created.
+  google.protobuf.Timestamp create_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // ID of the agent that handled the conversation.
+  string agent_id = 5;
+
+  // Set of QaAnswers represented in the result.
+  repeated QaAnswer qa_answers = 6;
+
+  // The overall numerical score of the result, incorporating any manual edits
+  // if they exist.
+  optional double score = 7;
+
+  // The maximum potential overall score of the scorecard. Any questions
+  // answered using `na_value` are excluded from this calculation.
+  optional double potential_score = 8;
+
+  // The normalized score, which is the score divided by the potential score.
+  // Any manual edits are included if they exist.
+  optional double normalized_score = 9;
+
+  // Collection of tags and their scores.
+  repeated QaTagResult qa_tag_results = 10;
+
+  // List of all individual score sets.
+  repeated ScoreSource score_sources = 11;
 }
