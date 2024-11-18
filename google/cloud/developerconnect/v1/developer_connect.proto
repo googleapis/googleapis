@@ -38,6 +38,14 @@ option (google.api.resource_definition) = {
   type: "secretmanager.googleapis.com/SecretVersion"
   pattern: "projects/{project}/secrets/{secret}/versions/{secret_version}"
 };
+option (google.api.resource_definition) = {
+  type: "cloudkms.googleapis.com/CryptoKey"
+  pattern: "projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}"
+};
+option (google.api.resource_definition) = {
+  type: "servicedirectory.googleapis.com/Service"
+  pattern: "projects/{project}/locations/{location}/namespaces/{namespace}/services/{service}"
+};
 
 // Service describing handlers for resources
 service DeveloperConnect {
@@ -217,6 +225,15 @@ message Connection {
   oneof connection_config {
     // Configuration for connections to github.com.
     GitHubConfig github_config = 5;
+
+    // Configuration for connections to an instance of GitHub Enterprise.
+    GitHubEnterpriseConfig github_enterprise_config = 13;
+
+    // Configuration for connections to gitlab.com.
+    GitLabConfig gitlab_config = 14;
+
+    // Configuration for connections to an instance of GitLab Enterprise.
+    GitLabEnterpriseConfig gitlab_enterprise_config = 16;
   }
 
   // Identifier. The resource name of the connection, in the format
@@ -264,6 +281,25 @@ message Connection {
   string uid = 12 [
     (google.api.field_info).format = UUID4,
     (google.api.field_behavior) = OUTPUT_ONLY
+  ];
+
+  // Optional. The crypto key configuration. This field is used by the
+  // Customer-Managed Encryption Keys (CMEK) feature.
+  CryptoKeyConfig crypto_key_config = 15
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The crypto key configuration. This field is used by the Customer-managed
+// encryption keys (CMEK) feature.
+message CryptoKeyConfig {
+  // Required. The name of the key which is used to encrypt/decrypt customer
+  // data. For key in Cloud KMS, the key should be in the format of
+  // `projects/*/locations/*/keyRings/*/cryptoKeys/*`.
+  string key_reference = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudkms.googleapis.com/CryptoKey"
+    }
   ];
 }
 
@@ -338,6 +374,71 @@ message GitHubConfig {
   string installation_uri = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
+// Configuration for connections to an instance of GitHub Enterprise.
+message GitHubEnterpriseConfig {
+  // Required. The URI of the GitHub Enterprise host this connection is for.
+  string host_uri = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. ID of the GitHub App created from the manifest.
+  int64 app_id = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The URL-friendly name of the GitHub App.
+  string app_slug = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. SecretManager resource containing the private key of the GitHub
+  // App, formatted as `projects/*/secrets/*/versions/*`.
+  string private_key_secret_version = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "secretmanager.googleapis.com/SecretVersion"
+    }
+  ];
+
+  // Optional. SecretManager resource containing the webhook secret of the
+  // GitHub App, formatted as `projects/*/secrets/*/versions/*`.
+  string webhook_secret_secret_version = 5 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "secretmanager.googleapis.com/SecretVersion"
+    }
+  ];
+
+  // Optional. ID of the installation of the GitHub App.
+  int64 app_installation_id = 8 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The URI to navigate to in order to manage the installation
+  // associated with this GitHubEnterpriseConfig.
+  string installation_uri = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Configuration for using Service Directory to privately connect to
+  // a GitHub Enterprise server. This should only be set if the GitHub
+  // Enterprise server is hosted on-premises and not reachable by public
+  // internet. If this field is left empty, calls to the GitHub Enterprise
+  // server will be made over the public internet.
+  ServiceDirectoryConfig service_directory_config = 10
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. GitHub Enterprise version installed at the host_uri.
+  string server_version = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. SSL certificate to use for requests to GitHub Enterprise.
+  string ssl_ca_certificate = 14 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// ServiceDirectoryConfig represents Service Directory configuration for a
+// connection.
+message ServiceDirectoryConfig {
+  // Required. The Service Directory service name.
+  // Format:
+  // projects/{project}/locations/{location}/namespaces/{namespace}/services/{service}.
+  string service = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "servicedirectory.googleapis.com/Service"
+    }
+  ];
+}
+
 // Represents an OAuth token of the account that authorized the Connection,
 // and associated metadata.
 message OAuthCredential {
@@ -352,6 +453,98 @@ message OAuthCredential {
 
   // Output only. The username associated with this token.
   string username = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Configuration for connections to gitlab.com.
+message GitLabConfig {
+  // Required. Immutable. SecretManager resource containing the webhook secret
+  // of a GitLab project, formatted as `projects/*/secrets/*/versions/*`. This
+  // is used to validate webhooks.
+  string webhook_secret_secret_version = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.resource_reference) = {
+      type: "secretmanager.googleapis.com/SecretVersion"
+    }
+  ];
+
+  // Required. A GitLab personal access token with the minimum `read_api` scope
+  // access and a minimum role of `reporter`. The GitLab Projects visible to
+  // this Personal Access Token will control which Projects Developer Connect
+  // has access to.
+  UserCredential read_authorizer_credential = 2
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Required. A GitLab personal access token with the minimum `api` scope
+  // access and a minimum role of `maintainer`. The GitLab Projects visible to
+  // this Personal Access Token will control which Projects Developer Connect
+  // has access to.
+  UserCredential authorizer_credential = 3
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// Represents a personal access token that authorized the Connection,
+// and associated metadata.
+message UserCredential {
+  // Required. A SecretManager resource containing the user token that
+  // authorizes the Developer Connect connection. Format:
+  // `projects/*/secrets/*/versions/*`.
+  string user_token_secret_version = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "secretmanager.googleapis.com/SecretVersion"
+    }
+  ];
+
+  // Output only. The username associated with this token.
+  string username = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Configuration for connections to an instance of GitLab Enterprise.
+message GitLabEnterpriseConfig {
+  // Required. The URI of the GitLab Enterprise host this connection is for.
+  string host_uri = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Immutable. SecretManager resource containing the webhook secret
+  // of a GitLab project, formatted as `projects/*/secrets/*/versions/*`. This
+  // is used to validate webhooks.
+  string webhook_secret_secret_version = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.resource_reference) = {
+      type: "secretmanager.googleapis.com/SecretVersion"
+    }
+  ];
+
+  // Required. A GitLab personal access token with the minimum `read_api` scope
+  // access and a minimum role of `reporter`. The GitLab Projects visible to
+  // this Personal Access Token will control which Projects Developer Connect
+  // has access to.
+  UserCredential read_authorizer_credential = 3
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Required. A GitLab personal access token with the minimum `api` scope
+  // access and a minimum role of `maintainer`. The GitLab Projects visible to
+  // this Personal Access Token will control which Projects Developer Connect
+  // has access to.
+  UserCredential authorizer_credential = 4
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Configuration for using Service Directory to privately connect to
+  // a GitLab Enterprise instance. This should only be set if the GitLab
+  // Enterprise server is hosted on-premises and not reachable by public
+  // internet. If this field is left empty, calls to the GitLab Enterprise
+  // server will be made over the public internet.
+  ServiceDirectoryConfig service_directory_config = 5
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. SSL Certificate Authority certificate to use for requests to
+  // GitLab Enterprise instance.
+  string ssl_ca_certificate = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Version of the GitLab Enterprise server running on the
+  // `host_uri`.
+  string server_version = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Message for requesting list of Connections
@@ -541,9 +734,10 @@ message OperationMetadata {
 
   // Output only. Identifies whether the user has requested cancellation
   // of the operation. Operations that have been cancelled successfully
-  // have [Operation.error][] value with a
-  // [google.rpc.Status.code][google.rpc.Status.code] of 1, corresponding to
-  // `Code.CANCELLED`.
+  // have
+  // [google.longrunning.Operation.error][google.longrunning.Operation.error]
+  // value with a [google.rpc.Status.code][google.rpc.Status.code] of 1,
+  // corresponding to `Code.CANCELLED`.
   bool requested_cancellation = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. API version used to start the operation.
@@ -600,6 +794,9 @@ message GitRepositoryLink {
     (google.api.field_info).format = UUID4,
     (google.api.field_behavior) = OUTPUT_ONLY
   ];
+
+  // Output only. External ID of the webhook created for the repository.
+  string webhook_id = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Message for creating a GitRepositoryLink
