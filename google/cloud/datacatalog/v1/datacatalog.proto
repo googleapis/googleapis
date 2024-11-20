@@ -38,7 +38,6 @@ import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/rpc/status.proto";
 
-option cc_enable_arenas = true;
 option csharp_namespace = "Google.Cloud.DataCatalog.V1";
 option go_package = "cloud.google.com/go/datacatalog/apiv1/datacatalogpb;datacatalogpb";
 option java_multiple_files = true;
@@ -626,6 +625,43 @@ service DataCatalog {
     option (google.longrunning.operation_info) = {
       response_type: "ImportEntriesResponse"
       metadata_type: "ImportEntriesMetadata"
+    };
+  }
+
+  // Sets the configuration related to the migration to Dataplex for an
+  // organization or project.
+  rpc SetConfig(SetConfigRequest) returns (MigrationConfig) {
+    option (google.api.http) = {
+      post: "/v1/{name=organizations/*/locations/*}:setConfig"
+      body: "*"
+      additional_bindings {
+        post: "/v1/{name=projects/*/locations/*}:setConfig"
+        body: "*"
+      }
+    };
+  }
+
+  // Retrieves the configuration related to the migration from Data Catalog to
+  // Dataplex for a specific organization, including all the projects under it
+  // which have a separate configuration set.
+  rpc RetrieveConfig(RetrieveConfigRequest) returns (OrganizationConfig) {
+    option (google.api.http) = {
+      get: "/v1/{name=organizations/*/locations/*}:retrieveConfig"
+    };
+  }
+
+  // Retrieves the effective configuration related to the migration from Data
+  // Catalog to Dataplex for a specific organization or project. If there is no
+  // specific configuration set for the resource, the setting is checked
+  // hierarchicahlly through the ancestors of the resource, starting from the
+  // resource itself.
+  rpc RetrieveEffectiveConfig(RetrieveEffectiveConfigRequest)
+      returns (MigrationConfig) {
+    option (google.api.http) = {
+      get: "/v1/{name=organizations/*/locations/*}:retrieveEffectiveConfig"
+      additional_bindings {
+        get: "/v1/{name=projects/*/locations/*}:retrieveEffectiveConfig"
+      }
     };
   }
 }
@@ -1670,8 +1706,8 @@ message Contacts {
 
 // Entry group metadata.
 //
-// An `EntryGroup` resource represents a logical grouping of zero or more
-// Data Catalog [Entry][google.cloud.datacatalog.v1.Entry] resources.
+//  An `EntryGroup` resource represents a logical grouping of zero or more
+//  Data Catalog [Entry][google.cloud.datacatalog.v1.Entry] resources.
 message EntryGroup {
   option (google.api.resource) = {
     type: "datacatalog.googleapis.com/EntryGroup"
@@ -1696,6 +1732,13 @@ message EntryGroup {
   // Output only. Timestamps of the entry group. Default value is empty.
   SystemTimestamps data_catalog_timestamps = 4
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. When set to [true], it means DataCatalog EntryGroup was
+  // transferred to Dataplex Catalog Service. It makes EntryGroup and its
+  // Entries to be read-only in DataCatalog. However, new Tags on EntryGroup and
+  // its Entries can be created. After setting the flag to [true] it cannot be
+  // unset.
+  bool transferred_to_dataplex = 9 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request message for
@@ -2286,4 +2329,84 @@ enum EntryType {
 
   // Feature Group resource in Vertex AI Feature Store.
   FEATURE_GROUP = 21;
+}
+
+// Request message for
+// [SetConfig][google.cloud.datacatalog.v1.DataCatalog.SetConfig].
+message SetConfigRequest {
+  // Required. The organization or project whose config is being specified.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The configuration field to set.
+  oneof configuration {
+    // Opt-in status for the migration of Tag Templates to Dataplex.
+    TagTemplateMigration tag_template_migration = 2;
+
+    // Opt-in status for the UI switch to Dataplex.
+    CatalogUIExperience catalog_ui_experience = 3;
+  }
+}
+
+// Request message for
+// [RetrieveConfig][google.cloud.datacatalog.v1.DataCatalog.RetrieveConfig].
+message RetrieveConfigRequest {
+  // Required. The organization whose config is being retrieved.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request message for
+// [RetrieveEffectiveConfig][google.cloud.datacatalog.v1.DataCatalog.RetrieveEffectiveConfig].
+message RetrieveEffectiveConfigRequest {
+  // Required. The resource whose effective config is being retrieved.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Configuration related to the opt-in status for the migration of TagTemplates
+// to Dataplex.
+enum TagTemplateMigration {
+  // Default value. Migration of Tag Templates from Data Catalog to Dataplex is
+  // not performed.
+  TAG_TEMPLATE_MIGRATION_UNSPECIFIED = 0;
+
+  // Migration of Tag Templates from Data Catalog to Dataplex is enabled.
+  TAG_TEMPLATE_MIGRATION_ENABLED = 1;
+
+  // Migration of Tag Templates from Data Catalog to Dataplex is disabled.
+  TAG_TEMPLATE_MIGRATION_DISABLED = 2;
+}
+
+// Configuration related to the opt-in status for the UI switch to Dataplex.
+enum CatalogUIExperience {
+  // Default value. The default UI is Dataplex.
+  CATALOG_UI_EXPERIENCE_UNSPECIFIED = 0;
+
+  // The UI is Dataplex.
+  CATALOG_UI_EXPERIENCE_ENABLED = 1;
+
+  // The UI is Data Catalog.
+  CATALOG_UI_EXPERIENCE_DISABLED = 2;
+}
+
+// The configuration related to the migration from Data Catalog to Dataplex that
+// has been applied to an organization and any projects under it. It is the
+// response message for
+// [RetrieveConfig][google.cloud.datacatalog.v1.DataCatalog.RetrieveConfig].
+message OrganizationConfig {
+  // Map of organizations and project resource names and their configuration.
+  // The format for the map keys is `organizations/{organizationId}` or
+  // `projects/{projectId}`.
+  map<string, MigrationConfig> config = 1;
+}
+
+// The configuration related to the migration to Dataplex applied to an
+// organization or project.
+// It is the response message for
+// [SetConfig][google.cloud.datacatalog.v1.DataCatalog.SetConfig] and
+// [RetrieveEffectiveConfig][google.cloud.datacatalog.v1.DataCatalog.RetrieveEffectiveConfig].
+message MigrationConfig {
+  // Opt-in status for the migration of Tag Templates to Dataplex.
+  TagTemplateMigration tag_template_migration = 1;
+
+  // Opt-in status for the UI switch to Dataplex.
+  CatalogUIExperience catalog_ui_experience = 2;
 }
