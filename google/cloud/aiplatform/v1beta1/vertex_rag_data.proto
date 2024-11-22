@@ -180,6 +180,12 @@ message RagVectorDbConfig {
 
   // Authentication config for the chosen Vector DB.
   ApiAuth api_auth = 5;
+
+  // Optional. Immutable. The embedding model config of the Vector DB.
+  RagEmbeddingModelConfig rag_embedding_model_config = 7 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
 }
 
 // RagFile status.
@@ -202,6 +208,15 @@ message FileStatus {
 
   // Output only. Only when the `state` field is ERROR.
   string error_status = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Config for the Vertex AI Search.
+message VertexAiSearchConfig {
+  // Vertex AI Search Serving Config resource full name. For example,
+  // `projects/{project}/locations/{location}/collections/{collection}/engines/{engine}/servingConfigs/{serving_config}`
+  // or
+  // `projects/{project}/locations/{location}/collections/{collection}/dataStores/{data_store}/servingConfigs/{serving_config}`.
+  string serving_config = 1;
 }
 
 // RagCorpus status.
@@ -252,12 +267,14 @@ message RagCorpus {
 
   // Optional. Immutable. The embedding model config of the RagCorpus.
   RagEmbeddingModelConfig rag_embedding_model_config = 6 [
+    deprecated = true,
     (google.api.field_behavior) = OPTIONAL,
     (google.api.field_behavior) = IMMUTABLE
   ];
 
   // Optional. Immutable. The Vector DB config of the RagCorpus.
   RagVectorDbConfig rag_vector_db_config = 7 [
+    deprecated = true,
     (google.api.field_behavior) = OPTIONAL,
     (google.api.field_behavior) = IMMUTABLE
   ];
@@ -272,6 +289,22 @@ message RagCorpus {
 
   // Output only. RagCorpus state.
   CorpusStatus corpus_status = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The backend config of the RagCorpus.
+  // It can be data store and/or retrieval engine.
+  oneof backend_config {
+    // Optional. Immutable. The config for the Vector DBs.
+    RagVectorDbConfig vector_db_config = 9 [
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.field_behavior) = IMMUTABLE
+    ];
+
+    // Optional. Immutable. The config for the Vertex AI Search.
+    VertexAiSearchConfig vertex_ai_search_config = 10 [
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.field_behavior) = IMMUTABLE
+    ];
+  }
 }
 
 // A RagFile contains user data for chunking, embedding and indexing.
@@ -353,23 +386,80 @@ message RagFile {
 
 // Specifies the size and overlap of chunks for RagFiles.
 message RagFileChunkingConfig {
+  // Specifies the fixed length chunking config.
+  message FixedLengthChunking {
+    // The size of the chunks.
+    int32 chunk_size = 1;
+
+    // The overlap between chunks.
+    int32 chunk_overlap = 2;
+  }
+
+  // Specifies the chunking config for RagFiles.
+  oneof chunking_config {
+    // Specifies the fixed length chunking config.
+    FixedLengthChunking fixed_length_chunking = 3;
+  }
+
   // The size of the chunks.
-  int32 chunk_size = 1;
+  int32 chunk_size = 1 [deprecated = true];
 
   // The overlap between chunks.
-  int32 chunk_overlap = 2;
+  int32 chunk_overlap = 2 [deprecated = true];
+}
+
+// Specifies the transformation config for RagFiles.
+message RagFileTransformationConfig {
+  // Specifies the chunking config for RagFiles.
+  RagFileChunkingConfig rag_file_chunking_config = 1;
 }
 
 // Specifies the parsing config for RagFiles.
 message RagFileParsingConfig {
+  // Specifies the advanced parsing for RagFiles.
+  message AdvancedParser {
+    // Whether to use advanced PDF parsing.
+    bool use_advanced_pdf_parsing = 1;
+  }
+
+  // Document AI Layout Parser config.
+  message LayoutParser {
+    // The full resource name of a Document AI processor or processor version.
+    // The processor must have type `LAYOUT_PARSER_PROCESSOR`. If specified, the
+    // `additional_config.parse_as_scanned_pdf` field must be false.
+    // Format:
+    // * `projects/{project_id}/locations/{location}/processors/{processor_id}`
+    // * `projects/{project_id}/locations/{location}/processors/{processor_id}/processorVersions/{processor_version_id}`
+    string processor_name = 1;
+
+    // The maximum number of requests the job is allowed to make to the Document
+    // AI processor per minute. Consult
+    // https://cloud.google.com/document-ai/quotas and the Quota page for your
+    // project to set an appropriate value here. If unspecified, a default value
+    // of 120 QPM would be used.
+    int32 max_parsing_requests_per_min = 2;
+  }
+
+  // The parser to use for RagFiles.
+  oneof parser {
+    // The Advanced Parser to use for RagFiles.
+    AdvancedParser advanced_parser = 3;
+
+    // The Layout Parser to use for RagFiles.
+    LayoutParser layout_parser = 4;
+  }
+
   // Whether to use advanced PDF parsing.
-  bool use_advanced_pdf_parsing = 2;
+  bool use_advanced_pdf_parsing = 2 [deprecated = true];
 }
 
 // Config for uploading RagFile.
 message UploadRagFileConfig {
   // Specifies the size and overlap of chunks after uploading RagFile.
-  RagFileChunkingConfig rag_file_chunking_config = 1;
+  RagFileChunkingConfig rag_file_chunking_config = 1 [deprecated = true];
+
+  // Specifies the transformation config for RagFiles.
+  RagFileTransformationConfig rag_file_transformation_config = 3;
 }
 
 // Config for importing RagFiles.
@@ -397,24 +487,32 @@ message ImportRagFilesConfig {
   }
 
   // Optional. If provided, all partial failures are written to the sink.
+  // Deprecated. Prefer to use the `import_result_sink`.
   oneof partial_failure_sink {
     // The Cloud Storage path to write partial failures to.
-    GcsDestination partial_failure_gcs_sink = 11;
+    // Deprecated. Prefer to use `import_result_gcs_sink`.
+    GcsDestination partial_failure_gcs_sink = 11 [deprecated = true];
 
     // The BigQuery destination to write partial failures to. It should be a
     // bigquery table resource name (e.g.
-    // "bq://projectId.bqDatasetId.bqTableId"). If the dataset id does not
-    // exist, it will be created. If the table does not exist, it will be
-    // created with the expected schema. If the table exists, the schema will be
-    // validated and data will be added to this existing table.
-    BigQueryDestination partial_failure_bigquery_sink = 12;
+    // "bq://projectId.bqDatasetId.bqTableId"). The dataset must exist. If the
+    // table does not exist, it will be created with the expected schema. If the
+    // table exists, the schema will be validated and data will be added to this
+    // existing table.
+    // Deprecated. Prefer to use `import_result_bq_sink`.
+    BigQueryDestination partial_failure_bigquery_sink = 12 [deprecated = true];
   }
 
   // Specifies the size and overlap of chunks after importing RagFiles.
-  RagFileChunkingConfig rag_file_chunking_config = 4;
+  RagFileChunkingConfig rag_file_chunking_config = 4 [deprecated = true];
 
-  // Specifies the parsing config for RagFiles.
-  RagFileParsingConfig rag_file_parsing_config = 8;
+  // Specifies the transformation config for RagFiles.
+  RagFileTransformationConfig rag_file_transformation_config = 16;
+
+  // Optional. Specifies the parsing config for RagFiles.
+  // RAG will use the default parser if this field is not set.
+  RagFileParsingConfig rag_file_parsing_config = 8
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The max number of queries per minute that this job is allowed to
   // make to the embedding model specified on the corpus. This value is specific

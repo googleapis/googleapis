@@ -20,6 +20,8 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/cloud/aiplatform/v1beta1/content.proto";
+import "google/cloud/aiplatform/v1beta1/tool.proto";
 
 option csharp_namespace = "Google.Cloud.AIPlatform.V1Beta1";
 option go_package = "cloud.google.com/go/aiplatform/apiv1beta1/aiplatformpb;aiplatformpb";
@@ -44,6 +46,28 @@ service VertexRagService {
     };
     option (google.api.method_signature) = "parent,query";
   }
+
+  // Given an input prompt, it returns augmented prompt from vertex rag store
+  //  to guide LLM towards generating grounded responses.
+  rpc AugmentPrompt(AugmentPromptRequest) returns (AugmentPromptResponse) {
+    option (google.api.http) = {
+      post: "/v1beta1/{parent=projects/*/locations/*}:augmentPrompt"
+      body: "*"
+    };
+    option (google.api.method_signature) = "parent,model,vertex_rag_store";
+  }
+
+  // Given an input text, it returns a score that evaluates the factuality of
+  // the text. It also extracts and returns claims from the text and provides
+  // supporting facts.
+  rpc CorroborateContent(CorroborateContentRequest)
+      returns (CorroborateContentResponse) {
+    option (google.api.http) = {
+      post: "/v1beta1/{parent=projects/*/locations/*}:corroborateContent"
+      body: "*"
+    };
+    option (google.api.method_signature) = "parent,content,facts";
+  }
 }
 
 // A query to retrieve relevant contexts.
@@ -65,10 +89,16 @@ message RagQuery {
   }
 
   // Optional. The number of contexts to retrieve.
-  int32 similarity_top_k = 2 [(google.api.field_behavior) = OPTIONAL];
+  int32 similarity_top_k = 2
+      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
 
   // Optional. Configurations for hybrid search results ranking.
-  Ranking ranking = 4 [(google.api.field_behavior) = OPTIONAL];
+  Ranking ranking = 4
+      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The retrieval config for the query.
+  RagRetrievalConfig rag_retrieval_config = 6
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request message for
@@ -108,7 +138,7 @@ message RetrieveContextsRequest {
     // Optional. Only return contexts with vector distance smaller than the
     // threshold.
     optional double vector_distance_threshold = 2
-        [(google.api.field_behavior) = OPTIONAL];
+        [deprecated = true, (google.api.field_behavior) = OPTIONAL];
   }
 
   // Data Source to retrieve contexts.
@@ -136,21 +166,34 @@ message RetrieveContextsRequest {
 message RagContexts {
   // A context of the query.
   message Context {
-    // For vertex RagStore, if the file is imported from Cloud Storage or Google
-    // Drive, source_uri will be original file URI in Cloud Storage or Google
-    // Drive; if file is uploaded, source_uri will be file display name.
+    // If the file is imported from Cloud Storage or Google Drive, source_uri
+    // will be original file URI in Cloud Storage or Google Drive; if file is
+    // uploaded, source_uri will be file display name.
     string source_uri = 1;
+
+    // The file display name.
+    string source_display_name = 5;
 
     // The text chunk.
     string text = 2;
 
     // The distance between the query dense embedding vector and the context
     // text vector.
-    double distance = 3;
+    double distance = 3 [deprecated = true];
 
     // The distance between the query sparse embedding vector and the context
     // text vector.
-    double sparse_distance = 4;
+    double sparse_distance = 4 [deprecated = true];
+
+    // According to the underlying Vector DB and the selected metric type, the
+    // score can be either the distance or the similarity between the query and
+    // the context and its range depends on the metric type.
+    //
+    // For example, if the metric type is COSINE_DISTANCE, it represents the
+    // distance between the query and the context. The larger the distance, the
+    // less relevant the context is to the query. The range is [0, 2], while 0
+    // means the most relevant and 2 means the least relevant.
+    optional double score = 6;
   }
 
   // All its contexts.
@@ -162,4 +205,137 @@ message RagContexts {
 message RetrieveContextsResponse {
   // The contexts of the query.
   RagContexts contexts = 1;
+}
+
+// Request message for AugmentPrompt.
+message AugmentPromptRequest {
+  // Metadata of the backend deployed model.
+  message Model {
+    // Optional. The model that the user will send the augmented prompt for
+    // content generation.
+    string model = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The model version of the backend deployed model.
+    string model_version = 2 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // The data source for retrieving contexts.
+  oneof data_source {
+    // Optional. Retrieves contexts from the Vertex RagStore.
+    VertexRagStore vertex_rag_store = 4
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Required. The resource name of the Location from which to augment prompt.
+  // The users must have permission to make a call in the project.
+  // Format:
+  // `projects/{project}/locations/{location}`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
+
+  // Optional. Input content to augment, only text format is supported for now.
+  repeated Content contents = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Metadata of the backend deployed model.
+  Model model = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message for AugmentPrompt.
+message AugmentPromptResponse {
+  // Augmented prompt, only text format is supported for now.
+  repeated Content augmented_prompt = 1;
+
+  // Retrieved facts from RAG data sources.
+  repeated Fact facts = 2;
+}
+
+// Request message for CorroborateContent.
+message CorroborateContentRequest {
+  // Parameters that can be overrided per request.
+  message Parameters {
+    // Optional. Only return claims with citation score larger than the
+    // threshold.
+    double citation_threshold = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Required. The resource name of the Location from which to corroborate text.
+  // The users must have permission to make a call in the project.
+  // Format:
+  // `projects/{project}/locations/{location}`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
+
+  // Optional. Input content to corroborate, only text format is supported for
+  // now.
+  optional Content content = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Facts used to generate the text can also be used to corroborate
+  // the text.
+  repeated Fact facts = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Parameters that can be set to override default settings per
+  // request.
+  Parameters parameters = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message for CorroborateContent.
+message CorroborateContentResponse {
+  // Confidence score of corroborating content. Value is [0,1] with 1 is the
+  // most confidence.
+  optional float corroboration_score = 1;
+
+  // Claims that are extracted from the input content and facts that support the
+  // claims.
+  repeated Claim claims = 2;
+}
+
+// The fact used in grounding.
+message Fact {
+  // Query that is used to retrieve this fact.
+  optional string query = 1;
+
+  // If present, it refers to the title of this fact.
+  optional string title = 2;
+
+  // If present, this uri links to the source of the fact.
+  optional string uri = 3;
+
+  // If present, the summary/snippet of the fact.
+  optional string summary = 4;
+
+  // If present, the distance between the query vector and this fact vector.
+  optional double vector_distance = 5 [deprecated = true];
+
+  // If present, according to the underlying Vector DB and the selected metric
+  // type, the score can be either the distance or the similarity between the
+  // query and the fact and its range depends on the metric type.
+  //
+  // For example, if the metric type is COSINE_DISTANCE, it represents the
+  // distance between the query and the fact. The larger the distance, the less
+  // relevant the fact is to the query. The range is [0, 2], while 0 means the
+  // most relevant and 2 means the least relevant.
+  optional double score = 6;
+}
+
+// Claim that is extracted from the input text and facts that support it.
+message Claim {
+  // Index in the input text where the claim starts (inclusive).
+  optional int32 start_index = 1;
+
+  // Index in the input text where the claim ends (exclusive).
+  optional int32 end_index = 2;
+
+  // Indexes of the facts supporting this claim.
+  repeated int32 fact_indexes = 3;
+
+  // Confidence score of this corroboration.
+  optional float score = 4;
 }
