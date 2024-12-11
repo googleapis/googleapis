@@ -457,9 +457,9 @@ gapic_generator_csharp_repositories()
 # Ruby
 ##############################################################################
 
-_gapic_generator_ruby_version = "v0.38.2"
+_gapic_generator_ruby_version = "v0.38.3"
 
-_gapic_generator_ruby_sha256 = "88dcf493c2f574de4b6cb483de1902272f675a7bdec74c9401ffb1c09f0d4d5b"
+_gapic_generator_ruby_sha256 = "08cc9302b45229ff4acef29a6ca7cdb6a433db353c5ecf94ae1ab194c5c59a2b"
 
 http_archive(
     name = "gapic_generator_ruby",
