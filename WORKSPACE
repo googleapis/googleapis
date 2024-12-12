@@ -314,9 +314,9 @@ load("@rules_gapic//python:py_gapic_repositories.bzl", "py_gapic_repositories")
 
 py_gapic_repositories()
 
-_gapic_generator_python_version = "1.20.2"
+_gapic_generator_python_version = "1.21.0"
 
-_gapic_generator_python_sha256 = "151c399872a325026dbf21d40a416f477db3156cb14fe64dba398c16c662e64a"
+_gapic_generator_python_sha256 = "3d699e92bf6b6b30da8be030900cfbe293b7d0bfa2a26c580ee790f51ae593df"
 
 http_archive(
     name = "gapic_generator_python",
