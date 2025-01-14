@@ -19,6 +19,7 @@ package google.cloud.tpu.v2alpha1;
 import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
+import "google/api/field_info.proto";
 import "google/api/resource.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/duration.proto";
@@ -119,6 +120,19 @@ service Tpu {
     };
   }
 
+  // Perform manual maintenance on a node.
+  rpc PerformMaintenance(PerformMaintenanceRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v2alpha1/{name=projects/*/locations/*/nodes/*}:performMaintenance"
+      body: "*"
+    };
+    option (google.longrunning.operation_info) = {
+      response_type: "Node"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
   // Lists queued resources.
   rpc ListQueuedResources(ListQueuedResourcesRequest)
       returns (ListQueuedResourcesResponse) {
@@ -178,6 +192,19 @@ service Tpu {
     };
   }
 
+  // Perform manual maintenance on specific nodes of a QueuedResource.
+  rpc PerformMaintenanceQueuedResource(PerformMaintenanceQueuedResourceRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v2alpha1/{name=projects/*/locations/*/queuedResources/*}:performMaintenanceQueuedResource"
+      body: "*"
+    };
+    option (google.longrunning.operation_info) = {
+      response_type: "QueuedResource"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
   // Generates the Cloud TPU service identity for the project.
   rpc GenerateServiceIdentity(GenerateServiceIdentityRequest)
       returns (GenerateServiceIdentityResponse) {
@@ -227,6 +254,14 @@ service Tpu {
     option (google.api.http) = {
       post: "/v2alpha1/{name=projects/*/locations/*/nodes/*}:getGuestAttributes"
       body: "*"
+    };
+  }
+
+  // Retrieves the reservations for the given project in the given location.
+  rpc ListReservations(ListReservationsRequest)
+      returns (ListReservationsResponse) {
+    option (google.api.http) = {
+      get: "/v2alpha1/{parent=projects/*/locations/*}/reservations"
     };
   }
 
@@ -307,6 +342,9 @@ message SchedulingConfig {
 
   // Whether the node is created under a reservation.
   bool reserved = 2;
+
+  // Optional. Defines whether the node is Spot VM.
+  bool spot = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // A network endpoint over which a TPU worker can be reached.
@@ -347,6 +385,10 @@ message NetworkConfig {
   // destination or source IPs. This is required if you plan to use the TPU
   // workers to forward routes.
   bool can_ip_forward = 4;
+
+  // Optional. Specifies networking queue count for TPU VM instance's network
+  // interface.
+  int32 queue_count = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // A service account.
@@ -415,6 +457,9 @@ message Node {
 
     // TPU node is currently unhiding.
     UNHIDING = 15;
+
+    // TPU node has unknown state after a failed repair.
+    UNKNOWN = 16;
   }
 
   // Health defines the status of a TPU node as reported by
@@ -474,8 +519,17 @@ message Node {
   // Required. The runtime version running in the Node.
   string runtime_version = 11 [(google.api.field_behavior) = REQUIRED];
 
-  // Network configurations for the TPU node.
+  // Network configurations for the TPU node. network_config and network_configs
+  // are mutually exclusive, you can only specify one of them. If both are
+  // specified, an error will be returned.
   NetworkConfig network_config = 36;
+
+  // Optional. Repeated network configurations for the TPU node. This field is
+  // used to specify multiple networks configs for the TPU node. network_config
+  // and network_configs are mutually exclusive, you can only specify one of
+  // them. If both are specified, an error will be returned.
+  repeated NetworkConfig network_configs = 50
+      [(google.api.field_behavior) = OPTIONAL];
 
   // The CIDR block that the TPU node will use when selecting an IP address.
   // This CIDR block must be a /29 block; the Compute Engine networks API
@@ -543,8 +597,15 @@ message Node {
   // Output only. Whether the Node belongs to a Multislice group.
   bool multislice_node = 47 [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  // Optional. Whether Autocheckpoint is enabled.
+  bool autocheckpoint_enabled = 48 [(google.api.field_behavior) = OPTIONAL];
+
   // Optional. Boot disk configuration.
   BootDiskConfig boot_disk_config = 49 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Upcoming maintenance on this TPU node.
+  UpcomingMaintenance upcoming_maintenance = 51
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A QueuedResource represents a request for resources that will be placed
@@ -565,6 +626,20 @@ message QueuedResource {
       // field must be populated in case of multi-node requests instead of
       // node_id. It's an error to specify both node_id and multi_node_params.
       message MultiNodeParams {
+        // The workload type for the multi-node request.
+        enum WorkloadType {
+          // Not specified.
+          WORKLOAD_TYPE_UNSPECIFIED = 0;
+
+          // All of the nodes are available most of the time.
+          // Recommended for training workloads.
+          THROUGHPUT_OPTIMIZED = 1;
+
+          // Most of the nodes are available all of the time.
+          // Recommended for serving workloads.
+          AVAILABILITY_OPTIMIZED = 2;
+        }
+
         // Required. Number of nodes with this spec. The system will attempt
         // to provison "node_count" nodes as part of the request.
         // This needs to be > 1.
@@ -576,6 +651,9 @@ message QueuedResource {
         // created will be "np-0", "np-1", "np-2". If this field is not
         // provided we use queued_resource_id as the node_id_prefix.
         string node_id_prefix = 2;
+
+        // Optional. The workload type for the multi-node request.
+        WorkloadType workload_type = 4 [(google.api.field_behavior) = OPTIONAL];
       }
 
       // Required. The parent resource name.
@@ -652,6 +730,10 @@ message QueuedResource {
     (google.api.field_behavior) = OUTPUT_ONLY,
     (google.api.field_behavior) = IMMUTABLE
   ];
+
+  // Output only. The time when the QueuedResource was created.
+  google.protobuf.Timestamp create_time = 11
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Resource specification.
   oneof resource {
@@ -805,7 +887,9 @@ message QueuedResourceState {
     SuspendedData suspended_data = 9;
   }
 
-  // Output only. The initiator of the QueuedResources's current state.
+  // Output only. The initiator of the QueuedResources's current state. Used to
+  // indicate whether the SUSPENDING/SUSPENDED state was initiated by the user
+  // or the service.
   StateInitiator state_initiator = 10
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
@@ -1267,6 +1351,145 @@ message SimulateMaintenanceEventRequest {
   repeated string worker_ids = 2;
 }
 
+// Request for
+// [PerformMaintenance][google.cloud.tpu.v2alpha1.Tpu.PerformMaintenance].
+message PerformMaintenanceRequest {
+  // Required. The resource name.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "tpu.googleapis.com/Node" }
+  ];
+}
+
+// Request for
+// [PerformMaintenanceQueuedResource][google.cloud.tpu.v2alpha1.Tpu.PerformMaintenanceQueuedResource].
+message PerformMaintenanceQueuedResourceRequest {
+  // Required. The name of the QueuedResource which holds the nodes to perform
+  // maintenance on.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "tpu.googleapis.com/QueuedResource"
+    }
+  ];
+
+  // The names of the nodes to perform maintenance on.
+  repeated string node_names = 2;
+}
+
+// A reservation describes the amount of a resource 'allotted' for a defined
+// period of time.
+message Reservation {
+  option (google.api.resource) = {
+    type: "tpu.googleapis.com/Reservation"
+    pattern: "projects/{project}/locations/{location}/reservations/{reservation}"
+  };
+
+  // Details of a standard reservation.
+  message Standard {
+    // Units in which capacity for a reservation is measured.
+    enum CapacityUnits {
+      // The capacity units is not known/set.
+      CAPACITY_UNITS_UNSPECIFIED = 0;
+
+      // The capacity unit is set to CORES.
+      CORES = 1;
+
+      // The capacity unit is set to CHIPS.
+      CHIPS = 2;
+    }
+
+    // Usage details of a reservation.
+    message Usage {
+      // The real-time value of usage within the reservation, with the unit
+      // specified in field capacity_units.
+      int64 total = 1;
+    }
+
+    // The size of the reservation, in the units specified in the
+    // 'capacity_units' field.
+    int32 size = 1;
+
+    // Capacity units this reservation is measured in.
+    CapacityUnits capacity_units = 2;
+
+    // The resource type of the reservation.
+    string resource_type = 3;
+
+    // The start and end time of the reservation.
+    google.type.Interval interval = 4;
+
+    // The current usage of the reservation.
+    Usage usage = 5;
+  }
+
+  // State of the Reservation.
+  enum State {
+    // The Reservation state is unspecified.
+    STATE_UNSPECIFIED = 0;
+
+    // The Reservation has been approved.
+    APPROVED = 3;
+
+    // The Reservation is being provisioned.
+    PROVISIONING = 4;
+
+    // The Reservation is active.
+    ACTIVE = 5;
+
+    // The Reservation is being deprovisioned.
+    DEPROVISIONING = 6;
+
+    // The Reservation is past its end date.
+    EXPIRED = 7;
+
+    // The Reservation encountered a failure during mutation.
+    FAILED = 8;
+  }
+
+  // The reservation name with the format:
+  // projects/{projectID}/locations/{location}/reservations/{reservationID}
+  string name = 1;
+
+  // The kind of reservation.
+  oneof kind {
+    // A standard reservation.
+    Standard standard = 2;
+  }
+
+  // Output only. The state of the Reservation.
+  State state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Request for
+// [ListReservations][google.cloud.tpu.v2alpha1.Tpu.ListReservations].
+message ListReservationsRequest {
+  // Required. The parent for reservations.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "tpu.googleapis.com/Reservation"
+    }
+  ];
+
+  // The maximum number of items to return. Defaults to 0 if not specified,
+  // which means no limit.
+  int32 page_size = 2;
+
+  // The next_page_token value returned from a previous List request, if any.
+  string page_token = 3;
+}
+
+// Response for
+// [ListReservations][google.cloud.tpu.v2alpha1.Tpu.ListReservations].
+message ListReservationsResponse {
+  // The listed reservations.
+  repeated Reservation reservations = 1;
+
+  // The next page token or empty if none.
+  string next_page_token = 2;
+}
+
 // A TPU accelerator configuration.
 message AcceleratorConfig {
   // TPU type.
@@ -1282,6 +1505,15 @@ message AcceleratorConfig {
 
     // TPU v4.
     V4 = 7;
+
+    // TPU v5lite pod.
+    V5LITE_POD = 9;
+
+    // TPU v5.
+    V5P = 10;
+
+    // TPU v6e.
+    V6E = 11;
   }
 
   // Required. Type of TPU.
@@ -1327,4 +1559,54 @@ message CustomerEncryptionKey {
     // /cryptoKeyVersions/1</pre>
     string kms_key_name = 7;
   }
+}
+
+// Upcoming Maintenance notification information.
+message UpcomingMaintenance {
+  // The type of maintenance for this notification.
+  enum MaintenanceType {
+    // No type specified. Do not use this value.
+    UNKNOWN_TYPE = 0;
+
+    // Scheduled maintenance (e.g. maintenance after uptime guarantee is
+    // complete).
+    SCHEDULED = 1;
+
+    // Unscheduled maintenance (e.g. emergency maintenance during
+    // uptime guarantee).
+    UNSCHEDULED = 2;
+  }
+
+  // The status of the maintenance for this notification.
+  enum MaintenanceStatus {
+    // Unknown maintenance status. Do not use this value.
+    UNKNOWN = 0;
+
+    // There is pending maintenance.
+    PENDING = 1;
+
+    // There is ongoing maintenance on this VM.
+    ONGOING = 2;
+  }
+
+  // Defines the type of maintenance.
+  optional MaintenanceType type = 1;
+
+  // Indicates if the maintenance can be customer triggered.
+  optional bool can_reschedule = 5;
+
+  // The current start time of the maintenance window.
+  // This timestamp value is in RFC3339 text format.
+  optional string window_start_time = 6;
+
+  // The time by which the maintenance disruption will be completed.
+  // This timestamp value is in RFC3339 text format.
+  optional string window_end_time = 7;
+
+  // The latest time for the planned maintenance window to start.
+  // This timestamp value is in RFC3339 text format.
+  optional string latest_window_start_time = 8;
+
+  // The status of the maintenance.
+  optional MaintenanceStatus maintenance_status = 9;
 }
