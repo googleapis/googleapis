@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2024 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,6 +15,11 @@
 syntax = "proto3";
 
 package google.bigtable.v2;
+
+import "google/api/field_behavior.proto";
+import "google/bigtable/v2/types.proto";
+import "google/protobuf/timestamp.proto";
+import "google/type/date.proto";
 
 option csharp_namespace = "Google.Cloud.Bigtable.V2";
 option go_package = "cloud.google.com/go/bigtable/apiv2/bigtablepb;bigtablepb";
@@ -83,6 +88,77 @@ message Cell {
 
   // Labels applied to the cell by a [RowFilter][google.bigtable.v2.RowFilter].
   repeated string labels = 3;
+}
+
+// `Value` represents a dynamically typed value.
+// The typed fields in `Value` are used as a transport encoding for the actual
+// value (which may be of a more complex type). See the documentation of the
+// `Type` message for more details.
+message Value {
+  // The verified `Type` of this `Value`, if it cannot be inferred.
+  //
+  // Read results will never specify the encoding for `type` since the value
+  // will already have been decoded by the server. Furthermore, the `type` will
+  // be omitted entirely if it can be inferred from a previous response. The
+  // exact semantics for inferring `type` will vary, and are therefore
+  // documented separately for each read method.
+  //
+  // When using composite types (Struct, Array, Map) only the outermost `Value`
+  // will specify the `type`. This top-level `type` will define the types for
+  // any nested `Struct' fields, `Array` elements, or `Map` key/value pairs.
+  // If a nested `Value` provides a `type` on write, the request will be
+  // rejected with INVALID_ARGUMENT.
+  Type type = 7;
+
+  // Options for transporting values within the protobuf type system. A given
+  // `kind` may support more than one `type` and vice versa. On write, this is
+  // roughly analogous to a GoogleSQL literal.
+  //
+  // The value is `NULL` if none of the fields in `kind` is set. If `type` is
+  // also omitted on write, we will infer it based on the schema.
+  oneof kind {
+    // Represents a raw byte sequence with no type information.
+    // The `type` field must be omitted.
+    bytes raw_value = 8;
+
+    // Represents a raw cell timestamp with no type information.
+    // The `type` field must be omitted.
+    int64 raw_timestamp_micros = 9;
+
+    // Represents a typed value transported as a byte sequence.
+    bytes bytes_value = 2;
+
+    // Represents a typed value transported as a string.
+    string string_value = 3;
+
+    // Represents a typed value transported as an integer.
+    int64 int_value = 6;
+
+    // Represents a typed value transported as a boolean.
+    bool bool_value = 10;
+
+    // Represents a typed value transported as a floating point number.
+    double float_value = 11;
+
+    // Represents a typed value transported as a timestamp.
+    google.protobuf.Timestamp timestamp_value = 12;
+
+    // Represents a typed value transported as a date.
+    google.type.Date date_value = 13;
+
+    // Represents a typed value transported as a sequence of values.
+    // To differentiate between `Struct`, `Array`, and `Map`, the outermost
+    // `Value` must provide an explicit `type` on write. This `type` will
+    // apply recursively to the nested `Struct` fields, `Array` elements,
+    // or `Map` key/value pairs, which *must not* supply their own `type`.
+    ArrayValue array_value = 4;
+  }
+}
+
+// `ArrayValue` is an ordered list of `Value`.
+message ArrayValue {
+  // The ordered elements in the array.
+  repeated Value values = 1;
 }
 
 // Specifies a contiguous range of rows.
@@ -463,6 +539,48 @@ message Mutation {
     bytes value = 4;
   }
 
+  // A Mutation which incrementally updates a cell in an `Aggregate` family.
+  message AddToCell {
+    // The name of the `Aggregate` family into which new data should be added.
+    // This must be a family with a `value_type` of `Aggregate`.
+    // Format: `[-_.a-zA-Z0-9]+`
+    string family_name = 1;
+
+    // The qualifier of the column into which new data should be added. This
+    // must be a `raw_value`.
+    Value column_qualifier = 2;
+
+    // The timestamp of the cell to which new data should be added. This must
+    // be a `raw_timestamp_micros` that matches the table's `granularity`.
+    Value timestamp = 3;
+
+    // The input value to be accumulated into the specified cell. This must be
+    // compatible with the family's `value_type.input_type`.
+    Value input = 4;
+  }
+
+  // A Mutation which merges accumulated state into a cell in an `Aggregate`
+  // family.
+  message MergeToCell {
+    // The name of the `Aggregate` family into which new data should be added.
+    // This must be a family with a `value_type` of `Aggregate`.
+    // Format: `[-_.a-zA-Z0-9]+`
+    string family_name = 1;
+
+    // The qualifier of the column into which new data should be added. This
+    // must be a `raw_value`.
+    Value column_qualifier = 2;
+
+    // The timestamp of the cell to which new data should be added. This must
+    // be a `raw_timestamp_micros` that matches the table's `granularity`.
+    Value timestamp = 3;
+
+    // The input value to be merged into the specified cell. This must be
+    // compatible with the family's `value_type.state_type`. Merging `NULL` is
+    // allowed, but has no effect.
+    Value input = 4;
+  }
+
   // A Mutation which deletes cells from the specified column, optionally
   // restricting the deletions to a given timestamp range.
   message DeleteFromColumn {
@@ -486,14 +604,18 @@ message Mutation {
   }
 
   // A Mutation which deletes all cells from the containing row.
-  message DeleteFromRow {
-
-  }
+  message DeleteFromRow {}
 
   // Which of the possible Mutation types to apply.
   oneof mutation {
     // Set a cell's value.
     SetCell set_cell = 1;
+
+    // Incrementally updates an `Aggregate` cell.
+    AddToCell add_to_cell = 5;
+
+    // Merges accumulated state to an `Aggregate` cell.
+    MergeToCell merge_to_cell = 6;
 
     // Deletes cells from a column.
     DeleteFromColumn delete_from_column = 2;
@@ -534,7 +656,7 @@ message ReadModifyWriteRule {
   }
 }
 
-// NOTE: This API is not generally available. Users must be allowlisted.
+// NOTE: This API is intended to be used by Apache Beam BigtableIO.
 // A partition of a change stream.
 message StreamPartition {
   // The row range covered by this partition and is specified by
@@ -542,7 +664,7 @@ message StreamPartition {
   RowRange row_range = 1;
 }
 
-// NOTE: This API is not generally available. Users must be allowlisted.
+// NOTE: This API is intended to be used by Apache Beam BigtableIO.
 // The information required to continue reading the data from multiple
 // `StreamPartitions` from where a previous read left off.
 message StreamContinuationTokens {
@@ -550,7 +672,7 @@ message StreamContinuationTokens {
   repeated StreamContinuationToken tokens = 1;
 }
 
-// NOTE: This API is not generally available. Users must be allowlisted.
+// NOTE: This API is intended to be used by Apache Beam BigtableIO.
 // The information required to continue reading the data from a
 // `StreamPartition` from where a previous read left off.
 message StreamContinuationToken {
@@ -559,4 +681,152 @@ message StreamContinuationToken {
 
   // An encoded position in the stream to restart reading from.
   string token = 2;
+}
+
+// Protocol buffers format descriptor, as described by Messages ProtoSchema and
+// ProtoRows
+message ProtoFormat {}
+
+// Describes a column in a Bigtable Query Language result set.
+message ColumnMetadata {
+  // The name of the column.
+  string name = 1;
+
+  // The type of the column.
+  Type type = 2;
+}
+
+// ResultSet schema in proto format
+message ProtoSchema {
+  // The columns in the result set.
+  repeated ColumnMetadata columns = 1;
+}
+
+// Describes the structure of a Bigtable result set.
+message ResultSetMetadata {
+  // The schema of the ResultSet, contains ordered list of column names
+  // with types
+  oneof schema {
+    // Schema in proto format
+    ProtoSchema proto_schema = 1;
+  }
+}
+
+// Rows represented in proto format.
+//
+// This should be constructed by concatenating the `batch_data` from each
+// of the relevant `ProtoRowsBatch` messages and parsing the result as a
+// `ProtoRows` message.
+message ProtoRows {
+  // A proto rows message consists of a list of values. Every N complete values
+  // defines a row, where N is equal to the  number of entries in the
+  // `metadata.proto_schema.columns` value received in the first response.
+  repeated Value values = 2;
+}
+
+// A part of a serialized `ProtoRows` message.
+message ProtoRowsBatch {
+  // Part of a serialized `ProtoRows` message.
+  // A complete, parseable ProtoRows message is constructed by
+  // concatenating `batch_data` from multiple `ProtoRowsBatch` messages. The
+  // `PartialResultSet` that contains the last part has `complete_batch` set to
+  // `true`.
+  bytes batch_data = 1;
+}
+
+// A partial result set from the streaming query API.
+// Cloud Bigtable clients buffer partial results received in this message until
+// a `resume_token` is received.
+//
+// The pseudocode below describes how to buffer and parse a stream of
+// `PartialResultSet` messages.
+//
+// Having:
+// - queue of row results waiting to be returned `queue`
+// - extensible buffer of bytes `buffer`
+// - a place to keep track of the most recent `resume_token`
+// for each PartialResultSet `p` received {
+//   if p.reset {
+//     ensure `queue` is empty
+//     ensure `buffer` is empty
+//   }
+//   if p.estimated_batch_size != 0 {
+//     (optional) ensure `buffer` is sized to at least `p.estimated_batch_size`
+//   }
+//   if `p.proto_rows_batch` is set {
+//     append `p.proto_rows_batch.bytes` to `buffer`
+//   }
+//   if p.batch_complete and `buffer` is not empty {
+//     parse `buffer` as `ProtoRows` message, clearing `buffer`
+//     add parsed rows to end of `queue`
+//   }
+//   if p.restart_token {
+//     release results in `queue`
+//     save `p.resume_token` in `resume_token`
+//   }
+// }
+message PartialResultSet {
+  // Some rows of the result set in one of the supported formats.
+  //
+  // Multiple `PartialResultSet` messages may be sent to represent a complete
+  // response. The client should buffer data constructed from the fields in
+  // `partial_rows` until a non-empty `resume_token` is received. Each
+  // sub-message documents the appropriate way to combine results.
+  oneof partial_rows {
+    // Partial rows in serialized ProtoRows format.
+    ProtoRowsBatch proto_rows_batch = 3;
+  }
+
+  // If true, the buffered data from `partial_rows` forms a complete parseable
+  // message of the appropriate type.
+  //
+  // The client should mark the end of a parseable message and prepare to
+  // receive a new one starting from the next `PartialResultSet` message.
+  //
+  // This does NOT mean the values can be yielded to the callers since a
+  // `resume_token` is required to safely do so.
+  //
+  // If `resume_token` is non-empty and any data has been received since the
+  // last one, this field is guaranteed to be true. In other words, clients may
+  // assume that a batch will never cross a `result_token` boundary.
+  bool batch_complete = 6;
+
+  // An opaque token sent by the server to allow query resumption and signal
+  // that the buffered values constructed from received `partial_rows` can be
+  // yielded to the caller. Clients can provide this token in a subsequent
+  // request to resume the result stream from the current point.
+  //
+  // When `resume_token` is non-empty, the buffered values received from
+  // `partial_rows` since the last non-empty `resume_token` can be yielded to
+  // the callers, provided that the client keeps the value of `resume_token` and
+  // uses it on subsequent retries.
+  //
+  // A `resume_token` may be sent without information in `partial_rows` to
+  // checkpoint the progress of a sparse query. Any previous `partial_rows` data
+  // should still be yielded in this case, and the new `resume_token` should be
+  // saved for future retries as normal.
+  //
+  // A `resume_token` will only be sent on a boundary where there is either no
+  // ongoing result batch, or `batch_complete` is also true.
+  //
+  // The server will also send a sentinel `resume_token` when last batch of
+  // `partial_rows` is sent. If the client retries the ExecuteQueryRequest with
+  // the sentinel `resume_token`, the server will emit it again without any
+  // data in `partial_rows`, then return OK.
+  bytes resume_token = 5;
+
+  // If `true`, any data buffered since the last non-empty `resume_token` must
+  // be discarded before the other parts of this message, if any, are handled.
+  bool reset = 7;
+
+  // Estimated size of the buffer required to hold the next batch of results.
+  //
+  // This value will be sent with the first `partial_rows` of a batch. That is,
+  // on the first `partial_rows` received in a stream, on the first message
+  // after a `batch_complete` message, and any time `reset` is true.
+  //
+  // The client can use this estimate to allocate a buffer for the next batch of
+  // results. This helps minimize the number of allocations required, though the
+  // buffer size may still need to be increased if the estimate is too low.
+  int32 estimated_batch_size = 4;
 }

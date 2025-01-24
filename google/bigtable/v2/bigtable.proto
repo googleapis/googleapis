@@ -1,4 +1,4 @@
-// Copyright 2023 Google LLC
+// Copyright 2024 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import "google/api/resource.proto";
 import "google/api/routing.proto";
 import "google/bigtable/v2/data.proto";
 import "google/bigtable/v2/request_stats.proto";
+import "google/bigtable/v2/types.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/wrappers.proto";
@@ -81,7 +82,7 @@ service Bigtable {
       routing_parameters { field: "app_profile_id" }
       routing_parameters {
         field: "authorized_view_name"
-        path_template: "{authorized_view_name=projects/*/instances/*/tables/*/authorizedViews/*}"
+        path_template: "{table_name=projects/*/instances/*/tables/*}/**"
       }
     };
     option (google.api.method_signature) = "table_name";
@@ -108,7 +109,7 @@ service Bigtable {
       routing_parameters { field: "app_profile_id" }
       routing_parameters {
         field: "authorized_view_name"
-        path_template: "{authorized_view_name=projects/*/instances/*/tables/*/authorizedViews/*}"
+        path_template: "{table_name=projects/*/instances/*/tables/*}/**"
       }
     };
     option (google.api.method_signature) = "table_name";
@@ -134,7 +135,7 @@ service Bigtable {
       routing_parameters { field: "app_profile_id" }
       routing_parameters {
         field: "authorized_view_name"
-        path_template: "{authorized_view_name=projects/*/instances/*/tables/*/authorizedViews/*}"
+        path_template: "{table_name=projects/*/instances/*/tables/*}/**"
       }
     };
     option (google.api.method_signature) = "table_name,row_key,mutations";
@@ -162,7 +163,7 @@ service Bigtable {
       routing_parameters { field: "app_profile_id" }
       routing_parameters {
         field: "authorized_view_name"
-        path_template: "{authorized_view_name=projects/*/instances/*/tables/*/authorizedViews/*}"
+        path_template: "{table_name=projects/*/instances/*/tables/*}/**"
       }
     };
     option (google.api.method_signature) = "table_name,entries";
@@ -188,7 +189,7 @@ service Bigtable {
       routing_parameters { field: "app_profile_id" }
       routing_parameters {
         field: "authorized_view_name"
-        path_template: "{authorized_view_name=projects/*/instances/*/tables/*/authorizedViews/*}"
+        path_template: "{table_name=projects/*/instances/*/tables/*}/**"
       }
     };
     option (google.api.method_signature) =
@@ -238,7 +239,7 @@ service Bigtable {
       routing_parameters { field: "app_profile_id" }
       routing_parameters {
         field: "authorized_view_name"
-        path_template: "{authorized_view_name=projects/*/instances/*/tables/*/authorizedViews/*}"
+        path_template: "{table_name=projects/*/instances/*/tables/*}/**"
       }
     };
     option (google.api.method_signature) = "table_name,row_key,rules";
@@ -246,10 +247,10 @@ service Bigtable {
         "table_name,row_key,rules,app_profile_id";
   }
 
-  // NOTE: This API is intended to be used by Apache Beam BigtableIO.
   // Returns the current list of partitions that make up the table's
   // change stream. The union of partitions will cover the entire keyspace.
   // Partitions can be read with `ReadChangeStream`.
+  // NOTE: This API is intended to be used by Apache Beam BigtableIO.
   rpc GenerateInitialChangeStreamPartitions(
       GenerateInitialChangeStreamPartitionsRequest)
       returns (stream GenerateInitialChangeStreamPartitionsResponse) {
@@ -261,10 +262,10 @@ service Bigtable {
     option (google.api.method_signature) = "table_name,app_profile_id";
   }
 
-  // NOTE: This API is intended to be used by Apache Beam BigtableIO.
   // Reads changes from a table's change stream. Changes will
   // reflect both user-initiated mutations and mutations that are caused by
   // garbage collection.
+  // NOTE: This API is intended to be used by Apache Beam BigtableIO.
   rpc ReadChangeStream(ReadChangeStreamRequest)
       returns (stream ReadChangeStreamResponse) {
     option (google.api.http) = {
@@ -273,6 +274,40 @@ service Bigtable {
     };
     option (google.api.method_signature) = "table_name";
     option (google.api.method_signature) = "table_name,app_profile_id";
+  }
+
+  // Prepares a GoogleSQL query for execution on a particular Bigtable instance.
+  rpc PrepareQuery(PrepareQueryRequest) returns (PrepareQueryResponse) {
+    option (google.api.http) = {
+      post: "/v2/{instance_name=projects/*/instances/*}:prepareQuery"
+      body: "*"
+    };
+    option (google.api.routing) = {
+      routing_parameters {
+        field: "instance_name"
+        path_template: "{name=projects/*/instances/*}"
+      }
+      routing_parameters { field: "app_profile_id" }
+    };
+    option (google.api.method_signature) = "instance_name,query";
+    option (google.api.method_signature) = "instance_name,query,app_profile_id";
+  }
+
+  // Executes a SQL query against a particular Bigtable instance.
+  rpc ExecuteQuery(ExecuteQueryRequest) returns (stream ExecuteQueryResponse) {
+    option (google.api.http) = {
+      post: "/v2/{instance_name=projects/*/instances/*}:executeQuery"
+      body: "*"
+    };
+    option (google.api.routing) = {
+      routing_parameters {
+        field: "instance_name"
+        path_template: "{name=projects/*/instances/*}"
+      }
+      routing_parameters { field: "app_profile_id" }
+    };
+    option (google.api.method_signature) = "instance_name,query";
+    option (google.api.method_signature) = "instance_name,query,app_profile_id";
   }
 }
 
@@ -334,6 +369,20 @@ message ReadRowsRequest {
 
   // The view into RequestStats, as described above.
   RequestStatsView request_stats_view = 6;
+
+  // Experimental API - Please note that this API is currently experimental
+  // and can change in the future.
+  //
+  // Return rows in lexiographical descending order of the row keys. The row
+  // contents will not be affected by this flag.
+  //
+  // Example result set:
+  //
+  //     [
+  //       {key: "k2", "f:col1": "v1", "f:col2": "v1"},
+  //       {key: "k1", "f:col1": "v2", "f:col2": "v2"}
+  //     ]
+  bool reversed = 7;
 }
 
 // Response message for Bigtable.ReadRows.
@@ -414,26 +463,11 @@ message ReadRowsResponse {
   // key, allowing the client to skip that work on a retry.
   bytes last_scanned_row_key = 2;
 
-  //
-  // If requested, provide enhanced query performance statistics. The semantics
-  // dictate:
-  //   * request_stats is empty on every (streamed) response, except
-  //   * request_stats has non-empty information after all chunks have been
-  //     streamed, where the ReadRowsResponse message only contains
-  //     request_stats.
-  //       * For example, if a read request would have returned an empty
-  //         response instead a single ReadRowsResponse is streamed with empty
-  //         chunks and request_stats filled.
-  //
-  // Visually, response messages will stream as follows:
-  //    ... -> {chunks: [...]} -> {chunks: [], request_stats: {...}}
-  //   \______________________/  \________________________________/
-  //       Primary response         Trailer of RequestStats info
-  //
-  // Or if the read did not return any values:
-  //   {chunks: [], request_stats: {...}}
-  //   \________________________________/
-  //      Trailer of RequestStats info
+  // If requested, return enhanced query performance statistics. The field
+  // request_stats is empty in a streamed response unless the ReadRowsResponse
+  // message contains request_stats in the last message of the stream. Always
+  // returned when requested, even when the read request returns an empty
+  // response.
   RequestStats request_stats = 3;
 }
 
@@ -616,7 +650,7 @@ message RateLimitInfo {
   // target load should be 80. After adjusting, the client should ignore
   // `factor` until another `period` has passed.
   //
-  // The client can measure its load using any unit that's comparable over time
+  // The client can measure its load using any unit that's comparable over time.
   // For example, QPS can be used as long as each request involves a similar
   // amount of work.
   double factor = 2;
@@ -740,7 +774,8 @@ message ReadModifyWriteRowRequest {
 
   // Required. Rules specifying how the specified row's contents are to be
   // transformed into writes. Entries are applied in order, meaning that earlier
-  // rules will affect the results of later ones.
+  // rules will affect the results of later ones. At least one entry must be
+  // specified, and there can be at most 100000 rules.
   repeated ReadModifyWriteRule rules = 3
       [(google.api.field_behavior) = REQUIRED];
 }
@@ -813,10 +848,10 @@ message ReadChangeStreamRequest {
     // the position. Tokens are delivered on the stream as part of `Heartbeat`
     // and `CloseStream` messages.
     //
-    // If a single token is provided, the token’s partition must exactly match
-    // the request’s partition. If multiple tokens are provided, as in the case
+    // If a single token is provided, the token's partition must exactly match
+    // the request's partition. If multiple tokens are provided, as in the case
     // of a partition merge, the union of the token partitions must exactly
-    // cover the request’s partition. Otherwise, INVALID_ARGUMENT will be
+    // cover the request's partition. Otherwise, INVALID_ARGUMENT will be
     // returned.
     StreamContinuationTokens continuation_tokens = 6;
   }
@@ -921,10 +956,13 @@ message ReadChangeStreamResponse {
     // This token is for the StreamPartition from the request.
     string token = 9;
 
-    // A commit timestamp that is lower than or equal to any timestamp for a
-    // record that will be delivered in the future on the stream. For an example
-    // usage see https://beam.apache.org/documentation/basics/#watermarks
-    google.protobuf.Timestamp low_watermark = 10;
+    // An estimate of the commit timestamp that is usually lower than or equal
+    // to any timestamp for a record that will be delivered in the future on the
+    // stream. It is possible that, under particular circumstances that a future
+    // record has a timestamp is is lower than a previously seen timestamp. For
+    // an example usage see
+    // https://beam.apache.org/documentation/basics/#watermarks
+    google.protobuf.Timestamp estimated_low_watermark = 10;
   }
 
   // A periodic message with information that can be used to checkpoint
@@ -934,24 +972,49 @@ message ReadChangeStreamResponse {
     // to pick up reading at the current stream position.
     StreamContinuationToken continuation_token = 1;
 
-    // A commit timestamp that is lower than or equal to any timestamp for a
-    // record that will be delivered in the future on the stream. For an example
-    // usage see https://beam.apache.org/documentation/basics/#watermarks
-    google.protobuf.Timestamp low_watermark = 2;
+    // An estimate of the commit timestamp that is usually lower than or equal
+    // to any timestamp for a record that will be delivered in the future on the
+    // stream. It is possible that, under particular circumstances that a future
+    // record has a timestamp that is lower than a previously seen timestamp.
+    // For an example usage see
+    // https://beam.apache.org/documentation/basics/#watermarks
+    google.protobuf.Timestamp estimated_low_watermark = 2;
   }
 
   // A message indicating that the client should stop reading from the stream.
-  // If status is OK and `continuation_tokens` is empty, the stream has finished
-  // (for example if there was an `end_time` specified).
-  // If `continuation_tokens` is present, then a change in partitioning requires
-  // the client to open a new stream for each token to resume reading.
+  // If status is OK and `continuation_tokens` & `new_partitions` are empty, the
+  // stream has finished (for example if there was an `end_time` specified).
+  // If `continuation_tokens` & `new_partitions` are present, then a change in
+  // partitioning requires the client to open a new stream for each token to
+  // resume reading. Example:
+  //
+  //                                      [B,      D) ends
+  //                                           |
+  //                                           v
+  //                   new_partitions:  [A,  C) [C,  E)
+  //     continuation_tokens.partitions:  [B,C) [C,D)
+  //                                      ^---^ ^---^
+  //                                      ^     ^
+  //                                      |     |
+  //                                      |     StreamContinuationToken 2
+  //                                      |
+  //                                      StreamContinuationToken 1
+  //
+  // To read the new partition [A,C), supply the continuation tokens whose
+  // ranges cover the new partition, for example ContinuationToken[A,B) &
+  // ContinuationToken[B,C).
   message CloseStream {
     // The status of the stream.
     google.rpc.Status status = 1;
 
-    // If non-empty, contains the information needed to start reading the new
-    // partition(s) that contain segments of this partition's row range.
+    // If non-empty, contains the information needed to resume reading their
+    // associated partitions.
     repeated StreamContinuationToken continuation_tokens = 2;
+
+    // If non-empty, contains the new partitions to start reading from, which
+    // are related to but not necessarily identical to the partitions for the
+    // above `continuation_tokens`.
+    repeated StreamPartition new_partitions = 3;
   }
 
   // The data or control message on the stream.
@@ -965,4 +1028,163 @@ message ReadChangeStreamResponse {
     // An indication that the stream should be closed.
     CloseStream close_stream = 3;
   }
+}
+
+// Request message for Bigtable.ExecuteQuery
+message ExecuteQueryRequest {
+  // Required. The unique name of the instance against which the query should be
+  // executed.
+  // Values are of the form `projects/<project>/instances/<instance>`
+  string instance_name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "bigtableadmin.googleapis.com/Instance"
+    }
+  ];
+
+  // Optional. This value specifies routing for replication. If not specified,
+  // the `default` application profile will be used.
+  string app_profile_id = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. The query string.
+  //
+  // Exactly one of `query` and `prepared_query` is required. Setting both
+  // or neither is an `INVALID_ARGUMENT`.
+  string query = 3 [deprecated = true, (google.api.field_behavior) = REQUIRED];
+
+  // A prepared query that was returned from `PrepareQueryResponse`.
+  //
+  // Exactly one of `query` and `prepared_query` is required. Setting both
+  // or neither is an `INVALID_ARGUMENT`.
+  //
+  // Setting this field also places restrictions on several other fields:
+  // - `data_format` must be empty.
+  // - `validate_only` must be false.
+  // - `params` must match the `param_types` set in the `PrepareQueryRequest`.
+  bytes prepared_query = 9;
+
+  // Requested data format for the response.
+  //
+  // If `prepared_query` is set, then the `data_format` is fixed by the
+  // `PrepareQueryRequest`, and a non-empty `data_format` in the
+  // `ExecuteQueryRequest` will be rejected with `INVALID_ARGUMENT`.
+  oneof data_format {
+    // Protocol buffer format as described by ProtoSchema and ProtoRows
+    // messages.
+    ProtoFormat proto_format = 4 [deprecated = true];
+  }
+
+  // Optional. If this request is resuming a previously interrupted query
+  // execution, `resume_token` should be copied from the last
+  // PartialResultSet yielded before the interruption. Doing this
+  // enables the query execution to resume where the last one left
+  // off.
+  // The rest of the request parameters must exactly match the
+  // request that yielded this token. Otherwise the request will fail.
+  bytes resume_token = 8 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. params contains string type keys and Bigtable type values that
+  // bind to placeholders in the query string. In query string, a parameter
+  // placeholder consists of the
+  // `@` character followed by the parameter name (for example, `@firstName`) in
+  // the query string.
+  //
+  // For example, if
+  // `params["firstName"] = bytes_value: "foo" type {bytes_type {}}`
+  // then `@firstName` will be replaced with googlesql bytes value "foo" in the
+  // query string during query evaluation.
+  //
+  // If `Value.kind` is not set, the value is treated as a NULL value of the
+  // given type. For example, if
+  // `params["firstName"] = type {string_type {}}`
+  // then `@firstName` will be replaced with googlesql null string.
+  //
+  // If `query` is set, any empty `Value.type` in the map will be rejected with
+  // `INVALID_ARGUMENT`.
+  //
+  // If `prepared_query` is set, any empty `Value.type` in the map will be
+  // inferred from the `param_types` in the `PrepareQueryRequest`. Any non-empty
+  // `Value.type` must match the corresponding `param_types` entry, or be
+  // rejected with `INVALID_ARGUMENT`.
+  map<string, Value> params = 7 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response message for Bigtable.ExecuteQuery
+message ExecuteQueryResponse {
+  // The first response streamed from the server is of type `ResultSetMetadata`
+  // and includes information about the columns and types of the result set.
+  // From there on, we stream `PartialResultSet` messages with no additional
+  // information. `PartialResultSet` will contain `resume_token` to restart the
+  // response if query interrupts. In case of resumption with `resume_token`,
+  // the server will not resend the ResultSetMetadata.
+  oneof response {
+    // Structure of rows in this response stream. The first (and only the first)
+    // response streamed from the server will be of this type.
+    ResultSetMetadata metadata = 1;
+
+    // A partial result set with row data potentially including additional
+    // instructions on how recent past and future partial responses should be
+    // interpreted.
+    PartialResultSet results = 2;
+  }
+}
+
+// Request message for Bigtable.PrepareQuery
+message PrepareQueryRequest {
+  // Required. The unique name of the instance against which the query should be
+  // executed.
+  // Values are of the form `projects/<project>/instances/<instance>`
+  string instance_name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "bigtableadmin.googleapis.com/Instance"
+    }
+  ];
+
+  // Optional. This value specifies routing for preparing the query. Note that
+  // this `app_profile_id` is only used for preparing the query. The actual
+  // query execution will use the app profile specified in the
+  // `ExecuteQueryRequest`. If not specified, the `default` application profile
+  // will be used.
+  string app_profile_id = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. The query string.
+  string query = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Requested data format for the response. Note that the selected
+  // data format is binding for all `ExecuteQuery` rpcs that use the prepared
+  // query.
+  oneof data_format {
+    // Protocol buffer format as described by ProtoSchema and ProtoRows
+    // messages.
+    ProtoFormat proto_format = 4;
+  }
+
+  // Required. `param_types` is a map of parameter identifier strings to their
+  // `Type`s.
+  //
+  // In query string, a parameter placeholder consists of the
+  // `@` character followed by the parameter name (for example, `@firstName`) in
+  // the query string.
+  //
+  // For example, if param_types["firstName"] = Bytes then @firstName will be a
+  // query parameter of type Bytes. The specific `Value` to be used for the
+  // query execution must be sent in `ExecuteQueryRequest` in the `params` map.
+  map<string, Type> param_types = 6 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response message for Bigtable.PrepareQueryResponse
+message PrepareQueryResponse {
+  // Structure of rows in the response stream of `ExecuteQueryResponse` for the
+  // returned `prepared_query`.
+  ResultSetMetadata metadata = 1;
+
+  // A serialized prepared query. Clients should treat this as an opaque
+  // blob of bytes to send in `ExecuteQueryRequest`.
+  bytes prepared_query = 2;
+
+  // The time at which the prepared query token becomes invalid.
+  // A token may become invalid early due to changes in the data being read, but
+  // it provides a guideline to refresh query plans asynchronously.
+  google.protobuf.Timestamp valid_until = 3;
 }
