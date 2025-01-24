@@ -60,6 +60,33 @@ enum PairwiseChoice {
   TIE = 3;
 }
 
+// The configs for autorater. This is applicable to both EvaluateInstances and
+// EvaluateDataset.
+message AutoraterConfig {
+  // Optional. Number of samples for each instance in the dataset.
+  // If not specified, the default is 4. Minimum value is 1, maximum value
+  // is 32.
+  optional int32 sampling_count = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether to flip the candidate and baseline responses.
+  // This is only applicable to the pairwise metric. If enabled, also provide
+  // PairwiseMetricSpec.candidate_response_field_name and
+  // PairwiseMetricSpec.baseline_response_field_name. When rendering
+  // PairwiseMetricSpec.metric_prompt_template, the candidate and baseline
+  // fields will be flipped for half of the samples to reduce bias.
+  optional bool flip_enabled = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The fully qualified name of the publisher model or tuned
+  // autorater endpoint to use.
+  //
+  // Publisher model format:
+  // `projects/{project}/locations/{location}/publishers/*/models/*`
+  //
+  // Tuned model endpoint format:
+  // `projects/{project}/locations/{location}/endpoints/{endpoint}`
+  string autorater_model = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
 // Request message for EvaluationService.EvaluateInstances.
 message EvaluateInstancesRequest {
   // Instances and specs for evaluation
@@ -140,6 +167,13 @@ message EvaluateInstancesRequest {
     // Input for tool parameter key value match metric.
     ToolParameterKVMatchInput tool_parameter_kv_match_input = 22;
 
+    // Translation metrics.
+    // Input for Comet metric.
+    CometInput comet_input = 31;
+
+    // Input for Metricx metric.
+    MetricxInput metricx_input = 32;
+
     // Input for trajectory exact match metric.
     TrajectoryExactMatchInput trajectory_exact_match_input = 33;
 
@@ -167,6 +201,10 @@ message EvaluateInstancesRequest {
       type: "locations.googleapis.com/Location"
     }
   ];
+
+  // Optional. Autorater config used for evaluation.
+  AutoraterConfig autorater_config = 30
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Response message for EvaluationService.EvaluateInstances.
@@ -253,6 +291,13 @@ message EvaluateInstancesResponse {
 
     // Results for tool parameter key value match metric.
     ToolParameterKVMatchResults tool_parameter_kv_match_results = 21;
+
+    // Translation metrics.
+    // Result for Comet metric.
+    CometResult comet_result = 29;
+
+    // Result for Metricx metric.
+    MetricxResult metricx_result = 30;
 
     // Result for trajectory exact match metric.
     TrajectoryExactMatchResults trajectory_exact_match_results = 31;
@@ -1032,6 +1077,10 @@ message PointwiseMetricSpec {
   // Required. Metric prompt template for pointwise metric.
   optional string metric_prompt_template = 1
       [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. System instructions for pointwise metric.
+  optional string system_instruction = 2
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Spec for pointwise metric result.
@@ -1069,6 +1118,18 @@ message PairwiseMetricSpec {
   // Required. Metric prompt template for pairwise metric.
   optional string metric_prompt_template = 1
       [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The field name of the candidate response.
+  string candidate_response_field_name = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The field name of the baseline response.
+  string baseline_response_field_name = 3
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. System instructions for pairwise metric.
+  optional string system_instruction = 4
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Spec for pairwise metric result.
@@ -1225,6 +1286,116 @@ message ToolParameterKVMatchResults {
 // Tool parameter key value match metric value for an instance.
 message ToolParameterKVMatchMetricValue {
   // Output only. Tool parameter key value match score.
+  optional float score = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Input for Comet metric.
+message CometInput {
+  // Required. Spec for comet metric.
+  CometSpec metric_spec = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Comet instance.
+  CometInstance instance = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Spec for Comet metric.
+message CometSpec {
+  // Comet version options.
+  enum CometVersion {
+    // Comet version unspecified.
+    COMET_VERSION_UNSPECIFIED = 0;
+
+    // Comet 22 for translation + source + reference
+    // (source-reference-combined).
+    COMET_22_SRC_REF = 2;
+  }
+
+  // Required. Which version to use for evaluation.
+  optional CometVersion version = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Source language in BCP-47 format.
+  string source_language = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Target language in BCP-47 format. Covers both prediction and
+  // reference.
+  string target_language = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Spec for Comet instance - The fields used for evaluation are dependent on the
+// comet version.
+message CometInstance {
+  // Required. Output of the evaluated model.
+  optional string prediction = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Ground truth used to compare against the prediction.
+  optional string reference = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Source text in original language.
+  optional string source = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Spec for Comet result - calculates the comet score for the given instance
+// using the version specified in the spec.
+message CometResult {
+  // Output only. Comet score. Range depends on version.
+  optional float score = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Input for MetricX metric.
+message MetricxInput {
+  // Required. Spec for Metricx metric.
+  MetricxSpec metric_spec = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Metricx instance.
+  MetricxInstance instance = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Spec for MetricX metric.
+message MetricxSpec {
+  // MetricX Version options.
+  enum MetricxVersion {
+    // MetricX version unspecified.
+    METRICX_VERSION_UNSPECIFIED = 0;
+
+    // MetricX 2024 (2.6) for translation + reference (reference-based).
+    METRICX_24_REF = 1;
+
+    // MetricX 2024 (2.6) for translation + source (QE).
+    METRICX_24_SRC = 2;
+
+    // MetricX 2024 (2.6) for translation + source + reference
+    // (source-reference-combined).
+    METRICX_24_SRC_REF = 3;
+  }
+
+  // Required. Which version to use for evaluation.
+  optional MetricxVersion version = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Source language in BCP-47 format.
+  string source_language = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Target language in BCP-47 format. Covers both prediction and
+  // reference.
+  string target_language = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Spec for MetricX instance - The fields used for evaluation are dependent on
+// the MetricX version.
+message MetricxInstance {
+  // Required. Output of the evaluated model.
+  optional string prediction = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Ground truth used to compare against the prediction.
+  optional string reference = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Source text in original language.
+  optional string source = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Spec for MetricX result - calculates the MetricX score for the given instance
+// using the version specified in the spec.
+message MetricxResult {
+  // Output only. MetricX score. Range depends on version.
   optional float score = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
