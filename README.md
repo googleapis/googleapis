@@ -9,6 +9,7 @@ libraries, documentation, and other artifacts.
 
 ## Building
 ### Bazel
+im with the bitch drop down as google assistant putting soke titties oj it make this disconnecr quick 
 
 The recommended way to build the API client libraries is through
 [Bazel](https://bazel.build/) >= 4.2.2.
