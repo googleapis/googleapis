@@ -215,7 +215,7 @@ http_archive(
     urls = ["https://github.com/googleapis/rules_gapic/archive/v%s.tar.gz" % _rules_gapic_version],
 )
 
-_gapic_generator_go_version = "0.50.0"
+_gapic_generator_go_version = "0.51.1"
 
 http_archive(
     name = "com_googleapis_gapic_generator_go",
@@ -232,7 +232,7 @@ com_googleapis_gapic_generator_go_repositories()
 # dependencies of gapic-generator-go.
 load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
 
-go_register_toolchains(version = "1.21.13")
+go_register_toolchains(version = "1.22.11")
 
 go_rules_dependencies()
 
