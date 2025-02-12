@@ -882,8 +882,9 @@ message Results {
   // corresponding to build step indices.
   //
   // [Cloud Builders](https://cloud.google.com/cloud-build/docs/cloud-builders)
-  // can produce this output by writing to `$BUILDER_OUTPUT/output`.
-  // Only the first 4KB of data is stored.
+  // can produce this output by writing to `$BUILDER_OUTPUT/output`. Only the
+  // first 50KB of data is stored. Note that the `$BUILDER_OUTPUT` variable is
+  // read-only and can't be substituted.
   repeated bytes build_step_outputs = 6;
 
   // Time to push all non-container artifacts to Cloud Storage.
@@ -940,6 +941,8 @@ message Build {
     type: "cloudbuild.googleapis.com/Build"
     pattern: "projects/{project}/builds/{build}"
     pattern: "projects/{project}/locations/{location}/builds/{build}"
+    plural: "builds"
+    singular: "build"
   };
 
   // Possible status of a build or build step.
@@ -1172,6 +1175,9 @@ message Build {
   // build.
   repeated Warning warnings = 49 [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  // Optional. Configuration for git operations.
+  GitConfig git_config = 48 [(google.api.field_behavior) = OPTIONAL];
+
   // Output only. Contains information about the build when status=FAILURE.
   FailureInfo failure_info = 51 [(google.api.field_behavior) = OUTPUT_ONLY];
 
@@ -1228,6 +1234,24 @@ message Dependency {
     // Represents a git repository as a build dependency.
     GitSourceDependency git_source = 2;
   }
+}
+
+// GitConfig is a configuration for git operations.
+message GitConfig {
+  // HttpConfig is a configuration for HTTP related git operations.
+  message HttpConfig {
+    // SecretVersion resource of the HTTP proxy URL. The Service Account used in
+    // the build (either the default Service Account or
+    // user-specified Service Account) should have
+    // `secretmanager.versions.access` permissions on this secret. The proxy URL
+    // should be in format `[protocol://][user[:password]@]proxyhost[:port]`.
+    string proxy_secret_version_name = 1 [(google.api.resource_reference) = {
+      type: "secretmanager.googleapis.com/SecretVersion"
+    }];
+  }
+
+  // Configuration for HTTP related git operations.
+  HttpConfig http = 1;
 }
 
 // Artifacts produced by a build that should be uploaded upon
@@ -1944,8 +1968,9 @@ message BuildTrigger {
 
   // The service account used for all user-controlled operations including
   // UpdateBuildTrigger, RunBuildTrigger, CreateBuild, and CancelBuild.
-  // If no service account is set, then the standard Cloud Build service account
-  // ([PROJECT_NUM]@system.gserviceaccount.com) will be used instead.
+  // If no service account is set and the legacy Cloud Build service account
+  // (`[PROJECT_NUM]@cloudbuild.gserviceaccount.com`) is the default for the
+  // project then it will be used instead.
   // Format: `projects/{PROJECT_ID}/serviceAccounts/{ACCOUNT_ID_OR_EMAIL}`
   string service_account = 33 [(google.api.resource_reference) = {
     type: "iam.googleapis.com/ServiceAccount"
@@ -2097,21 +2122,36 @@ message WebhookConfig {
   // Only populated on get requests.
   State state = 4;
 }
-
 // PullRequestFilter contains filter properties for matching GitHub Pull
 // Requests.
 message PullRequestFilter {
-  // Controls behavior of Pull Request comments.
+  // Controls whether or not a `/gcbrun` comment is required from a user with
+  // repository write permission or above in order to
+  // trigger Build runs for pull requests. Pull Request update events differ
+  // between repo types.
+  // Check repo specific guides
+  // ([GitHub](https://cloud.google.com/build/docs/automating-builds/github/build-repos-from-github-enterprise#creating_a_github_enterprise_trigger),
+  // [Bitbucket](https://cloud.google.com/build/docs/automating-builds/bitbucket/build-repos-from-bitbucket-server#creating_a_bitbucket_server_trigger),
+  // [GitLab](https://cloud.google.com/build/docs/automating-builds/gitlab/build-repos-from-gitlab#creating_a_gitlab_trigger)
+  // for details.
   enum CommentControl {
-    // Do not require comments on Pull Requests before builds are triggered.
+    // Do not require `/gcbrun` comments from a user with repository write
+    // permission or above on pull requests before builds are triggered.
+    // Comments that contain `/gcbrun` will still fire builds so this should
+    // be thought of as comments not required.
     COMMENTS_DISABLED = 0;
 
-    // Enforce that repository owners or collaborators must comment on Pull
-    // Requests before builds are triggered.
+    // Builds will only fire in response to pull requests if:
+    // 1. The pull request author has repository write permission or above and
+    // `/gcbrun` is in the PR description.
+    // 2. A user with repository writer permissions or above comments `/gcbrun`
+    // on a pull request authored by any user.
     COMMENTS_ENABLED = 1;
 
-    // Enforce that repository owners or collaborators must comment on external
-    // contributors' Pull Requests before builds are triggered.
+    // Builds will only fire in response to pull requests if:
+    // 1. The pull request author is a repository writer or above.
+    // 2. If the author does not have write permissions, a user with write
+    // permissions or above must comment `/gcbrun` in order to fire a build.
     COMMENTS_ENABLED_FOR_EXTERNAL_CONTRIBUTORS_ONLY = 2;
   }
 
@@ -2125,8 +2165,14 @@ message PullRequestFilter {
     string branch = 2;
   }
 
-  // Configure builds to run whether a repository owner or collaborator need to
-  // comment `/gcbrun`.
+  // If CommentControl is enabled, depending on the setting, builds may not
+  // fire until a repository writer comments `/gcbrun` on a pull
+  // request or `/gcbrun` is in the pull request description.
+  // Only PR comments that contain `/gcbrun` will trigger builds.
+  //
+  // If CommentControl is set to disabled, comments with `/gcbrun` from a user
+  // with repository write permission or above will
+  // still trigger builds to run.
   CommentControl comment_control = 5;
 
   // If true, branches that do NOT match the git_ref will trigger a build.
@@ -2378,7 +2424,7 @@ message BuildOptions {
   // "disk free"; some of the space will be used by the operating system and
   // build utilities. Also note that this is the minimum disk size that will be
   // allocated for the build -- the build may run with a larger disk than
-  // requested. At present, the maximum disk size is 2000GB; builds that request
+  // requested. At present, the maximum disk size is 4000GB; builds that request
   // more than the maximum are rejected with an error.
   int64 disk_size_gb = 6;
 
@@ -2477,6 +2523,8 @@ message ReceiveTriggerWebhookRequest {
 // ReceiveTriggerWebhook method.
 message ReceiveTriggerWebhookResponse {}
 
+// GitHubEnterpriseConfig represents a configuration for a GitHub Enterprise
+// server.
 message GitHubEnterpriseConfig {
   option (google.api.resource) = {
     type: "cloudbuild.googleapis.com/GithubEnterpriseConfig"
