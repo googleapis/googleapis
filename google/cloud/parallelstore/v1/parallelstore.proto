@@ -25,6 +25,7 @@ import "google/longrunning/operations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
+import "google/rpc/code.proto";
 
 option csharp_namespace = "Google.Cloud.Parallelstore.V1";
 option go_package = "cloud.google.com/go/parallelstore/apiv1/parallelstorepb;parallelstorepb";
@@ -190,6 +191,19 @@ enum DirectoryStripeLevel {
   DIRECTORY_STRIPE_LEVEL_MAX = 3;
 }
 
+// Represents the deployment type for the instance.
+enum DeploymentType {
+  // Default Deployment Type
+  // It is equivalent to SCRATCH
+  DEPLOYMENT_TYPE_UNSPECIFIED = 0;
+
+  // Scratch
+  SCRATCH = 1;
+
+  // Persistent
+  PERSISTENT = 2;
+}
+
 // A Parallelstore instance.
 message Instance {
   option (google.api.resource) = {
@@ -218,6 +232,10 @@ message Instance {
 
     // The instance is being upgraded.
     UPGRADING = 5;
+
+    // The instance is being repaired. This should only be used by instances
+    // using the `PERSISTENT` deployment type.
+    REPAIRING = 6;
   }
 
   // Identifier. The resource name of the instance, in the format
@@ -252,8 +270,10 @@ message Instance {
     (google.api.field_behavior) = REQUIRED
   ];
 
+  // Deprecated 'daos_version' field.
   // Output only. The version of DAOS software running in the instance.
-  string daos_version = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string daos_version = 9
+      [deprecated = true, (google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. A list of IPv4 addresses used for client side configuration.
   repeated string access_points = 10
@@ -287,17 +307,19 @@ message Instance {
     (google.api.resource_reference) = { type: "compute.googleapis.com/Address" }
   ];
 
-  // Optional. Stripe level for files. Allowed values are:
+  // Optional. Immutable. Stripe level for files. Allowed values are:
   //
   // * `FILE_STRIPE_LEVEL_MIN`: offers the best performance for small size
   //   files.
   // * `FILE_STRIPE_LEVEL_BALANCED`: balances performance for workloads
   //   involving a mix of small and large files.
   // * `FILE_STRIPE_LEVEL_MAX`: higher throughput performance for larger files.
-  FileStripeLevel file_stripe_level = 15
-      [(google.api.field_behavior) = OPTIONAL];
+  FileStripeLevel file_stripe_level = 15 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = OPTIONAL
+  ];
 
-  // Optional. Stripe level for directories. Allowed values are:
+  // Optional. Immutable. Stripe level for directories. Allowed values are:
   //
   // * `DIRECTORY_STRIPE_LEVEL_MIN`: recommended when directories contain a
   //   small number of files.
@@ -305,8 +327,20 @@ message Instance {
   //   involving a mix of small and large directories.
   // * `DIRECTORY_STRIPE_LEVEL_MAX`: recommended for directories with a large
   //   number of files.
-  DirectoryStripeLevel directory_stripe_level = 16
-      [(google.api.field_behavior) = OPTIONAL];
+  DirectoryStripeLevel directory_stripe_level = 16 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+
+  // Optional. Immutable. The deployment type of the instance. Allowed values
+  // are:
+  //
+  // * `SCRATCH`: the instance is a scratch instance.
+  // * `PERSISTENT`: the instance is a persistent instance.
+  DeploymentType deployment_type = 17 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = OPTIONAL
+  ];
 }
 
 // List instances request.
@@ -636,6 +670,29 @@ message ExportDataRequest {
 // The response to a request to import data to Parallelstore.
 message ImportDataResponse {}
 
+// An entry describing an error that has occurred.
+message TransferErrorLogEntry {
+  // A URL that refers to the target (a data source, a data sink,
+  // or an object) with which the error is associated.
+  string uri = 1;
+
+  // A list of messages that carry the error details.
+  repeated string error_details = 2;
+}
+
+// A summary of errors by error code, plus a count and sample error log
+// entries.
+message TransferErrorSummary {
+  // One of the error codes that caused the transfer failure.
+  google.rpc.Code error_code = 1;
+
+  // Count of this type of error.
+  int64 error_count = 2;
+
+  // A list of messages that carry the error details.
+  repeated TransferErrorLogEntry error_log_entries = 4;
+}
+
 // Metadata related to the data import operation.
 message ImportDataMetadata {
   // Data transfer operation metadata.
@@ -734,6 +791,11 @@ message TransferOperationMetadata {
 
   // Output only. The type of transfer occurring.
   TransferType transfer_type = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. List of files that failed to be transferred. This list will
+  // have a maximum size of 5 elements.
+  repeated TransferErrorSummary error_summary = 13
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A collection of counters that report the progress of a transfer operation.
@@ -761,4 +823,10 @@ message TransferCounters {
 
   // Bytes that are copied to the data destination.
   int64 bytes_copied = 6;
+
+  // Objects that failed to write to the data destination.
+  int64 objects_failed = 7;
+
+  // Number of Bytes that failed to be written to the data destination.
+  int64 bytes_failed = 8;
 }
