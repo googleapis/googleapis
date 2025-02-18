@@ -136,7 +136,7 @@ service DlpService {
     };
   }
 
-  // Returns a list of the sensitive information types that DLP API
+  // Returns a list of the sensitive information types that the DLP API
   // supports. See
   // https://cloud.google.com/sensitive-data-protection/docs/infotypes-reference
   // to learn more.
@@ -1234,6 +1234,9 @@ message ByteContentItem {
 
     // Executable file types. Only used for profiling.
     EXECUTABLE = 17;
+
+    // AI model file types. Only used for profiling.
+    AI_MODEL = 18;
   }
 
   // The type of data stored in the bytes string. Default will be TEXT_UTF8.
@@ -2024,6 +2027,9 @@ message InfoTypeDescription {
   // request.
   string description = 4;
 
+  // A sample that is a true positive for this infoType.
+  string example = 8;
+
   // A list of available versions for the infotype.
   repeated VersionDescription versions = 9;
 
@@ -2241,6 +2247,9 @@ message InfoTypeCategory {
     // Information that is not sensitive on its own, but provides details about
     // the circumstances surrounding an entity or an event.
     CONTEXTUAL_INFORMATION = 7;
+
+    // Category for `CustomInfoType` types.
+    CUSTOM = 8;
   }
 
   // Categories of infotypes.
@@ -2989,7 +2998,8 @@ message PrimitiveTransformation {
     // Mask
     CharacterMaskConfig character_mask_config = 3;
 
-    // Ffx-Fpe
+    // Ffx-Fpe. Strongly discouraged, consider using CryptoDeterministicConfig
+    // instead. Fpe is computationally expensive incurring latency costs.
     CryptoReplaceFfxFpeConfig crypto_replace_ffx_fpe_config = 4;
 
     // Fixed size bucketing
@@ -3311,7 +3321,7 @@ message BucketingConfig {
 //
 // Note: We recommend using  CryptoDeterministicConfig for all use cases which
 // do not require preserving the input alphabet space and size, plus warrant
-// referential integrity.
+// referential integrity. FPE incurs significant latency costs.
 message CryptoReplaceFfxFpeConfig {
   // These are commonly used subsets of the alphabet that the FFX mode
   // natively supports. In the algorithm, the alphabet is selected using
@@ -4824,15 +4834,32 @@ message DataProfileAction {
   // If set, the detailed data profiles will be persisted to the location
   // of your choice whenever updated.
   message Export {
-    // Store all table and column profiles in an existing table or a new table
-    // in an existing dataset. Each re-generation will result in new rows in
-    // BigQuery. Data is inserted using [streaming
-    // insert](https://cloud.google.com/blog/products/bigquery/life-of-a-bigquery-streaming-insert)
-    // and so data may be in the buffer for a period of time after the profile
-    // has finished. The Pub/Sub notification is sent before the streaming
-    // buffer is guaranteed to be written, so data may not be instantly
-    // visible to queries by the time your topic receives the Pub/Sub
-    // notification.
+    // Store all profiles to BigQuery.
+    //
+    // * The system will create a new dataset and table for you if none are
+    //   are provided. The dataset will be named
+    //   `sensitive_data_protection_discovery` and table will be named
+    //   `discovery_profiles`. This table will be placed in the same project as
+    //   the container project running the scan. After the first profile is
+    //   generated and the dataset and table are created, the discovery scan
+    //   configuration will be updated with the dataset and table names.
+    // * See [Analyze data profiles stored in
+    // BigQuery](https://cloud.google.com/sensitive-data-protection/docs/analyze-data-profiles).
+    // * See [Sample queries for your BigQuery
+    // table](https://cloud.google.com/sensitive-data-protection/docs/analyze-data-profiles#sample_sql_queries).
+    // *  Data is inserted using [streaming
+    //    insert](https://cloud.google.com/blog/products/bigquery/life-of-a-bigquery-streaming-insert)
+    //    and so data may be in the buffer for a period of time after the
+    //    profile has finished.
+    //  * The Pub/Sub notification is sent before the streaming buffer is
+    //    guaranteed to be written, so data may not be instantly
+    //    visible to queries by the time your topic receives the Pub/Sub
+    //    notification.
+    //  * The best practice is to use the same table for an entire organization
+    //    so that you can take advantage of the [provided Looker
+    //    reports](https://cloud.google.com/sensitive-data-protection/docs/analyze-data-profiles#use_a_premade_report).
+    //    If you use VPC Service Controls to define security perimeters, then
+    //    you must use a separate table for each boundary.
     BigQueryTable profile_table = 1;
   }
 
@@ -4896,7 +4923,8 @@ message DataProfileAction {
   // Message expressing intention to publish to Google Security Operations.
   message PublishToChronicle {}
 
-  // If set, a summary finding will be created/updated in SCC for each profile.
+  // If set, a summary finding will be created or updated in Security Command
+  // Center for each profile.
   message PublishToSecurityCommandCenter {}
 
   // If set, attaches the [tags]
@@ -4967,7 +4995,7 @@ message DataProfileAction {
     // analytics](https://cloud.google.com/chronicle/docs/detection/usecase-dlp-high-risk-user-download).
     PublishToChronicle publish_to_chronicle = 3;
 
-    // Publishes findings to SCC for each data profile.
+    // Publishes findings to Security Command Center for each data profile.
     PublishToSecurityCommandCenter publish_to_scc = 4;
 
     // Tags the profiled resources with the specified tag values.
@@ -4988,7 +5016,7 @@ message DataProfileJobConfig {
 
   // The project that will run the scan. The DLP service
   // account that exists within this project must have access to all resources
-  // that are profiled, and the Cloud DLP API must be enabled.
+  // that are profiled, and the DLP API must be enabled.
   string project_id = 5;
 
   // Must be set only when scanning other clouds.
@@ -5133,7 +5161,7 @@ message DiscoveryConfig {
 
     // The project that will run the scan. The DLP service
     // account that exists within this project must have access to all resources
-    // that are profiled, and the Cloud DLP API must be enabled.
+    // that are profiled, and the DLP API must be enabled.
     string project_id = 2;
   }
 
@@ -5208,6 +5236,12 @@ message DiscoveryConfig {
 
   // Required. A status for this configuration.
   Status status = 10 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Processing location configuration. Vertex AI dataset scanning
+  // will set processing_location.image_fallback_type to MultiRegionProcessing
+  // by default.
+  ProcessingLocation processing_location = 13
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Target used to match against for Discovery.
@@ -5234,6 +5268,16 @@ message DiscoveryTarget {
     // Other clouds target for discovery. The first target to match a resource
     // will be the one applied.
     OtherCloudDiscoveryTarget other_cloud_target = 5;
+
+    // Vertex AI dataset target for Discovery. The first target to match a
+    // dataset will be the one applied. Note that discovery for Vertex AI can
+    // incur Cloud Storage Class B operation charges for storage.objects.get
+    // operations and retrieval fees. For more information, see [Cloud Storage
+    // pricing](https://cloud.google.com/storage/pricing#price-tables).
+    // Note that discovery for Vertex AI dataset will not be able to scan images
+    // unless DiscoveryConfig.processing_location.image_fallback_location has
+    // multi_region_processing or global_processing configured.
+    VertexDatasetDiscoveryTarget vertex_dataset_target = 7;
   }
 }
 
@@ -5798,13 +5842,13 @@ message DiscoveryCloudStorageConditions {
     // Scan buckets regardless of the attribute.
     ALL_SUPPORTED_BUCKETS = 1;
 
-    // Buckets with autoclass disabled
-    // (https://cloud.google.com/storage/docs/autoclass). Only one of
+    // Buckets with [Autoclass](https://cloud.google.com/storage/docs/autoclass)
+    // disabled. Only one of
     // AUTOCLASS_DISABLED or AUTOCLASS_ENABLED should be set.
     AUTOCLASS_DISABLED = 2;
 
-    // Buckets with autoclass enabled
-    // (https://cloud.google.com/storage/docs/autoclass). Only one of
+    // Buckets with [Autoclass](https://cloud.google.com/storage/docs/autoclass)
+    // enabled. Only one of
     // AUTOCLASS_DISABLED or AUTOCLASS_ENABLED should be set. Scanning
     // Autoclass-enabled buckets can affect object storage classes.
     AUTOCLASS_ENABLED = 3;
@@ -6088,6 +6132,114 @@ message OtherCloudDiscoveryStartingLocation {
 // Match discovery resources not covered by any other filter.
 message AllOtherResources {}
 
+// Target used to match against for discovery with Vertex AI datasets.
+message VertexDatasetDiscoveryTarget {
+  // Required. The datasets the discovery cadence applies to. The first target
+  // with a matching filter will be the one to apply to a dataset.
+  DiscoveryVertexDatasetFilter filter = 1
+      [(google.api.field_behavior) = REQUIRED];
+
+  // In addition to matching the filter, these conditions must be true
+  // before a profile is generated.
+  DiscoveryVertexDatasetConditions conditions = 2;
+
+  // Type of schedule.
+  oneof cadence {
+    // How often and when to update profiles. New datasets that match both the
+    // filter and conditions are scanned as quickly as possible depending on
+    // system capacity.
+    DiscoveryVertexDatasetGenerationCadence generation_cadence = 3;
+
+    // Disable profiling for datasets that match this filter.
+    Disabled disabled = 4;
+  }
+}
+
+// Determines what datasets will have profiles generated within an organization
+// or project. Includes the ability to filter by regular expression patterns
+// on project ID or dataset regex.
+message DiscoveryVertexDatasetFilter {
+  // Whether the filter applies to a specific set of datasets or all
+  // other datasets within the location being profiled. The first
+  // filter to match will be applied, regardless of the condition. If none is
+  // set, this field defaults to `others`.
+  oneof filter {
+    // A specific set of Vertex AI datasets for this filter to apply to.
+    VertexDatasetCollection collection = 1;
+
+    // The dataset resource to scan. Targets including this can only include
+    // one target (the target with this dataset resource reference).
+    VertexDatasetResourceReference vertex_dataset_resource_reference = 2;
+
+    // Catch-all. This should always be the last target in the list because
+    // anything above it will apply first. Should only appear once in a
+    // configuration. If none is specified, a default one will be added
+    // automatically.
+    AllOtherResources others = 100;
+  }
+}
+
+// Match dataset resources using regex filters.
+message VertexDatasetCollection {
+  // The pattern used to filter dataset resources.
+  oneof pattern {
+    // The regex used to filter dataset resources.
+    VertexDatasetRegexes vertex_dataset_regexes = 1;
+  }
+}
+
+// A collection of regular expressions to determine what datasets to match
+// against.
+message VertexDatasetRegexes {
+  // Required. The group of regular expression patterns to match against one or
+  // more datasets. Maximum of 100 entries. The sum of the lengths of all
+  // regular expressions can't exceed 10 KiB.
+  repeated VertexDatasetRegex patterns = 1
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// A pattern to match against one or more dataset resources.
+message VertexDatasetRegex {
+  // For organizations, if unset, will match all projects. Has no effect
+  // for configurations created within a project.
+  string project_id_regex = 1;
+}
+
+// Identifies a single Vertex AI dataset.
+message VertexDatasetResourceReference {
+  // Required. The name of the dataset resource. If set within a project-level
+  // configuration, the specified resource must be within the project.
+  string dataset_resource_name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Requirements that must be true before a dataset is profiled for the
+// first time.
+message DiscoveryVertexDatasetConditions {
+  // Vertex AI dataset must have been created after this date. Used to avoid
+  // backfilling.
+  google.protobuf.Timestamp created_after = 1;
+
+  // Minimum age a Vertex AI dataset must have. If set, the value must be 1 hour
+  // or greater.
+  google.protobuf.Duration min_age = 2;
+}
+
+// How often existing datasets should have their profiles refreshed.
+// New datasets are scanned as quickly as possible depending on system
+// capacity.
+message DiscoveryVertexDatasetGenerationCadence {
+  // If you set this field, profiles are refreshed at this
+  // frequency regardless of whether the underlying datasets have changed.
+  // Defaults to never.
+  DataProfileUpdateFrequency refresh_frequency = 1;
+
+  // Governs when to update data profiles when the inspection rules
+  // defined by the `InspectTemplate` change.
+  // If not set, changing the template will not cause a data profile to be
+  // updated.
+  DiscoveryInspectTemplateModifiedCadence inspect_template_modified_cadence = 2;
+}
+
 // Combines all of the information about a DLP job.
 message DlpJob {
   option (google.api.resource) = {
@@ -6165,7 +6317,8 @@ message DlpJob {
   repeated ActionDetails action_details = 12;
 }
 
-// The request message for [DlpJobs.GetDlpJob][].
+// The request message for
+// [GetDlpJob][google.privacy.dlp.v2.DlpService.GetDlpJob].
 message GetDlpJobRequest {
   // Required. The name of the DlpJob resource.
   string name = 1 [
@@ -7366,6 +7519,9 @@ message TableDataProfile {
 
   // The time at which the table was created.
   google.protobuf.Timestamp create_time = 23;
+
+  // Resources related to this profile.
+  repeated RelatedResource related_resources = 41;
 }
 
 // Success or errors for the profile generation.
@@ -7668,14 +7824,16 @@ message FileStoreDataProfile {
   // profile.
   repeated string data_storage_locations = 19;
 
-  // The location type of the bucket (region, dual-region, multi-region, etc).
-  // If dual-region, expect data_storage_locations to be populated.
+  // The location type of the file store (region, dual-region, multi-region,
+  // etc). If dual-region, expect data_storage_locations to be populated.
   string location_type = 20;
 
   // The file store path.
   //
   // * Cloud Storage: `gs://{bucket}`
   // * Amazon S3: `s3://{bucket}`
+  // * Vertex AI dataset:
+  // `projects/{project_number}/locations/{location}/datasets/{dataset_id}`
   string file_store_path = 6;
 
   // The resource name of the resource profiled.
@@ -7732,6 +7890,19 @@ message FileStoreDataProfile {
 
   // The file store does not have any files.
   bool file_store_is_empty = 23;
+
+  // Resources related to this profile.
+  repeated RelatedResource related_resources = 26;
+}
+
+// A related resource.
+// Examples:
+//
+// * The source BigQuery table for a Vertex AI dataset.
+// * The source Cloud Storage bucket for a Vertex AI dataset.
+message RelatedResource {
+  // The full resource name of the related resource.
+  string full_resource = 1;
 }
 
 // Information regarding the discovered InfoType.
@@ -7775,8 +7946,8 @@ message FileClusterSummary {
   // File extensions can be derived from the file name or the file content.
   repeated FileExtensionInfo file_extensions_seen = 8;
 
-  // True if no files exist in this cluster. If the bucket had more files than
-  // could be listed, this will be false even if no files for this cluster
+  // True if no files exist in this cluster. If the file store had more files
+  // than could be listed, this will be false even if no files for this cluster
   // were seen and file_extensions_seen is empty.
   bool no_files_exist = 9;
 }
@@ -8124,8 +8295,8 @@ message DeleteConnectionRequest {
   ];
 }
 
-// A data connection to allow DLP to profile data in locations that require
-// additional configuration.
+// A data connection to allow the DLP API to profile data in locations that
+// require additional configuration.
 message Connection {
   option (google.api.resource) = {
     type: "dlp.googleapis.com/Connection"
@@ -8157,8 +8328,8 @@ enum ConnectionState {
   // Unused
   CONNECTION_STATE_UNSPECIFIED = 0;
 
-  // DLP automatically created this connection during an initial scan, and it is
-  // awaiting full configuration by a user.
+  // The DLP API automatically created this connection during an initial scan,
+  // and it is awaiting full configuration by a user.
   MISSING_CREDENTIALS = 1;
 
   // A configured connection that has not encountered any errors.
@@ -8233,7 +8404,7 @@ message CloudSqlProperties {
     CloudSqlIamCredential cloud_sql_iam = 3;
   }
 
-  // Required. DLP will limit its connections to max_connections.
+  // Required. The DLP API will limit its connections to max_connections.
   // Must be 2 or greater.
   int32 max_connections = 4 [(google.api.field_behavior) = REQUIRED];
 
@@ -8299,6 +8470,9 @@ message FileClusterType {
 
     // Executable files like .exe, .class, .apk etc.
     CLUSTER_EXECUTABLE = 9;
+
+    // AI models like .tflite etc.
+    CLUSTER_AI_MODEL = 10;
   }
 
   // File cluster type.
@@ -8306,4 +8480,30 @@ message FileClusterType {
     // Cluster type.
     Cluster cluster = 1;
   }
+}
+
+// Configure processing location for discovery and inspection. For example,
+// image OCR is only provided in limited regions but configuring
+// ProcessingLocation will redirect OCR to a location where OCR is provided.
+message ProcessingLocation {
+  // Processing will happen in a multi-region that contains the current region
+  // if available.
+  message MultiRegionProcessing {}
+
+  // Processing will happen in the global region.
+  message GlobalProcessing {}
+
+  // Configure image processing to fall back to the configured processing option
+  // below if unavailable in the request location.
+  message ImageFallbackLocation {
+    // Processing will happen in a multi-region that contains the current region
+    // if available.
+    MultiRegionProcessing multi_region_processing = 100;
+
+    // Processing will happen in the global region.
+    GlobalProcessing global_processing = 200;
+  }
+
+  // Image processing will fall back using this configuration.
+  ImageFallbackLocation image_fallback_location = 1;
 }
