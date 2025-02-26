@@ -423,6 +423,25 @@ message Reservation {
     int64 max_slots = 2;
   }
 
+  // Disaster Recovery(DR) replication status of the reservation.
+  message ReplicationStatus {
+    // Output only. The last error encountered while trying to replicate changes
+    // from the primary to the secondary. This field is only available if the
+    // replication has not succeeded since.
+    google.rpc.Status error = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The time at which the last error was encountered while
+    // trying to replicate changes from the primary to the secondary. This field
+    // is only available if the replication has not succeeded since.
+    google.protobuf.Timestamp last_error_time = 2
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. A timestamp corresponding to the last change on the primary
+    // that was successfully replicated to the secondary.
+    google.protobuf.Timestamp last_replication_time = 3
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
   // The resource name of the reservation, e.g.,
   // `projects/*/locations/*/reservations/team1-prod`.
   // The reservation_id must only contain lower case alphanumeric characters or
@@ -436,13 +455,7 @@ message Reservation {
   // Queries using this reservation might use more slots during runtime if
   // ignore_idle_slots is set to false, or autoscaling is enabled.
   //
-  // If edition is EDITION_UNSPECIFIED and total slot_capacity of the
-  // reservation and its siblings exceeds the total slot_count of all capacity
-  // commitments, the request will fail with
-  // `google.rpc.Code.RESOURCE_EXHAUSTED`.
-  //
-  // If edition is any value but EDITION_UNSPECIFIED, then the above requirement
-  // is not needed. The total slot_capacity of the reservation and its siblings
+  // The total slot_capacity of the reservation and its siblings
   // may exceed the total slot_count of capacity commitments. In that case, the
   // exceeding slots will be charged with the autoscale SKU. You can increase
   // the number of baseline slots in a reservation every few minutes. If you
@@ -493,11 +506,11 @@ message Reservation {
   // Edition of the reservation.
   Edition edition = 17;
 
-  // Optional. The current location of the reservation's primary replica. This
-  // field is only set for reservations using the managed disaster recovery
+  // Output only. The current location of the reservation's primary replica.
+  // This field is only set for reservations using the managed disaster recovery
   // feature.
   string primary_location = 18 [
-    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = OUTPUT_ONLY,
     (google.api.resource_reference) = {
       type: "locations.googleapis.com/Location"
     }
@@ -515,15 +528,26 @@ message Reservation {
     }
   ];
 
-  // Optional. The location where the reservation was originally created. This
-  // is set only during the failover reservation's creation. All billing charges
-  // for the failover reservation will be applied to this location.
+  // Output only. The location where the reservation was originally created.
+  // This is set only during the failover reservation's creation. All billing
+  // charges for the failover reservation will be applied to this location.
   string original_primary_location = 20 [
-    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = OUTPUT_ONLY,
     (google.api.resource_reference) = {
       type: "locations.googleapis.com/Location"
     }
   ];
+
+  // Output only. The Disaster Recovery(DR) replication status of the
+  // reservation. This is only available for the primary replicas of DR/failover
+  // reservations and provides information about the both the staleness of the
+  // secondary and the last error encountered while trying to replicate changes
+  // from the primary to the secondary. If this field is blank, it means that
+  // the reservation is either not a DR reservation or the reservation is a DR
+  // secondary or that any replication operations on the reservation have
+  // succeeded.
+  ReplicationStatus replication_status = 24
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Capacity commitment is a way to purchase compute capacity for BigQuery jobs
@@ -941,6 +965,10 @@ message Assignment {
 
     // Background jobs that BigQuery runs for the customers in the background.
     BACKGROUND = 4;
+
+    // Continuous SQL jobs will use this reservation. Reservations with
+    // continuous assignments cannot be mixed with non-continuous assignments.
+    CONTINUOUS = 6;
   }
 
   // Assignment will remain in PENDING state if no active capacity commitment is
@@ -973,6 +1001,16 @@ message Assignment {
 
   // Output only. State of the assignment.
   State state = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. This field controls if "Gemini in BigQuery"
+  // (https://cloud.google.com/gemini/docs/bigquery/overview) features should be
+  // enabled for this reservation assignment, which is not on by default.
+  // "Gemini in BigQuery" has a distinct compliance posture from BigQuery.  If
+  // this field is set to true, the assignment job type is QUERY, and
+  // the parent reservation edition is ENTERPRISE_PLUS, then the assignment will
+  // give the grantee project/organization access to "Gemini in BigQuery"
+  // features.
+  bool enable_gemini_in_bigquery = 10 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // The request for
