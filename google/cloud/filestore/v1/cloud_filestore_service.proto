@@ -34,6 +34,8 @@ option java_outer_classname = "CloudFilestoreServiceProto";
 option java_package = "com.google.cloud.filestore.v1";
 option php_namespace = "Google\\Cloud\\Filestore\\V1";
 
+// LINT: LEGACY_NAMES
+
 // Configures and manages Filestore resources.
 //
 // Filestore Manager v1.
@@ -261,6 +263,19 @@ service CloudFilestoreManager {
       metadata_type: "google.cloud.common.OperationMetadata"
     };
   }
+
+  // Promote the standby instance (replica).
+  rpc PromoteReplica(PromoteReplicaRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/instances/*}:promoteReplica"
+      body: "*"
+    };
+    option (google.longrunning.operation_info) = {
+      response_type: "Instance"
+      metadata_type: "google.cloud.common.OperationMetadata"
+    };
+  }
 }
 
 // Network configuration for the instance.
@@ -415,6 +430,84 @@ message NfsExportOptions {
   int64 anon_gid = 5;
 }
 
+// Replica configuration for the instance.
+message ReplicaConfig {
+  // The replica state.
+  enum State {
+    // State not set.
+    STATE_UNSPECIFIED = 0;
+
+    // The replica is being created.
+    CREATING = 1;
+
+    // The replica is ready.
+    READY = 3;
+
+    // The replica is being removed.
+    REMOVING = 4;
+
+    // The replica is experiencing an issue and might be unusable. You can get
+    // further details from the `stateReasons` field of the `ReplicaConfig`
+    // object.
+    FAILED = 5;
+  }
+
+  // Additional information about the replication state, if available.
+  enum StateReason {
+    // Reason not specified.
+    STATE_REASON_UNSPECIFIED = 0;
+
+    // The peer instance is unreachable.
+    PEER_INSTANCE_UNREACHABLE = 1;
+
+    // The remove replica peer instance operation failed.
+    REMOVE_FAILED = 2;
+  }
+
+  // Output only. The replica state.
+  State state = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Additional information about the replication state, if
+  // available.
+  repeated StateReason state_reasons = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The peer instance.
+  string peer_instance = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = { type: "file.googleapis.com/Instance" }
+  ];
+
+  // Output only. The timestamp of the latest replication snapshot taken on the
+  // active instance and is already replicated safely.
+  google.protobuf.Timestamp last_active_sync_time = 10
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Replication specifications.
+message Replication {
+  // Replication role.
+  enum Role {
+    // Role not set.
+    ROLE_UNSPECIFIED = 0;
+
+    // The instance is the `ACTIVE` replication member, functions as
+    // the replication source instance.
+    ACTIVE = 1;
+
+    // The instance is the `STANDBY` replication member, functions as
+    // the replication destination instance.
+    STANDBY = 2;
+  }
+
+  // Optional. The replication role.
+  Role role = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Replication configuration for the replica instance associated
+  // with this instance. Only a single replica is supported.
+  repeated ReplicaConfig replicas = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
 // A Filestore instance.
 message Instance {
   option (google.api.resource) = {
@@ -461,6 +554,9 @@ message Instance {
 
     // The instance is reverting to a snapshot.
     REVERTING = 12;
+
+    // The replica instance is being promoted.
+    PROMOTING = 13;
   }
 
   // Available service tiers.
@@ -508,6 +604,88 @@ message Instance {
 
     // The KMS key used by the instance is either revoked or denied access to.
     KMS_KEY_ISSUE = 1;
+  }
+
+  // File access protocol.
+  enum FileProtocol {
+    // FILE_PROTOCOL_UNSPECIFIED serves a "not set" default value when
+    // a FileProtocol is a separate field in a message.
+    FILE_PROTOCOL_UNSPECIFIED = 0;
+
+    // NFS 3.0.
+    NFS_V3 = 1;
+
+    // NFS 4.1.
+    NFS_V4_1 = 2;
+  }
+
+  // IOPS per TB.
+  // Filestore defines TB as 1024^4 bytes (TiB).
+  message IOPSPerTB {
+    // Required. Maximum IOPS per TiB.
+    int64 max_iops_per_tb = 2 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Fixed IOPS (input/output operations per second) parameters.
+  message FixedIOPS {
+    // Required. Maximum IOPS.
+    int64 max_iops = 2 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Used for setting the performance configuration.
+  // If the user doesn't specify PerformanceConfig, automatically provision
+  // the default performance settings as described in
+  // https://cloud.google.com/filestore/docs/performance. Larger instances will
+  // be linearly set to more IOPS. If the instance's capacity is increased or
+  // decreased, its performance will be automatically adjusted upwards or
+  // downwards accordingly (respectively).
+  message PerformanceConfig {
+    oneof mode {
+      // Provision IOPS dynamically based on the capacity of the instance.
+      // Provisioned IOPS will be calculated by multiplying the capacity of the
+      // instance in TiB by the `iops_per_tb` value. For example, for a 2 TiB
+      // instance with an `iops_per_tb` value of 17000 the provisioned IOPS will
+      // be 34000.
+      //
+      // If the calculated value is outside the supported range for the
+      // instance's capacity during instance creation, instance creation will
+      // fail with an `InvalidArgument` error. Similarly, if an instance
+      // capacity update would result in a value outside the supported range,
+      // the update will fail with an `InvalidArgument` error.
+      IOPSPerTB iops_per_tb = 4;
+
+      // Choose a fixed provisioned IOPS value for the instance, which will
+      // remain constant regardless of instance capacity. Value must be a
+      // multiple of 1000.
+      //
+      // If the chosen value is outside the supported range for the instance's
+      // capacity during instance creation, instance creation will fail with an
+      // `InvalidArgument` error. Similarly, if an instance capacity update
+      // would result in a value outside the supported range, the update will
+      // fail with an `InvalidArgument` error.
+      FixedIOPS fixed_iops = 2;
+    }
+  }
+
+  // The enforced performance limits, calculated from the instance's performance
+  // configuration.
+  message PerformanceLimits {
+    // Output only. The max IOPS.
+    int64 max_iops = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The max read IOPS.
+    int64 max_read_iops = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The max write IOPS.
+    int64 max_write_iops = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The max read throughput in bytes per second.
+    int64 max_read_throughput_bps = 5
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The max write throughput in bytes per second.
+    int64 max_write_throughput_bps = 6
+        [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
   // Output only. The resource name of the instance, in the format
@@ -559,6 +737,52 @@ message Instance {
   // state.
   repeated SuspensionReason suspension_reasons = 15
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Replication configuration.
+  Replication replication = 19 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Input only. Immutable. Tag key-value pairs bound to this
+  // resource. Each key must be a namespaced name and each value a short name.
+  // Example:
+  // "123456789012/environment" : "production",
+  // "123456789013/costCenter" : "marketing"
+  // See the documentation for more information:
+  // - Namespaced name:
+  // https://cloud.google.com/resource-manager/docs/tags/tags-creating-and-managing#retrieving_tag_key
+  // - Short name:
+  // https://cloud.google.com/resource-manager/docs/tags/tags-creating-and-managing#retrieving_tag_value
+  map<string, string> tags = 20 [
+    (google.api.field_behavior) = INPUT_ONLY,
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+
+  // Immutable. The protocol indicates the access protocol for all shares in the
+  // instance. This field is immutable and it cannot be changed after the
+  // instance has been created. Default value: `NFS_V3`.
+  FileProtocol protocol = 21 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Output only. Indicates whether this instance supports configuring its
+  // performance. If true, the user can configure the instance's performance by
+  // using the 'performance_config' field.
+  bool custom_performance_supported = 23
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Used to configure performance.
+  PerformanceConfig performance_config = 24
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Used for getting performance limits.
+  PerformanceLimits performance_limits = 25
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Indicates whether the instance is protected against deletion.
+  bool deletion_protection_enabled = 26
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The reason for enabling deletion protection.
+  string deletion_protection_reason = 27
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // CreateInstanceRequest creates an instance.
@@ -600,6 +824,9 @@ message UpdateInstanceRequest {
   // * "description"
   // * "file_shares"
   // * "labels"
+  // * "performance_config"
+  // * "deletion_protection_enabled"
+  // * "deletion_protection_reason"
   google.protobuf.FieldMask update_mask = 1;
 
   // Only fields specified in update_mask are updated.
@@ -632,9 +859,8 @@ message RestoreInstanceRequest {
 // RevertInstanceRequest reverts the given instance's file share to the
 // specified snapshot.
 message RevertInstanceRequest {
-  // Required.
+  // Required. The resource name of the instance, in the format
   // `projects/{project_id}/locations/{location_id}/instances/{instance_id}`.
-  // The resource name of the instance, in the format
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = { type: "file.googleapis.com/Instance" }
@@ -703,8 +929,9 @@ message ListInstancesResponse {
   // if there are no more results in the list.
   string next_page_token = 2;
 
-  // Locations that could not be reached.
-  repeated string unreachable = 3;
+  // Unordered list. Locations that could not be reached.
+  repeated string unreachable = 3
+      [(google.api.field_behavior) = UNORDERED_LIST];
 }
 
 // A Filestore snapshot.
@@ -750,6 +977,22 @@ message Snapshot {
   // Output only. The amount of bytes needed to allocate a full copy of the
   // snapshot content
   int64 filesystem_used_bytes = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Input only. Immutable. Tag key-value pairs bound to this
+  // resource. Each key must be a namespaced name and each value a short name.
+  // Example:
+  // "123456789012/environment" : "production",
+  // "123456789013/costCenter" : "marketing"
+  // See the documentation for more information:
+  // - Namespaced name:
+  // https://cloud.google.com/resource-manager/docs/tags/tags-creating-and-managing#retrieving_tag_key
+  // - Short name:
+  // https://cloud.google.com/resource-manager/docs/tags/tags-creating-and-managing#retrieving_tag_value
+  map<string, string> tags = 7 [
+    (google.api.field_behavior) = INPUT_ONLY,
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = OPTIONAL
+  ];
 }
 
 // CreateSnapshotRequest creates a snapshot.
@@ -825,6 +1068,10 @@ message ListSnapshotsRequest {
 
   // List filter.
   string filter = 5;
+
+  // Optional. If true, allow partial responses for multi-regional Aggregated
+  // List requests.
+  bool return_partial_success = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // ListSnapshotsResponse is the result of ListSnapshotsRequest.
@@ -835,6 +1082,10 @@ message ListSnapshotsResponse {
   // The token you can use to retrieve the next page of results. Not returned
   // if there are no more results in the list.
   string next_page_token = 2;
+
+  // Unordered list. Locations that could not be reached.
+  repeated string unreachable = 3
+      [(google.api.field_behavior) = UNORDERED_LIST];
 }
 
 // A Filestore backup.
@@ -922,6 +1173,27 @@ message Backup {
 
   // Immutable. KMS key name used for data encryption.
   string kms_key = 13 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Optional. Input only. Immutable. Tag key-value pairs bound to this
+  // resource. Each key must be a namespaced name and each value a short name.
+  // Example:
+  // "123456789012/environment" : "production",
+  // "123456789013/costCenter" : "marketing"
+  // See the documentation for more information:
+  // - Namespaced name:
+  // https://cloud.google.com/resource-manager/docs/tags/tags-creating-and-managing#retrieving_tag_key
+  // - Short name:
+  // https://cloud.google.com/resource-manager/docs/tags/tags-creating-and-managing#retrieving_tag_value
+  map<string, string> tags = 15 [
+    (google.api.field_behavior) = INPUT_ONLY,
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+
+  // Output only. The file system protocol of the source Filestore instance that
+  // this backup is created from.
+  Instance.FileProtocol file_system_protocol = 16
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // CreateBackupRequest creates a backup.
@@ -968,6 +1240,25 @@ message UpdateBackupRequest {
   // this field.
   google.protobuf.FieldMask update_mask = 2
       [(google.api.field_behavior) = REQUIRED];
+}
+
+// PromoteReplicaRequest promotes a Filestore standby instance (replica).
+message PromoteReplicaRequest {
+  // Required. The resource name of the instance, in the format
+  // `projects/{project_id}/locations/{location_id}/instances/{instance_id}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "file.googleapis.com/Instance" }
+  ];
+
+  // Optional. The resource name of the peer instance to promote, in the format
+  // `projects/{project_id}/locations/{location_id}/instances/{instance_id}`.
+  // The peer instance is required if the operation is called on an active
+  // instance.
+  string peer_instance = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = { type: "file.googleapis.com/Instance" }
+  ];
 }
 
 // GetBackupRequest gets the state of a backup.
@@ -1024,6 +1315,7 @@ message ListBackupsResponse {
   // if there are no more results in the list.
   string next_page_token = 2;
 
-  // Locations that could not be reached.
-  repeated string unreachable = 3;
+  // Unordered list. Locations that could not be reached.
+  repeated string unreachable = 3
+      [(google.api.field_behavior) = UNORDERED_LIST];
 }
