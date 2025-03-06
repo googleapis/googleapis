@@ -6,8 +6,8 @@ RUN apt-get install -y \
     zip \
     build-essential \
     python-dev \
+    openjdk-17-jdk \
     python3-dev \
-    openjdk-11-jdk \
     pkg-config \
     openssl \
     libcurl4-openssl-dev
