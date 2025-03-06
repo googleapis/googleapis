@@ -26,6 +26,7 @@ import "google/longrunning/operations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "Google.Cloud.Dialogflow.Cx.V3Beta1";
 option go_package = "cloud.google.com/go/dialogflow/cx/apiv3beta1/cxpb;cxpb";
@@ -93,6 +94,56 @@ service Tools {
   rpc DeleteTool(DeleteToolRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
       delete: "/v3beta1/{name=projects/*/locations/*/agents/*/tools/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // List versions of the specified
+  // [Tool][google.cloud.dialogflow.cx.v3beta1.Tool].
+  rpc ListToolVersions(ListToolVersionsRequest)
+      returns (ListToolVersionsResponse) {
+    option (google.api.http) = {
+      get: "/v3beta1/{parent=projects/*/locations/*/agents/*/tools/*}/versions"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Creates a version for the specified
+  // [Tool][google.cloud.dialogflow.cx.v3beta1.Tool].
+  rpc CreateToolVersion(CreateToolVersionRequest) returns (ToolVersion) {
+    option (google.api.http) = {
+      post: "/v3beta1/{parent=projects/*/locations/*/agents/*/tools/*}/versions"
+      body: "tool_version"
+    };
+    option (google.api.method_signature) = "parent,tool_version";
+  }
+
+  // Retrieves the specified version of the
+  // [Tool][google.cloud.dialogflow.cx.v3beta1.Tool].
+  rpc GetToolVersion(GetToolVersionRequest) returns (ToolVersion) {
+    option (google.api.http) = {
+      get: "/v3beta1/{name=projects/*/locations/*/agents/*/tools/*/versions/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Deletes the specified version of the
+  // [Tool][google.cloud.dialogflow.cx.v3beta1.Tool].
+  rpc DeleteToolVersion(DeleteToolVersionRequest)
+      returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/v3beta1/{name=projects/*/locations/*/agents/*/tools/*/versions/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Retrieves the specified version of the Tool and stores it as the
+  // current tool draft, returning the tool with resources updated.
+  rpc RestoreToolVersion(RestoreToolVersionRequest)
+      returns (RestoreToolVersionResponse) {
+    option (google.api.http) = {
+      post: "/v3beta1/{name=projects/*/locations/*/agents/*/tools/*/versions/*}:restore"
+      body: "*"
     };
     option (google.api.method_signature) = "name";
   }
@@ -331,6 +382,79 @@ message Tool {
         [(google.api.field_behavior) = OPTIONAL];
   }
 
+  // A ConnectorTool enabling using Integration Connectors Connections as tools.
+  message ConnectorTool {
+    // Configuration of a Connection operation for the tool to use.
+    message Action {
+      // Entity CRUD operation specification.
+      message EntityOperation {
+        // The operation to perform on the entity.
+        enum OperationType {
+          // Operation type unspecified. Invalid, ConnectorTool create/update
+          // will fail.
+          OPERATION_TYPE_UNSPECIFIED = 0;
+
+          // List operation.
+          LIST = 1;
+
+          // Get operation.
+          GET = 2;
+
+          // Create operation.
+          CREATE = 3;
+
+          // Update operation.
+          UPDATE = 4;
+
+          // Delete operation.
+          DELETE = 5;
+        }
+
+        // Required. ID of the entity.
+        string entity_id = 1 [(google.api.field_behavior) = REQUIRED];
+
+        // Required. Operation to perform on the entity.
+        OperationType operation = 2 [(google.api.field_behavior) = REQUIRED];
+      }
+
+      // Required. Specification for an action to configure for the tool to use.
+      oneof action_spec {
+        // ID of a Connection action for the tool to use.
+        string connection_action_id = 4;
+
+        // Entity operation configuration for the tool to use.
+        EntityOperation entity_operation = 5;
+      }
+
+      // Optional. Entity fields to use as inputs for the operation.
+      // If no fields are specified, all fields of the Entity will be used.
+      repeated string input_fields = 2 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Entity fields to return from the operation.
+      // If no fields are specified, all fields of the Entity will be returned.
+      repeated string output_fields = 3
+          [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Required. The full resource name of the referenced Integration Connectors
+    // Connection. Format: 'projects/*/locations/*/connections/*'
+    string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. Actions for the tool to use.
+    repeated Action actions = 2 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. Integration Connectors end-user authentication configuration.
+    // If configured, the end-user authentication fields will be passed in the
+    // Integration Connectors API request and override the admin, default
+    // authentication configured for the Connection.
+    // **Note**: The Connection must have authentication override enabled in
+    // order to specify an EUC configuration here - otherwise, the ConnectorTool
+    // creation will fail. See:
+    // https://cloud.google.com/application-integration/docs/configure-connectors-task#configure-authentication-override
+    EndUserAuthConfig end_user_auth_config = 3
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
   // Authentication information required for API calls
   message Authentication {
     // Config for authentication with API key.
@@ -340,8 +464,9 @@ message Tool {
       // KEY>", "X-Api-Key" would be the parameter name.
       string key_name = 1 [(google.api.field_behavior) = REQUIRED];
 
-      // Required. The API key.
-      string api_key = 2 [(google.api.field_behavior) = REQUIRED];
+      // Optional. The API key. If the `secret_version_for_api_key` field is
+      // set, this field will be ignored.
+      string api_key = 2 [(google.api.field_behavior) = OPTIONAL];
 
       // Required. Key location in the request.
       RequestLocation request_location = 3
@@ -381,8 +506,10 @@ message Tool {
       // Required. The client ID from the OAuth provider.
       string client_id = 2 [(google.api.field_behavior) = REQUIRED];
 
-      // Required. The client secret from the OAuth provider.
-      string client_secret = 3 [(google.api.field_behavior) = REQUIRED];
+      // Optional. The client secret from the OAuth provider. If the
+      // `secret_version_for_client_secret` field is set, this field will be
+      // ignored.
+      string client_secret = 3 [(google.api.field_behavior) = OPTIONAL];
 
       // Required. The token endpoint in the OAuth provider to exchange for an
       // access token.
@@ -426,13 +553,13 @@ message Tool {
 
     // Config for authentication using bearer token.
     message BearerTokenConfig {
-      // Required. The text token appended to the text `Bearer` to the request
+      // Optional. The text token appended to the text `Bearer` to the request
       // Authorization header.
       // [Session parameters
       // reference](https://cloud.google.com/dialogflow/cx/docs/concept/parameter#session-ref)
       // can be used to pass the token dynamically, e.g.
       // `$session.params.parameter-id`.
-      string token = 1 [(google.api.field_behavior) = REQUIRED];
+      string token = 1 [(google.api.field_behavior) = OPTIONAL];
     }
 
     // The auth configuration.
@@ -495,6 +622,45 @@ message Tool {
     ];
   }
 
+  // End-user authentication configuration used for Connection calls.
+  // The field values can either be hardcoded authentication values or the names
+  // of [session
+  // parameters](https://cloud.google.com/dialogflow/cx/docs/concept/parameter#session-ref)
+  // or [request
+  // parameters](https://cloud.google.com/dialogflow/cx/docs/concept/parameter#request-scoped).
+  //
+  // If parameter names are provided, then those parameters can be used to pass
+  // the authentication values dynamically, through `$session.params.param-id`
+  // or `$request.payload.param-id`.
+  message EndUserAuthConfig {
+    // Oauth 2.0 Authorization Code authentication configuration.
+    message Oauth2AuthCodeConfig {
+      // Required. Oauth token value or parameter name to pass it through.
+      string oauth_token = 1 [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // JWT Profile Oauth 2.0 Authorization Grant authentication configuration.
+    message Oauth2JwtBearerConfig {
+      // Required. Issuer value or parameter name to pass it through.
+      string issuer = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // Required. Subject value or parameter name to pass it through.
+      string subject = 2 [(google.api.field_behavior) = REQUIRED];
+
+      // Required. Client key value or parameter name to pass it through.
+      string client_key = 3 [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // The end-user authentication configuration.
+    oneof end_user_auth_config {
+      // Oauth 2.0 Authorization Code authentication.
+      Oauth2AuthCodeConfig oauth2_auth_code_config = 2;
+
+      // JWT Profile Oauth 2.0 Authorization Grant authentication.
+      Oauth2JwtBearerConfig oauth2_jwt_bearer_config = 3;
+    }
+  }
+
   // Represents the type of the tool.
   enum ToolType {
     // Default value. This value is unused.
@@ -531,10 +697,152 @@ message Tool {
 
     // Client side executed function specification.
     FunctionTool function_spec = 13;
+
+    // Integration connectors tool specification.
+    ConnectorTool connector_spec = 15;
   }
 
   // Output only. The tool type.
   ToolType tool_type = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The request message for
+// [Tools.ListToolVersions][google.cloud.dialogflow.cx.v3beta1.Tools.ListToolVersions].
+message ListToolVersionsRequest {
+  // Required. The parent of the tool versions.
+  // Format:
+  // `projects/<ProjectID>/locations/<LocationID>/agents/<AgentID>/tools/<ToolID>`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "dialogflow.googleapis.com/ToolVersion"
+    }
+  ];
+
+  // Optional. The maximum number of items to return in a single page. By
+  // default 100 and at most 1000.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The next_page_token value returned from a previous list request.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The response message for
+// [Tools.ListToolVersions][google.cloud.dialogflow.cx.v3beta1.Tools.ListToolVersions].
+message ListToolVersionsResponse {
+  // The list of tool versions. There will be a maximum number of items
+  // returned based on the page_size field in the request.
+  repeated ToolVersion tool_versions = 1;
+
+  // Token to retrieve the next page of results, or empty if there are no more
+  // results in the list.
+  string next_page_token = 2;
+}
+
+// The request message for
+// [Tools.CreateToolVersion][google.cloud.dialogflow.cx.v3beta1.Tools.CreateToolVersion].
+// The request message for
+// [Tools.CreateToolVersion][google.cloud.dialogflow.cx.v3beta1.Tools.CreateToolVersion].
+message CreateToolVersionRequest {
+  // Required. The tool to create a version for.
+  // Format:
+  // `projects/<ProjectID>/locations/<LocationID>/agents/<AgentID>/tools/<ToolID>`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "dialogflow.googleapis.com/ToolVersion"
+    }
+  ];
+
+  // Required. The tool version to create.
+  ToolVersion tool_version = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The request message for
+// [Tools.GetToolVersion][google.cloud.dialogflow.cx.v3beta1.Tools.GetToolVersion].
+message GetToolVersionRequest {
+  // Required. The name of the tool version.
+  // Format:
+  // `projects/<ProjectID>/locations/<LocationID>/agents/<AgentID>/tools/<ToolID>/versions/<VersionID>`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dialogflow.googleapis.com/ToolVersion"
+    }
+  ];
+}
+
+// The request message for
+// [Tools.DeleteToolVersion][google.cloud.dialogflow.cx.v3beta1.Tools.DeleteToolVersion].
+message DeleteToolVersionRequest {
+  // Required. The name of the tool version to delete.
+  // Format:
+  // `projects/<ProjectID>/locations/<LocationID>/agents/<AgentID>/tools/<ToolID>/versions/<VersionID>`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dialogflow.googleapis.com/ToolVersion"
+    }
+  ];
+
+  // Optional. This field has no effect for Tools not being used.
+  // For Tools that are used:
+  //
+  // *  If `force` is set to false, an error will be returned with message
+  //    indicating the referenced resources.
+  // *  If `force` is set to true, Dialogflow will remove the tool, as well
+  //    as any references to the tool.
+  bool force = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The request message for
+// [Tools.RestoreToolVersion][google.cloud.dialogflow.cx.v3beta1.Tools.RestoreToolVersion].
+message RestoreToolVersionRequest {
+  // Required. The name of the tool version.
+  // Format:
+  // `projects/<ProjectID>/locations/<LocationID>/agents/<AgentID>/tools/<ToolID>/versions/<VersionID>`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dialogflow.googleapis.com/ToolVersion"
+    }
+  ];
+}
+
+// The response message for
+// [Tools.RestoreToolVersion][google.cloud.dialogflow.cx.v3beta1.Tools.RestoreToolVersion].
+message RestoreToolVersionResponse {
+  // The updated tool.
+  Tool tool = 2;
+}
+
+// Tool version is a snapshot of the tool at certain timestamp.
+message ToolVersion {
+  option (google.api.resource) = {
+    type: "dialogflow.googleapis.com/ToolVersion"
+    pattern: "projects/{project}/locations/{location}/agents/{agent}/tools/{tool}/versions/{version}"
+    plural: "toolVersions"
+    singular: "toolVersion"
+  };
+
+  // Identifier. The unique identifier of the tool version.
+  //  Format:
+  // `projects/<ProjectID>/locations/<LocationID>/agents/<AgentID>/tools/<ToolID>/versions/<VersionID>`.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Required. The display name of the tool version.
+  string display_name = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Snapshot of the tool to be associated with this version.
+  Tool tool = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Output only. Last time the tool version was created or modified.
+  google.protobuf.Timestamp create_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Last time the tool version was created or modified.
+  google.protobuf.Timestamp update_time = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Metadata returned for the
