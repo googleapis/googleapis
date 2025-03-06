@@ -23,6 +23,7 @@ import "google/api/resource.proto";
 import "google/api/routing.proto";
 import "google/bigtable/v2/data.proto";
 import "google/bigtable/v2/request_stats.proto";
+import "google/bigtable/v2/types.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/wrappers.proto";
@@ -275,7 +276,24 @@ service Bigtable {
     option (google.api.method_signature) = "table_name,app_profile_id";
   }
 
-  // Executes a BTQL query against a particular Cloud Bigtable instance.
+  // Prepares a GoogleSQL query for execution on a particular Bigtable instance.
+  rpc PrepareQuery(PrepareQueryRequest) returns (PrepareQueryResponse) {
+    option (google.api.http) = {
+      post: "/v2/{instance_name=projects/*/instances/*}:prepareQuery"
+      body: "*"
+    };
+    option (google.api.routing) = {
+      routing_parameters {
+        field: "instance_name"
+        path_template: "{name=projects/*/instances/*}"
+      }
+      routing_parameters { field: "app_profile_id" }
+    };
+    option (google.api.method_signature) = "instance_name,query";
+    option (google.api.method_signature) = "instance_name,query,app_profile_id";
+  }
+
+  // Executes a SQL query against a particular Bigtable instance.
   rpc ExecuteQuery(ExecuteQueryRequest) returns (stream ExecuteQueryResponse) {
     option (google.api.http) = {
       post: "/v2/{instance_name=projects/*/instances/*}:executeQuery"
@@ -1041,13 +1059,31 @@ message ExecuteQueryRequest {
   string app_profile_id = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. The query string.
-  string query = 3 [(google.api.field_behavior) = REQUIRED];
+  //
+  // Exactly one of `query` and `prepared_query` is required. Setting both
+  // or neither is an `INVALID_ARGUMENT`.
+  string query = 3 [deprecated = true, (google.api.field_behavior) = REQUIRED];
 
-  // Required. Requested data format for the response.
+  // A prepared query that was returned from `PrepareQueryResponse`.
+  //
+  // Exactly one of `query` and `prepared_query` is required. Setting both
+  // or neither is an `INVALID_ARGUMENT`.
+  //
+  // Setting this field also places restrictions on several other fields:
+  // - `data_format` must be empty.
+  // - `validate_only` must be false.
+  // - `params` must match the `param_types` set in the `PrepareQueryRequest`.
+  bytes prepared_query = 9;
+
+  // Requested data format for the response.
+  //
+  // If `prepared_query` is set, then the `data_format` is fixed by the
+  // `PrepareQueryRequest`, and a non-empty `data_format` in the
+  // `ExecuteQueryRequest` will be rejected with `INVALID_ARGUMENT`.
   oneof data_format {
     // Protocol buffer format as described by ProtoSchema and ProtoRows
     // messages.
-    ProtoFormat proto_format = 4;
+    ProtoFormat proto_format = 4 [deprecated = true];
   }
 
   // Optional. If this request is resuming a previously interrupted query
@@ -1067,17 +1103,21 @@ message ExecuteQueryRequest {
   //
   // For example, if
   // `params["firstName"] = bytes_value: "foo" type {bytes_type {}}`
-  //  then `@firstName` will be replaced with googlesql bytes value "foo" in the
-  //  query string during query evaluation.
+  // then `@firstName` will be replaced with googlesql bytes value "foo" in the
+  // query string during query evaluation.
   //
-  // In case of Value.kind is not set, it will be set to corresponding null
-  // value in googlesql.
-  //  `params["firstName"] =  type {string_type {}}`
-  //  then `@firstName` will be replaced with googlesql null string.
+  // If `Value.kind` is not set, the value is treated as a NULL value of the
+  // given type. For example, if
+  // `params["firstName"] = type {string_type {}}`
+  // then `@firstName` will be replaced with googlesql null string.
   //
-  // Value.type should always be set and no inference of type will be made from
-  // Value.kind. If Value.type is not set, we will return INVALID_ARGUMENT
-  // error.
+  // If `query` is set, any empty `Value.type` in the map will be rejected with
+  // `INVALID_ARGUMENT`.
+  //
+  // If `prepared_query` is set, any empty `Value.type` in the map will be
+  // inferred from the `param_types` in the `PrepareQueryRequest`. Any non-empty
+  // `Value.type` must match the corresponding `param_types` entry, or be
+  // rejected with `INVALID_ARGUMENT`.
   map<string, Value> params = 7 [(google.api.field_behavior) = REQUIRED];
 }
 
@@ -1099,4 +1139,64 @@ message ExecuteQueryResponse {
     // interpreted.
     PartialResultSet results = 2;
   }
+}
+
+// Request message for Bigtable.PrepareQuery
+message PrepareQueryRequest {
+  // Required. The unique name of the instance against which the query should be
+  // executed.
+  // Values are of the form `projects/<project>/instances/<instance>`
+  string instance_name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "bigtableadmin.googleapis.com/Instance"
+    }
+  ];
+
+  // Optional. This value specifies routing for preparing the query. Note that
+  // this `app_profile_id` is only used for preparing the query. The actual
+  // query execution will use the app profile specified in the
+  // `ExecuteQueryRequest`. If not specified, the `default` application profile
+  // will be used.
+  string app_profile_id = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. The query string.
+  string query = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Requested data format for the response. Note that the selected
+  // data format is binding for all `ExecuteQuery` rpcs that use the prepared
+  // query.
+  oneof data_format {
+    // Protocol buffer format as described by ProtoSchema and ProtoRows
+    // messages.
+    ProtoFormat proto_format = 4;
+  }
+
+  // Required. `param_types` is a map of parameter identifier strings to their
+  // `Type`s.
+  //
+  // In query string, a parameter placeholder consists of the
+  // `@` character followed by the parameter name (for example, `@firstName`) in
+  // the query string.
+  //
+  // For example, if param_types["firstName"] = Bytes then @firstName will be a
+  // query parameter of type Bytes. The specific `Value` to be used for the
+  // query execution must be sent in `ExecuteQueryRequest` in the `params` map.
+  map<string, Type> param_types = 6 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response message for Bigtable.PrepareQueryResponse
+message PrepareQueryResponse {
+  // Structure of rows in the response stream of `ExecuteQueryResponse` for the
+  // returned `prepared_query`.
+  ResultSetMetadata metadata = 1;
+
+  // A serialized prepared query. Clients should treat this as an opaque
+  // blob of bytes to send in `ExecuteQueryRequest`.
+  bytes prepared_query = 2;
+
+  // The time at which the prepared query token becomes invalid.
+  // A token may become invalid early due to changes in the data being read, but
+  // it provides a guideline to refresh query plans asynchronously.
+  google.protobuf.Timestamp valid_until = 3;
 }
