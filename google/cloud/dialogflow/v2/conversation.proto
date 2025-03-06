@@ -117,6 +117,17 @@ service Conversations {
     option (google.api.method_signature) = "name";
   }
 
+  // Data ingestion API.
+  // Ingests context references for an existing conversation.
+  rpc IngestContextReferences(IngestContextReferencesRequest)
+      returns (IngestContextReferencesResponse) {
+    option (google.api.http) = {
+      post: "/v2/{conversation=projects/*/locations/*/conversations/*}:ingestContextReferences"
+      body: "*"
+    };
+    option (google.api.method_signature) = "conversation,context_references";
+  }
+
   // Lists messages that belong to a given conversation.
   // `messages` are ordered by `create_time` in descending order. To fetch
   // updates without duplication, send request with filter
@@ -191,6 +202,22 @@ service Conversations {
         body: "*"
       }
     };
+  }
+
+  // Generates all the suggestions using generators configured in the
+  // conversation profile. A generator is used only if its trigger event is
+  // matched.
+  rpc GenerateSuggestions(GenerateSuggestionsRequest)
+      returns (GenerateSuggestionsResponse) {
+    option (google.api.http) = {
+      post: "/v2/{conversation=projects/*/conversations/*}/suggestions:generate"
+      body: "*"
+      additional_bindings {
+        post: "/v2/{conversation=projects/*/locations/*/conversations/*}/suggestions:generate"
+        body: "*"
+      }
+    };
+    option (google.api.method_signature) = "conversation";
   }
 }
 
@@ -273,6 +300,62 @@ message Conversation {
         [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
+  // Represents a section of ingested context information.
+  message ContextReference {
+    // Contents ingested.
+    message ContextContent {
+      // Represents the format of the ingested string.
+      enum ContentFormat {
+        // Unspecified content format.
+        CONTENT_FORMAT_UNSPECIFIED = 0;
+
+        // Content was provided in JSON format.
+        JSON = 1;
+
+        // Content was provided as plain text.
+        PLAIN_TEXT = 2;
+      }
+
+      // Required. The information ingested in a single request.
+      string content = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // Required. The format of the ingested string.
+      ContentFormat content_format = 2 [(google.api.field_behavior) = REQUIRED];
+
+      // Output only. The time when this information was incorporated into the
+      // relevant context reference.
+      google.protobuf.Timestamp ingestion_time = 3
+          [(google.api.field_behavior) = OUTPUT_ONLY];
+    }
+
+    // Represents the mode in which context reference contents are updated.
+    enum UpdateMode {
+      // Unspecified update mode.
+      UPDATE_MODE_UNSPECIFIED = 0;
+
+      // Context content updates are applied in append mode.
+      APPEND = 1;
+
+      // Context content updates are applied in overwrite mode.
+      OVERWRITE = 2;
+    }
+
+    // Required. The list of content updates for a context reference.
+    repeated ContextContent context_contents = 1
+        [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The mode in which context reference contents are updated.
+    UpdateMode update_mode = 2 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. The language of the information ingested, defaults to "en-US"
+    // if not set.
+    string language_code = 3 [(google.api.field_behavior) = OPTIONAL];
+
+    // Output only. The time the context reference was first created.
+    google.protobuf.Timestamp create_time = 4
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
   // Output only. Identifier. The unique identifier of this conversation.
   // Format: `projects/<Project ID>/locations/<Location
   // ID>/conversations/<Conversation ID>`.
@@ -330,6 +413,10 @@ message Conversation {
 
   // Output only. The telephony connection information.
   TelephonyConnectionInfo telephony_connection_info = 10
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The context reference updates provided by external systems.
+  map<string, ContextReference> ingested_context_references = 17
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
@@ -483,6 +570,32 @@ message ConversationPhoneNumber {
 
   // Output only. The phone number to connect to this conversation.
   string phone_number = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The request message for [ConversationsService.IngestContextReferences][].
+message IngestContextReferencesRequest {
+  // Required. Resource identifier of the conversation to ingest context
+  // information for. Format: `projects/<Project ID>/locations/<Location
+  // ID>/conversations/<Conversation ID>`.
+  string conversation = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dialogflow.googleapis.com/Conversation"
+    }
+  ];
+
+  // Required. The context references to ingest. The key is the name of the
+  // context reference and the value contains the contents of the context
+  // reference. The key is used to incorporate ingested context references to
+  // enhance the generator.
+  map<string, Conversation.ContextReference> context_references = 2
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// The response message for [ConversationsService.IngestContextReferences][].
+message IngestContextReferencesResponse {
+  // All context references ingested.
+  map<string, Conversation.ContextReference> ingested_context_references = 1;
 }
 
 // The request message for
@@ -677,6 +790,13 @@ message GenerateStatelessSuggestionRequest {
     // `projects/<Project ID>/locations/<Location ID>/generators/<Generator ID>`
     string generator_name = 3;
   }
+
+  // Optional. A section of ingested context information. The key is the name of
+  // the context reference and the value contains the contents of the context
+  // reference. The key is used to incorporate ingested context references to
+  // enhance the generator.
+  map<string, Conversation.ContextReference> context_references = 4
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Context of the conversation, including transcripts.
   ConversationContext conversation_context = 5
@@ -1035,4 +1155,36 @@ message SearchKnowledgeAnswer {
   string answer_record = 5 [(google.api.resource_reference) = {
     type: "dialogflow.googleapis.com/AnswerRecord"
   }];
+}
+
+// The request message for
+// [Conversations.GenerateSuggestions][google.cloud.dialogflow.v2.Conversations.GenerateSuggestions].
+message GenerateSuggestionsRequest {
+  // Required. The conversation for which the suggestions are generated. Format:
+  // `projects/<Project ID>/locations/<Location
+  // ID>/conversations/<Conversation ID>`.
+  //
+  // The conversation must be created with a conversation profile which has
+  // generators configured in it to be able to get suggestions.
+  string conversation = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dialogflow.googleapis.com/Conversation"
+    }
+  ];
+
+  // Optional. The name of the latest conversation message for which the request
+  // is triggered. Format: `projects/<Project ID>/locations/<Location
+  // ID>/conversations/<Conversation ID>/messages/<Message ID>`.
+  string latest_message = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "dialogflow.googleapis.com/Message"
+    }
+  ];
+
+  // Optional. A list of trigger events. Only generators configured in the
+  // conversation_profile whose trigger_event is listed here will be triggered.
+  repeated TriggerEvent trigger_events = 3
+      [(google.api.field_behavior) = OPTIONAL];
 }
