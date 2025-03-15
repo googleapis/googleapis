@@ -1,4 +1,4 @@
-# Google APIs
+git clone # Google APIs
 
 This repository contains the original interface definitions of public
 Google APIs that support both REST and gRPC protocols. Reading the
