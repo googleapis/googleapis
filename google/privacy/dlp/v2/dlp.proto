@@ -88,6 +88,9 @@ service DlpService {
   // When no InfoTypes or CustomInfoTypes are specified in this request, the
   // system will automatically choose what detectors to run. By default this may
   // be all types, but may change over time as detectors are updated.
+  //
+  // Only the first frame of each multiframe image is redacted. Metadata and
+  // other frames are omitted in the response.
   rpc RedactImage(RedactImageRequest) returns (RedactImageResponse) {
     option (google.api.http) = {
       post: "/v2/{parent=projects/*}/image:redact"
@@ -144,6 +147,12 @@ service DlpService {
     option (google.api.http) = {
       get: "/v2/infoTypes"
       additional_bindings { get: "/v2/{parent=locations/*}/infoTypes" }
+      additional_bindings {
+        get: "/v2/{parent=projects/*/locations/*}/infoTypes"
+      }
+      additional_bindings {
+        get: "/v2/{parent=organizations/*/locations/*}/infoTypes"
+      }
     };
     option (google.api.method_signature) = "parent";
   }
@@ -1183,6 +1192,9 @@ message ByteContentItem {
   // The type of data being sent for inspection. To learn more, see
   // [Supported file
   // types](https://cloud.google.com/sensitive-data-protection/docs/supported-file-types).
+  //
+  // Only the first frame of each multiframe image is inspected. Metadata and
+  // other frames aren't inspected.
   enum BytesType {
     // Unused
     BYTES_TYPE_UNSPECIFIED = 0;
@@ -2038,6 +2050,13 @@ message InfoTypeDescription {
 
   // The default sensitivity of the infoType.
   SensitivityScore sensitivity_score = 11;
+
+  // If this field is set, this infoType is a general infoType and these
+  // specific infoTypes are contained within it.
+  // General infoTypes are infoTypes that encompass multiple specific infoTypes.
+  // For example, the "GEOGRAPHIC_DATA" general infoType would have set for this
+  // field "LOCATION", "LOCATION_COORDINATES", and "STREET_ADDRESS".
+  repeated string specific_info_types = 12;
 }
 
 // Classification of infoTypes to organize them according to geographic
@@ -2088,6 +2107,9 @@ message InfoTypeCategory {
 
     // The infoType is typically used in Croatia.
     CROATIA = 42;
+
+    // The infoType is typically used in Czechia.
+    CZECHIA = 52;
 
     // The infoType is typically used in Denmark.
     DENMARK = 10;
@@ -4861,6 +4883,15 @@ message DataProfileAction {
     //    If you use VPC Service Controls to define security perimeters, then
     //    you must use a separate table for each boundary.
     BigQueryTable profile_table = 1;
+
+    // Store sample [data profile
+    // findings][google.privacy.dlp.v2.DataProfileFinding] in an existing table
+    // or a new table in an existing dataset. Each regeneration will result in
+    // new rows in BigQuery. Data is inserted using [streaming
+    // insert](https://cloud.google.com/blog/products/bigquery/life-of-a-bigquery-streaming-insert)
+    // and so data may be in the buffer for a period of time after the profile
+    // has finished.
+    BigQueryTable sample_findings_table = 2;
   }
 
   // Send a Pub/Sub message into the given Pub/Sub topic to connect other
@@ -5001,6 +5032,65 @@ message DataProfileAction {
     // Tags the profiled resources with the specified tag values.
     TagResources tag_resources = 8;
   }
+}
+
+// Details about a piece of potentially sensitive information that was detected
+// when the data resource was profiled.
+message DataProfileFinding {
+  // The content that was found. Even if the content is not textual, it
+  // may be converted to a textual representation here. If the finding exceeds
+  // 4096 bytes in length, the quote may be omitted.
+  string quote = 1;
+
+  // The [type of
+  // content](https://cloud.google.com/sensitive-data-protection/docs/infotypes-reference)
+  // that might have been found.
+  InfoType infotype = 2;
+
+  // Contains data parsed from quotes. Currently supported infoTypes: DATE,
+  // DATE_OF_BIRTH, and TIME.
+  QuoteInfo quote_info = 3;
+
+  // Resource name of the data profile associated with the finding.
+  string data_profile_resource_name = 4;
+
+  // A unique identifier for the finding.
+  string finding_id = 5;
+
+  // Timestamp when the finding was detected.
+  google.protobuf.Timestamp timestamp = 6;
+
+  // Where the content was found.
+  DataProfileFindingLocation location = 7;
+
+  // How broadly a resource has been shared.
+  ResourceVisibility resource_visibility = 8;
+}
+
+// Location of a data profile finding within a resource.
+message DataProfileFindingLocation {
+  // Name of the container where the finding is located.
+  // The top-level name is the source file name or table name. Names of some
+  // common storage containers are formatted as follows:
+  //
+  // * BigQuery tables:  `{project_id}:{dataset_id}.{table_id}`
+  // * Cloud Storage files: `gs://{bucket}/{path}`
+  string container_name = 1;
+
+  // Additional location details that may be provided for some types of
+  // profiles. At this time, only findings for table data profiles include such
+  // details.
+  oneof location_extra_details {
+    // Location of a finding within a resource that produces a table data
+    // profile.
+    DataProfileFindingRecordLocation data_profile_finding_record_location = 2;
+  }
+}
+
+// Location of a finding within a resource that produces a table data profile.
+message DataProfileFindingRecordLocation {
+  // Field ID of the column containing the finding.
+  FieldId field = 1;
 }
 
 // Configuration for setting up a job to scan resources for profile generation.
@@ -7520,6 +7610,14 @@ message TableDataProfile {
   // The time at which the table was created.
   google.protobuf.Timestamp create_time = 23;
 
+  // The BigQuery table to which the sample findings are written.
+  BigQueryTable sample_findings_table = 37;
+
+  // The tags attached to the table, including any tags attached during
+  // profiling. Because tags are attached to Cloud SQL instances rather than
+  // Cloud SQL tables, this field is empty for Cloud SQL table profiles.
+  repeated Tag tags = 39;
+
   // Resources related to this profile.
   repeated RelatedResource related_resources = 41;
 }
@@ -7888,11 +7986,35 @@ message FileStoreDataProfile {
   // InfoTypes detected in this file store.
   repeated FileStoreInfoTypeSummary file_store_info_type_summaries = 21;
 
+  // The BigQuery table to which the sample findings are written.
+  BigQueryTable sample_findings_table = 22;
+
   // The file store does not have any files.
   bool file_store_is_empty = 23;
 
+  // The tags attached to the resource, including any tags attached during
+  // profiling.
+  repeated Tag tags = 25;
+
   // Resources related to this profile.
   repeated RelatedResource related_resources = 26;
+}
+
+// A tag associated with a resource.
+message Tag {
+  // The namespaced name for the tag value to attach to Google Cloud resources.
+  // Must be in the format `{parent_id}/{tag_key_short_name}/{short_name}`, for
+  // example, "123456/environment/prod". This is only set for Google Cloud
+  // resources.
+  string namespaced_tag_value = 1;
+
+  // The key of a tag key-value pair. For Google Cloud resources, this is the
+  // resource name of the key, for example, "tagKeys/123456".
+  string key = 2;
+
+  // The value of a tag key-value pair. For Google Cloud resources, this is the
+  // resource name of the value, for example, "tagValues/123456".
+  string value = 3;
 }
 
 // A related resource.
