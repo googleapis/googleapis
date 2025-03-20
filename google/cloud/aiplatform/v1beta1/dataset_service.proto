@@ -22,11 +22,13 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/aiplatform/v1beta1/annotation.proto";
 import "google/cloud/aiplatform/v1beta1/annotation_spec.proto";
+import "google/cloud/aiplatform/v1beta1/content.proto";
 import "google/cloud/aiplatform/v1beta1/data_item.proto";
 import "google/cloud/aiplatform/v1beta1/dataset.proto";
 import "google/cloud/aiplatform/v1beta1/dataset_version.proto";
 import "google/cloud/aiplatform/v1beta1/operation.proto";
 import "google/cloud/aiplatform/v1beta1/saved_query.proto";
+import "google/cloud/aiplatform/v1beta1/tool.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
@@ -264,13 +266,39 @@ service DatasetService {
     option (google.api.method_signature) = "name";
   }
 
-  // Lists Annotations belongs to a dataitem
+  // Lists Annotations belongs to a dataitem.
   rpc ListAnnotations(ListAnnotationsRequest)
       returns (ListAnnotationsResponse) {
     option (google.api.http) = {
       get: "/v1beta1/{parent=projects/*/locations/*/datasets/*/dataItems/*}/annotations"
     };
     option (google.api.method_signature) = "parent";
+  }
+
+  // Assesses the state or validity of the dataset with respect to a given use
+  // case.
+  rpc AssessData(AssessDataRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1beta1/{name=projects/*/locations/*/datasets/*}:assess"
+      body: "*"
+    };
+    option (google.longrunning.operation_info) = {
+      response_type: "AssessDataResponse"
+      metadata_type: "AssessDataOperationMetadata"
+    };
+  }
+
+  // Assembles each row of a multimodal dataset and writes the result into a
+  // BigQuery table.
+  rpc AssembleData(AssembleDataRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1beta1/{name=projects/*/locations/*/datasets/*}:assemble"
+      body: "*"
+    };
+    option (google.longrunning.operation_info) = {
+      response_type: "AssembleDataResponse"
+      metadata_type: "AssembleDataOperationMetadata"
+    };
   }
 }
 
@@ -887,4 +915,225 @@ message ListAnnotationsResponse {
 
   // The standard List next-page token.
   string next_page_token = 2;
+}
+
+// Request message for
+// [DatasetService.AssessData][google.cloud.aiplatform.v1beta1.DatasetService.AssessData].
+// Used only for MULTIMODAL datasets.
+message AssessDataRequest {
+  // Configuration for the tuning validation assessment.
+  message TuningValidationAssessmentConfig {
+    // The dataset usage (e.g. training/validation).
+    enum DatasetUsage {
+      // Default value. Should not be used.
+      DATASET_USAGE_UNSPECIFIED = 0;
+
+      // Supervised fine-tuning training dataset.
+      SFT_TRAINING = 1;
+
+      // Supervised fine-tuning validation dataset.
+      SFT_VALIDATION = 2;
+    }
+
+    // Required. The name of the model used for tuning.
+    string model_name = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The dataset usage (e.g. training/validation).
+    DatasetUsage dataset_usage = 2 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Configuration for the tuning resource usage assessment.
+  message TuningResourceUsageAssessmentConfig {
+    // Required. The name of the model used for tuning.
+    string model_name = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // The assessment type.
+  oneof assessment_config {
+    // Optional. Configuration for the tuning validation assessment.
+    TuningValidationAssessmentConfig tuning_validation_assessment_config = 2
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Configuration for the tuning resource usage assessment.
+    TuningResourceUsageAssessmentConfig
+        tuning_resource_usage_assessment_config = 3
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // The read config for the dataset.
+  oneof read_config {
+    // Optional. Config for assembling templates with a Gemini API structure to
+    // assess assembled data.
+    GeminiTemplateConfig gemini_template_config = 4
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Required. The name of the Dataset resource. Used only for MULTIMODAL
+  // datasets. Format:
+  // `projects/{project}/locations/{location}/datasets/{dataset}`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/Dataset"
+    }
+  ];
+}
+
+// Response message for
+// [DatasetService.AssessData][google.cloud.aiplatform.v1beta1.DatasetService.AssessData].
+message AssessDataResponse {
+  // The result of the tuning validation assessment.
+  message TuningValidationAssessmentResult {
+    // Optional. A list containing the first validation errors.
+    repeated string errors = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // The result of the tuning resource usage assessment.
+  message TuningResourceUsageAssessmentResult {
+    // Number of tokens in the tuning dataset.
+    int64 token_count = 1;
+
+    // Number of billable tokens in the tuning dataset.
+    int64 billable_character_count = 2;
+  }
+
+  // The assessment result.
+  oneof assessment_result {
+    // Optional. The result of the tuning validation assessment.
+    TuningValidationAssessmentResult tuning_validation_assessment_result = 1
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The result of the tuning resource usage assessment.
+    TuningResourceUsageAssessmentResult
+        tuning_resource_usage_assessment_result = 2
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+}
+
+// Runtime operation information for
+// [DatasetService.AssessData][google.cloud.aiplatform.v1beta1.DatasetService.AssessData].
+message AssessDataOperationMetadata {
+  // The common part of the operation metadata.
+  GenericOperationMetadata generic_metadata = 1;
+}
+
+// Template configuration to create Gemini examples from a multimodal dataset.
+message GeminiTemplateConfig {
+  // Required. The template that will be used for assembling the request to use
+  // for downstream applications.
+  GeminiExample gemini_example = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Map of template params to the columns in the dataset table.
+  map<string, string> field_mapping = 2
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// Format for Gemini examples used for Vertex Multimodal datasets.
+message GeminiExample {
+  // Optional. The fully qualified name of the publisher model or tuned model
+  // endpoint to use.
+  //
+  // Publisher model format:
+  // `projects/{project}/locations/{location}/publishers/*/models/*`
+  //
+  // Tuned model endpoint format:
+  // `projects/{project}/locations/{location}/endpoints/{endpoint}`
+  string model = 1 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/Endpoint"
+    }
+  ];
+
+  // Required. The content of the current conversation with the model.
+  //
+  // For single-turn queries, this is a single instance. For multi-turn
+  // queries, this is a repeated field that contains conversation history +
+  // latest request.
+  repeated Content contents = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The user provided system instructions for the model.
+  // Note: only text should be used in parts and content in each part will be
+  // in a separate paragraph.
+  optional Content system_instruction = 8
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The name of the cached content used as context to serve the
+  // prediction. Note: only used in explicit caching, where users can have
+  // control over caching (e.g. what content to cache) and enjoy guaranteed cost
+  // savings. Format:
+  // `projects/{project}/locations/{location}/cachedContents/{cachedContent}`
+  string cached_content = 9 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/CachedContent"
+    }
+  ];
+
+  // Optional. A list of `Tools` the model may use to generate the next
+  // response.
+  //
+  // A `Tool` is a piece of code that enables the system to interact with
+  // external systems to perform an action, or set of actions, outside of
+  // knowledge and scope of the model.
+  repeated Tool tools = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Tool config. This config is shared for all tools provided in the
+  // request.
+  ToolConfig tool_config = 7 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The labels with user-defined metadata for the request. It is used
+  // for billing and reporting only.
+  //
+  // Label keys and values can be no longer than 63 characters
+  // (Unicode codepoints) and can only contain lowercase letters, numeric
+  // characters, underscores, and dashes. International characters are
+  // allowed. Label values are optional. Label keys must start with a letter.
+  map<string, string> labels = 10 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Per request settings for blocking unsafe content.
+  // Enforced on GenerateContentResponse.candidates.
+  repeated SafetySetting safety_settings = 3
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Generation config.
+  GenerationConfig generation_config = 4
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request message for
+// [DatasetService.AssembleData][google.cloud.aiplatform.v1beta1.DatasetService.AssembleData].
+// Used only for MULTIMODAL datasets.
+message AssembleDataRequest {
+  // The read config for the dataset.
+  oneof read_config {
+    // Optional. Config for assembling templates with a Gemini API structure.
+    GeminiTemplateConfig gemini_template_config = 2
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Required. The name of the Dataset resource (used only for MULTIMODAL
+  // datasets). Format:
+  // `projects/{project}/locations/{location}/datasets/{dataset}`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/Dataset"
+    }
+  ];
+}
+
+// Response message for
+// [DatasetService.AssembleData][google.cloud.aiplatform.v1beta1.DatasetService.AssembleData].
+message AssembleDataResponse {
+  // Destination BigQuery table path containing the assembled data as a single
+  // column.
+  string bigquery_destination = 1;
+}
+
+// Runtime operation information for
+// [DatasetService.AssembleData][google.cloud.aiplatform.v1beta1.DatasetService.AssembleData].
+message AssembleDataOperationMetadata {
+  // The common part of the operation metadata.
+  GenericOperationMetadata generic_metadata = 1;
 }
