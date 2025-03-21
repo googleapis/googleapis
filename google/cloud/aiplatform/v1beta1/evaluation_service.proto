@@ -20,6 +20,7 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/cloud/aiplatform/v1beta1/content.proto";
 import "google/cloud/aiplatform/v1beta1/io.proto";
 import "google/cloud/aiplatform/v1beta1/operation.proto";
 import "google/longrunning/operations.proto";
@@ -118,7 +119,9 @@ message EvaluateDatasetRequest {
   // Required. Config for evaluation output.
   OutputConfig output_config = 4 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. Autorater config used for evaluation.
+  // Optional. Autorater config used for evaluation. Currently only publisher
+  // Gemini models are supported. Format:
+  // `projects/{PROJECT}/locations/{LOCATION}/publishers/google/models/{MODEL}.`
   AutoraterConfig autorater_config = 5 [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -196,7 +199,8 @@ message Metric {
 message EvaluationDataset {
   // The source of the dataset.
   oneof source {
-    // Cloud storage source holds the dataset.
+    // Cloud storage source holds the dataset. Currently only one Cloud Storage
+    // file path is supported.
     GcsSource gcs_source = 1;
 
     // BigQuery source holds the dataset.
@@ -335,6 +339,10 @@ message EvaluateInstancesRequest {
 
     // Input for trajectory single tool use metric.
     TrajectorySingleToolUseInput trajectory_single_tool_use_input = 39;
+
+    // Rubric Based Instruction Following metric.
+    RubricBasedInstructionFollowingInput
+        rubric_based_instruction_following_input = 40;
   }
 
   // Required. The resource name of the Location to evaluate the instances.
@@ -460,6 +468,10 @@ message EvaluateInstancesResponse {
 
     // Results for trajectory single tool use metric.
     TrajectorySingleToolUseResults trajectory_single_tool_use_results = 37;
+
+    // Result for rubric based instruction following metric.
+    RubricBasedInstructionFollowingResult
+        rubric_based_instruction_following_result = 38;
   }
 }
 
@@ -1213,6 +1225,11 @@ message PointwiseMetricInstance {
     // in the json_instance to render
     // PointwiseMetricSpec.instance_prompt_template.
     string json_instance = 1;
+
+    // Key-value contents for the mutlimodality input, including text, image,
+    // video, audio, and pdf, etc. The key is placeholder in metric prompt
+    // template, and the value is the multimodal content.
+    ContentMap content_map_instance = 2;
   }
 }
 
@@ -1225,6 +1242,25 @@ message PointwiseMetricSpec {
   // Optional. System instructions for pointwise metric.
   optional string system_instruction = 2
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. CustomOutputFormatConfig allows customization of metric output.
+  // By default, metrics return a score and explanation.
+  // When this config is set, the default output is replaced with either:
+  //  - The raw output string.
+  //  - A parsed output based on a user-defined schema.
+  // If a custom format is chosen, the `score` and `explanation` fields in the
+  // corresponding metric result will be empty.
+  CustomOutputFormatConfig custom_output_format_config = 3
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Spec for custom output format configuration.
+message CustomOutputFormatConfig {
+  // Custom output format configuration.
+  oneof custom_output_format_config {
+    // Optional. Whether to return raw output.
+    bool return_raw_output = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
 }
 
 // Spec for pointwise metric result.
@@ -1234,6 +1270,24 @@ message PointwiseMetricResult {
 
   // Output only. Explanation for pointwise metric score.
   string explanation = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Spec for custom output.
+  CustomOutput custom_output = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Spec for custom output.
+message CustomOutput {
+  // Custom output.
+  oneof custom_output {
+    // Output only. List of raw output strings.
+    RawOutput raw_outputs = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+}
+
+// Raw output.
+message RawOutput {
+  // Output only. Raw output string.
+  repeated string raw_output = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Input for pairwise metric.
@@ -1254,6 +1308,11 @@ message PairwiseMetricInstance {
     // in the json_instance to render
     // PairwiseMetricSpec.instance_prompt_template.
     string json_instance = 1;
+
+    // Key-value contents for the mutlimodality input, including text, image,
+    // video, audio, and pdf, etc. The key is placeholder in metric prompt
+    // template, and the value is the multimodal content.
+    ContentMap content_map_instance = 2;
   }
 }
 
@@ -1274,6 +1333,14 @@ message PairwiseMetricSpec {
   // Optional. System instructions for pairwise metric.
   optional string system_instruction = 4
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. CustomOutputFormatConfig allows customization of metric output.
+  // When this config is set, the default output is replaced with
+  // the raw output string.
+  // If a custom format is chosen, the `pairwise_choice` and `explanation`
+  // fields in the corresponding metric result will be empty.
+  CustomOutputFormatConfig custom_output_format_config = 5
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Spec for pairwise metric result.
@@ -1284,6 +1351,9 @@ message PairwiseMetricResult {
 
   // Output only. Explanation for pairwise metric score.
   string explanation = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Spec for custom output.
+  CustomOutput custom_output = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Input for tool call valid metric.
@@ -1543,6 +1613,53 @@ message MetricxResult {
   optional float score = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
+// Instance and metric spec for RubricBasedInstructionFollowing metric.
+message RubricBasedInstructionFollowingInput {
+  // Required. Spec for RubricBasedInstructionFollowing metric.
+  RubricBasedInstructionFollowingSpec metric_spec = 1
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Instance for RubricBasedInstructionFollowing metric.
+  RubricBasedInstructionFollowingInstance instance = 2
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// Instance for RubricBasedInstructionFollowing metric - one instance
+// corresponds to one row in an evaluation dataset.
+message RubricBasedInstructionFollowingInstance {
+  // Instance for RubricBasedInstructionFollowing metric.
+  oneof instance {
+    // Required. Instance specified as a json string. String key-value pairs are
+    // expected in the json_instance to render RubricBasedInstructionFollowing
+    // prompt templates.
+    string json_instance = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+}
+
+// Spec for RubricBasedInstructionFollowing metric - returns rubrics
+// and verdicts corresponding to rubrics along with overall score.
+message RubricBasedInstructionFollowingSpec {}
+
+// Result for RubricBasedInstructionFollowing metric.
+message RubricBasedInstructionFollowingResult {
+  // Output only. Overall score for the instruction following.
+  optional float score = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. List of per rubric critique results.
+  repeated RubricCritiqueResult rubric_critique_results = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Rubric critique result.
+message RubricCritiqueResult {
+  // Output only. Rubric to be evaluated.
+  string rubric = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Verdict for the rubric - true if the rubric is met, false
+  // otherwise.
+  bool verdict = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
 // Instances and metric spec for TrajectoryExactMatch metric.
 message TrajectoryExactMatchInput {
   // Required. Spec for TrajectoryExactMatch metric.
@@ -1794,4 +1911,16 @@ message ToolCall {
 
   // Optional. Spec for tool input
   optional string tool_input = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Map of placeholder in metric prompt template to contents of model input.
+message ContentMap {
+  // Repeated Content type.
+  message Contents {
+    // Optional. Repeated contents.
+    repeated Content contents = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Optional. Map of placeholder to contents.
+  map<string, Contents> values = 1 [(google.api.field_behavior) = OPTIONAL];
 }
