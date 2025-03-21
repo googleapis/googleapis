@@ -200,6 +200,34 @@ service HubService {
     };
   }
 
+  // Accepts a proposal to update a Network Connectivity Center spoke in a hub.
+  rpc AcceptSpokeUpdate(AcceptSpokeUpdateRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/global/hubs/*}:acceptSpokeUpdate"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name,spoke_uri,spoke_etag";
+    option (google.longrunning.operation_info) = {
+      response_type: "AcceptSpokeUpdateResponse"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
+  // Rejects a proposal to update a Network Connectivity Center spoke in a hub.
+  rpc RejectSpokeUpdate(RejectSpokeUpdateRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/global/hubs/*}:rejectSpokeUpdate"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name,spoke_uri,spoke_etag";
+    option (google.longrunning.operation_info) = {
+      response_type: "RejectSpokeUpdateResponse"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
   // Deletes a Network Connectivity Center spoke.
   rpc DeleteSpoke(DeleteSpokeRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
@@ -336,6 +364,11 @@ enum State {
   // The hub associated with this spoke resource has been deleted.
   // This state applies to spoke resources only.
   OBSOLETE = 10;
+
+  // The resource is in an undefined state due to resource creation or deletion
+  // failure. You can try to delete the resource later or contact support for
+  // help.
+  FAILED = 11;
 }
 
 // The SpokeType enum represents the type of spoke. The type
@@ -416,8 +449,8 @@ message Hub {
   // labels](https://cloud.google.com/resource-manager/docs/creating-managing-labels#requirements).
   map<string, string> labels = 4;
 
-  // An optional description of the hub.
-  string description = 5;
+  // Optional. An optional description of the hub.
+  string description = 5 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. The Google-generated UUID for the hub. This value is unique
   // across all hub resources. If a hub is deleted and another with the same
@@ -460,10 +493,10 @@ message Hub {
   // the preset_topology is set to PRESET_TOPOLOGY_UNSPECIFIED.
   PresetTopology preset_topology = 14 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Whether Private Service Connect transitivity is enabled for the
-  // hub. If true, Private Service Connect endpoints in VPC spokes attached to
-  // the hub are made accessible to other VPC spokes attached to the hub.
-  // The default value is false.
+  // Optional. Whether Private Service Connect connection propagation is enabled
+  // for the hub. If true, Private Service Connect endpoints in VPC spokes
+  // attached to the hub are made accessible to other VPC spokes attached to the
+  // hub. The default value is false.
   optional bool export_psc = 15 [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -519,6 +552,16 @@ message Spoke {
       // Network Connectivity Center encountered errors while accepting
       // the spoke.
       FAILED = 4;
+
+      // The proposed spoke update is pending review.
+      UPDATE_PENDING_REVIEW = 5;
+
+      // The proposed spoke update has been rejected by the hub administrator.
+      UPDATE_REJECTED = 6;
+
+      // Network Connectivity Center encountered errors while accepting
+      // the spoke update.
+      UPDATE_FAILED = 7;
     }
 
     // The code associated with this reason.
@@ -549,8 +592,8 @@ message Spoke {
   // labels](https://cloud.google.com/resource-manager/docs/creating-managing-labels#requirements).
   map<string, string> labels = 4;
 
-  // An optional description of the spoke.
-  string description = 5;
+  // Optional. An optional description of the spoke.
+  string description = 5 [(google.api.field_behavior) = OPTIONAL];
 
   // Immutable. The name of the hub that this spoke is attached to.
   string hub = 6 [
@@ -568,14 +611,17 @@ message Spoke {
     }
   ];
 
-  // VPN tunnels that are associated with the spoke.
-  LinkedVpnTunnels linked_vpn_tunnels = 17;
+  // Optional. VPN tunnels that are associated with the spoke.
+  LinkedVpnTunnels linked_vpn_tunnels = 17
+      [(google.api.field_behavior) = OPTIONAL];
 
-  // VLAN attachments that are associated with the spoke.
-  LinkedInterconnectAttachments linked_interconnect_attachments = 18;
+  // Optional. VLAN attachments that are associated with the spoke.
+  LinkedInterconnectAttachments linked_interconnect_attachments = 18
+      [(google.api.field_behavior) = OPTIONAL];
 
-  // Router appliance instances that are associated with the spoke.
-  LinkedRouterApplianceInstances linked_router_appliance_instances = 19;
+  // Optional. Router appliance instances that are associated with the spoke.
+  LinkedRouterApplianceInstances linked_router_appliance_instances = 19
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. VPC network that is associated with the spoke.
   LinkedVpcNetwork linked_vpc_network = 20
@@ -593,12 +639,20 @@ message Spoke {
   // Output only. The current lifecycle state of this spoke.
   State state = 15 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. The reasons for current state of the spoke. Only present when
-  // the spoke is in the `INACTIVE` state.
+  // Output only. The reasons for current state of the spoke.
   repeated StateReason reasons = 21 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The type of resource associated with the spoke.
   SpokeType spoke_type = 22 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. This checksum is computed by the server based on the value of
+  // other fields, and may be sent on update and delete requests to ensure the
+  // client has an up-to-date value before proceeding.
+  string etag = 27 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The list of fields waiting for hub administration's approval.
+  repeated string field_paths_pending_update = 28
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 message RouteTable {
@@ -774,10 +828,11 @@ message Group {
 // state, and it must be reviewed and accepted by a hub
 // administrator.
 message AutoAccept {
-  // A list of project ids or project numbers for which you want
+  // Optional. A list of project ids or project numbers for which you want
   // to enable auto-accept. The auto-accept setting is applied to
   // spokes being created or updated in these projects.
-  repeated string auto_accept_projects = 1;
+  repeated string auto_accept_projects = 1
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request for
@@ -1377,6 +1432,107 @@ message RejectHubSpokeResponse {
 }
 
 // The request for
+// [HubService.AcceptSpokeUpdate][google.cloud.networkconnectivity.v1.HubService.AcceptSpokeUpdate].
+message AcceptSpokeUpdateRequest {
+  // Required. The name of the hub to accept spoke update.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/Hub"
+    }
+  ];
+
+  // Required. The URI of the spoke to accept update.
+  string spoke_uri = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/Spoke"
+    }
+  ];
+
+  // Required. The etag of the spoke to accept update.
+  string spoke_etag = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. A request ID to identify requests. Specify a unique request ID so
+  // that if you must retry your request, the server knows to ignore the request
+  // if it has already been completed. The server guarantees that a request
+  // doesn't result in creation of duplicate commitments for at least 60
+  // minutes.
+  //
+  // For example, consider a situation where you make an initial request and
+  // the request times out. If you make the request again with the same request
+  // ID, the server can check to see whether the original operation
+  // was received. If it was, the server ignores the second request. This
+  // behavior prevents clients from mistakenly creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID, with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 4 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
+// The response for
+// [HubService.AcceptSpokeUpdate][google.cloud.networkconnectivity.v1.HubService.AcceptSpokeUpdate].
+message AcceptSpokeUpdateResponse {
+  // The spoke that was operated on.
+  Spoke spoke = 1;
+}
+
+// The request for
+// [HubService.RejectSpokeUpdate][google.cloud.networkconnectivity.v1.HubService.RejectSpokeUpdate].
+message RejectSpokeUpdateRequest {
+  // Required. The name of the hub to reject spoke update.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/Hub"
+    }
+  ];
+
+  // Required. The URI of the spoke to reject update.
+  string spoke_uri = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/Spoke"
+    }
+  ];
+
+  // Required. The etag of the spoke to reject update.
+  string spoke_etag = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Additional information provided by the hub administrator.
+  string details = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A request ID to identify requests. Specify a unique request ID so
+  // that if you must retry your request, the server knows to ignore the request
+  // if it has already been completed. The server guarantees that a request
+  // doesn't result in creation of duplicate commitments for at least 60
+  // minutes.
+  //
+  // For example, consider a situation where you make an initial request and
+  // the request times out. If you make the request again with the same request
+  // ID, the server can check to see whether the original operation
+  // was received. If it was, the server ignores the second request. This
+  // behavior prevents clients from mistakenly creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID, with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 5 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
+// The response for
+// [HubService.RejectSpokeUpdate][google.cloud.networkconnectivity.v1.HubService.RejectSpokeUpdate].
+message RejectSpokeUpdateResponse {
+  // The spoke that was operated on.
+  Spoke spoke = 1;
+}
+
+// The request for
 // [HubService.GetRouteTable][google.cloud.networkconnectivity.v1.HubService.GetRouteTable].
 message GetRouteTableRequest {
   // Required. The name of the route table resource.
@@ -1622,9 +1778,23 @@ message LinkedVpcNetwork {
   repeated string include_export_ranges = 3
       [(google.api.field_behavior) = OPTIONAL];
 
+  // Optional. The proposed include export IP ranges waiting for hub
+  // administration's approval.
+  repeated string proposed_include_export_ranges = 5
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The proposed exclude export IP ranges waiting for hub
+  // administration's approval.
+  repeated string proposed_exclude_export_ranges = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
   // Output only. The list of Producer VPC spokes that this VPC spoke is a
   // service consumer VPC spoke for. These producer VPCs are connected through
-  // VPC peering to this spoke's backing VPC network.
+  // VPC peering to this spoke's backing VPC network. Because they are directly
+  // connected throuh VPC peering, NCC export filters do not apply between the
+  // service consumer VPC spoke and any of its producer VPC spokes. This VPC
+  // spoke cannot be deleted as long as any of these producer VPC spokes are
+  // connected to the NCC Hub.
   repeated string producer_vpc_spokes = 4 [
     (google.api.field_behavior) = OUTPUT_ONLY,
     (google.api.resource_reference) = {
@@ -1667,6 +1837,16 @@ message LinkedProducerVpcNetwork {
   // Optional. IP ranges allowed to be included from peering.
   repeated string include_export_ranges = 4
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The proposed include export IP ranges waiting for hub
+  // administration's approval.
+  repeated string proposed_include_export_ranges = 7
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The proposed exclude export IP ranges waiting for hub
+  // administration's approval.
+  repeated string proposed_exclude_export_ranges = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A router appliance instance is a Compute Engine virtual machine (VM) instance
