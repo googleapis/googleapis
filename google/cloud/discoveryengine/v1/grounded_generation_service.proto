@@ -109,6 +109,9 @@ message GenerateGroundedContentRequest {
     // If specified, custom value for frequency penalty will be used.
     optional float frequency_penalty = 8;
 
+    // If specified, custom value for the seed will be used.
+    optional int32 seed = 12;
+
     // If specified, custom value for presence penalty will be used.
     optional float presence_penalty = 9;
 
@@ -188,6 +191,9 @@ message GenerateGroundedContentRequest {
           [(google.api.field_behavior) = OPTIONAL];
     }
 
+    // Params for using enterprise web retrieval as grounding source.
+    message EnterpriseWebRetrievalSource {}
+
     // Sources.
     oneof source {
       // If set, grounding is performed with inline content.
@@ -198,6 +204,9 @@ message GenerateGroundedContentRequest {
 
       // If set, grounding is performed with Google Search.
       GoogleSearchSource google_search_source = 3;
+
+      // If set, grounding is performed with enterprise web retrieval.
+      EnterpriseWebRetrievalSource enterprise_web_retrieval_source = 8;
     }
   }
 
@@ -228,8 +237,6 @@ message GenerateGroundedContentRequest {
   // For single-turn queries, this is a single instance. For multi-turn queries,
   // this is a repeated field that contains conversation history + latest
   // request.
-  //
-  // Only a single-turn query is supported currently.
   repeated GroundedGenerationContent contents = 2;
 
   // Content generation specification.
@@ -258,6 +265,7 @@ message GenerateGroundedContentRequest {
   map<string, string> user_labels = 6;
 }
 
+// Response for the `GenerateGroundedContent` method.
 message GenerateGroundedContentResponse {
   // A response candidate generated from the model.
   message Candidate {
@@ -347,6 +355,39 @@ message GenerateGroundedContentResponse {
         optional float support_score = 2;
       }
 
+      // Metadata about an image from the web search.
+      message ImageMetadata {
+        // Metadata about the website that the image is from.
+        message WebsiteInfo {
+          // The url of the website.
+          string uri = 1;
+
+          // The title of the website.
+          string title = 2;
+        }
+
+        // Metadata about the image.
+        message Image {
+          // The url of the image.
+          string uri = 1;
+
+          // The width of the image in pixels.
+          int32 width = 2;
+
+          // The height of the image in pixels.
+          int32 height = 3;
+        }
+
+        // Metadata about the full size image.
+        Image image = 1;
+
+        // Metadata about the thumbnail.
+        Image thumbnail = 2;
+
+        // The details about the website that the image is from.
+        WebsiteInfo source = 3;
+      }
+
       // Retrieval metadata to provide an understanding in the
       // retrieval steps performed by the model. There can be multiple such
       // messages which can correspond to different parts of the retrieval. This
@@ -367,6 +408,9 @@ message GenerateGroundedContentResponse {
       // An support to a fact indicates that the claim is supported by
       // the fact.
       repeated GroundingSupport grounding_support = 2;
+
+      // Images from the web search.
+      repeated ImageMetadata images = 9;
     }
 
     // Index of the candidate.
@@ -409,7 +453,7 @@ message CheckGroundingRequest {
     }
   ];
 
-  // Answer candidate to check. Can have a maximum length of 1024 characters.
+  // Answer candidate to check. It can have a maximum length of 4096 tokens.
   string answer_candidate = 2;
 
   // List of facts for the grounding check.
@@ -443,14 +487,30 @@ message CheckGroundingRequest {
 // [GroundedGenerationService.CheckGrounding][google.cloud.discoveryengine.v1.GroundedGenerationService.CheckGrounding]
 // method.
 message CheckGroundingResponse {
+  // Fact chunk for grounding check.
+  message CheckGroundingFactChunk {
+    // Text content of the fact chunk. Can be at most 10K characters long.
+    string chunk_text = 1;
+  }
+
   // Text and citation info for a claim in the answer candidate.
   message Claim {
     // Position indicating the start of the claim in the answer candidate,
-    // measured in bytes.
+    // measured in bytes. Note that this is not measured in characters and,
+    // therefore, must be rendered in the user interface keeping in mind that
+    // some characters may take more than one byte. For example,
+    // if the claim text contains non-ASCII characters, the start and end
+    // positions vary when measured in characters
+    // (programming-language-dependent) and when measured in bytes
+    // (programming-language-independent).
     optional int32 start_pos = 1;
 
     // Position indicating the end of the claim in the answer candidate,
-    // exclusive.
+    // exclusive, in bytes. Note that this is not measured in characters and,
+    // therefore, must be rendered as such. For example, if the claim text
+    // contains non-ASCII characters, the start and end positions vary when
+    // measured in characters (programming-language-dependent) and when measured
+    // in bytes (programming-language-independent).
     optional int32 end_pos = 2;
 
     // Text for the claim in the answer candidate. Always provided regardless of
@@ -468,10 +528,7 @@ message CheckGroundingResponse {
     // decided this claim doesn't require attribution/grounding check, this
     // field will be set to false. In that case, no grounding check was done for
     // the claim and therefore
-    // [citation_indices][google.cloud.discoveryengine.v1.CheckGroundingResponse.Claim.citation_indices],
-    // [anti_citation_indices][google.cloud.discoveryengine.v1.CheckGroundingResponse.Claim.anti_citation_indices],
-    // and
-    // [score][google.cloud.discoveryengine.v1.CheckGroundingResponse.Claim.score]
+    // [citation_indices][google.cloud.discoveryengine.v1.CheckGroundingResponse.Claim.citation_indices]
     // should not be returned.
     optional bool grounding_check_required = 6;
   }
@@ -484,6 +541,10 @@ message CheckGroundingResponse {
   // List of facts cited across all claims in the answer candidate.
   // These are derived from the facts supplied in the request.
   repeated FactChunk cited_chunks = 3;
+
+  // List of facts cited across all claims in the answer candidate.
+  // These are derived from the facts supplied in the request.
+  repeated CheckGroundingFactChunk cited_facts = 6;
 
   // Claim texts and citation info across all claims in the answer candidate.
   repeated Claim claims = 4;

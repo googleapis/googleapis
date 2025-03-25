@@ -22,6 +22,7 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/discoveryengine/v1/answer.proto";
 import "google/cloud/discoveryengine/v1/conversation.proto";
+import "google/cloud/discoveryengine/v1/safety.proto";
 import "google/cloud/discoveryengine/v1/search_service.proto";
 import "google/cloud/discoveryengine/v1/session.proto";
 import "google/protobuf/empty.proto";
@@ -161,6 +162,29 @@ service ConversationalSearchService {
       }
       additional_bindings {
         post: "/v1/{serving_config=projects/*/locations/*/collections/*/engines/*/servingConfigs/*}:answer"
+        body: "*"
+      }
+    };
+  }
+
+  // Answer query method (streaming).
+  //
+  // It takes one
+  // [AnswerQueryRequest][google.cloud.discoveryengine.v1.AnswerQueryRequest]
+  // and returns multiple
+  // [AnswerQueryResponse][google.cloud.discoveryengine.v1.AnswerQueryResponse]
+  // messages in a stream.
+  rpc StreamAnswerQuery(AnswerQueryRequest)
+      returns (stream AnswerQueryResponse) {
+    option (google.api.http) = {
+      post: "/v1/{serving_config=projects/*/locations/*/dataStores/*/servingConfigs/*}:streamAnswer"
+      body: "*"
+      additional_bindings {
+        post: "/v1/{serving_config=projects/*/locations/*/collections/*/dataStores/*/servingConfigs/*}:streamAnswer"
+        body: "*"
+      }
+      additional_bindings {
+        post: "/v1/{serving_config=projects/*/locations/*/collections/*/engines/*/servingConfigs/*}:streamAnswer"
         body: "*"
       }
     };
@@ -470,16 +494,83 @@ message ListConversationsResponse {
 // method.
 message AnswerQueryRequest {
   // Safety specification.
+  // There are two use cases:
+  // 1. when only safety_spec.enable is set, the BLOCK_LOW_AND_ABOVE threshold
+  // will be applied for all categories.
+  // 2. when safety_spec.enable is set and some safety_settings are set, only
+  // specified safety_settings are applied.
   message SafetySpec {
+    // Safety settings.
+    message SafetySetting {
+      // Probability based thresholds levels for blocking.
+      enum HarmBlockThreshold {
+        // Unspecified harm block threshold.
+        HARM_BLOCK_THRESHOLD_UNSPECIFIED = 0;
+
+        // Block low threshold and above (i.e. block more).
+        BLOCK_LOW_AND_ABOVE = 1;
+
+        // Block medium threshold and above.
+        BLOCK_MEDIUM_AND_ABOVE = 2;
+
+        // Block only high threshold (i.e. block less).
+        BLOCK_ONLY_HIGH = 3;
+
+        // Block none.
+        BLOCK_NONE = 4;
+
+        // Turn off the safety filter.
+        OFF = 5;
+      }
+
+      // Required. Harm category.
+      HarmCategory category = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // Required. The harm block threshold.
+      HarmBlockThreshold threshold = 2 [(google.api.field_behavior) = REQUIRED];
+    }
+
     // Enable the safety filtering on the answer response. It is false by
     // default.
     bool enable = 1;
+
+    // Optional. Safety settings.
+    // This settings are effective only when the safety_spec.enable is true.
+    repeated SafetySetting safety_settings = 2
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Related questions specification.
   message RelatedQuestionsSpec {
     // Enable related questions feature if true.
     bool enable = 1;
+  }
+
+  // Grounding specification.
+  message GroundingSpec {
+    // Level to filter based on answer grounding.
+    enum FilteringLevel {
+      // Default is no filter
+      FILTERING_LEVEL_UNSPECIFIED = 0;
+
+      // Filter answers based on a low threshold.
+      FILTERING_LEVEL_LOW = 1;
+
+      // Filter answers based on a high threshold.
+      FILTERING_LEVEL_HIGH = 2;
+    }
+
+    // Optional. Specifies whether to include grounding_supports in the answer.
+    // The default value is `false`.
+    //
+    // When this field is set to `true`, returned answer will have
+    // `grounding_score` and will contain GroundingSupports for each claim.
+    bool include_grounding_supports = 2
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Specifies whether to enable the filtering based on grounding
+    // score and at what level.
+    FilteringLevel filtering_level = 3 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Answer generation specification.
@@ -750,6 +841,27 @@ message AnswerQueryRequest {
 
     // Query rephraser specification.
     message QueryRephraserSpec {
+      // Query Rephraser Model specification.
+      message ModelSpec {
+        // Query rephraser types. Currently only supports single-hop
+        // (max_rephrase_steps = 1) model selections. For multi-hop
+        // (max_rephrase_steps > 1), there is only one default model.
+        enum ModelType {
+          // Unspecified model type.
+          MODEL_TYPE_UNSPECIFIED = 0;
+
+          // Small query rephraser model. Gemini 1.0 XS model.
+          SMALL = 1;
+
+          // Large query rephraser model. Gemini 1.0 Pro model.
+          LARGE = 2;
+        }
+
+        // Optional. Enabled query rephraser model type. If not set, it will use
+        // LARGE by default.
+        ModelType model_type = 1 [(google.api.field_behavior) = OPTIONAL];
+      }
+
       // Disable query rephraser.
       bool disable = 1;
 
@@ -757,6 +869,9 @@ message AnswerQueryRequest {
       // The max number is 5 steps.
       // If not set or set to < 1, it will be set to 1 by default.
       int32 max_rephrase_steps = 2;
+
+      // Optional. Query Rephraser Model specification.
+      ModelSpec model_spec = 3 [(google.api.field_behavior) = OPTIONAL];
     }
 
     // Query classification specification.
@@ -764,6 +879,42 @@ message AnswerQueryRequest {
 
     // Query rephraser specification.
     QueryRephraserSpec query_rephraser_spec = 2;
+
+    // Optional. Whether to disable spell correction.
+    // The default value is `false`.
+    bool disable_spell_correction = 3 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // End user specification.
+  message EndUserSpec {
+    // End user metadata.
+    message EndUserMetaData {
+      // Chunk information.
+      message ChunkInfo {
+        // Document metadata contains the information of the document of
+        // the current chunk.
+        message DocumentMetadata {
+          // Title of the document.
+          string title = 1;
+        }
+
+        // Chunk textual content. It is limited to 8000 characters.
+        string content = 1;
+
+        // Metadata of the document from the current chunk.
+        DocumentMetadata document_metadata = 2;
+      }
+
+      // Search result content.
+      oneof content {
+        // Chunk information.
+        ChunkInfo chunk_info = 1;
+      }
+    }
+
+    // Optional. End user metadata.
+    repeated EndUserMetaData end_user_metadata = 1
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Required. The resource name of the Search serving config, such as
@@ -797,6 +948,9 @@ message AnswerQueryRequest {
 
   // Related questions specification.
   RelatedQuestionsSpec related_questions_spec = 5;
+
+  // Optional. Grounding specification.
+  GroundingSpec grounding_spec = 6 [(google.api.field_behavior) = OPTIONAL];
 
   // Answer generation specification.
   AnswerGenerationSpec answer_generation_spec = 7;
@@ -850,6 +1004,9 @@ message AnswerQueryRequest {
   // Document](https://cloud.google.com/resource-manager/docs/creating-managing-labels#requirements)
   // for more details.
   map<string, string> user_labels = 13;
+
+  // Optional. End user specification.
+  EndUserSpec end_user_spec = 14 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Response message for
@@ -940,6 +1097,10 @@ message GetSessionRequest {
       type: "discoveryengine.googleapis.com/Session"
     }
   ];
+
+  // Optional. If set to true, the full session including all answer details
+  // will be returned.
+  bool include_answer_details = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request for ListSessions method.
@@ -971,13 +1132,18 @@ message ListSessionsRequest {
   // A comma-separated list of fields to order by, sorted in ascending order.
   // Use "desc" after a field name for descending.
   // Supported fields:
+  //
   //   * `update_time`
   //   * `create_time`
   //   * `session_name`
+  //   * `is_pinned`
   //
   // Example:
-  // "update_time desc"
-  // "create_time"
+  //
+  // * "update_time desc"
+  // * "create_time"
+  // * "is_pinned desc,update_time desc": list sessions by is_pinned first, then
+  //    by update_time.
   string order_by = 5;
 }
 

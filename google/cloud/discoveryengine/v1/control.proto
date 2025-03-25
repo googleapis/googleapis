@@ -95,9 +95,97 @@ message Control {
 
   // Adjusts order of products in returned list.
   message BoostAction {
-    // Required. Strength of the boost, which should be in [-1, 1]. Negative
+    // Specification for custom ranking based on customer specified attribute
+    // value. It provides more controls for customized ranking than the simple
+    // (condition, boost) combination above.
+    message InterpolationBoostSpec {
+      // The control points used to define the curve. The curve defined
+      // through these control points can only be monotonically increasing
+      // or decreasing(constant values are acceptable).
+      message ControlPoint {
+        // Optional. Can be one of:
+        // 1. The numerical field value.
+        // 2. The duration spec for freshness:
+        // The value must be formatted as an XSD `dayTimeDuration` value (a
+        // restricted subset of an ISO 8601 duration value). The pattern for
+        // this is: `[nD][T[nH][nM][nS]]`.
+        string attribute_value = 1 [(google.api.field_behavior) = OPTIONAL];
+
+        // Optional. The value between -1 to 1 by which to boost the score if
+        // the attribute_value evaluates to the value specified above.
+        float boost_amount = 2 [(google.api.field_behavior) = OPTIONAL];
+      }
+
+      // The attribute(or function) for which the custom ranking is to be
+      // applied.
+      enum AttributeType {
+        // Unspecified AttributeType.
+        ATTRIBUTE_TYPE_UNSPECIFIED = 0;
+
+        // The value of the numerical field will be used to dynamically update
+        // the boost amount. In this case, the attribute_value (the x value)
+        // of the control point will be the actual value of the numerical
+        // field for which the boost_amount is specified.
+        NUMERICAL = 1;
+
+        // For the freshness use case the attribute value will be the duration
+        // between the current time and the date in the datetime field
+        // specified. The value must be formatted as an XSD `dayTimeDuration`
+        // value (a restricted subset of an ISO 8601 duration value). The
+        // pattern for this is: `[nD][T[nH][nM][nS]]`.
+        // For example, `5D`, `3DT12H30M`, `T24H`.
+        FRESHNESS = 2;
+      }
+
+      // The interpolation type to be applied. Default will be linear
+      // (Piecewise Linear).
+      enum InterpolationType {
+        // Interpolation type is unspecified. In this case, it defaults to
+        // Linear.
+        INTERPOLATION_TYPE_UNSPECIFIED = 0;
+
+        // Piecewise linear interpolation will be applied.
+        LINEAR = 1;
+      }
+
+      // Optional. The name of the field whose value will be used to determine
+      // the boost amount.
+      string field_name = 1 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The attribute type to be used to determine the boost amount.
+      // The attribute value can be derived from the field value of the
+      // specified field_name. In the case of numerical it is straightforward
+      // i.e. attribute_value = numerical_field_value. In the case of freshness
+      // however, attribute_value = (time.now() - datetime_field_value).
+      AttributeType attribute_type = 2 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The interpolation type to be applied to connect the control
+      // points listed below.
+      InterpolationType interpolation_type = 3
+          [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The control points used to define the curve. The monotonic
+      // function (defined through the interpolation_type above) passes through
+      // the control points listed here.
+      repeated ControlPoint control_points = 4
+          [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Constant value boost or custom ranking based boost specifications.
+    oneof boost_spec {
+      // Optional. Strength of the boost, which should be in [-1, 1]. Negative
+      // boost means demotion. Default is 0.0 (No-op).
+      float fixed_boost = 4 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Complex specification for custom ranking based on customer
+      // defined attribute value.
+      InterpolationBoostSpec interpolation_boost_spec = 5
+          [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Strength of the boost, which should be in [-1, 1]. Negative
     // boost means demotion. Default is 0.0 (No-op).
-    float boost = 1 [(google.api.field_behavior) = REQUIRED];
+    float boost = 1 [deprecated = true];
 
     // Required. Specifies which products to apply the boost to.
     //
@@ -164,6 +252,24 @@ message Control {
     repeated string synonyms = 1;
   }
 
+  // Promote certain links based on some trigger queries.
+  //
+  // Example: Promote shoe store link when searching for `shoe` keyword.
+  // The link can be outside of associated data store.
+  message PromoteAction {
+    // Required. Data store with which this promotion is attached to.
+    string data_store = 1 [
+      (google.api.field_behavior) = REQUIRED,
+      (google.api.resource_reference) = {
+        type: "discoveryengine.googleapis.com/DataStore"
+      }
+    ];
+
+    // Required. Promotion attached to this action.
+    SearchLinkPromotion search_link_promotion = 2
+        [(google.api.field_behavior) = REQUIRED];
+  }
+
   // Actions are restricted by Vertical and Solution
   //
   // Required.
@@ -180,6 +286,11 @@ message Control {
 
     // Treats a group of terms as synonyms of one another.
     SynonymsAction synonyms_action = 10;
+
+    // Promote certain links based on predefined trigger queries.
+    //
+    // This now only supports basic site search.
+    PromoteAction promote_action = 15;
   }
 
   // Immutable. Fully qualified name
