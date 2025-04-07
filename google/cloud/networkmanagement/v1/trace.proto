@@ -151,9 +151,13 @@ message Step {
     ARRIVE_AT_INSTANCE = 9;
 
     // Forwarding state: arriving at a Compute Engine internal load balancer.
+    // Deprecated in favor of the `ANALYZE_LOAD_BALANCER_BACKEND` state, not
+    // used in new tests.
     ARRIVE_AT_INTERNAL_LOAD_BALANCER = 10 [deprecated = true];
 
     // Forwarding state: arriving at a Compute Engine external load balancer.
+    // Deprecated in favor of the `ANALYZE_LOAD_BALANCER_BACKEND` state, not
+    // used in new tests.
     ARRIVE_AT_EXTERNAL_LOAD_BALANCER = 11 [deprecated = true];
 
     // Forwarding state: arriving at a Cloud VPN gateway.
@@ -164,6 +168,14 @@ message Step {
 
     // Forwarding state: arriving at a VPC connector.
     ARRIVE_AT_VPC_CONNECTOR = 24;
+
+    // Forwarding state: for packets originating from a serverless endpoint
+    // forwarded through Direct VPC egress.
+    DIRECT_VPC_EGRESS_CONNECTION = 35;
+
+    // Forwarding state: for packets originating from a serverless endpoint
+    // forwarded through public (external) connectivity.
+    SERVERLESS_EXTERNAL_CONNECTION = 36;
 
     // Transition state: packet header translated.
     NAT = 14;
@@ -237,6 +249,12 @@ message Step {
 
     // Display information of a VPC connector.
     VpcConnectorInfo vpc_connector = 21;
+
+    // Display information of a serverless direct VPC egress connection.
+    DirectVpcEgressConnectionInfo direct_vpc_egress_connection = 33;
+
+    // Display information of a serverless public (external) connection.
+    ServerlessExternalConnectionInfo serverless_external_connection = 34;
 
     // Display information of the final state "deliver" and reason.
     DeliverInfo deliver = 12;
@@ -395,6 +413,10 @@ message FirewallInfo {
     // For details, see [firewall rules
     // specifications](https://cloud.google.com/firewall/docs/firewalls#specifications)
     TRACKING_STATE = 101;
+
+    // Firewall analysis was skipped due to executing Connectivity Test in the
+    // BypassFirewallChecks mode
+    ANALYSIS_SKIPPED = 102;
   }
 
   // The display name of the firewall rule. This field might be empty for
@@ -456,13 +478,13 @@ message RouteInfo {
     // Dynamic route exchanged between BGP peers.
     DYNAMIC = 3;
 
-    // A subnet route received from peering network.
+    // A subnet route received from peering network or NCC Hub.
     PEERING_SUBNET = 4;
 
     // A static route received from peering network.
     PEERING_STATIC = 5;
 
-    // A dynamic route received from peering network.
+    // A dynamic route received from peering network or NCC Hub.
     PEERING_DYNAMIC = 6;
 
     // Policy based route.
@@ -487,7 +509,9 @@ message RouteInfo {
     // Next hop is a VPC network gateway.
     NEXT_HOP_NETWORK = 3;
 
-    // Next hop is a peering VPC.
+    // Next hop is a peering VPC. This scenario only happens when the user
+    // doesn't have permissions to the project where the next hop resource is
+    // located.
     NEXT_HOP_PEERING = 4;
 
     // Next hop is an interconnect.
@@ -506,7 +530,7 @@ message RouteInfo {
     NEXT_HOP_INTERNET_GATEWAY = 8;
 
     // Next hop is blackhole; that is, the next hop either does not exist or is
-    // not running.
+    // unusable.
     NEXT_HOP_BLACKHOLE = 9;
 
     // Next hop is the forwarding rule of an Internal Load Balancer.
@@ -517,7 +541,8 @@ message RouteInfo {
     // instance](https://cloud.google.com/network-connectivity/docs/network-connectivity-center/concepts/ra-overview).
     NEXT_HOP_ROUTER_APPLIANCE = 11;
 
-    // Next hop is an NCC hub.
+    // Next hop is an NCC hub. This scenario only happens when the user doesn't
+    // have permissions to the project where the next hop resource is located.
     NEXT_HOP_NCC_HUB = 12;
   }
 
@@ -539,25 +564,31 @@ message RouteInfo {
   // Type of next hop.
   NextHopType next_hop_type = 9;
 
-  // Indicates where route is applicable.
-  RouteScope route_scope = 14;
+  // Indicates where route is applicable. Deprecated, routes with NCC_HUB scope
+  // are not included in the trace in new tests.
+  RouteScope route_scope = 14 [deprecated = true];
 
   // Name of a route.
   string display_name = 1;
 
-  // URI of a route (if applicable).
+  // URI of a route. SUBNET, STATIC, PEERING_SUBNET (only for peering network)
+  // and POLICY_BASED routes only.
   string uri = 2;
 
-  // Region of the route (if applicable).
+  // Region of the route. DYNAMIC, PEERING_DYNAMIC, POLICY_BASED and ADVERTISED
+  // routes only. If set for POLICY_BASED route, this is a region of VLAN
+  // attachments for Cloud Interconnect the route applies to.
   string region = 19;
 
   // Destination IP range of the route.
   string dest_ip_range = 3;
 
-  // Next hop of the route.
-  string next_hop = 4;
+  // String type of the next hop of the route (for example, "VPN tunnel").
+  // Deprecated in favor of the next_hop_type and next_hop_uri fields, not used
+  // in new tests.
+  string next_hop = 4 [deprecated = true];
 
-  // URI of a Compute Engine network. NETWORK routes only.
+  // URI of a VPC network where route is located.
   string network_uri = 5;
 
   // Priority of the route.
@@ -566,33 +597,54 @@ message RouteInfo {
   // Instance tags of the route.
   repeated string instance_tags = 7;
 
-  // Source IP address range of the route. Policy based routes only.
+  // Source IP address range of the route. POLICY_BASED routes only.
   string src_ip_range = 10;
 
-  // Destination port ranges of the route. Policy based routes only.
+  // Destination port ranges of the route. POLICY_BASED routes only.
   repeated string dest_port_ranges = 11;
 
-  // Source port ranges of the route. Policy based routes only.
+  // Source port ranges of the route. POLICY_BASED routes only.
   repeated string src_port_ranges = 12;
 
-  // Protocols of the route. Policy based routes only.
+  // Protocols of the route. POLICY_BASED routes only.
   repeated string protocols = 13;
 
-  // URI of a NCC Hub. NCC_HUB routes only.
+  // URI of the NCC Hub the route is advertised by. PEERING_SUBNET and
+  // PEERING_DYNAMIC routes that are advertised by NCC Hub only.
   optional string ncc_hub_uri = 15;
 
-  // URI of a NCC Spoke. NCC_HUB routes only.
+  // URI of the destination NCC Spoke. PEERING_SUBNET and PEERING_DYNAMIC routes
+  // that are advertised by NCC Hub only.
   optional string ncc_spoke_uri = 16;
 
-  // For advertised dynamic routes, the URI of the Cloud Router that advertised
+  // For ADVERTISED dynamic routes, the URI of the Cloud Router that advertised
   // the corresponding IP prefix.
   optional string advertised_route_source_router_uri = 17;
 
-  // For advertised routes, the URI of their next hop, i.e. the URI of the
+  // For ADVERTISED routes, the URI of their next hop, i.e. the URI of the
   // hybrid endpoint (VPN tunnel, Interconnect attachment, NCC router appliance)
   // the advertised prefix is advertised through, or URI of the source peered
-  // network.
-  optional string advertised_route_next_hop_uri = 18;
+  // network. Deprecated in favor of the next_hop_uri field, not used in new
+  // tests.
+  optional string advertised_route_next_hop_uri = 18 [deprecated = true];
+
+  // URI of the next hop resource.
+  string next_hop_uri = 20;
+
+  // URI of a VPC network where the next hop resource is located.
+  string next_hop_network_uri = 21;
+
+  // For PEERING_SUBNET and PEERING_STATIC routes, the URI of the originating
+  // SUBNET/STATIC route.
+  string originating_route_uri = 22;
+
+  // For PEERING_SUBNET, PEERING_STATIC and PEERING_DYNAMIC routes, the name of
+  // the originating SUBNET/STATIC/DYNAMIC route.
+  string originating_route_display_name = 23;
+
+  // For PEERING_SUBNET and PEERING_DYNAMIC routes that are advertised by NCC
+  // Hub, the URI of the corresponding route in NCC Hub's routing table.
+  string ncc_hub_route_uri = 24;
 }
 
 // For display only. Details of a Google Service sending packets to a
@@ -632,6 +684,10 @@ message GoogleServiceInfo {
     // Google API via VPC Service Controls.
     // https://cloud.google.com/vpc/docs/configure-private-service-connect-apis
     GOOGLE_API_VPC_SC = 6;
+
+    // Google API via Serverless VPC Access.
+    // https://cloud.google.com/vpc/docs/serverless-vpc-access
+    SERVERLESS_VPC_ACCESS = 7;
   }
 
   // Source IP address.
@@ -1135,6 +1191,10 @@ message AbortInfo {
     // Aborted due to an unsupported configuration of the Google-managed
     // project.
     UNSUPPORTED_GOOGLE_MANAGED_PROJECT_CONFIG = 31;
+
+    // Aborted because the source endpoint is a Cloud Run revision with direct
+    // VPC access enabled, but there are no reserved serverless IP ranges.
+    NO_SERVERLESS_IP_RANGES = 37;
   }
 
   // Causes that the analysis is aborted.
@@ -1248,6 +1308,11 @@ message DropInfo {
     // For more details, see [Health check firewall
     // rules](https://cloud.google.com/load-balancing/docs/health-checks#firewall_rules).
     FIREWALL_BLOCKING_LOAD_BALANCER_BACKEND_HEALTH_CHECK = 13;
+
+    // Matching ingress firewall rules by network tags for packets sent via
+    // serverless VPC direct egress is unsupported. Behavior is undefined.
+    // https://cloud.google.com/run/docs/configuring/vpc-direct-vpc#limitations
+    INGRESS_FIREWALL_TAGS_UNSUPPORTED_BY_DIRECT_VPC_EGRESS = 85;
 
     // Packet is sent from or to a Compute Engine instance that is not in a
     // running state.
@@ -1486,6 +1551,18 @@ message DropInfo {
     // Sending packets processed by the Private NAT Gateways to the Private
     // Service Connect endpoints is not supported.
     PRIVATE_NAT_TO_PSC_ENDPOINT_UNSUPPORTED = 83;
+
+    // Packet is sent to the PSC port mapping service, but its destination port
+    // does not match any port mapping rules.
+    PSC_PORT_MAPPING_PORT_MISMATCH = 86;
+
+    // Sending packets directly to the PSC port mapping service without going
+    // through the PSC connection is not supported.
+    PSC_PORT_MAPPING_WITHOUT_PSC_CONNECTION_UNSUPPORTED = 87;
+
+    // Packet with destination IP address within the reserved NAT64 range is
+    // dropped due to matching a route of an unsupported type.
+    UNSUPPORTED_ROUTE_MATCHED_FOR_NAT64_DESTINATION = 88;
   }
 
   // Cause that the packet is dropped.
@@ -1575,7 +1652,7 @@ message RedisClusterInfo {
   // "projects/{project_id}/locations/{location}/clusters/{cluster_id}"
   string uri = 2;
 
-  // URI of a Redis Cluster network in format
+  // URI of the network containing the Redis Cluster endpoints in format
   // "projects/{project_id}/global/networks/{network_id}".
   string network_uri = 3;
 
@@ -1647,6 +1724,33 @@ message VpcConnectorInfo {
 
   // Location in which the VPC connector is deployed.
   string location = 3;
+}
+
+// For display only. Metadata associated with a serverless direct VPC egress
+// connection.
+message DirectVpcEgressConnectionInfo {
+  // URI of direct access network.
+  string network_uri = 1;
+
+  // URI of direct access subnetwork.
+  string subnetwork_uri = 2;
+
+  // Selected IP range.
+  string selected_ip_range = 3 [(google.api.field_info).format = IPV4_OR_IPV6];
+
+  // Selected starting IP address, from the selected IP range.
+  string selected_ip_address = 4
+      [(google.api.field_info).format = IPV4_OR_IPV6];
+
+  // Region in which the Direct VPC egress is deployed.
+  string region = 5;
+}
+
+// For display only. Metadata associated with a serverless public connection.
+message ServerlessExternalConnectionInfo {
+  // Selected starting IP address, from the Google dynamic address pool.
+  string selected_ip_address = 1
+      [(google.api.field_info).format = IPV4_OR_IPV6];
 }
 
 // For display only. Metadata associated with NAT.
