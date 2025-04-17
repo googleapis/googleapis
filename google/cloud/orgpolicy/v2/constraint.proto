@@ -18,6 +18,7 @@ package google.cloud.orgpolicy.v2;
 
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "Google.Cloud.OrgPolicy.V2";
@@ -36,8 +37,8 @@ option ruby_package = "Google::Cloud::OrgPolicy::V2";
 // organization by setting a policy that includes constraints at different
 // locations in the organization's resource hierarchy. Policies are inherited
 // down the resource hierarchy from higher levels, but can also be overridden.
-// For details about the inheritance rules please read about
-// [`policies`][google.cloud.OrgPolicy.v2.Policy].
+// For details about the inheritance rules, see
+// [`Policy`][google.cloud.orgpolicy.v2.Policy].
 //
 // Constraints have a default behavior determined by the `constraint_default`
 // field, which is the enforcement behavior that is used in the absence of a
@@ -56,7 +57,7 @@ message Constraint {
   // Immutable after creation.
   enum ConstraintDefault {
     // This is only used for distinguishing unset values and should never be
-    // used.
+    // used. Results in an error.
     CONSTRAINT_DEFAULT_UNSPECIFIED = 0;
 
     // Indicate that all values are allowed for list constraints.
@@ -68,8 +69,9 @@ message Constraint {
     DENY = 2;
   }
 
-  // A constraint that allows or disallows a list of string values, which are
-  // configured by an Organization Policy administrator with a policy.
+  // A constraint type that allows or disallows a list of string values, which
+  // are configured in the
+  // [`PolicyRule`][google.cloud.orgpolicy.v2.PolicySpec.PolicyRule].
   message ListConstraint {
     // Indicates whether values grouped into categories can be used in
     // `Policy.allowed_values` and `Policy.denied_values`. For example,
@@ -83,12 +85,131 @@ message Constraint {
     bool supports_under = 2;
   }
 
-  // A constraint that is either enforced or not.
+  // Custom constraint definition. Defines this as a managed constraint.
+  message CustomConstraintDefinition {
+    // The operation for which this constraint will be applied. To apply this
+    // constraint only when creating new resources, the `method_types` should be
+    // `CREATE` only. To apply this constraint when creating or deleting
+    // resources, the `method_types` should be `CREATE` and `DELETE`.
+    //
+    // `UPDATE`-only custom constraints are not supported. Use `CREATE` or
+    // `CREATE, UPDATE`.
+    enum MethodType {
+      // This is only used for distinguishing unset values and should never be
+      // used. Results in an error.
+      METHOD_TYPE_UNSPECIFIED = 0;
+
+      // Constraint applied when creating the resource.
+      CREATE = 1;
+
+      // Constraint applied when updating the resource.
+      UPDATE = 2;
+
+      // Constraint applied when deleting the resource.
+      // Not currently supported.
+      DELETE = 3;
+
+      // Constraint applied when removing an IAM grant.
+      REMOVE_GRANT = 4;
+
+      // Constraint applied when enforcing forced tagging.
+      GOVERN_TAGS = 5;
+    }
+
+    // Allow or deny type.
+    enum ActionType {
+      // This is only used for distinguishing unset values and should never be
+      // used. Results in an error.
+      ACTION_TYPE_UNSPECIFIED = 0;
+
+      // Allowed action type.
+      ALLOW = 1;
+
+      // Deny action type.
+      DENY = 2;
+    }
+
+    // Defines a parameter structure.
+    message Parameter {
+      // All valid types of parameter.
+      enum Type {
+        // This is only used for distinguishing unset values and should never be
+        // used. Results in an error.
+        TYPE_UNSPECIFIED = 0;
+
+        // List parameter type.
+        LIST = 1;
+
+        // String parameter type.
+        STRING = 2;
+
+        // Boolean parameter type.
+        BOOLEAN = 3;
+      }
+
+      // Defines Metadata structure.
+      message Metadata {
+        // Detailed description of what this `parameter` is and use of it.
+        // Mutable.
+        string description = 1;
+      }
+
+      // Type of the parameter.
+      Type type = 1;
+
+      // Sets the value of the parameter in an assignment if no value is given.
+      google.protobuf.Value default_value = 2;
+
+      // Provides a CEL expression to specify the acceptable parameter values
+      // during assignment.
+      // For example, parameterName in ("parameterValue1", "parameterValue2")
+      string valid_values_expr = 3;
+
+      // Defines subproperties primarily used by the UI to display user-friendly
+      // information.
+      Metadata metadata = 4;
+
+      // Determines the parameter's value structure.
+      // For example, `LIST<STRING>` can be specified by defining `type: LIST`,
+      // and `item: STRING`.
+      Type item = 5;
+    }
+
+    // The resource instance type on which this policy applies. Format will be
+    // of the form : `<service name>/<type>` Example:
+    //
+    //  * `compute.googleapis.com/Instance`.
+    repeated string resource_types = 1;
+
+    // All the operations being applied for this constraint.
+    repeated MethodType method_types = 2;
+
+    // Org policy condition/expression. For example:
+    // `resource.instanceName.matches("[production|test]_.*_(\d)+")` or,
+    // `resource.management.auto_upgrade == true`
+    //
+    // The max length of the condition is 1000 characters.
+    string condition = 3;
+
+    // Allow or deny type.
+    ActionType action_type = 4;
+
+    // Stores the structure of
+    // [`Parameters`][google.cloud.orgpolicy.v2.Constraint.CustomConstraintDefinition.Parameter]
+    // used by the constraint condition. The key of `map` represents the name of
+    // the parameter.
+    map<string, Parameter> parameters = 5;
+  }
+
+  // A constraint type is enforced or not enforced, which is configured in the
+  // [`PolicyRule`][google.cloud.orgpolicy.v2.PolicySpec.PolicyRule].
   //
-  // For example, a constraint `constraints/compute.disableSerialPortAccess`.
-  // If it is enforced on a VM instance, serial port connections will not be
-  // opened to that instance.
-  message BooleanConstraint {}
+  // If `customConstraintDefinition` is defined, this constraint is a managed
+  // constraint.
+  message BooleanConstraint {
+    // Custom constraint definition. Defines this as a managed constraint.
+    CustomConstraintDefinition custom_constraint_definition = 1;
+  }
 
   // Immutable. The resource name of the constraint. Must be in one of
   // the following forms:
@@ -118,15 +239,22 @@ message Constraint {
   //
   // Immutable after creation.
   oneof constraint_type {
-    // Defines this constraint as being a ListConstraint.
+    // Defines this constraint as being a list constraint.
     ListConstraint list_constraint = 5;
 
-    // Defines this constraint as being a BooleanConstraint.
+    // Defines this constraint as being a boolean constraint.
     BooleanConstraint boolean_constraint = 6;
   }
 
   // Shows if dry run is supported for this constraint or not.
   bool supports_dry_run = 7;
+
+  // Managed constraint and canned constraint sometimes can have
+  // equivalents. This field is used to store the equivalent constraint name.
+  string equivalent_constraint = 8;
+
+  // Shows if simulation is supported for this constraint or not.
+  bool supports_simulation = 9;
 }
 
 // A custom constraint defined by customers which can *only* be applied to the
@@ -142,14 +270,15 @@ message CustomConstraint {
   };
 
   // The operation for which this constraint will be applied. To apply this
-  // constraint only when creating new VMs, the `method_types` should be
+  // constraint only when creating new resources, the `method_types` should be
   // `CREATE` only. To apply this constraint when creating or deleting
-  // VMs, the `method_types` should be `CREATE` and `DELETE`.
+  // resources, the `method_types` should be `CREATE` and `DELETE`.
   //
   // `UPDATE` only custom constraints are not supported. Use `CREATE` or
   // `CREATE, UPDATE`.
   enum MethodType {
-    // Unspecified. Results in an error.
+    // This is only used for distinguishing unset values and should never be
+    // used. Results in an error.
     METHOD_TYPE_UNSPECIFIED = 0;
 
     // Constraint applied when creating the resource.
@@ -159,7 +288,7 @@ message CustomConstraint {
     UPDATE = 2;
 
     // Constraint applied when deleting the resource.
-    // Not supported yet.
+    // Not currently supported.
     DELETE = 3;
 
     // Constraint applied when removing an IAM grant.
@@ -171,7 +300,8 @@ message CustomConstraint {
 
   // Allow or deny type.
   enum ActionType {
-    // Unspecified. Results in an error.
+    // This is only used for distinguishing unset values and should never be
+    // used. Results in an error.
     ACTION_TYPE_UNSPECIFIED = 0;
 
     // Allowed action type.
@@ -193,7 +323,7 @@ message CustomConstraint {
   string name = 1 [(google.api.field_behavior) = IMMUTABLE];
 
   // Immutable. The resource instance type on which this policy applies. Format
-  // will be of the form : `<canonical service name>/<type>` Example:
+  // will be of the form : `<service name>/<type>` Example:
   //
   //  * `compute.googleapis.com/Instance`.
   repeated string resource_types = 2 [(google.api.field_behavior) = IMMUTABLE];
@@ -201,7 +331,8 @@ message CustomConstraint {
   // All the operations being applied for this constraint.
   repeated MethodType method_types = 3;
 
-  // Org policy condition/expression. For example:
+  // A Common Expression Language (CEL) condition which is used in the
+  // evaluation of the constraint. For example:
   // `resource.instanceName.matches("[production|test]_.*_(\d)+")` or,
   // `resource.management.auto_upgrade == true`
   //
@@ -221,7 +352,7 @@ message CustomConstraint {
 
   // Output only. The last time this custom constraint was updated. This
   // represents the last time that the `CreateCustomConstraint` or
-  // `UpdateCustomConstraint` RPC was called
+  // `UpdateCustomConstraint` methods were called.
   google.protobuf.Timestamp update_time = 8
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
