@@ -353,9 +353,9 @@ gapic_generator_register_toolchains()
 # TypeScript
 ##############################################################################
 
-_gapic_generator_typescript_version = "4.8.2"
+_gapic_generator_typescript_version = "4.9.0"
 
-_gapic_generator_typescript_sha256 = "ff609ae012007dd103136d44185125cef87bd9ea0792643e465b402a2e21dbbf"
+_gapic_generator_typescript_sha256 = "223fcf700ff27ab156b969f79ac802178a5fec73a9c09c603fa022ef998193df"
 
 ### TypeScript generator
 http_archive(
@@ -365,13 +365,9 @@ http_archive(
     urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v%s.tar.gz" % _gapic_generator_typescript_version],
 )
 
-load("@gapic_generator_typescript//:repositories.bzl", "NODE_VERSION", "gapic_generator_typescript_repositories")
+load("@gapic_generator_typescript//:repositories.bzl", "gapic_generator_typescript_repositories")
 
 gapic_generator_typescript_repositories()
-
-load("@aspect_rules_js//js:repositories.bzl", "rules_js_dependencies")
-
-rules_js_dependencies()
 
 load("@aspect_rules_ts//ts:repositories.bzl", "rules_ts_dependencies")
 
@@ -379,26 +375,28 @@ rules_ts_dependencies(
     ts_version_from = "@gapic_generator_typescript//:package.json",
 )
 
-load("@rules_nodejs//nodejs:repositories.bzl", "nodejs_register_toolchains")
+load("@aspect_rules_js//js:repositories.bzl", "rules_js_dependencies")
 
-nodejs_register_toolchains(
-    name = "nodejs",
-    node_version = NODE_VERSION,
-)
+rules_js_dependencies()
 
-load("@aspect_rules_js//npm:npm_import.bzl", "npm_translate_lock", "pnpm_repository")
+load("@aspect_rules_js//js:toolchains.bzl", "DEFAULT_NODE_VERSION", "rules_js_register_toolchains")
+
+rules_js_register_toolchains(node_version = DEFAULT_NODE_VERSION)
+
+load("@aspect_rules_js//npm:repositories.bzl", "npm_translate_lock", "pnpm_repository")
 
 npm_translate_lock(
     name = "npm",
     data = ["@gapic_generator_typescript//:package.json"],
     pnpm_lock = "@gapic_generator_typescript//:pnpm-lock.yaml",
+    update_pnpm_lock = True,
 )
+
+pnpm_repository(name = "pnpm")
 
 load("@npm//:repositories.bzl", "npm_repositories")
 
 npm_repositories()
-
-pnpm_repository(name = "pnpm")
 
 ##############################################################################
 # PHP
