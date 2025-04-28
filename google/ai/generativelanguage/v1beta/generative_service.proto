@@ -24,6 +24,7 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
 
 option go_package = "cloud.google.com/go/ai/generativelanguage/apiv1beta/generativelanguagepb;generativelanguagepb";
 option java_multiple_files = true;
@@ -51,6 +52,10 @@ service GenerativeService {
         post: "/v1beta/{model=tunedModels/*}:generateContent"
         body: "*"
       }
+      additional_bindings {
+        post: "/v1beta/{model=dynamic/*}:generateContent"
+        body: "*"
+      }
     };
     option (google.api.method_signature) = "model,contents";
   }
@@ -76,6 +81,10 @@ service GenerativeService {
       body: "*"
       additional_bindings {
         post: "/v1beta/{model=tunedModels/*}:streamGenerateContent"
+        body: "*"
+      }
+      additional_bindings {
+        post: "/v1beta/{model=dynamic/*}:streamGenerateContent"
         body: "*"
       }
     };
@@ -115,6 +124,11 @@ service GenerativeService {
     };
     option (google.api.method_signature) = "model,contents";
   }
+
+  // Low-Latency bidirectional streaming API that supports audio and video
+  // streaming inputs can produce multimodal output streams (audio and text).
+  rpc BidiGenerateContent(stream BidiGenerateContentClientMessage)
+      returns (stream BidiGenerateContentServerMessage) {}
 }
 
 // Type of task for which the embedding will be used.
@@ -142,6 +156,9 @@ enum TaskType {
 
   // Specifies that the given text will be used for fact verification.
   FACT_VERIFICATION = 7;
+
+  // Specifies that the given text will be used for code retrieval.
+  CODE_RETRIEVAL_QUERY = 8;
 }
 
 // Request to generate a completion from the model.
@@ -240,8 +257,27 @@ message VoiceConfig {
 
 // The speech generation config.
 message SpeechConfig {
-  // The configuration for the speaker to use.
+  // The configuration in case of single-voice output.
   VoiceConfig voice_config = 1;
+
+  // Optional. Language code (in BCP 47 format, e.g. "en-US") for speech
+  // synthesis.
+  //
+  // Valid values are: de-DE, en-AU, en-GB, en-IN, en-US, es-US, fr-FR, hi-IN,
+  // pt-BR, ar-XA, es-ES, fr-CA, id-ID, it-IT, ja-JP, tr-TR, vi-VN, bn-IN,
+  // gu-IN, kn-IN, ml-IN, mr-IN, ta-IN, te-IN, nl-NL, ko-KR, cmn-CN, pl-PL,
+  // ru-RU, and th-TH.
+  string language_code = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Config for thinking features.
+message ThinkingConfig {
+  // Indicates whether to include thoughts in the response.
+  // If true, thoughts are returned only when available.
+  optional bool include_thoughts = 1;
+
+  // The number of thoughts tokens that the model should generate.
+  optional int32 thinking_budget = 2;
 }
 
 // Configuration options for model generation and outputs. Not all parameters
@@ -262,10 +298,24 @@ message GenerationConfig {
     AUDIO = 3;
   }
 
-  // Optional. Number of generated responses to return.
-  //
-  // Currently, this value can only be set to 1. If unset, this will default
-  // to 1.
+  // Media resolution for the input media.
+  enum MediaResolution {
+    // Media resolution has not been set.
+    MEDIA_RESOLUTION_UNSPECIFIED = 0;
+
+    // Media resolution set to low (64 tokens).
+    MEDIA_RESOLUTION_LOW = 1;
+
+    // Media resolution set to medium (256 tokens).
+    MEDIA_RESOLUTION_MEDIUM = 2;
+
+    // Media resolution set to high (zoomed reframing with 256 tokens).
+    MEDIA_RESOLUTION_HIGH = 3;
+  }
+
+  // Optional. Number of generated responses to return. If unset, this will
+  // default to 1. Please note that this doesn't work for previous generation
+  // models (Gemini 1.0 family)
   optional int32 candidate_count = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The set of character sequences (up to 5) that will stop output
@@ -316,6 +366,10 @@ message GenerationConfig {
   // and doesn't allow setting `top_k` on requests.
   optional int32 top_k = 7 [(google.api.field_behavior) = OPTIONAL];
 
+  // Optional. Seed used in decoding. If not set, the request uses a randomly
+  // generated seed.
+  optional int32 seed = 8 [(google.api.field_behavior) = OPTIONAL];
+
   // Optional. MIME type of the generated candidate text.
   // Supported MIME types are:
   // `text/plain`: (default) Text output.
@@ -358,7 +412,7 @@ message GenerationConfig {
   //
   // A positive penalty will discourage the use of tokens that have already
   // been used, proportional to the number of times the token has been used:
-  // The more a token is used, the more dificult it is for the model to use
+  // The more a token is used, the more difficult it is for the model to use
   // that token again increasing the vocabulary of responses.
   //
   // Caution: A _negative_ penalty will encourage the model to reuse tokens
@@ -399,6 +453,16 @@ message GenerationConfig {
 
   // Optional. The speech generation config.
   optional SpeechConfig speech_config = 21
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Config for thinking features.
+  // An error will be returned if this field is set for models that don't
+  // support thinking.
+  optional ThinkingConfig thinking_config = 22
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If specified, the media resolution specified will be used.
+  optional MediaResolution media_resolution = 23
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -485,9 +549,34 @@ message GenerateContentResponse {
     // Total number of tokens across all the generated response candidates.
     int32 candidates_token_count = 2;
 
+    // Output only. Number of tokens present in tool-use prompt(s).
+    int32 tool_use_prompt_token_count = 8
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Number of tokens of thoughts for thinking models.
+    int32 thoughts_token_count = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+
     // Total token count for the generation request (prompt + response
     // candidates).
     int32 total_token_count = 3;
+
+    // Output only. List of modalities that were processed in the request input.
+    repeated ModalityTokenCount prompt_tokens_details = 5
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. List of modalities of the cached content in the request
+    // input.
+    repeated ModalityTokenCount cache_tokens_details = 6
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. List of modalities that were returned in the response.
+    repeated ModalityTokenCount candidates_tokens_details = 7
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. List of modalities that were processed for tool-use request
+    // inputs.
+    repeated ModalityTokenCount tool_use_prompt_tokens_details = 9
+        [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
   // Candidate responses from the model.
@@ -929,8 +1018,8 @@ message EmbedContentRequest {
   // counted.
   Content content = 2 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. Optional task type for which the embeddings will be used. Can
-  // only be set for `models/embedding-001`.
+  // Optional. Optional task type for which the embeddings will be used. Not
+  // supported on earlier models (`models/embedding-001`).
   optional TaskType task_type = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. An optional title for the text. Only applicable when TaskType is
@@ -1033,4 +1122,521 @@ message CountTokensResponse {
 
   // Number of tokens in the cached part of the prompt (the cached content).
   int32 cached_content_token_count = 5;
+
+  // Output only. List of modalities that were processed in the request input.
+  repeated ModalityTokenCount prompt_tokens_details = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. List of modalities that were processed in the cached content.
+  repeated ModalityTokenCount cache_tokens_details = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Configures the realtime input behavior in `BidiGenerateContent`.
+message RealtimeInputConfig {
+  // Configures automatic detection of activity.
+  message AutomaticActivityDetection {
+    // Determines how start of speech is detected.
+    enum StartSensitivity {
+      // The default is START_SENSITIVITY_HIGH.
+      START_SENSITIVITY_UNSPECIFIED = 0;
+
+      // Automatic detection will detect the start of speech more often.
+      START_SENSITIVITY_HIGH = 1;
+
+      // Automatic detection will detect the start of speech less often.
+      START_SENSITIVITY_LOW = 2;
+    }
+
+    // Determines how end of speech is detected.
+    enum EndSensitivity {
+      // The default is END_SENSITIVITY_HIGH.
+      END_SENSITIVITY_UNSPECIFIED = 0;
+
+      // Automatic detection ends speech more often.
+      END_SENSITIVITY_HIGH = 1;
+
+      // Automatic detection ends speech less often.
+      END_SENSITIVITY_LOW = 2;
+    }
+
+    // Optional. If enabled (the default), detected voice and text input count
+    // as activity. If disabled, the client must send activity signals.
+    optional bool disabled = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Determines how likely speech is to be detected.
+    optional StartSensitivity start_of_speech_sensitivity = 3
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The required duration of detected speech before start-of-speech
+    // is committed. The lower this value, the more sensitive the
+    // start-of-speech detection is and shorter speech can be recognized.
+    // However, this also increases the probability of false positives.
+    optional int32 prefix_padding_ms = 4
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Determines how likely detected speech is ended.
+    optional EndSensitivity end_of_speech_sensitivity = 5
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The required duration of detected non-speech (e.g. silence)
+    // before end-of-speech is committed. The larger this value, the longer
+    // speech gaps can be without interrupting the user's activity but this will
+    // increase the model's latency.
+    optional int32 silence_duration_ms = 6
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // The different ways of handling user activity.
+  enum ActivityHandling {
+    // If unspecified, the default behavior is `START_OF_ACTIVITY_INTERRUPTS`.
+    ACTIVITY_HANDLING_UNSPECIFIED = 0;
+
+    // If true, start of activity will interrupt the model's response (also
+    // called "barge in"). The model's current response will be cut-off in the
+    // moment of the interruption. This is the default behavior.
+    START_OF_ACTIVITY_INTERRUPTS = 1;
+
+    // The model's response will not be interrupted.
+    NO_INTERRUPTION = 2;
+  }
+
+  // Options about which input is included in the user's turn.
+  enum TurnCoverage {
+    // If unspecified, the default behavior is `TURN_INCLUDES_ONLY_ACTIVITY`.
+    TURN_COVERAGE_UNSPECIFIED = 0;
+
+    // The users turn only includes activity since the last turn, excluding
+    // inactivity (e.g. silence on the audio stream). This is the default
+    // behavior.
+    TURN_INCLUDES_ONLY_ACTIVITY = 1;
+
+    // The users turn includes all realtime input since the last turn, including
+    // inactivity (e.g. silence on the audio stream).
+    TURN_INCLUDES_ALL_INPUT = 2;
+  }
+
+  // Optional. If not set, automatic activity detection is enabled by default.
+  // If automatic voice detection is disabled, the client must send activity
+  // signals.
+  AutomaticActivityDetection automatic_activity_detection = 1
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Defines what effect activity has.
+  optional ActivityHandling activity_handling = 3
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Defines which input is included in the user's turn.
+  optional TurnCoverage turn_coverage = 4
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Session resumption configuration.
+//
+// This message is included in the session configuration as
+// `BidiGenerateContentSetup.session_resumption`. If configured, the server
+// will send `SessionResumptionUpdate` messages.
+message SessionResumptionConfig {
+  // The handle of a previous session. If not present then a new session is
+  // created.
+  //
+  // Session handles come from `SessionResumptionUpdate.token` values in
+  // previous connections.
+  optional string handle = 1;
+}
+
+// Enables context window compression — a mechanism for managing the model's
+// context window so that it does not exceed a given length.
+message ContextWindowCompressionConfig {
+  // The SlidingWindow method operates by discarding content at the beginning of
+  // the context window. The resulting context will always begin at the start of
+  // a USER role turn. System instructions and any
+  // `BidiGenerateContentSetup.prefix_turns` will always remain at the beginning
+  // of the result.
+  message SlidingWindow {
+    // The target number of tokens to keep. The default value is
+    // trigger_tokens/2.
+    //
+    // Discarding parts of the context window causes a temporary latency
+    // increase so this value should be calibrated to avoid frequent compression
+    // operations.
+    optional int64 target_tokens = 1;
+  }
+
+  // The context window compression mechanism used.
+  oneof compression_mechanism {
+    // A sliding-window mechanism.
+    SlidingWindow sliding_window = 2;
+  }
+
+  // The number of tokens (before running a turn) required to trigger a context
+  // window compression.
+  //
+  // This can be used to balance quality against latency as shorter context
+  // windows may result in faster model responses. However, any compression
+  // operation will cause a temporary latency increase, so they should not be
+  // triggered frequently.
+  //
+  // If not set, the default is 80% of the model's context window limit. This
+  // leaves 20% for the next user request/model response.
+  optional int64 trigger_tokens = 1;
+}
+
+// The audio transcription configuration.
+message AudioTranscriptionConfig {}
+
+// Message to be sent in the first (and only in the first)
+// `BidiGenerateContentClientMessage`. Contains configuration that will apply
+// for the duration of the streaming RPC.
+//
+// Clients should wait for a `BidiGenerateContentSetupComplete` message before
+// sending any additional messages.
+message BidiGenerateContentSetup {
+  // Required. The model's resource name. This serves as an ID for the Model to
+  // use.
+  //
+  // Format: `models/{model}`
+  string model = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Generation config.
+  //
+  // The following fields are not supported:
+  //
+  //  - `response_logprobs`
+  //  - `response_mime_type`
+  //  - `logprobs`
+  //  - `response_schema`
+  //  - `stop_sequence`
+  //  - `routing_config`
+  //  - `audio_timestamp`
+  GenerationConfig generation_config = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The user provided system instructions for the model.
+  //
+  // Note: Only text should be used in parts and content in each part will be
+  // in a separate paragraph.
+  Content system_instruction = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A list of `Tools` the model may use to generate the next
+  // response.
+  //
+  // A `Tool` is a piece of code that enables the system to interact with
+  // external systems to perform an action, or set of actions, outside of
+  // knowledge and scope of the model.
+  repeated Tool tools = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Configures the handling of realtime input.
+  RealtimeInputConfig realtime_input_config = 6
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Configures session resumption mechanism.
+  //
+  // If included, the server will send `SessionResumptionUpdate` messages.
+  SessionResumptionConfig session_resumption = 7
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Configures a context window compression mechanism.
+  //
+  // If included, the server will automatically reduce the size of the context
+  // when it exceeds the configured length.
+  ContextWindowCompressionConfig context_window_compression = 8
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If set, enables transcription of the model's audio output. The
+  // transcription aligns with the language code specified for the output
+  // audio, if configured.
+  AudioTranscriptionConfig output_audio_transcription = 11
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Incremental update of the current conversation delivered from the client.
+// All of the content here is unconditionally appended to the conversation
+// history and used as part of the prompt to the model to generate content.
+//
+// A message here will interrupt any current model generation.
+message BidiGenerateContentClientContent {
+  // Optional. The content appended to the current conversation with the model.
+  //
+  // For single-turn queries, this is a single instance. For multi-turn
+  // queries, this is a repeated field that contains conversation history and
+  // the latest request.
+  repeated Content turns = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If true, indicates that the server content generation should
+  // start with the currently accumulated prompt. Otherwise, the server awaits
+  // additional messages before starting generation.
+  bool turn_complete = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// User input that is sent in real time.
+//
+// The different modalities (audio, video and text) are handled as concurrent
+// streams. The ordering across these streams is not guaranteed.
+//
+// This is different from
+// [BidiGenerateContentClientContent][google.ai.generativelanguage.v1beta.BidiGenerateContentClientContent]
+// in a few ways:
+//
+// * Can be sent continuously without interruption to model generation.
+// * If there is a need to mix data interleaved across the
+//   [BidiGenerateContentClientContent][google.ai.generativelanguage.v1beta.BidiGenerateContentClientContent]
+//   and the
+//   [BidiGenerateContentRealtimeInput][google.ai.generativelanguage.v1beta.BidiGenerateContentRealtimeInput],
+//   the server attempts to optimize for best response, but there are no
+//   guarantees.
+// * End of turn is not explicitly specified, but is rather derived from user
+//   activity (for example, end of speech).
+// * Even before the end of turn, the data is processed incrementally
+//   to optimize for a fast start of the response from the model.
+message BidiGenerateContentRealtimeInput {
+  // Marks the start of user activity.
+  message ActivityStart {}
+
+  // Marks the end of user activity.
+  message ActivityEnd {}
+
+  // Optional. Inlined bytes data for media input. Multiple `media_chunks` are
+  // not supported, all but the first will be ignored.
+  //
+  // DEPRECATED: Use one of `audio`, `video`, or `text` instead.
+  repeated Blob media_chunks = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. These form the realtime audio input stream.
+  Blob audio = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Indicates that the audio stream has ended, e.g. because the
+  // microphone was turned off.
+  //
+  // This should only be sent when automatic activity detection is enabled
+  // (which is the default).
+  //
+  // The client can reopen the stream by sending an audio message.
+  optional bool audio_stream_end = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. These form the realtime video input stream.
+  Blob video = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. These form the realtime text input stream.
+  optional string text = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Marks the start of user activity. This can only be sent if
+  // automatic (i.e. server-side) activity detection is disabled.
+  ActivityStart activity_start = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Marks the end of user activity. This can only be sent if
+  // automatic (i.e. server-side) activity detection is disabled.
+  ActivityEnd activity_end = 7 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Client generated response to a `ToolCall` received from the server.
+// Individual `FunctionResponse` objects are matched to the respective
+// `FunctionCall` objects by the `id` field.
+//
+// Note that in the unary and server-streaming GenerateContent APIs function
+// calling happens by exchanging the `Content` parts, while in the bidi
+// GenerateContent APIs function calling happens over these dedicated set of
+// messages.
+message BidiGenerateContentToolResponse {
+  // Optional. The response to the function calls.
+  repeated FunctionResponse function_responses = 1
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Messages sent by the client in the BidiGenerateContent call.
+message BidiGenerateContentClientMessage {
+  // The type of the message.
+  oneof message_type {
+    // Optional. Session configuration sent in the first and only first client
+    // message.
+    BidiGenerateContentSetup setup = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Incremental update of the current conversation delivered from
+    // the client.
+    BidiGenerateContentClientContent client_content = 2
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. User input that is sent in real time.
+    BidiGenerateContentRealtimeInput realtime_input = 3
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Response to a `ToolCallMessage` received from the server.
+    BidiGenerateContentToolResponse tool_response = 4
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+}
+
+// Sent in response to a `BidiGenerateContentSetup` message from the client.
+message BidiGenerateContentSetupComplete {}
+
+// Incremental server update generated by the model in response to client
+// messages.
+//
+// Content is generated as quickly as possible, and not in real time. Clients
+// may choose to buffer and play it out in real time.
+message BidiGenerateContentServerContent {
+  // Output only. The content that the model has generated as part of the
+  // current conversation with the user.
+  optional Content model_turn = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. If true, indicates that the model is done generating.
+  //
+  // When model is interrupted while generating there will be no
+  // 'generation_complete' message in interrupted turn, it will go through
+  // 'interrupted > turn_complete'.
+  //
+  // When model assumes realtime playback there will be delay between
+  // generation_complete and turn_complete that is caused by model waiting for
+  // playback to finish.
+  bool generation_complete = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. If true, indicates that the model has completed its turn.
+  // Generation will only start in response to additional client messages.
+  bool turn_complete = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. If true, indicates that a client message has interrupted
+  // current model generation. If the client is playing out the content in real
+  // time, this is a good signal to stop and empty the current playback queue.
+  bool interrupted = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Grounding metadata for the generated content.
+  GroundingMetadata grounding_metadata = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Output audio transcription. The transcription is sent
+  // independently of the other server messages and there is no guaranteed
+  // ordering, in particular not between `server_content` and this
+  // `output_transcription`.
+  BidiGenerateContentTranscription output_transcription = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Request for the client to execute the `function_calls` and return the
+// responses with the matching `id`s.
+message BidiGenerateContentToolCall {
+  // Output only. The function call to be executed.
+  repeated FunctionCall function_calls = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Notification for the client that a previously issued `ToolCallMessage`
+// with the specified `id`s should not have been executed and should be
+// cancelled. If there were side-effects to those tool calls, clients may
+// attempt to undo the tool calls. This message occurs only in cases where the
+// clients interrupt server turns.
+message BidiGenerateContentToolCallCancellation {
+  // Output only. The ids of the tool calls to be cancelled.
+  repeated string ids = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A notice that the server will soon disconnect.
+message GoAway {
+  // The remaining time before the connection will be terminated as ABORTED.
+  //
+  // This duration will never be less than a model-specific minimum, which will
+  // be specified together with the rate limits for the model.
+  google.protobuf.Duration time_left = 1;
+}
+
+// Update of the session resumption state.
+//
+// Only sent if `BidiGenerateContentSetup.session_resumption` was set.
+message SessionResumptionUpdate {
+  // New handle that represents a state that can be resumed. Empty if
+  // `resumable`=false.
+  string new_handle = 1;
+
+  // True if the current session can be resumed at this point.
+  //
+  // Resumption is not possible at some points in the session. For example, when
+  // the model is executing function calls or generating. Resuming the session
+  // (using a previous session token) in such a state will result in some data
+  // loss. In these cases, `new_handle` will be empty and `resumable` will be
+  // false.
+  bool resumable = 2;
+}
+
+// Transcription of audio (input or output).
+message BidiGenerateContentTranscription {
+  // Transcription text.
+  string text = 1;
+}
+
+// Response message for the BidiGenerateContent call.
+message BidiGenerateContentServerMessage {
+  // The type of the message.
+  oneof message_type {
+    // Output only. Sent in response to a `BidiGenerateContentSetup` message
+    // from the client when setup is complete.
+    BidiGenerateContentSetupComplete setup_complete = 2
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Content generated by the model in response to client
+    // messages.
+    BidiGenerateContentServerContent server_content = 3
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Request for the client to execute the `function_calls` and
+    // return the responses with the matching `id`s.
+    BidiGenerateContentToolCall tool_call = 4
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Notification for the client that a previously issued
+    // `ToolCallMessage` with the specified `id`s should be cancelled.
+    BidiGenerateContentToolCallCancellation tool_call_cancellation = 5
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. A notice that the server will soon disconnect.
+    GoAway go_away = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Update of the session resumption state.
+    SessionResumptionUpdate session_resumption_update = 7
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Output only. Usage metadata about the response(s).
+  UsageMetadata usage_metadata = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Usage metadata about response(s).
+message UsageMetadata {
+  // Output only. Number of tokens in the prompt. When `cached_content` is set,
+  // this is still the total effective prompt size meaning this includes the
+  // number of tokens in the cached content.
+  int32 prompt_token_count = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Number of tokens in the cached part of the prompt (the cached content)
+  int32 cached_content_token_count = 4;
+
+  // Output only. Total number of tokens across all the generated response
+  // candidates.
+  int32 response_token_count = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Number of tokens present in tool-use prompt(s).
+  int32 tool_use_prompt_token_count = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Number of tokens of thoughts for thinking models.
+  int32 thoughts_token_count = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Total token count for the generation request (prompt +
+  // response candidates).
+  int32 total_token_count = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. List of modalities that were processed in the request input.
+  repeated ModalityTokenCount prompt_tokens_details = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. List of modalities of the cached content in the request input.
+  repeated ModalityTokenCount cache_tokens_details = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. List of modalities that were returned in the response.
+  repeated ModalityTokenCount response_tokens_details = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. List of modalities that were processed for tool-use request
+  // inputs.
+  repeated ModalityTokenCount tool_use_prompt_tokens_details = 9
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
