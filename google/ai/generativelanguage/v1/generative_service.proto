@@ -50,6 +50,10 @@ service GenerativeService {
         post: "/v1/{model=tunedModels/*}:generateContent"
         body: "*"
       }
+      additional_bindings {
+        post: "/v1/{model=dynamic/*}:generateContent"
+        body: "*"
+      }
     };
     option (google.api.method_signature) = "model,contents";
   }
@@ -64,6 +68,10 @@ service GenerativeService {
       body: "*"
       additional_bindings {
         post: "/v1/{model=tunedModels/*}:streamGenerateContent"
+        body: "*"
+      }
+      additional_bindings {
+        post: "/v1/{model=dynamic/*}:streamGenerateContent"
         body: "*"
       }
     };
@@ -130,6 +138,9 @@ enum TaskType {
 
   // Specifies that the given text will be used for fact verification.
   FACT_VERIFICATION = 7;
+
+  // Specifies that the given text will be used for code retrieval.
+  CODE_RETRIEVAL_QUERY = 8;
 }
 
 // Request to generate a completion from the model.
@@ -180,10 +191,9 @@ message GenerateContentRequest {
 // Configuration options for model generation and outputs. Not all parameters
 // are configurable for every model.
 message GenerationConfig {
-  // Optional. Number of generated responses to return.
-  //
-  // Currently, this value can only be set to 1. If unset, this will default
-  // to 1.
+  // Optional. Number of generated responses to return. If unset, this will
+  // default to 1. Please note that this doesn't work for previous generation
+  // models (Gemini 1.0 family)
   optional int32 candidate_count = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The set of character sequences (up to 5) that will stop output
@@ -234,6 +244,10 @@ message GenerationConfig {
   // and doesn't allow setting `top_k` on requests.
   optional int32 top_k = 7 [(google.api.field_behavior) = OPTIONAL];
 
+  // Optional. Seed used in decoding. If not set, the request uses a randomly
+  // generated seed.
+  optional int32 seed = 8 [(google.api.field_behavior) = OPTIONAL];
+
   // Optional. Presence penalty applied to the next token's logprobs if the
   // token has already been seen in the response.
   //
@@ -255,7 +269,7 @@ message GenerationConfig {
   //
   // A positive penalty will discourage the use of tokens that have already
   // been used, proportional to the number of times the token has been used:
-  // The more a token is used, the more dificult it is for the model to use
+  // The more a token is used, the more difficult it is for the model to use
   // that token again increasing the vocabulary of responses.
   //
   // Caution: A _negative_ penalty will encourage the model to reuse tokens
@@ -339,9 +353,34 @@ message GenerateContentResponse {
     // Total number of tokens across all the generated response candidates.
     int32 candidates_token_count = 2;
 
+    // Output only. Number of tokens present in tool-use prompt(s).
+    int32 tool_use_prompt_token_count = 8
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Number of tokens of thoughts for thinking models.
+    int32 thoughts_token_count = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+
     // Total token count for the generation request (prompt + response
     // candidates).
     int32 total_token_count = 3;
+
+    // Output only. List of modalities that were processed in the request input.
+    repeated ModalityTokenCount prompt_tokens_details = 5
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. List of modalities of the cached content in the request
+    // input.
+    repeated ModalityTokenCount cache_tokens_details = 6
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. List of modalities that were returned in the response.
+    repeated ModalityTokenCount candidates_tokens_details = 7
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. List of modalities that were processed for tool-use request
+    // inputs.
+    repeated ModalityTokenCount tool_use_prompt_tokens_details = 9
+        [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
   // Candidate responses from the model.
@@ -585,8 +624,8 @@ message EmbedContentRequest {
   // counted.
   Content content = 2 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. Optional task type for which the embeddings will be used. Can
-  // only be set for `models/embedding-001`.
+  // Optional. Optional task type for which the embeddings will be used. Not
+  // supported on earlier models (`models/embedding-001`).
   optional TaskType task_type = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. An optional title for the text. Only applicable when TaskType is
@@ -686,4 +725,12 @@ message CountTokensResponse {
   // The number of tokens that the `Model` tokenizes the `prompt` into. Always
   // non-negative.
   int32 total_tokens = 1;
+
+  // Output only. List of modalities that were processed in the request input.
+  repeated ModalityTokenCount prompt_tokens_details = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. List of modalities that were processed in the cached content.
+  repeated ModalityTokenCount cache_tokens_details = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
