@@ -22,9 +22,12 @@ import "google/api/field_behavior.proto";
 import "google/api/field_info.proto";
 import "google/api/resource.proto";
 import "google/longrunning/operations.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
+import "google/type/dayofweek.proto";
+import "google/type/timeofday.proto";
 
 option csharp_namespace = "Google.Cloud.Memorystore.V1";
 option go_package = "cloud.google.com/go/memorystore/apiv1/memorystorepb;memorystorepb";
@@ -44,6 +47,10 @@ option (google.api.resource_definition) = {
 option (google.api.resource_definition) = {
   type: "compute.googleapis.com/ServiceAttachment"
   pattern: "projects/{project}/regions/{region}/serviceAttachments/{service_attachment}"
+};
+option (google.api.resource_definition) = {
+  type: "cloudkms.googleapis.com/CryptoKey"
+  pattern: "projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}"
 };
 
 // Service describing handlers for resources
@@ -117,6 +124,107 @@ service Memorystore {
     };
     option (google.api.method_signature) = "name";
   }
+
+  // Reschedules upcoming maintenance event.
+  rpc RescheduleMaintenance(RescheduleMaintenanceRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/instances/*}:rescheduleMaintenance"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name,reschedule_type,schedule_time";
+    option (google.longrunning.operation_info) = {
+      response_type: "Instance"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
+  // Lists all backup collections owned by a consumer project in either the
+  // specified location (region) or all locations.
+  //
+  // If `location_id` is specified as `-` (wildcard), then all regions
+  // available to the project are queried, and the results are aggregated.
+  rpc ListBackupCollections(ListBackupCollectionsRequest)
+      returns (ListBackupCollectionsResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*/locations/*}/backupCollections"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Get a backup collection.
+  rpc GetBackupCollection(GetBackupCollectionRequest)
+      returns (BackupCollection) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/locations/*/backupCollections/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Lists all backups owned by a backup collection.
+  rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*/locations/*/backupCollections/*}/backups"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Gets the details of a specific backup.
+  rpc GetBackup(GetBackupRequest) returns (Backup) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/locations/*/backupCollections/*/backups/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Deletes a specific backup.
+  rpc DeleteBackup(DeleteBackupRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      delete: "/v1/{name=projects/*/locations/*/backupCollections/*/backups/*}"
+    };
+    option (google.api.method_signature) = "name";
+    option (google.longrunning.operation_info) = {
+      response_type: "google.protobuf.Empty"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
+  // Exports a specific backup to a customer target Cloud Storage URI.
+  rpc ExportBackup(ExportBackupRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/backupCollections/*/backups/*}:export"
+      body: "*"
+    };
+    option (google.longrunning.operation_info) = {
+      response_type: "Backup"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
+  // Backup Instance.
+  // If this is the first time a backup is being created, a backup collection
+  // will be created at the backend, and this backup belongs to this collection.
+  // Both collection and backup will have a resource name. Backup will be
+  // executed for each shard. A replica (primary if nonHA) will be selected to
+  // perform the execution. Backup call will be rejected if there is an ongoing
+  // backup or update operation. Be aware that during preview, if the instance's
+  // internal software version is too old, critical update will be performed
+  // before actual backup. Once the internal software version is updated to the
+  // minimum version required by the backup feature, subsequent backups will not
+  // require critical update. After preview, there will be no critical update
+  // needed for backup.
+  rpc BackupInstance(BackupInstanceRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/instances/*}:backup"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+    option (google.longrunning.operation_info) = {
+      response_type: "Instance"
+      metadata_type: "OperationMetadata"
+    };
+  }
 }
 
 // Status of the PSC connection.
@@ -166,12 +274,38 @@ message Instance {
       // Output only. Target number of replica nodes per shard for the instance.
       optional int32 target_replica_count = 2
           [(google.api.field_behavior) = OUTPUT_ONLY];
+
+      // Output only. Target engine version for the instance.
+      optional string target_engine_version = 3
+          [(google.api.field_behavior) = OUTPUT_ONLY];
+
+      // Output only. Target node type for the instance.
+      optional NodeType target_node_type = 4
+          [(google.api.field_behavior) = OUTPUT_ONLY];
     }
 
     oneof info {
       // Output only. Describes ongoing update when instance state is UPDATING.
       UpdateInfo update_info = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
     }
+  }
+
+  // Backups that stored in Cloud Storage buckets.
+  // The Cloud Storage buckets need to be the same region as the instances.
+  message GcsBackupSource {
+    // Optional. Example: gs://bucket1/object1, gs://bucket2/folder2/object2
+    repeated string uris = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Backups that generated and managed by memorystore.
+  message ManagedBackupSource {
+    // Optional. Example:
+    // //memorystore.googleapis.com/projects/{project}/locations/{location}/backupCollections/{collection}/backups/{backup}
+    // A shorter version (without the prefix) of the backup name is also
+    // supported, like
+    // projects/{project}/locations/{location}/backupCollections/{collection}/backups/{backup_id}
+    // In this case, it assumes the backup is under memorystore.googleapis.com.
+    string backup = 1 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // InstanceEndpoint consists of PSC connections that are created
@@ -190,9 +324,10 @@ message Instance {
     // Connectivity Automation (auto connection) during the cluster creation,
     // or it could be created by customer themeslves (user-created connection).
     oneof connection {
-      // Detailed information of a PSC connection that is created through
-      // service connectivity automation.
-      PscAutoConnection psc_auto_connection = 1;
+      // Immutable. Detailed information of a PSC connection that is created
+      // through service connectivity automation.
+      PscAutoConnection psc_auto_connection = 1
+          [(google.api.field_behavior) = IMMUTABLE];
 
       // Detailed information of a PSC connection that is created by the user.
       PscConnection psc_connection = 2;
@@ -276,6 +411,25 @@ message Instance {
     CLUSTER_DISABLED = 4;
   }
 
+  // The source to import from.
+  oneof import_sources {
+    // Optional. Immutable. Backups that stored in Cloud Storage buckets.
+    // The Cloud Storage buckets need to be the same region as the instances.
+    // Read permission is required to import from the provided Cloud Storage
+    // Objects.
+    GcsBackupSource gcs_source = 23 [
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.field_behavior) = IMMUTABLE
+    ];
+
+    // Optional. Immutable. Backups that generated and managed by memorystore
+    // service.
+    ManagedBackupSource managed_backup_source = 24 [
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.field_behavior) = IMMUTABLE
+    ];
+  }
+
   // Identifier. Unique name of the instance.
   // Format: projects/{project}/locations/{location}/instances/{instance}
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
@@ -322,26 +476,20 @@ message Instance {
   // Optional. Number of shards for the instance.
   int32 shard_count = 11 [(google.api.field_behavior) = OPTIONAL];
 
-  // Output only. Endpoints clients can connect to the instance through.
-  // Currently only one discovery endpoint is supported.
+  // Output only. Deprecated: Use the endpoints.connections.psc_auto_connection
+  // or endpoints.connections.psc_connection values instead.
   repeated DiscoveryEndpoint discovery_endpoints = 12
-      [(google.api.field_behavior) = OUTPUT_ONLY];
+      [deprecated = true, (google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Optional. Immutable. Machine type for individual nodes of the instance.
-  NodeType node_type = 13 [
-    (google.api.field_behavior) = OPTIONAL,
-    (google.api.field_behavior) = IMMUTABLE
-  ];
+  // Optional. Machine type for individual nodes of the instance.
+  NodeType node_type = 13 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Persistence configuration of the instance.
   PersistenceConfig persistence_config = 14
       [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Immutable. Engine version of the instance.
-  string engine_version = 15 [
-    (google.api.field_behavior) = OPTIONAL,
-    (google.api.field_behavior) = IMMUTABLE
-  ];
+  // Optional. Engine version of the instance.
+  string engine_version = 15 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. User-provided engine configurations for the instance.
   map<string, string> engine_configs = 16
@@ -361,12 +509,17 @@ message Instance {
   optional bool deletion_protection_enabled = 19
       [(google.api.field_behavior) = OPTIONAL];
 
-  // Required. Immutable. User inputs and resource details of the auto-created
-  // PSC connections.
+  // Optional. Immutable. Deprecated: Use the
+  // endpoints.connections.psc_auto_connection value instead.
   repeated PscAutoConnection psc_auto_connections = 20 [
-    (google.api.field_behavior) = REQUIRED,
+    deprecated = true,
+    (google.api.field_behavior) = OPTIONAL,
     (google.api.field_behavior) = IMMUTABLE
   ];
+
+  // Output only. Service attachment details to configure PSC connections.
+  repeated PscAttachmentDetail psc_attachment_details = 21
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Optional. Endpoints for the instance.
   repeated InstanceEndpoint endpoints = 25
@@ -374,18 +527,402 @@ message Instance {
 
   // Optional. The mode config for the instance.
   Mode mode = 26 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Input only. Ondemand maintenance for the instance.
+  optional bool ondemand_maintenance = 28 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = INPUT_ONLY
+  ];
+
+  // Optional. The maintenance policy for the instance. If not provided,
+  // the maintenance event will be performed based on Memorystore
+  // internal rollout schedule.
+  MaintenancePolicy maintenance_policy = 31
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Published maintenance schedule.
+  MaintenanceSchedule maintenance_schedule = 32
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The config for cross instance replication.
+  CrossInstanceReplicationConfig cross_instance_replication_config = 33
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If true, instance endpoints that are created and registered by
+  // customers can be deleted asynchronously. That is, such an instance endpoint
+  // can be de-registered before the forwarding rules in the instance endpoint
+  // are deleted.
+  optional bool async_instance_endpoints_deletion_enabled = 44
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The backup collection full resource name. Example:
+  // projects/{project}/locations/{location}/backupCollections/{collection}
+  optional string backup_collection = 47 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "memorystore.googleapis.com/BackupCollection"
+    }
+  ];
+
+  // Optional. The automated backup config for the instance.
+  AutomatedBackupConfig automated_backup_config = 48
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The automated backup config for an instance.
+message AutomatedBackupConfig {
+  // This schedule allows the backup to be triggered at a fixed frequency
+  // (currently only daily is supported).
+  message FixedFrequencySchedule {
+    // Required. The start time of every automated backup in UTC. It must be set
+    // to the start of an hour. This field is required.
+    google.type.TimeOfDay start_time = 2
+        [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // The automated backup mode.
+  enum AutomatedBackupMode {
+    // Default value. Automated backup config is not specified.
+    AUTOMATED_BACKUP_MODE_UNSPECIFIED = 0;
+
+    // Automated backup config disabled.
+    DISABLED = 1;
+
+    // Automated backup config enabled.
+    ENABLED = 2;
+  }
+
+  // The schedule of automated backups.
+  oneof schedule {
+    // Optional. Trigger automated backups at a fixed frequency.
+    FixedFrequencySchedule fixed_frequency_schedule = 2
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Optional. The automated backup mode. If the mode is disabled, the other
+  // fields will be ignored.
+  AutomatedBackupMode automated_backup_mode = 1
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. How long to keep automated backups before the backups are
+  // deleted. The value should be between 1 day and 365 days. If not specified,
+  // the default value is 35 days.
+  google.protobuf.Duration retention = 3
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// BackupCollection of an instance.
+message BackupCollection {
+  option (google.api.resource) = {
+    type: "memorystore.googleapis.com/BackupCollection"
+    pattern: "projects/{project}/locations/{location}/backupCollections/{backup_collection}"
+    plural: "backupCollections"
+    singular: "backupCollection"
+  };
+
+  // Identifier. Full resource path of the backup collection.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Output only. The instance uid of the backup collection.
+  string instance_uid = 3 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
+
+  // Output only. The full resource path of the instance the backup collection
+  // belongs to. Example:
+  // projects/{project}/locations/{location}/instances/{instance}
+  string instance = 4 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "memorystore.googleapis.com/Instance"
+    }
+  ];
+
+  // Output only. The KMS key used to encrypt the backups under this backup
+  // collection.
+  string kms_key = 5 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "cloudkms.googleapis.com/CryptoKey"
+    }
+  ];
+
+  // Output only. System assigned unique identifier of the backup collection.
+  string uid = 6 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
+
+  // Output only. The time when the backup collection was created.
+  google.protobuf.Timestamp create_time = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Backup of an instance.
+message Backup {
+  option (google.api.resource) = {
+    type: "memorystore.googleapis.com/Backup"
+    pattern: "projects/{project}/locations/{location}/backupCollections/{backup_collection}/backups/{backup}"
+    plural: "backups"
+    singular: "backup"
+  };
+
+  // Type of the backup.
+  enum BackupType {
+    // The default value, not set.
+    BACKUP_TYPE_UNSPECIFIED = 0;
+
+    // On-demand backup.
+    ON_DEMAND = 1;
+
+    // Automated backup.
+    AUTOMATED = 2;
+  }
+
+  // State of the backup.
+  enum State {
+    // The default value, not set.
+    STATE_UNSPECIFIED = 0;
+
+    // The backup is being created.
+    CREATING = 1;
+
+    // The backup is active to be used.
+    ACTIVE = 2;
+
+    // The backup is being deleted.
+    DELETING = 3;
+
+    // The backup is currently suspended due to reasons like project deletion,
+    // billing account closure, etc.
+    SUSPENDED = 4;
+  }
+
+  // Identifier. Full resource path of the backup. the last part of the name is
+  // the backup id with the following format: [YYYYMMDDHHMMSS]_[Shorted Instance
+  // UID] OR customer specified while backup instance. Example:
+  // 20240515123000_1234
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Output only. The time when the backup was created.
+  google.protobuf.Timestamp create_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Instance resource path of this backup.
+  string instance = 3 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "memorystore.googleapis.com/Instance"
+    }
+  ];
+
+  // Output only. Instance uid of this backup.
+  string instance_uid = 4 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
+
+  // Output only. Total size of the backup in bytes.
+  int64 total_size_bytes = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time when the backup will expire.
+  google.protobuf.Timestamp expire_time = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. valkey-7.5/valkey-8.0, etc.
+  string engine_version = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. List of backup files of the backup.
+  repeated BackupFile backup_files = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Node type of the instance.
+  Instance.NodeType node_type = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Number of replicas for the instance.
+  int32 replica_count = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Number of shards for the instance.
+  int32 shard_count = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Type of the backup.
+  BackupType backup_type = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. State of the backup.
+  State state = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. System assigned unique identifier of the backup.
+  string uid = 15 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
+}
+
+// Backup is consisted of multiple backup files.
+message BackupFile {
+  // Output only. e.g: <shard-id>.rdb
+  string file_name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Size of the backup file in bytes.
+  int64 size_bytes = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time when the backup file was created.
+  google.protobuf.Timestamp create_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Cross instance replication config.
+message CrossInstanceReplicationConfig {
+  // Details of the remote instance associated with this instance in a cross
+  // instance replication setup.
+  message RemoteInstance {
+    // Optional. The full resource path of the remote instance in
+    // the format: projects/<project>/locations/<region>/instances/<instance-id>
+    string instance = 1 [
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.resource_reference) = {
+        type: "memorystore.googleapis.com/Instance"
+      }
+    ];
+
+    // Output only. The unique identifier of the remote instance.
+    string uid = 2 [
+      (google.api.field_info).format = UUID4,
+      (google.api.field_behavior) = OUTPUT_ONLY
+    ];
+  }
+
+  // An output only view of all the member instances participating in the cross
+  // instance replication.
+  message Membership {
+    // Output only. The primary instance that acts as the source of replication
+    // for the secondary instances.
+    RemoteInstance primary_instance = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The list of secondary instances replicating from the primary
+    // instance.
+    repeated RemoteInstance secondary_instances = 2
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // The role of the instance in cross instance replication.
+  enum InstanceRole {
+    // instance role is not set.
+    // The behavior is equivalent to NONE.
+    INSTANCE_ROLE_UNSPECIFIED = 0;
+
+    // This instance does not participate in cross instance replication. It is
+    // an independent instance and does not replicate to or from any other
+    // instances.
+    NONE = 1;
+
+    // A instance that allows both reads and writes. Any data written to this
+    // instance is also replicated to the attached secondary instances.
+    PRIMARY = 2;
+
+    // A instance that allows only reads and replicates data from a primary
+    // instance.
+    SECONDARY = 3;
+  }
+
+  // Required. The role of the instance in cross instance replication.
+  InstanceRole instance_role = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Details of the primary instance that is used as the replication
+  // source for this secondary instance.
+  //
+  // This field is only set for a secondary instance.
+  RemoteInstance primary_instance = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. List of secondary instances that are replicating from this
+  // primary instance.
+  //
+  // This field is only set for a primary instance.
+  repeated RemoteInstance secondary_instances = 3
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The last time cross instance replication config was updated.
+  google.protobuf.Timestamp update_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. An output only view of all the member instances participating
+  // in the cross instance replication. This view will be provided by every
+  // member instance irrespective of its instance role(primary or secondary).
+  //
+  // A primary instance can provide information about all the secondary
+  // instances replicating from it. However, a secondary instance only knows
+  // about the primary instance from which it is replicating. However, for
+  // scenarios, where the primary instance is unavailable(e.g. regional outage),
+  // a Getinstance request can be sent to any other member instance and this
+  // field will list all the member instances participating in cross instance
+  // replication.
+  Membership membership = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Maintenance policy per instance.
+message MaintenancePolicy {
+  // Output only. The time when the policy was created.
+  google.protobuf.Timestamp create_time = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time when the policy was updated.
+  google.protobuf.Timestamp update_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Maintenance window that is applied to resources covered by this
+  // policy. Minimum 1. For the current version, the maximum number of
+  // weekly_window is expected to be one.
+  repeated WeeklyMaintenanceWindow weekly_maintenance_window = 3
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Time window specified for weekly operations.
+message WeeklyMaintenanceWindow {
+  // Optional. Allows to define schedule that runs specified day of the week.
+  google.type.DayOfWeek day = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Start time of the window in UTC.
+  google.type.TimeOfDay start_time = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Upcoming maintenance schedule.
+message MaintenanceSchedule {
+  // Output only. The start time of any upcoming scheduled maintenance for this
+  // instance.
+  google.protobuf.Timestamp start_time = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The end time of any upcoming scheduled maintenance for this
+  // instance.
+  google.protobuf.Timestamp end_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Configuration of a service attachment of the cluster, for creating PSC
+// connections.
+message PscAttachmentDetail {
+  // Output only. Service attachment URI which your self-created PscConnection
+  // should use as target.
+  string service_attachment = 1 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "compute.googleapis.com/ServiceAttachment"
+    }
+  ];
+
+  // Output only. Type of Psc endpoint.
+  ConnectionType connection_type = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Details of consumer resources in a PSC connection.
 message PscAutoConnection {
   // Ports of the exposed endpoint.
   oneof ports {
-    // Optional. Output only. port will only be set for Primary/Reader or
-    // Discovery endpoint.
-    int32 port = 9 [
-      (google.api.field_behavior) = OUTPUT_ONLY,
-      (google.api.field_behavior) = OPTIONAL
-    ];
+    // Optional. port will only be set for Primary/Reader or Discovery endpoint.
+    int32 port = 9 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Output only. The PSC connection id of the forwarding rule connected to the
@@ -444,9 +981,15 @@ message PscAutoConnection {
 
 // User created Psc connection configuration.
 message PscConnection {
-  // Output only. The PSC connection id of the forwarding rule connected to the
+  // Ports of the exposed endpoint.
+  oneof ports {
+    // Optional. port will only be set for Primary/Reader or Discovery endpoint.
+    int32 port = 9 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Required. The PSC connection id of the forwarding rule connected to the
   // service attachment.
-  string psc_connection_id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string psc_connection_id = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. The IP allocated on the consumer network for the PSC forwarding
   // rule.
@@ -626,6 +1169,39 @@ message ZoneDistributionConfig {
   ZoneDistributionMode mode = 1 [(google.api.field_behavior) = OPTIONAL];
 }
 
+// Request for rescheduling instance maintenance.
+message RescheduleMaintenanceRequest {
+  // Reschedule options.
+  enum RescheduleType {
+    // Not set.
+    RESCHEDULE_TYPE_UNSPECIFIED = 0;
+
+    // If the user wants to schedule the maintenance to happen now.
+    IMMEDIATE = 1;
+
+    // If the user wants to reschedule the maintenance to a specific time.
+    SPECIFIC_TIME = 3;
+  }
+
+  // Required. Name of the instance to reschedule maintenance for:
+  // `projects/{project}/locations/{location_id}/instances/{instance}`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "memorystore.googleapis.com/Instance"
+    }
+  ];
+
+  // Required. If reschedule type is SPECIFIC_TIME, schedule_time must be set.
+  RescheduleType reschedule_type = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Timestamp when the maintenance shall be rescheduled to if
+  // reschedule_type=SPECIFIC_TIME, in RFC 3339 format.
+  // Example: `2012-11-15T16:19:00.094Z`.
+  google.protobuf.Timestamp schedule_time = 3
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
 // Request message for [ListInstances][].
 message ListInstancesRequest {
   // Required. The parent to list instances from.
@@ -781,6 +1357,175 @@ message DeleteInstanceRequest {
     (google.api.field_info).format = UUID4,
     (google.api.field_behavior) = OPTIONAL
   ];
+}
+
+// Request for [ListBackupCollections]
+message ListBackupCollectionsRequest {
+  // Required. The resource name of the backupCollection location using the
+  // form:
+  //     `projects/{project_id}/locations/{location_id}`
+  // where `location_id` refers to a Google Cloud region.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "memorystore.googleapis.com/BackupCollection"
+    }
+  ];
+
+  // Optional. The maximum number of items to return.
+  //
+  // If not specified, a default value of 1000 will be used by the service.
+  // Regardless of the page_size value, the response may include a partial list
+  // and a caller should only rely on response's
+  // [`next_page_token`][google.cloud.memorystore.v1.ListBackupCollectionsResponse.next_page_token]
+  // to determine if there are more clusters left to be queried.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The `next_page_token` value returned from a previous
+  // [ListBackupCollections] request, if any.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response for [ListBackupCollections].
+message ListBackupCollectionsResponse {
+  // A list of backupCollections in the project.
+  //
+  // If the `location_id` in the parent field of the request is "-", all regions
+  // available to the project are queried, and the results aggregated.
+  // If in such an aggregated query a location is unavailable, a placeholder
+  // backupCollection entry is included in the response with the `name` field
+  // set to a value of the form
+  // `projects/{project_id}/locations/{location_id}/backupCollections/`- and the
+  // `status` field set to ERROR and `status_message` field set to "location not
+  // available for ListBackupCollections".
+  repeated BackupCollection backup_collections = 1;
+
+  // Token to retrieve the next page of results, or empty if there are no more
+  // results in the list.
+  string next_page_token = 2;
+
+  // Locations that could not be reached.
+  repeated string unreachable = 3;
+}
+
+// Request for [GetBackupCollection].
+message GetBackupCollectionRequest {
+  // Required. Instance backupCollection resource name using the form:
+  //     `projects/{project_id}/locations/{location_id}/backupCollections/{backup_collection_id}`
+  // where `location_id` refers to a Google Cloud region.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "memorystore.googleapis.com/BackupCollection"
+    }
+  ];
+}
+
+// Request for [ListBackups].
+message ListBackupsRequest {
+  // Required. The resource name of the backupCollection using the form:
+  // `projects/{project_id}/locations/{location_id}/backupCollections/{backup_collection_id}`
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "memorystore.googleapis.com/Backup"
+    }
+  ];
+
+  // Optional. The maximum number of items to return.
+  //
+  // If not specified, a default value of 1000 will be used by the service.
+  // Regardless of the page_size value, the response may include a partial list
+  // and a caller should only rely on response's
+  // [`next_page_token`][google.cloud.memorystore.v1.ListBackupsResponse.next_page_token]
+  // to determine if there are more clusters left to be queried.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The `next_page_token` value returned from a previous
+  // [ListBackupCollections] request, if any.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response for [ListBackups].
+message ListBackupsResponse {
+  // A list of backups in the project.
+  repeated Backup backups = 1;
+
+  // Token to retrieve the next page of results, or empty if there are no more
+  // results in the list.
+  string next_page_token = 2;
+
+  // Backups that could not be reached.
+  repeated string unreachable = 3;
+}
+
+// Request for [GetBackup].
+message GetBackupRequest {
+  // Required. Instance backup resource name using the form:
+  // `projects/{project_id}/locations/{location_id}/backupCollections/{backup_collection_id}/backups/{backup_id}`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "memorystore.googleapis.com/Backup"
+    }
+  ];
+}
+
+// Request for [DeleteBackup].
+message DeleteBackupRequest {
+  // Required. Instance backup resource name using the form:
+  // `projects/{project_id}/locations/{location_id}/backupCollections/{backup_collection_id}/backups/{backup_id}`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "memorystore.googleapis.com/Backup"
+    }
+  ];
+
+  // Optional. Idempotent request UUID.
+  string request_id = 2 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
+// Request for [ExportBackup].
+message ExportBackupRequest {
+  // Required. Specify destination to export a backup.
+  oneof destination {
+    // Google Cloud Storage bucket, like "my-bucket".
+    string gcs_bucket = 2;
+  }
+
+  // Required. Instance backup resource name using the form:
+  // `projects/{project_id}/locations/{location_id}/backupCollections/{backup_collection_id}/backups/{backup_id}`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "memorystore.googleapis.com/Backup"
+    }
+  ];
+}
+
+// Request for [BackupInstance].
+message BackupInstanceRequest {
+  // Required. Instance resource name using the form:
+  //  `projects/{project_id}/locations/{location_id}/instances/{instance_id}`
+  // where `location_id` refers to a Google Cloud region.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "memorystore.googleapis.com/Instance"
+    }
+  ];
+
+  // Optional. TTL for the backup to expire. Value range is 1 day to 100 years.
+  // If not specified, the default value is 100 years.
+  google.protobuf.Duration ttl = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The id of the backup to be created. If not specified, the
+  // default value ([YYYYMMDDHHMMSS]_[Shortened Instance UID] is used.
+  optional string backup_id = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request message for [GetCertificateAuthority][].
