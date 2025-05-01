@@ -18,6 +18,7 @@ package google.dataflow.v1beta3;
 
 import "google/api/annotations.proto";
 import "google/api/client.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -35,9 +36,7 @@ service MetricsV1Beta3 {
   option (google.api.default_host) = "dataflow.googleapis.com";
   option (google.api.oauth_scopes) =
       "https://www.googleapis.com/auth/cloud-platform,"
-      "https://www.googleapis.com/auth/compute,"
-      "https://www.googleapis.com/auth/compute.readonly,"
-      "https://www.googleapis.com/auth/userinfo.email";
+      "https://www.googleapis.com/auth/compute";
 
   // Request the job status.
   //
@@ -58,7 +57,8 @@ service MetricsV1Beta3 {
   // Request detailed information about the execution status of the job.
   //
   // EXPERIMENTAL.  This API is subject to change or removal without notice.
-  rpc GetJobExecutionDetails(GetJobExecutionDetailsRequest) returns (JobExecutionDetails) {
+  rpc GetJobExecutionDetails(GetJobExecutionDetailsRequest)
+      returns (JobExecutionDetails) {
     option (google.api.http) = {
       get: "/v1b3/projects/{project_id}/locations/{location}/jobs/{job_id}/executionDetails"
     };
@@ -68,7 +68,8 @@ service MetricsV1Beta3 {
   // job.
   //
   // EXPERIMENTAL.  This API is subject to change or removal without notice.
-  rpc GetStageExecutionDetails(GetStageExecutionDetailsRequest) returns (StageExecutionDetails) {
+  rpc GetStageExecutionDetails(GetStageExecutionDetailsRequest)
+      returns (StageExecutionDetails) {
     option (google.api.http) = {
       get: "/v1b3/projects/{project_id}/locations/{location}/jobs/{job_id}/stages/{stage_id}/executionDetails"
     };
@@ -95,6 +96,7 @@ message MetricStructuredName {
 }
 
 // Describes the state of a metric.
+// Next ID: 14
 message MetricUpdate {
   // Name of the metric.
   MetricStructuredName name = 1;
@@ -131,9 +133,13 @@ message MetricUpdate {
 
   // Worker-computed aggregate value for the "Set" aggregation kind.  The only
   // possible value type is a list of Values whose type can be Long, Double,
-  // or String, according to the metric's type.  All Values in the list must
-  // be of the same type.
+  // String, or BoundedTrie according to the metric's type.  All Values in the
+  // list must be of the same type.
   google.protobuf.Value set = 7;
+
+  // Worker-computed aggregate value for the "Trie" aggregation kind.  The only
+  // possible value type is a BoundedTrieNode.
+  google.protobuf.Value trie = 13;
 
   // A struct value describing properties of a distribution of numeric values.
   google.protobuf.Value distribution = 11;
@@ -173,7 +179,8 @@ message GetJobMetricsRequest {
 
 // JobMetrics contains a collection of metrics describing the detailed progress
 // of a Dataflow job. Metrics correspond to user-defined and system-defined
-// metrics in the job.
+// metrics in the job. For more information, see [Dataflow job metrics]
+// (https://cloud.google.com/dataflow/docs/guides/using-monitoring-intf).
 //
 // This resource captures only the most recent values of each metric;
 // time-series data can be queried for them (under the same metric names)
@@ -230,6 +237,92 @@ message ProgressTimeseries {
   repeated Point data_points = 2;
 }
 
+// Information useful for straggler identification and debugging.
+message StragglerInfo {
+  // Information useful for debugging a straggler. Each type will provide
+  // specialized debugging information relevant for a particular cause.
+  // The StragglerDebuggingInfo will be 1:1 mapping to the StragglerCause enum.
+  message StragglerDebuggingInfo {
+    oneof straggler_debugging_info_value {
+      // Hot key debugging details.
+      HotKeyDebuggingInfo hot_key = 1;
+    }
+  }
+
+  // The time when the work item attempt became a straggler.
+  google.protobuf.Timestamp start_time = 1;
+
+  // The straggler causes, keyed by the string representation of the
+  // StragglerCause enum and contains specialized debugging information for each
+  // straggler cause.
+  map<string, StragglerDebuggingInfo> causes = 2;
+}
+
+// Information useful for streaming straggler identification and debugging.
+message StreamingStragglerInfo {
+  // Start time of this straggler.
+  google.protobuf.Timestamp start_time = 1;
+
+  // End time of this straggler.
+  google.protobuf.Timestamp end_time = 2;
+
+  // Name of the worker where the straggler was detected.
+  string worker_name = 3;
+
+  // The event-time watermark lag at the time of the straggler detection.
+  google.protobuf.Duration data_watermark_lag = 4;
+
+  // The system watermark lag at the time of the straggler detection.
+  google.protobuf.Duration system_watermark_lag = 5;
+}
+
+// Information for a straggler.
+message Straggler {
+  // Information useful for straggler identification and debugging.
+  oneof straggler_info {
+    // Batch straggler identification and debugging information.
+    StragglerInfo batch_straggler = 1;
+
+    // Streaming straggler identification and debugging information.
+    StreamingStragglerInfo streaming_straggler = 2;
+  }
+}
+
+// Information useful for debugging a hot key detection.
+message HotKeyDebuggingInfo {
+  // Information about a hot key.
+  message HotKeyInfo {
+    // The age of the hot key measured from when it was first detected.
+    google.protobuf.Duration hot_key_age = 1;
+
+    // A detected hot key that is causing limited parallelism. This field will
+    // be populated only if the following flag is set to true:
+    // "--enable_hot_key_logging".
+    string key = 2;
+
+    // If true, then the above key is truncated and cannot be deserialized. This
+    // occurs if the key above is populated and the key size is >5MB.
+    bool key_truncated = 3;
+  }
+
+  // Debugging information for each detected hot key. Keyed by a hash of the
+  // key.
+  map<uint64, HotKeyInfo> detected_hot_keys = 1;
+}
+
+// Summarized straggler identification details.
+message StragglerSummary {
+  // The total count of stragglers.
+  int64 total_straggler_count = 1;
+
+  // Aggregated counts of straggler causes, keyed by the string representation
+  // of the StragglerCause enum.
+  map<string, int64> straggler_cause_count = 2;
+
+  // The most recent stragglers.
+  repeated Straggler recent_stragglers = 3;
+}
+
 // The state of some component of job execution.
 enum ExecutionState {
   // The component state is unknown or unspecified.
@@ -274,6 +367,9 @@ message StageSummary {
 
   // Metrics for this stage.
   repeated MetricUpdate metrics = 6;
+
+  // Straggler summary for this stage.
+  StragglerSummary straggler_summary = 7;
 }
 
 // Information about the execution of a job.
@@ -346,6 +442,9 @@ message WorkItemDetails {
 
   // Metrics for this work item.
   repeated MetricUpdate metrics = 7;
+
+  // Information about straggler detections for this work item.
+  StragglerInfo straggler_info = 8;
 }
 
 // Information about a worker
