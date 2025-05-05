@@ -255,7 +255,7 @@ rules_gapic_repositories()
 
 load("@rules_jvm_external//:defs.bzl", "maven_install")
 
-_gapic_generator_java_version = "2.56.1"
+_gapic_generator_java_version = "2.56.3"
 
 http_archive(
     name = "gapic_generator_java",
