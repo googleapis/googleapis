@@ -88,6 +88,37 @@ service AlloyDBAdmin {
     };
   }
 
+  // Exports data from the cluster.
+  // Imperative only.
+  rpc ExportCluster(ExportClusterRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1alpha/{name=projects/*/locations/*/clusters/*}:export"
+      body: "*"
+    };
+    option (google.api.method_signature) =
+        "name,gcs_destination,database,csv_export_options,sql_export_options";
+    option (google.longrunning.operation_info) = {
+      response_type: "ExportClusterResponse"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
+  // Imports data to the cluster.
+  // Imperative only.
+  rpc ImportCluster(ImportClusterRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1alpha/{name=projects/*/locations/*/clusters/*}:import"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name,gcs_uri,database,user";
+    option (google.longrunning.operation_info) = {
+      response_type: "ImportClusterResponse"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
   // Upgrades a single Cluster.
   // Imperative only.
   rpc UpgradeCluster(UpgradeClusterRequest)
@@ -627,6 +658,164 @@ message UpdateClusterRequest {
   // Optional. If set to true, update succeeds even if cluster is not found. In
   // that case, a new cluster is created and `update_mask` is ignored.
   bool allow_missing = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Destination for Export. Export will be done to cloud storage.
+message GcsDestination {
+  // Required. The path to the file in Google Cloud Storage where the export
+  // will be stored. The URI is in the form `gs://bucketName/fileName`.
+  string uri = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Export cluster request.
+message ExportClusterRequest {
+  // Options for exporting data in CSV format.
+  message CsvExportOptions {
+    // Required. The SELECT query used to extract the data.
+    string select_query = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. Specifies the character that separates columns within each row
+    // (line) of the file. The default is comma. The value of this argument has
+    // to be a character in Hex ASCII Code.
+    string field_delimiter = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Specifies the quoting character to be used when a data value is
+    // quoted. The default is double-quote. The value of this argument has to be
+    // a character in Hex ASCII Code.
+    string quote_character = 3 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Specifies the character that should appear before a data
+    // character that needs to be escaped. The default is the same as quote
+    // character. The value of this argument has to be a character in Hex ASCII
+    // Code.
+    string escape_character = 4 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Options for exporting data in SQL format.
+  message SqlExportOptions {
+    // Optional. Tables to export from.
+    repeated string tables = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. If true, only export the schema.
+    optional bool schema_only = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. If true, output commands to DROP all the dumped database
+    // objects prior to outputting the commands for creating them.
+    optional bool clean_target_objects = 3
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. If true, use DROP ... IF EXISTS commands to check for the
+    // object's existence before dropping it in clean_target_objects mode.
+    optional bool if_exist_target_objects = 4
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Oneof field to support other destinations in future.
+  oneof destination {
+    // Required. Option to export data to cloud storage.
+    GcsDestination gcs_destination = 2 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Required field to specify export file type and options.
+  oneof export_options {
+    // Options for exporting data in CSV format. Required field to be set for
+    // CSV file type.
+    CsvExportOptions csv_export_options = 4;
+
+    // Options for exporting data in SQL format. Required field to be set for
+    // SQL file type.
+    SqlExportOptions sql_export_options = 5;
+  }
+
+  // Required. The resource name of the cluster.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "alloydb.googleapis.com/Cluster" }
+  ];
+
+  // Required. Name of the database where the export command will be executed.
+  // Note - Value provided should be the same as expected from
+  // `SELECT current_database();` and NOT as a resource reference.
+  string database = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response of export cluster rpc.
+message ExportClusterResponse {
+  // Oneof field to support other destinations in future.
+  oneof destination {
+    // Required. Option to export data to cloud storage.
+    GcsDestination gcs_destination = 2 [(google.api.field_behavior) = REQUIRED];
+  }
+}
+
+// Import cluster request.
+message ImportClusterRequest {
+  // Options for importing data in SQL format.
+  message SqlImportOptions {}
+
+  // Options for importing data in CSV format.
+  message CsvImportOptions {
+    // Required. The database table to import CSV file into.
+    string table = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. The columns to which CSV data is imported. If not specified,
+    // all columns of the database table are loaded with CSV data.
+    repeated string columns = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Specifies the character that separates columns within each row
+    // (line) of the file. The default is comma. The value of this argument has
+    // to be a character in Hex ASCII Code.
+    string field_delimiter = 3 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Specifies the quoting character to be used when a data value is
+    // quoted. The default is double-quote. The value of this argument has to be
+    // a character in Hex ASCII Code.
+    string quote_character = 4 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Specifies the character that should appear before a data
+    // character that needs to be escaped. The default is same as quote
+    // character. The value of this argument has to be a character in Hex ASCII
+    // Code.
+    string escape_character = 5 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // oneof field to support various import formats like SQL and CSV.
+  oneof import_options {
+    // Options for importing data in SQL format.
+    SqlImportOptions sql_import_options = 4;
+
+    // Options for importing data in CSV format.
+    CsvImportOptions csv_import_options = 7;
+  }
+
+  // Required. The resource name of the cluster.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "alloydb.googleapis.com/Cluster" }
+  ];
+
+  // Required. The path to the file in Google Cloud Storage where the source
+  // file for import will be stored. The URI is in the form
+  // `gs://bucketName/fileName`.
+  string gcs_uri = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Name of the database to which the import will be done.
+  // For import from SQL file, this is required only if the file does not
+  // specify a database.
+  // Note - Value provided should be the same as expected from `SELECT
+  // current_database();` and NOT as a resource reference.
+  string database = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Database user to be used for importing the data.
+  // Note - Value provided should be the same as expected from
+  // `SELECT current_user;` and NOT as a resource reference.
+  string user = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response of import rpc.
+message ImportClusterResponse {
+  // Required. Size of the object downloaded from Google Cloud Storage in bytes.
+  int64 bytes_downloaded = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
 // Upgrades a cluster.
@@ -1644,6 +1833,11 @@ message ListSupportedDatabaseFlagsRequest {
 
   // A token identifying a page of results the server should return.
   string page_token = 3;
+
+  // Optional. The scope for which supported flags are requested. If not
+  // specified, default is DATABASE.
+  SupportedDatabaseFlag.Scope scope = 6
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Message for response to listing SupportedDatabaseFlags.
@@ -1696,9 +1890,9 @@ message GenerateClientCertificateRequest {
   // Optional. The public key from the client.
   string public_key = 5 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. An optional hint to the endpoint to generate a client
-  // ceritificate that can be used by AlloyDB connectors to exchange additional
-  // metadata with the server after TLS handshake.
+  // Optional. An optional hint to the endpoint to generate a client certificate
+  // that can be used by AlloyDB connectors to exchange additional metadata with
+  // the server after TLS handshake.
   bool use_metadata_exchange = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -1780,9 +1974,10 @@ message OperationMetadata {
 
   // Output only. Identifies whether the user has requested cancellation
   // of the operation. Operations that have successfully been cancelled
-  // have [Operation.error][] value with a
-  // [google.rpc.Status.code][google.rpc.Status.code] of 1, corresponding to
-  // `Code.CANCELLED`.
+  // have
+  // [google.longrunning.Operation.error][google.longrunning.Operation.error]
+  // value with a [google.rpc.Status.code][google.rpc.Status.code] of 1,
+  // corresponding to `Code.CANCELLED`.
   bool requested_cancellation = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. API version used to start the operation.

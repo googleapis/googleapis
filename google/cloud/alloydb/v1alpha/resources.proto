@@ -311,8 +311,7 @@ message AutomatedBackupPolicy {
 
   // Optional. The encryption config can be specified to encrypt the
   // backups with a customer-managed encryption key (CMEK). When this field is
-  // not specified, the backup will then use default encryption scheme to
-  // protect the user data.
+  // not specified, the backup will use the cluster's encryption config.
   EncryptionConfig encryption_config = 8
       [(google.api.field_behavior) = OPTIONAL];
 
@@ -339,8 +338,7 @@ message ContinuousBackupConfig {
 
   // The encryption config can be specified to encrypt the
   // backups with a customer-managed encryption key (CMEK). When this field is
-  // not specified, the backup will then use default encryption scheme to
-  // protect the user data.
+  // not specified, the backup will use the cluster's encryption config.
   EncryptionConfig encryption_config = 3;
 }
 
@@ -748,26 +746,32 @@ message Instance {
   message MachineConfig {
     // The number of CPU's in the VM instance.
     int32 cpu_count = 1;
+
+    // Machine type of the VM instance. E.g. "n2-highmem-4",
+    // "n2-highmem-8", "c4a-highmem-4-lssd".
+    // cpu_count must match the number of vCPUs in the machine type.
+    string machine_type = 4;
   }
 
   // Details of a single node in the instance.
-  // Nodes in an AlloyDB instance are ephemereal, they can change during
+  // Nodes in an AlloyDB instance are ephemeral, they can change during
   // update, failover, autohealing and resize operations.
   message Node {
-    // The Compute Engine zone of the VM e.g. "us-central1-b".
-    string zone_id = 1;
+    // Output only. The Compute Engine zone of the VM e.g. "us-central1-b".
+    string zone_id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-    // The identifier of the VM e.g. "test-read-0601-407e52be-ms3l".
-    string id = 2;
+    // Output only. The identifier of the VM e.g.
+    // "test-read-0601-407e52be-ms3l".
+    string id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-    // The private IP address of the VM e.g. "10.57.0.34".
-    string ip = 3;
+    // Output only. The private IP address of the VM e.g. "10.57.0.34".
+    string ip = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-    // Determined by state of the compute VM and postgres-service health.
-    // Compute VM state can have values listed in
+    // Output only. Determined by state of the compute VM and postgres-service
+    // health. Compute VM state can have values listed in
     // https://cloud.google.com/compute/docs/instances/instance-life-cycle and
     // postgres-service health can have values: HEALTHY and UNHEALTHY.
-    string state = 4;
+    string state = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
   // QueryInsights Instance specific configuration.
@@ -808,7 +812,7 @@ message Instance {
     // Output only. Track wait event types during query execution for an
     // instance. This flag is turned "on" by default but tracking is enabled
     // only after observability enabled flag is also turned on. This is
-    // read-only flag and only modifiable by producer API.
+    // read-only flag and only modifiable by internal API.
     optional bool track_wait_event_types = 4
         [(google.api.field_behavior) = OUTPUT_ONLY];
 
@@ -878,6 +882,33 @@ message Instance {
     string network_attachment_resource = 1;
   }
 
+  // Configuration for setting up PSC service automation. Consumer projects in
+  // the configs will be allowlisted automatically for the instance.
+  message PscAutoConnectionConfig {
+    // The consumer project to which the PSC service automation endpoint will
+    // be created.
+    string consumer_project = 1;
+
+    // The consumer network for the PSC service automation, example:
+    // "projects/vpc-host-project/global/networks/default".
+    // The consumer network might be hosted a different project than the
+    // consumer project.
+    string consumer_network = 2;
+
+    // Output only. The IP address of the PSC service automation endpoint.
+    string ip_address = 3 [
+      (google.api.field_info).format = IPV4,
+      (google.api.field_behavior) = OUTPUT_ONLY
+    ];
+
+    // Output only. The status of the PSC service automation connection.
+    string status = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The status of the service connection policy.
+    string consumer_network_status = 5
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
   // PscInstanceConfig contains PSC related configuration at an
   // instance level.
   message PscInstanceConfig {
@@ -902,6 +933,10 @@ message Instance {
     // can have PSC interface attached. Currently we only support 0 or 1 PSC
     // interface.
     repeated PscInterfaceConfig psc_interface_configs = 8
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Configurations for setting up PSC service automation.
+    repeated PscAutoConnectionConfig psc_auto_connections = 9
         [(google.api.field_behavior) = OPTIONAL];
   }
 
@@ -1057,11 +1092,13 @@ message Instance {
   // zone with available capacity.
   string gce_zone = 12;
 
-  // Database flags. Set at instance level.
-  //  * They are copied from primary instance on read instance creation.
-  //  * Read instances can set new or override existing flags that are relevant
-  //    for reads, e.g. for enabling columnar cache on a read instance. Flags
-  //    set on read instance may or may not be present on primary.
+  // Database flags. Set at the instance level.
+  // They are copied from the primary instance on secondary instance creation.
+  // Flags that have restrictions default to the value at primary
+  // instance on read instances during creation. Read instances can set new
+  // flags or override existing flags that are relevant for reads, for example,
+  // for enabling columnar cache on a read instance. Flags set on read instance
+  // might or might not be present on the primary instance.
   //
   //
   // This is a list of "key": "value" pairs.
@@ -1153,6 +1190,9 @@ message Instance {
     (google.api.field_info).format = IPV4,
     (google.api.field_behavior) = OUTPUT_ONLY
   ];
+
+  // Output only. Configuration parameters related to Gemini Cloud Assist.
+  GCAInstanceConfig gca_config = 38 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // ConnectionInfo singleton resource.
@@ -1431,6 +1471,18 @@ message SupportedDatabaseFlag {
     NONE = 4;
   }
 
+  // The scope of the flag.
+  enum Scope {
+    // The scope of the flag is not specified. Default is DATABASE.
+    SCOPE_UNSPECIFIED = 0;
+
+    // The flag is a database flag.
+    DATABASE = 1;
+
+    // The flag is a connection pool flag.
+    CONNECTION_POOL = 2;
+  }
+
   // The restrictions on the flag value per type.
   oneof restrictions {
     // Restriction on STRING type value.
@@ -1438,6 +1490,15 @@ message SupportedDatabaseFlag {
 
     // Restriction on INTEGER type value.
     IntegerRestrictions integer_restrictions = 8;
+  }
+
+  // The recommended value for the flag by type, if applicable.
+  oneof recommended_value {
+    // The recommended value for a STRING flag.
+    string recommended_string_value = 10;
+
+    // The recommended value for an INTEGER flag.
+    google.protobuf.Int64Value recommended_integer_value = 11;
   }
 
   // The name of the flag resource, following Google Cloud conventions, e.g.:
@@ -1463,6 +1524,9 @@ message SupportedDatabaseFlag {
   // will automatically restart the database (making sure to satisfy any
   // availability SLO's).
   bool requires_db_restart = 6;
+
+  // The scope of the flag.
+  Scope scope = 9;
 }
 
 // Message describing User object.
