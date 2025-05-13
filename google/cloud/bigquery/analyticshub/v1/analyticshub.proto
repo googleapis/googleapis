@@ -184,8 +184,10 @@ service AnalyticsHubService {
     option (google.api.method_signature) = "name";
   }
 
-  // Creates a Subscription to a Data Clean Room. This is a long-running
-  // operation as it will create one or more linked datasets.
+  // Creates a Subscription to a Data Clean Room. This is a
+  // long-running operation as it will create one or more linked datasets.
+  // Throws a Bad Request error if the Data Exchange does not contain any
+  // listings.
   rpc SubscribeDataExchange(SubscribeDataExchangeRequest)
       returns (google.longrunning.Operation) {
     option (google.api.http) = {
@@ -353,7 +355,7 @@ message DataExchange {
   };
 
   // Output only. The resource name of the data exchange.
-  // e.g. `projects/myproject/locations/US/dataExchanges/123`.
+  // e.g. `projects/myproject/locations/us/dataExchanges/123`.
   string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Required. Human-readable display name of the data exchange. The display
@@ -398,7 +400,6 @@ message DataExchange {
 
   // Optional. By default, false.
   // If true, the DataExchange has an email sharing mandate enabled.
-  // Publishers can view the logged email of the subscriber.
   optional bool log_linked_dataset_query_user_email = 10
       [(google.api.field_behavior) = OPTIONAL];
 }
@@ -533,6 +534,17 @@ message Listing {
             type: "bigquery.googleapis.com/Table"
           }
         ];
+
+        // Optional. Format:
+        // For routine:
+        // `projects/{projectId}/datasets/{datasetId}/routines/{routineId}`
+        // Example:"projects/test_project/datasets/test_dataset/routines/test_routine"
+        string routine = 2 [
+          (google.api.field_behavior) = OPTIONAL,
+          (google.api.resource_reference) = {
+            type: "bigquery.googleapis.com/Routine"
+          }
+        ];
       }
     }
 
@@ -606,6 +618,44 @@ message Listing {
     bool restrict_query_result = 2 [(google.api.field_behavior) = OPTIONAL];
   }
 
+  // Commercial info contains the information about the commercial data products
+  // associated with the listing.
+  message CommercialInfo {
+    // Specifies the details of the Marketplace Data Product associated with the
+    // Listing.
+    message GoogleCloudMarketplaceInfo {
+      // Indicates whether this commercial access is currently active.
+      enum CommercialState {
+        // Commercialization is incomplete and cannot be used.
+        COMMERCIAL_STATE_UNSPECIFIED = 0;
+
+        // Commercialization has been initialized.
+        ONBOARDING = 1;
+
+        // Commercialization is complete and available for use.
+        ACTIVE = 2;
+      }
+
+      // Output only. Resource name of the commercial service associated with
+      // the Marketplace Data Product. e.g. example.com
+      optional string service = 1 [
+        (google.api.field_behavior) = OUTPUT_ONLY,
+        (google.api.resource_reference) = {
+          type: "servicemanagement.googleapis.com/ManagedService"
+        }
+      ];
+
+      // Output only. Commercial state of the Marketplace Data Product.
+      optional CommercialState commercial_state = 3
+          [(google.api.field_behavior) = OUTPUT_ONLY];
+    }
+
+    // Output only. Details of the Marketplace Data Product associated with the
+    // Listing.
+    optional GoogleCloudMarketplaceInfo cloud_marketplace = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
   // State of the listing.
   enum State {
     // Default value. This value is unused.
@@ -669,7 +719,7 @@ message Listing {
   }
 
   // Output only. The resource name of the listing.
-  // e.g. `projects/myproject/locations/US/dataExchanges/123/listings/456`
+  // e.g. `projects/myproject/locations/us/dataExchanges/123/listings/456`
   string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Required. Human-readable display name of the listing. The display name must
@@ -729,9 +779,19 @@ message Listing {
   SharedResourceType resource_type = 15
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  // Output only. Commercial info contains the information about the commercial
+  // data products associated with the listing.
+  optional CommercialInfo commercial_info = 17
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
   // Optional. By default, false.
   // If true, the Listing has an email sharing mandate enabled.
   optional bool log_linked_dataset_query_user_email = 18
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If true, the listing is only available to get the resource
+  // metadata. Listing is non subscribable.
+  optional bool allow_only_metadata_sharing = 19
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -761,6 +821,22 @@ message Subscription {
     string listing = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
+  // Commercial info metadata for this subscription.
+  message CommercialInfo {
+    // Cloud Marketplace commercial metadata for this subscription.
+    message GoogleCloudMarketplaceInfo {
+      // Resource name of the Marketplace Order.
+      string order = 1 [(google.api.resource_reference) = {
+        type: "cloudcommerceconsumerprocurement.googleapis.com/Order"
+      }];
+    }
+
+    // Output only. This is set when the subscription is commercialised via
+    // Cloud Marketplace.
+    GoogleCloudMarketplaceInfo cloud_marketplace = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
   // State of the subscription.
   enum State {
     // Default value. This value is unused.
@@ -780,16 +856,16 @@ message Subscription {
 
   oneof resource_name {
     // Output only. Resource name of the source Listing.
-    // e.g. projects/123/locations/US/dataExchanges/456/listings/789
+    // e.g. projects/123/locations/us/dataExchanges/456/listings/789
     string listing = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
 
     // Output only. Resource name of the source Data Exchange.
-    // e.g. projects/123/locations/US/dataExchanges/456
+    // e.g. projects/123/locations/us/dataExchanges/456
     string data_exchange = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
   // Output only. The resource name of the subscription.
-  // e.g. `projects/myproject/locations/US/subscriptions/123`.
+  // e.g. `projects/myproject/locations/us/subscriptions/123`.
   string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Timestamp when the subscription was created.
@@ -811,7 +887,7 @@ message Subscription {
   State state = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Map of listing resource names to associated linked resource,
-  // e.g. projects/123/locations/US/dataExchanges/456/listings/789
+  // e.g. projects/123/locations/us/dataExchanges/456/listings/789
   // ->
   // projects/123/datasets/my_dataset
   //
@@ -832,17 +908,26 @@ message Subscription {
   SharedResourceType resource_type = 12
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  // Output only. This is set if this is a commercial subscription i.e. if this
+  // subscription was created from subscribing to a commercial listing.
+  CommercialInfo commercial_info = 13
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
   // Output only. By default, false.
   // If true, the Subscriber agreed to the email sharing mandate
   // that is enabled for DataExchange/Listing.
   optional bool log_linked_dataset_query_user_email = 14
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. BigQuery destination dataset to create for the subscriber.
+  DestinationDataset destination_dataset = 15
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Message for requesting the list of data exchanges.
 message ListDataExchangesRequest {
   // Required. The parent resource path of the data exchanges.
-  // e.g. `projects/myproject/locations/US`.
+  // e.g. `projects/myproject/locations/us`.
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -872,7 +957,7 @@ message ListDataExchangesResponse {
 // organization and location.
 message ListOrgDataExchangesRequest {
   // Required. The organization resource path of the projects containing
-  // DataExchanges. e.g. `organizations/myorg/locations/US`.
+  // DataExchanges. e.g. `organizations/myorg/locations/us`.
   string organization = 1 [(google.api.field_behavior) = REQUIRED];
 
   // The maximum number of results to return in a single response page. Leverage
@@ -897,7 +982,7 @@ message ListOrgDataExchangesResponse {
 // Message for getting a data exchange.
 message GetDataExchangeRequest {
   // Required. The resource name of the data exchange.
-  // e.g. `projects/myproject/locations/US/dataExchanges/123`.
+  // e.g. `projects/myproject/locations/us/dataExchanges/123`.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -909,7 +994,7 @@ message GetDataExchangeRequest {
 // Message for creating a data exchange.
 message CreateDataExchangeRequest {
   // Required. The parent resource path of the data exchange.
-  // e.g. `projects/myproject/locations/US`.
+  // e.g. `projects/myproject/locations/us`.
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -918,7 +1003,7 @@ message CreateDataExchangeRequest {
   ];
 
   // Required. The ID of the data exchange.
-  // Must contain only ASCII letters, numbers (0-9), underscores (_).
+  // Must contain only Unicode letters, numbers (0-9), underscores (_).
   // Max length: 100 bytes.
   string data_exchange_id = 2 [(google.api.field_behavior) = REQUIRED];
 
@@ -941,7 +1026,7 @@ message UpdateDataExchangeRequest {
 // Message for deleting a data exchange.
 message DeleteDataExchangeRequest {
   // Required. The full name of the data exchange resource that you want to
-  // delete. For example, `projects/myproject/locations/US/dataExchanges/123`.
+  // delete. For example, `projects/myproject/locations/us/dataExchanges/123`.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -953,7 +1038,7 @@ message DeleteDataExchangeRequest {
 // Message for requesting the list of listings.
 message ListListingsRequest {
   // Required. The parent resource path of the listing.
-  // e.g. `projects/myproject/locations/US/dataExchanges/123`.
+  // e.g. `projects/myproject/locations/us/dataExchanges/123`.
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -982,7 +1067,7 @@ message ListListingsResponse {
 // Message for getting a listing.
 message GetListingRequest {
   // Required. The resource name of the listing.
-  // e.g. `projects/myproject/locations/US/dataExchanges/123/listings/456`.
+  // e.g. `projects/myproject/locations/us/dataExchanges/123/listings/456`.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -994,7 +1079,7 @@ message GetListingRequest {
 // Message for creating a listing.
 message CreateListingRequest {
   // Required. The parent resource path of the listing.
-  // e.g. `projects/myproject/locations/US/dataExchanges/123`.
+  // e.g. `projects/myproject/locations/us/dataExchanges/123`.
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1003,7 +1088,7 @@ message CreateListingRequest {
   ];
 
   // Required. The ID of the listing to create.
-  // Must contain only ASCII letters, numbers (0-9), underscores (_).
+  // Must contain only Unicode letters, numbers (0-9), underscores (_).
   // Max length: 100 bytes.
   string listing_id = 2 [(google.api.field_behavior) = REQUIRED];
 
@@ -1026,13 +1111,18 @@ message UpdateListingRequest {
 // Message for deleting a listing.
 message DeleteListingRequest {
   // Required. Resource name of the listing to delete.
-  // e.g. `projects/myproject/locations/US/dataExchanges/123/listings/456`.
+  // e.g. `projects/myproject/locations/us/dataExchanges/123/listings/456`.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
       type: "analyticshub.googleapis.com/Listing"
     }
   ];
+
+  // Optional. If the listing is commercial then this field must be set to true,
+  // otherwise a failure is thrown. This acts as a safety guard to avoid
+  // deleting commercial listings accidentally.
+  bool delete_commercial = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Message for subscribing to a listing.
@@ -1050,7 +1140,7 @@ message SubscribeListingRequest {
   }
 
   // Required. Resource name of the listing that you want to subscribe to.
-  // e.g. `projects/myproject/locations/US/dataExchanges/123/listings/456`.
+  // e.g. `projects/myproject/locations/us/dataExchanges/123/listings/456`.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1068,7 +1158,7 @@ message SubscribeListingResponse {
 // Message for subscribing to a Data Exchange.
 message SubscribeDataExchangeRequest {
   // Required. Resource name of the Data Exchange.
-  // e.g. `projects/publisherproject/locations/US/dataExchanges/123`
+  // e.g. `projects/publisherproject/locations/us/dataExchanges/123`
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1077,7 +1167,7 @@ message SubscribeDataExchangeRequest {
   ];
 
   // Required. The parent resource path of the Subscription.
-  // e.g. `projects/subscriberproject/locations/US`
+  // e.g. `projects/subscriberproject/locations/us`
   string destination = 2 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1106,7 +1196,7 @@ message SubscribeDataExchangeResponse {
 // Message for refreshing a subscription.
 message RefreshSubscriptionRequest {
   // Required. Resource name of the Subscription to refresh.
-  // e.g. `projects/subscriberproject/locations/US/subscriptions/123`
+  // e.g. `projects/subscriberproject/locations/us/subscriptions/123`
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1124,7 +1214,7 @@ message RefreshSubscriptionResponse {
 // Message for getting a subscription.
 message GetSubscriptionRequest {
   // Required. Resource name of the subscription.
-  // e.g. projects/123/locations/US/subscriptions/456
+  // e.g. projects/123/locations/us/subscriptions/456
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1136,7 +1226,7 @@ message GetSubscriptionRequest {
 // Message for listing subscriptions.
 message ListSubscriptionsRequest {
   // Required. The parent resource path of the subscription.
-  // e.g. projects/myproject/locations/US
+  // e.g. projects/myproject/locations/us
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -1147,8 +1237,8 @@ message ListSubscriptionsRequest {
   // An expression for filtering the results of the request. Eligible
   // fields for filtering are:
   //
-  //  * `listing`
-  //  * `data_exchange`
+  //  + `listing`
+  //  + `data_exchange`
   //
   // Alternatively, a literal wrapped in double quotes may be provided.
   // This will be checked for an exact match against both fields above.
@@ -1156,9 +1246,9 @@ message ListSubscriptionsRequest {
   // In all cases, the full Data Exchange or Listing resource name must
   // be provided. Some example of using filters:
   //
-  //  * data_exchange="projects/myproject/locations/us/dataExchanges/123"
-  //  * listing="projects/123/locations/us/dataExchanges/456/listings/789"
-  //  * "projects/myproject/locations/us/dataExchanges/123"
+  //  + data_exchange="projects/myproject/locations/us/dataExchanges/123"
+  //  + listing="projects/123/locations/us/dataExchanges/456/listings/789"
+  //  + "projects/myproject/locations/us/dataExchanges/123"
   string filter = 2;
 
   // The maximum number of results to return in a single response page.
@@ -1181,8 +1271,8 @@ message ListSubscriptionsResponse {
 message ListSharedResourceSubscriptionsRequest {
   // Required. Resource name of the requested target. This resource may be
   // either a Listing or a DataExchange. e.g.
-  // projects/123/locations/US/dataExchanges/456 OR e.g.
-  // projects/123/locations/US/dataExchanges/456/listings/789
+  // projects/123/locations/us/dataExchanges/456 OR e.g.
+  // projects/123/locations/us/dataExchanges/456/listings/789
   string resource = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = { type: "*" }
@@ -1211,13 +1301,18 @@ message ListSharedResourceSubscriptionsResponse {
 // Message for revoking a subscription.
 message RevokeSubscriptionRequest {
   // Required. Resource name of the subscription to revoke.
-  // e.g. projects/123/locations/US/subscriptions/456
+  // e.g. projects/123/locations/us/subscriptions/456
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
       type: "analyticshub.googleapis.com/Subscription"
     }
   ];
+
+  // Optional. If the subscription is commercial then this field must be set to
+  // true, otherwise a failure is thrown. This acts as a safety guard to avoid
+  // revoking commercial subscriptions accidentally.
+  bool revoke_commercial = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Message for response when you revoke a subscription.
@@ -1227,7 +1322,7 @@ message RevokeSubscriptionResponse {}
 // Message for deleting a subscription.
 message DeleteSubscriptionRequest {
   // Required. Resource name of the subscription to delete.
-  // e.g. projects/123/locations/US/subscriptions/456
+  // e.g. projects/123/locations/us/subscriptions/456
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
