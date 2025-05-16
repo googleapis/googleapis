@@ -149,9 +149,9 @@ http_archive(
 
 # Explicitly declaring Protobuf version, while Protobuf dependency is already
 # instantiated in grpc_deps().
-_protobuf_version = "25.6"
+_protobuf_version = "25.7"
 
-_protobuf_sha256 = "ecfeb9f673e63321b4871c1cee6b5adeb0ef711d08a0c5bb1945271767df65bf"
+_protobuf_sha256 = "af034f71287cff2f1691649772c61b13696787a06ff616cadf9869611491fabe"
 
 http_archive(
     name = "com_google_protobuf",
