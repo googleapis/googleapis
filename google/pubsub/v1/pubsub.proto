@@ -549,6 +549,10 @@ message IngestionFailureEvent {
   // occurs, one or more Avro objects won't be ingested.
   message AvroFailureReason {}
 
+  // Set when a Pub/Sub message fails to get published due to a schema
+  // validation violation.
+  message SchemaViolationReason {}
+
   // Failure when ingesting from a Cloud Storage source.
   message CloudStorageFailure {
     // Optional. Name of the Cloud Storage bucket used for ingestion.
@@ -571,6 +575,10 @@ message IngestionFailureEvent {
       // Optional. The Pub/Sub API limits prevented the desired message from
       // being published.
       ApiViolationReason api_violation_reason = 6
+          [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The Pub/Sub message failed schema validation.
+      SchemaViolationReason schema_violation_reason = 7
           [(google.api.field_behavior) = OPTIONAL];
     }
   }
@@ -596,6 +604,10 @@ message IngestionFailureEvent {
       // being published.
       ApiViolationReason api_violation_reason = 5
           [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The Pub/Sub message failed schema validation.
+      SchemaViolationReason schema_violation_reason = 6
+          [(google.api.field_behavior) = OPTIONAL];
     }
   }
 
@@ -620,6 +632,10 @@ message IngestionFailureEvent {
       // being published.
       ApiViolationReason api_violation_reason = 5
           [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The Pub/Sub message failed schema validation.
+      SchemaViolationReason schema_violation_reason = 6
+          [(google.api.field_behavior) = OPTIONAL];
     }
   }
 
@@ -643,6 +659,29 @@ message IngestionFailureEvent {
       // Optional. The Pub/Sub API limits prevented the desired message from
       // being published.
       ApiViolationReason api_violation_reason = 5
+          [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The Pub/Sub message failed schema validation.
+      SchemaViolationReason schema_violation_reason = 6
+          [(google.api.field_behavior) = OPTIONAL];
+    }
+  }
+
+  // Failure when ingesting from an AWS Kinesis source.
+  message AwsKinesisFailureReason {
+    // Optional. The stream ARN of the Kinesis stream being ingested from.
+    string stream_arn = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The partition key of the message that failed to be ingested.
+    string partition_key = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The sequence number of the message that failed to be ingested.
+    string sequence_number = 3 [(google.api.field_behavior) = OPTIONAL];
+
+    // Reason why ingestion failed for the specified message.
+    oneof reason {
+      // Optional. The Pub/Sub message failed schema validation.
+      SchemaViolationReason schema_violation_reason = 4
           [(google.api.field_behavior) = OPTIONAL];
     }
   }
@@ -669,6 +708,10 @@ message IngestionFailureEvent {
 
     // Optional. Failure when ingesting from Confluent Cloud.
     ConfluentCloudFailureReason confluent_cloud_failure = 6
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Failure when ingesting from AWS Kinesis.
+    AwsKinesisFailureReason aws_kinesis_failure = 7
         [(google.api.field_behavior) = OPTIONAL];
   }
 }
@@ -1128,7 +1171,7 @@ service Subscriber {
   }
 
   // Establishes a stream with the server, which sends messages down to the
-  // client. The client streams acknowledgements and ack deadline modifications
+  // client. The client streams acknowledgments and ack deadline modifications
   // back to the server. The server will close the stream and return the status
   // on any error. The server may close the stream with status `UNAVAILABLE` to
   // reassign server-side resources, in which case, the client should
@@ -1394,8 +1437,8 @@ message Subscription {
   //
   // If not set, the default retry policy is applied. This generally implies
   // that messages will be retried as soon as possible for healthy subscribers.
-  // RetryPolicy will be triggered on NACKs or acknowledgement deadline
-  // exceeded events for a given message.
+  // RetryPolicy will be triggered on NACKs or acknowledgment deadline exceeded
+  // events for a given message.
   RetryPolicy retry_policy = 14 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Indicates whether the subscription is detached from its topic.
@@ -1410,7 +1453,7 @@ message Subscription {
   // subscription:
   //
   // * The message sent to a subscriber is guaranteed not to be resent
-  // before the message's acknowledgement deadline expires.
+  // before the message's acknowledgment deadline expires.
   // * An acknowledged message will not be resent to a subscriber.
   //
   // Note that subscribers may still receive multiple copies of a message
@@ -1449,7 +1492,7 @@ message Subscription {
 // Retry delay will be exponential based on provided minimum and maximum
 // backoffs. https://en.wikipedia.org/wiki/Exponential_backoff.
 //
-// RetryPolicy will be triggered on NACKs or acknowledgement deadline exceeded
+// RetryPolicy will be triggered on NACKs or acknowledgment deadline exceeded
 // events for a given message.
 //
 // Retry Policy is implemented on a best effort basis. At times, the delay
@@ -1489,7 +1532,7 @@ message DeadLetterPolicy {
   // value must be between 5 and 100.
   //
   // The number of delivery attempts is defined as 1 + (the sum of number of
-  // NACKs and number of times the acknowledgement deadline has been exceeded
+  // NACKs and number of times the acknowledgment deadline has been exceeded
   // for the message).
   //
   // A NACK is any call to ModifyAckDeadline with a 0 deadline. Note that
@@ -1751,7 +1794,7 @@ message CloudStorageConfig {
 
   // Optional. The maximum duration that can elapse before a new Cloud Storage
   // file is created. Min 1 minute, max 10 minutes, default 5 minutes. May not
-  // exceed the subscription's acknowledgement deadline.
+  // exceed the subscription's acknowledgment deadline.
   google.protobuf.Duration max_duration = 6
       [(google.api.field_behavior) = OPTIONAL];
 
@@ -1973,7 +2016,7 @@ message AcknowledgeRequest {
 }
 
 // Request for the `StreamingPull` streaming RPC method. This request is used to
-// establish the initial stream as well as to stream acknowledgements and ack
+// establish the initial stream as well as to stream acknowledgments and ack
 // deadline modifications from the client to the server.
 message StreamingPullRequest {
   // Required. The subscription for which to initialize the new stream. This
@@ -1987,12 +2030,11 @@ message StreamingPullRequest {
     }
   ];
 
-  // Optional. List of acknowledgement IDs for acknowledging previously received
+  // Optional. List of acknowledgment IDs for acknowledging previously received
   // messages (received on this stream or a different stream). If an ack ID has
   // expired, the corresponding message may be redelivered later. Acknowledging
-  // a message more than once will not result in an error. If the
-  // acknowledgement ID is malformed, the stream will be aborted with status
-  // `INVALID_ARGUMENT`.
+  // a message more than once will not result in an error. If the acknowledgment
+  // ID is malformed, the stream will be aborted with status `INVALID_ARGUMENT`.
   repeated string ack_ids = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The list of new ack deadlines for the IDs listed in
@@ -2009,7 +2051,7 @@ message StreamingPullRequest {
   repeated int32 modify_deadline_seconds = 3
       [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. List of acknowledgement IDs whose deadline will be modified based
+  // Optional. List of acknowledgment IDs whose deadline will be modified based
   // on the corresponding element in `modify_deadline_seconds`. This field can
   // be used to indicate that more time is needed to process a message by the
   // subscriber, or to make the message available for redelivery if the
@@ -2058,39 +2100,39 @@ message StreamingPullRequest {
 // Response for the `StreamingPull` method. This response is used to stream
 // messages from the server to the client.
 message StreamingPullResponse {
-  // Acknowledgement IDs sent in one or more previous requests to acknowledge a
+  // Acknowledgment IDs sent in one or more previous requests to acknowledge a
   // previously received message.
   message AcknowledgeConfirmation {
-    // Optional. Successfully processed acknowledgement IDs.
+    // Optional. Successfully processed acknowledgment IDs.
     repeated string ack_ids = 1 [(google.api.field_behavior) = OPTIONAL];
 
-    // Optional. List of acknowledgement IDs that were malformed or whose
-    // acknowledgement deadline has expired.
+    // Optional. List of acknowledgment IDs that were malformed or whose
+    // acknowledgment deadline has expired.
     repeated string invalid_ack_ids = 2
         [(google.api.field_behavior) = OPTIONAL];
 
-    // Optional. List of acknowledgement IDs that were out of order.
+    // Optional. List of acknowledgment IDs that were out of order.
     repeated string unordered_ack_ids = 3
         [(google.api.field_behavior) = OPTIONAL];
 
-    // Optional. List of acknowledgement IDs that failed processing with
+    // Optional. List of acknowledgment IDs that failed processing with
     // temporary issues.
     repeated string temporary_failed_ack_ids = 4
         [(google.api.field_behavior) = OPTIONAL];
   }
 
-  // Acknowledgement IDs sent in one or more previous requests to modify the
+  // Acknowledgment IDs sent in one or more previous requests to modify the
   // deadline for a specific message.
   message ModifyAckDeadlineConfirmation {
-    // Optional. Successfully processed acknowledgement IDs.
+    // Optional. Successfully processed acknowledgment IDs.
     repeated string ack_ids = 1 [(google.api.field_behavior) = OPTIONAL];
 
-    // Optional. List of acknowledgement IDs that were malformed or whose
-    // acknowledgement deadline has expired.
+    // Optional. List of acknowledgment IDs that were malformed or whose
+    // acknowledgment deadline has expired.
     repeated string invalid_ack_ids = 2
         [(google.api.field_behavior) = OPTIONAL];
 
-    // Optional. List of acknowledgement IDs that failed processing with
+    // Optional. List of acknowledgment IDs that failed processing with
     // temporary issues.
     repeated string temporary_failed_ack_ids = 3
         [(google.api.field_behavior) = OPTIONAL];
