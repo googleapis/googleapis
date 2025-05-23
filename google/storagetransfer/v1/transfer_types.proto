@@ -77,6 +77,13 @@ message AzureCredentials {
 // the `updated` property of Cloud Storage objects, the `LastModified` field
 // of S3 objects, and the `Last-Modified` header of Azure blobs.
 //
+// For S3 objects, the `LastModified` value is the time the object begins
+// uploading. If the object meets your "last modification time" criteria,
+// but has not finished uploading, the object is not transferred. See
+// [Transfer from Amazon S3 to Cloud
+// Storage](https://cloud.google.com/storage-transfer/docs/create-transfers/agentless/s3#transfer_options)
+// for more information.
+//
 // Transfers with a [PosixFilesystem][google.storagetransfer.v1.PosixFilesystem]
 // source or destination don't support `ObjectConditions`.
 message ObjectConditions {
@@ -306,6 +313,26 @@ message AwsS3Data {
 // Storage blob's key
 // name](https://docs.microsoft.com/en-us/rest/api/storageservices/naming-and-referencing-containers--blobs--and-metadata#blob-names).
 message AzureBlobStorageData {
+  // The identity of an Azure application through which Storage Transfer Service
+  // can authenticate requests using Azure workload identity federation.
+  //
+  // Storage Transfer Service can issue requests to Azure Storage through
+  // registered Azure applications, eliminating the need to pass credentials to
+  // Storage Transfer Service directly.
+  //
+  // To configure federated identity, see
+  // [Configure access to Microsoft Azure
+  // Storage](https://cloud.google.com/storage-transfer/docs/source-microsoft-azure#option_3_authenticate_using_federated_identity).
+  message FederatedIdentityConfig {
+    // Required. The client (application) ID of the application with federated
+    // credentials.
+    string client_id = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The tenant (directory) ID of the application with federated
+    // credentials.
+    string tenant_id = 2 [(google.api.field_behavior) = REQUIRED];
+  }
+
   // Required. The name of the Azure Storage account.
   string storage_account = 1 [(google.api.field_behavior) = REQUIRED];
 
@@ -349,6 +376,15 @@ message AzureBlobStorageData {
   //
   // Format: `projects/{project_number}/secrets/{secret_name}`
   string credentials_secret = 7 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Federated identity config of a user registered Azure application.
+  //
+  // If `federated_identity_config` is specified, do not specify
+  // [azure_credentials][google.storagetransfer.v1.AzureBlobStorageData.azure_credentials]
+  // or
+  // [credentials_secret][google.storagetransfer.v1.AzureBlobStorageData.credentials_secret].
+  FederatedIdentityConfig federated_identity_config = 8
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // An HttpData resource specifies a list of objects on the web to be
@@ -393,8 +429,9 @@ message AzureBlobStorageData {
 // effect when filtering objects to transfer.
 message HttpData {
   // Required. The URL that points to the file that stores the object list
-  // entries. This file must allow public access.  Currently, only URLs with
-  // HTTP and HTTPS schemes are supported.
+  // entries. This file must allow public access. The URL is either an
+  // HTTP/HTTPS address (e.g. `https://example.com/urllist.tsv`) or a Cloud
+  // Storage path (e.g. `gs://my-bucket/urllist.tsv`).
   string list_url = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
@@ -585,7 +622,7 @@ message TransferOptions {
   }
 
   // When to overwrite objects that already exist in the sink. The default is
-  // that only objects that are different from the source are ovewritten. If
+  // that only objects that are different from the source are overwritten. If
   // true, all objects in the sink whose name matches an object in the source
   // are overwritten with the source object.
   bool overwrite_objects_already_existing_in_sink = 1;
@@ -963,7 +1000,7 @@ message Schedule {
   // [schedule_end_date][google.storagetransfer.v1.Schedule.schedule_end_date],
   // `end_time_of_day` specifies the end date and time for starting new transfer
   // operations. This field must be greater than or equal to the timestamp
-  // corresponding to the combintation of
+  // corresponding to the combination of
   // [schedule_start_date][google.storagetransfer.v1.Schedule.schedule_start_date]
   // and
   // [start_time_of_day][google.storagetransfer.v1.Schedule.start_time_of_day],
@@ -1057,6 +1094,23 @@ message TransferJob {
 
   // The ID of the Google Cloud project that owns the job.
   string project_id = 3;
+
+  // Optional. The user-managed service account to which to delegate service
+  // agent permissions. You can grant Cloud Storage bucket permissions to this
+  // service account instead of to the Transfer Service service agent.
+  //
+  // Format is
+  // `projects/-/serviceAccounts/ACCOUNT_EMAIL_OR_UNIQUEID`
+  //
+  // Either the service account email
+  // (`SERVICE_ACCOUNT_NAME@PROJECT_ID.iam.gserviceaccount.com`) or the unique
+  // ID (`123456789012345678901`) are accepted in the string. The `-`
+  // wildcard character is required; replacing it with a project ID is invalid.
+  //
+  // See
+  // https://cloud.google.com//storage-transfer/docs/delegate-service-agent-permissions
+  // for required permissions.
+  string service_account = 18 [(google.api.field_behavior) = OPTIONAL];
 
   // Transfer specification.
   TransferSpec transfer_spec = 4;
@@ -1312,7 +1366,7 @@ message LoggingConfig {
     // Deleting objects at the source or the destination.
     DELETE = 2;
 
-    // Copying objects to Google Cloud Storage.
+    // Copying objects to the destination.
     COPY = 3;
   }
 
@@ -1328,6 +1382,11 @@ message LoggingConfig {
     // `LoggableAction` terminated in an error state. `FAILED` actions are
     // logged as [ERROR][google.logging.type.LogSeverity.ERROR].
     FAILED = 2;
+
+    // The `COPY` action was skipped for this file. Only supported for
+    // agent-based transfers. `SKIPPED` actions are
+    // logged as [INFO][google.logging.type.LogSeverity.INFO].
+    SKIPPED = 3;
   }
 
   // Specifies the actions to be logged. If empty, no logs are generated.
