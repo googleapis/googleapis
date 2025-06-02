@@ -1,0 +1,451 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.spanner.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/spanner/v1/type.proto";
+
+option csharp_namespace = "Google.Cloud.Spanner.V1";
+option go_package = "cloud.google.com/go/spanner/apiv1/spannerpb;spannerpb";
+option java_multiple_files = true;
+option java_outer_classname = "ChangeStreamProto";
+option java_package = "com.google.spanner.v1";
+option php_namespace = "Google\\Cloud\\Spanner\\V1";
+option ruby_package = "Google::Cloud::Spanner::V1";
+
+// Spanner Change Streams enable customers to capture and stream out changes to
+// their Spanner databases in real-time. A change stream
+// can be created with option partition_mode='IMMUTABLE_KEY_RANGE' or
+// partition_mode='MUTABLE_KEY_RANGE'.
+//
+// This message is only used in Change Streams created with the option
+// partition_mode='MUTABLE_KEY_RANGE'. Spanner automatically creates a special
+// Table-Valued Function (TVF) along with each Change Streams. The function
+// provides access to the change stream's records. The function is named
+// READ_<change_stream_name> (where <change_stream_name> is the
+// name of the change stream), and it returns a table with only one column
+// called ChangeRecord.
+message ChangeStreamRecord {
+  // A data change record contains a set of changes to a table with the same
+  // modification type (insert, update, or delete) committed at the same commit
+  // timestamp in one change stream partition for the same transaction. Multiple
+  // data change records can be returned for the same transaction across
+  // multiple change stream partitions.
+  message DataChangeRecord {
+    // Metadata for a column.
+    message ColumnMetadata {
+      // Name of the column.
+      string name = 1;
+
+      // Type of the column.
+      Type type = 2;
+
+      // Indicates whether the column is a primary key column.
+      bool is_primary_key = 3;
+
+      // Ordinal position of the column based on the original table definition
+      // in the schema starting with a value of 1.
+      int64 ordinal_position = 4;
+    }
+
+    // Returns the value and associated metadata for a particular field of the
+    // [Mod][google.spanner.v1.ChangeStreamRecord.DataChangeRecord.Mod].
+    message ModValue {
+      // Index within the repeated
+      // [column_metadata][google.spanner.v1.ChangeStreamRecord.DataChangeRecord.column_metadata]
+      // field, to obtain the column metadata for the column that was modified.
+      int32 column_metadata_index = 1;
+
+      // The value of the column.
+      google.protobuf.Value value = 2;
+    }
+
+    // A mod describes all data changes in a watched table row.
+    message Mod {
+      // Returns the value of the primary key of the modified row.
+      repeated ModValue keys = 1;
+
+      // Returns the old values before the change for the modified columns.
+      // Always empty for
+      // [INSERT][google.spanner.v1.ChangeStreamRecord.DataChangeRecord.ModType.INSERT],
+      // or if old values are not being captured specified by
+      // [value_capture_type][google.spanner.v1.ChangeStreamRecord.DataChangeRecord.ValueCaptureType].
+      repeated ModValue old_values = 2;
+
+      // Returns the new values after the change for the modified columns.
+      // Always empty for
+      // [DELETE][google.spanner.v1.ChangeStreamRecord.DataChangeRecord.ModType.DELETE].
+      repeated ModValue new_values = 3;
+    }
+
+    // Mod type describes the type of change Spanner applied to the data. For
+    // example, if the client submits an INSERT_OR_UPDATE request, Spanner will
+    // perform an insert if there is no existing row and return ModType INSERT.
+    // Alternatively, if there is an existing row, Spanner will perform an
+    // update and return ModType UPDATE.
+    enum ModType {
+      // Not specified.
+      MOD_TYPE_UNSPECIFIED = 0;
+
+      // Indicates data was inserted.
+      INSERT = 10;
+
+      // Indicates existing data was updated.
+      UPDATE = 20;
+
+      // Indicates existing data was deleted.
+      DELETE = 30;
+    }
+
+    // Value capture type describes which values are recorded in the data
+    // change record.
+    enum ValueCaptureType {
+      // Not specified.
+      VALUE_CAPTURE_TYPE_UNSPECIFIED = 0;
+
+      // Records both old and new values of the modified watched columns.
+      OLD_AND_NEW_VALUES = 10;
+
+      // Records only new values of the modified watched columns.
+      NEW_VALUES = 20;
+
+      // Records new values of all watched columns, including modified and
+      // unmodified columns.
+      NEW_ROW = 30;
+
+      // Records the new values of all watched columns, including modified and
+      // unmodified columns. Also records the old values of the modified
+      // columns.
+      NEW_ROW_AND_OLD_VALUES = 40;
+    }
+
+    // Indicates the timestamp in which the change was committed.
+    // DataChangeRecord.commit_timestamps,
+    // PartitionStartRecord.start_timestamps,
+    // PartitionEventRecord.commit_timestamps, and
+    // PartitionEndRecord.end_timestamps can have the same value in the same
+    // partition.
+    google.protobuf.Timestamp commit_timestamp = 1;
+
+    // Record sequence numbers are unique and monotonically increasing (but not
+    // necessarily contiguous) for a specific timestamp across record
+    // types in the same partition. To guarantee ordered processing, the reader
+    // should process records (of potentially different types) in
+    // record_sequence order for a specific timestamp in the same partition.
+    //
+    // The record sequence number ordering across partitions is only meaningful
+    // in the context of a specific transaction. Record sequence numbers are
+    // unique across partitions for a specific transaction. Sort the
+    // DataChangeRecords for the same
+    // [server_transaction_id][google.spanner.v1.ChangeStreamRecord.DataChangeRecord.server_transaction_id]
+    // by
+    // [record_sequence][google.spanner.v1.ChangeStreamRecord.DataChangeRecord.record_sequence]
+    // to reconstruct the ordering of the changes within the transaction.
+    string record_sequence = 2;
+
+    // Provides a globally unique string that represents the transaction in
+    // which the change was committed. Multiple transactions can have the same
+    // commit timestamp, but each transaction has a unique
+    // server_transaction_id.
+    string server_transaction_id = 3;
+
+    // Indicates whether this is the last record for a transaction in the
+    //  current partition. Clients can use this field to determine when all
+    //  records for a transaction in the current partition have been received.
+    bool is_last_record_in_transaction_in_partition = 4;
+
+    // Name of the table affected by the change.
+    string table = 5;
+
+    // Provides metadata describing the columns associated with the
+    // [mods][google.spanner.v1.ChangeStreamRecord.DataChangeRecord.mods] listed
+    // below.
+    repeated ColumnMetadata column_metadata = 6;
+
+    // Describes the changes that were made.
+    repeated Mod mods = 7;
+
+    // Describes the type of change.
+    ModType mod_type = 8;
+
+    // Describes the value capture type that was specified in the change stream
+    // configuration when this change was captured.
+    ValueCaptureType value_capture_type = 9;
+
+    // Indicates the number of data change records that are part of this
+    // transaction across all change stream partitions. This value can be used
+    // to assemble all the records associated with a particular transaction.
+    int32 number_of_records_in_transaction = 10;
+
+    // Indicates the number of partitions that return data change records for
+    // this transaction. This value can be helpful in assembling all records
+    // associated with a particular transaction.
+    int32 number_of_partitions_in_transaction = 11;
+
+    // Indicates the transaction tag associated with this transaction.
+    string transaction_tag = 12;
+
+    // Indicates whether the transaction is a system transaction. System
+    // transactions include those issued by time-to-live (TTL), column backfill,
+    // etc.
+    bool is_system_transaction = 13;
+  }
+
+  // A heartbeat record is returned as a progress indicator, when there are no
+  // data changes or any other partition record types in the change stream
+  // partition.
+  message HeartbeatRecord {
+    // Indicates the timestamp at which the query has returned all the records
+    // in the change stream partition with timestamp <= heartbeat timestamp.
+    // The heartbeat timestamp will not be the same as the timestamps of other
+    // record types in the same partition.
+    google.protobuf.Timestamp timestamp = 1;
+  }
+
+  // A partition start record serves as a notification that the client should
+  // schedule the partitions to be queried. PartitionStartRecord returns
+  // information about one or more partitions.
+  message PartitionStartRecord {
+    // Start timestamp at which the partitions should be queried to return
+    // change stream records with timestamps >= start_timestamp.
+    // DataChangeRecord.commit_timestamps,
+    // PartitionStartRecord.start_timestamps,
+    // PartitionEventRecord.commit_timestamps, and
+    // PartitionEndRecord.end_timestamps can have the same value in the same
+    // partition.
+    google.protobuf.Timestamp start_timestamp = 1;
+
+    // Record sequence numbers are unique and monotonically increasing (but not
+    // necessarily contiguous) for a specific timestamp across record
+    // types in the same partition. To guarantee ordered processing, the reader
+    // should process records (of potentially different types) in
+    // record_sequence order for a specific timestamp in the same partition.
+    string record_sequence = 2;
+
+    // Unique partition identifiers to be used in queries.
+    repeated string partition_tokens = 3;
+  }
+
+  // A partition end record serves as a notification that the client should stop
+  // reading the partition. No further records are expected to be retrieved on
+  // it.
+  message PartitionEndRecord {
+    // End timestamp at which the change stream partition is terminated. All
+    // changes generated by this partition will have timestamps <=
+    // end_timestamp. DataChangeRecord.commit_timestamps,
+    // PartitionStartRecord.start_timestamps,
+    // PartitionEventRecord.commit_timestamps, and
+    // PartitionEndRecord.end_timestamps can have the same value in the same
+    // partition. PartitionEndRecord is the last record returned for a
+    // partition.
+    google.protobuf.Timestamp end_timestamp = 1;
+
+    // Record sequence numbers are unique and monotonically increasing (but not
+    // necessarily contiguous) for a specific timestamp across record
+    // types in the same partition. To guarantee ordered processing, the reader
+    // should process records (of potentially different types) in
+    // record_sequence order for a specific timestamp in the same partition.
+    string record_sequence = 2;
+
+    // Unique partition identifier describing the terminated change stream
+    // partition.
+    // [partition_token][google.spanner.v1.ChangeStreamRecord.PartitionEndRecord.partition_token]
+    // is equal to the partition token of the change stream partition currently
+    // queried to return this PartitionEndRecord.
+    string partition_token = 3;
+  }
+
+  // A partition event record describes key range changes for a change stream
+  // partition. The changes to a row defined by its primary key can be captured
+  // in one change stream partition for a specific time range, and then be
+  // captured in a different change stream partition for a different time range.
+  // This movement of key ranges across change stream partitions is a reflection
+  // of activities, such as Spanner's dynamic splitting and load balancing, etc.
+  // Processing this event is needed if users want to guarantee processing of
+  // the changes for any key in timestamp order. If time ordered processing of
+  // changes for a primary key is not needed, this event can be ignored.
+  // To guarantee time ordered processing for each primary key, if the event
+  // describes move-ins, the reader of this partition needs to wait until the
+  // readers of the source partitions have processed all records with timestamps
+  // <= this PartitionEventRecord.commit_timestamp, before advancing beyond this
+  // PartitionEventRecord. If the event describes move-outs, the reader can
+  // notify the readers of the destination partitions that they can continue
+  // processing.
+  message PartitionEventRecord {
+    // Describes move-in of the key ranges into the change stream partition
+    // identified by
+    // [partition_token][google.spanner.v1.ChangeStreamRecord.PartitionEventRecord.partition_token].
+    //
+    // To maintain processing the changes for a particular key in timestamp
+    // order, the query processing the change stream partition identified by
+    // [partition_token][google.spanner.v1.ChangeStreamRecord.PartitionEventRecord.partition_token]
+    // should not advance beyond the partition event record commit timestamp
+    // until the queries processing the source change stream partitions have
+    // processed all change stream records with timestamps <= the partition
+    // event record commit timestamp.
+    message MoveInEvent {
+      // An unique partition identifier describing the source change stream
+      // partition that recorded changes for the key range that is moving
+      // into this partition.
+      string source_partition_token = 1;
+    }
+
+    // Describes move-out of the key ranges out of the change stream partition
+    // identified by
+    // [partition_token][google.spanner.v1.ChangeStreamRecord.PartitionEventRecord.partition_token].
+    //
+    // To maintain processing the changes for a particular key in timestamp
+    // order, the query processing the
+    // [MoveOutEvent][google.spanner.v1.ChangeStreamRecord.PartitionEventRecord.MoveOutEvent]
+    // in the partition identified by
+    // [partition_token][google.spanner.v1.ChangeStreamRecord.PartitionEventRecord.partition_token]
+    // should inform the queries processing the destination partitions that
+    // they can unblock and proceed processing records past the
+    // [commit_timestamp][google.spanner.v1.ChangeStreamRecord.PartitionEventRecord.commit_timestamp].
+    message MoveOutEvent {
+      // An unique partition identifier describing the destination change
+      // stream partition that will record changes for the key range that is
+      // moving out of this partition.
+      string destination_partition_token = 1;
+    }
+
+    // Indicates the commit timestamp at which the key range change occurred.
+    // DataChangeRecord.commit_timestamps,
+    // PartitionStartRecord.start_timestamps,
+    // PartitionEventRecord.commit_timestamps, and
+    // PartitionEndRecord.end_timestamps can have the same value in the same
+    // partition.
+    google.protobuf.Timestamp commit_timestamp = 1;
+
+    // Record sequence numbers are unique and monotonically increasing (but not
+    // necessarily contiguous) for a specific timestamp across record
+    // types in the same partition. To guarantee ordered processing, the reader
+    // should process records (of potentially different types) in
+    // record_sequence order for a specific timestamp in the same partition.
+    string record_sequence = 2;
+
+    // Unique partition identifier describing the partition this event
+    // occurred on.
+    // [partition_token][google.spanner.v1.ChangeStreamRecord.PartitionEventRecord.partition_token]
+    // is equal to the partition token of the change stream partition currently
+    // queried to return this PartitionEventRecord.
+    string partition_token = 3;
+
+    // Set when one or more key ranges are moved into the change stream
+    // partition identified by
+    // [partition_token][google.spanner.v1.ChangeStreamRecord.PartitionEventRecord.partition_token].
+    //
+    // Example: Two key ranges are moved into partition (P1) from partition (P2)
+    // and partition (P3) in a single transaction at timestamp T.
+    //
+    // The PartitionEventRecord returned in P1 will reflect the move as:
+    //
+    // PartitionEventRecord {
+    //   commit_timestamp: T
+    //   partition_token: "P1"
+    //   move_in_events {
+    //     source_partition_token: "P2"
+    //   }
+    //   move_in_events {
+    //     source_partition_token: "P3"
+    //   }
+    // }
+    //
+    // The PartitionEventRecord returned in P2 will reflect the move as:
+    //
+    // PartitionEventRecord {
+    //   commit_timestamp: T
+    //   partition_token: "P2"
+    //   move_out_events {
+    //     destination_partition_token: "P1"
+    //   }
+    // }
+    //
+    // The PartitionEventRecord returned in P3 will reflect the move as:
+    //
+    // PartitionEventRecord {
+    //   commit_timestamp: T
+    //   partition_token: "P3"
+    //   move_out_events {
+    //     destination_partition_token: "P1"
+    //   }
+    // }
+    repeated MoveInEvent move_in_events = 4;
+
+    // Set when one or more key ranges are moved out of the change stream
+    // partition identified by
+    // [partition_token][google.spanner.v1.ChangeStreamRecord.PartitionEventRecord.partition_token].
+    //
+    // Example: Two key ranges are moved out of partition (P1) to partition (P2)
+    // and partition (P3) in a single transaction at timestamp T.
+    //
+    // The PartitionEventRecord returned in P1 will reflect the move as:
+    //
+    // PartitionEventRecord {
+    //   commit_timestamp: T
+    //   partition_token: "P1"
+    //   move_out_events {
+    //     destination_partition_token: "P2"
+    //   }
+    //   move_out_events {
+    //     destination_partition_token: "P3"
+    //   }
+    // }
+    //
+    // The PartitionEventRecord returned in P2 will reflect the move as:
+    //
+    // PartitionEventRecord {
+    //   commit_timestamp: T
+    //   partition_token: "P2"
+    //   move_in_events {
+    //     source_partition_token: "P1"
+    //   }
+    // }
+    //
+    // The PartitionEventRecord returned in P3 will reflect the move as:
+    //
+    // PartitionEventRecord {
+    //   commit_timestamp: T
+    //   partition_token: "P3"
+    //   move_in_events {
+    //     source_partition_token: "P1"
+    //   }
+    // }
+    repeated MoveOutEvent move_out_events = 5;
+  }
+
+  // One of the change stream subrecords.
+  oneof record {
+    // Data change record describing a data change for a change stream
+    // partition.
+    DataChangeRecord data_change_record = 1;
+
+    // Heartbeat record describing a heartbeat for a change stream partition.
+    HeartbeatRecord heartbeat_record = 2;
+
+    // Partition start record describing a new change stream partition.
+    PartitionStartRecord partition_start_record = 3;
+
+    // Partition end record describing a terminated change stream partition.
+    PartitionEndRecord partition_end_record = 4;
+
+    // Partition event record describing key range changes for a change stream
+    // partition.
+    PartitionEventRecord partition_event_record = 5;
+  }
+}
