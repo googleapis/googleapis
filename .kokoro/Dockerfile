@@ -15,6 +15,7 @@ RUN apt-get update && \
     libxml2-dev \
     libcurl4-openssl-dev \
     libssl-dev \
+    git \
     && apt-get clean
 
 RUN mkdir -p /tools
