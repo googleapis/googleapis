@@ -54,6 +54,118 @@ message Engine {
     repeated SearchAddOn search_add_ons = 2;
   }
 
+  // Additional config specs for a Media Recommendation engine.
+  message MediaRecommendationEngineConfig {
+    // Custom threshold for `cvr` optimization_objective.
+    message OptimizationObjectiveConfig {
+      // Required. The name of the field to target. Currently supported
+      // values: `watch-percentage`, `watch-time`.
+      string target_field = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // Required. The threshold to be applied to the target (e.g., 0.5).
+      float target_field_value_float = 2
+          [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // More feature configs of the selected engine type.
+    message EngineFeaturesConfig {
+      // Feature related configurations applied to a specific type of meida
+      // recommendation engines.
+      oneof type_dedicated_config {
+        // Recommended for you engine feature config.
+        RecommendedForYouFeatureConfig recommended_for_you_config = 1;
+
+        // Most popular engine feature config.
+        MostPopularFeatureConfig most_popular_config = 2;
+      }
+    }
+
+    // Additional feature configurations for creating a `recommended-for-you`
+    // engine.
+    message RecommendedForYouFeatureConfig {
+      // The type of event with which the engine is queried at prediction time.
+      // If set to `generic`, only `view-item`, `media-play`,and
+      // `media-complete` will be used as `context-event` in engine training. If
+      // set to `view-home-page`, `view-home-page` will also be used as
+      // `context-events` in addition to `view-item`, `media-play`, and
+      // `media-complete`. Currently supported for the `recommended-for-you`
+      // engine. Currently supported values: `view-home-page`, `generic`.
+      string context_event_type = 1;
+    }
+
+    // Feature configurations that are required for creating a Most Popular
+    // engine.
+    message MostPopularFeatureConfig {
+      // The time window of which the engine is queried at training and
+      // prediction time. Positive integers only. The value translates to the
+      // last X days of events. Currently required for the `most-popular-items`
+      // engine.
+      int64 time_window_days = 1;
+    }
+
+    // The training state of the engine.
+    enum TrainingState {
+      // Unspecified training state.
+      TRAINING_STATE_UNSPECIFIED = 0;
+
+      // The engine training is paused.
+      PAUSED = 1;
+
+      // The engine is training.
+      TRAINING = 2;
+    }
+
+    // Required. The type of engine. e.g., `recommended-for-you`.
+    //
+    // This field together with
+    // [optimization_objective][google.cloud.discoveryengine.v1.Engine.MediaRecommendationEngineConfig.optimization_objective]
+    // describe engine metadata to use to control engine training and serving.
+    //
+    // Currently supported values: `recommended-for-you`, `others-you-may-like`,
+    // `more-like-this`, `most-popular-items`.
+    string type = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // The optimization objective. e.g., `cvr`.
+    //
+    // This field together with
+    // [optimization_objective][google.cloud.discoveryengine.v1.Engine.MediaRecommendationEngineConfig.type]
+    // describe engine metadata to use to control engine training and serving.
+    //
+    // Currently supported
+    // values: `ctr`, `cvr`.
+    //
+    //  If not specified, we choose default based on engine type.
+    // Default depends on type of recommendation:
+    //
+    // `recommended-for-you` => `ctr`
+    //
+    // `others-you-may-like` => `ctr`
+    string optimization_objective = 2;
+
+    // Name and value of the custom threshold for cvr optimization_objective.
+    // For target_field `watch-time`, target_field_value must be an integer
+    // value indicating the media progress time in seconds between (0, 86400]
+    // (excludes 0, includes 86400) (e.g., 90).
+    // For target_field `watch-percentage`, the target_field_value must be a
+    // valid float value between (0, 1.0] (excludes 0, includes 1.0) (e.g.,
+    // 0.5).
+    OptimizationObjectiveConfig optimization_objective_config = 3;
+
+    // The training state that the engine is in (e.g.
+    // `TRAINING` or `PAUSED`).
+    //
+    // Since part of the cost of running the service
+    // is frequency of training - this can be used to determine when to train
+    // engine in order to control cost. If not specified: the default value for
+    // `CreateEngine` method is `TRAINING`. The default value for
+    // `UpdateEngine` method is to keep the state the same as before.
+    TrainingState training_state = 4;
+
+    // Optional. Additional engine features config.
+    EngineFeaturesConfig engine_features_config = 5
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
   // Configurations for a Chat Engine.
   message ChatEngineConfig {
     // Configurations for generating a Dialogflow agent.
@@ -159,6 +271,15 @@ message Engine {
     // [solution_type][google.cloud.discoveryengine.v1.Engine.solution_type] is
     // [SOLUTION_TYPE_SEARCH][google.cloud.discoveryengine.v1.SolutionType.SOLUTION_TYPE_SEARCH].
     SearchEngineConfig search_engine_config = 13;
+
+    // Configurations for the Media Engine. Only applicable on the data
+    // stores with
+    // [solution_type][google.cloud.discoveryengine.v1.Engine.solution_type]
+    // [SOLUTION_TYPE_RECOMMENDATION][google.cloud.discoveryengine.v1.SolutionType.SOLUTION_TYPE_RECOMMENDATION]
+    // and
+    // [IndustryVertical.MEDIA][google.cloud.discoveryengine.v1.IndustryVertical.MEDIA]
+    // vertical.
+    MediaRecommendationEngineConfig media_recommendation_engine_config = 14;
   }
 
   // Engine metadata to monitor the status of the engine.
@@ -171,7 +292,7 @@ message Engine {
         [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
-  // Immutable. The fully qualified resource name of the engine.
+  // Immutable. Identifier. The fully qualified resource name of the engine.
   //
   // This field must be a UTF-8 encoded string with a length limit of 1024
   // characters.
@@ -180,7 +301,10 @@ message Engine {
   // `projects/{project}/locations/{location}/collections/{collection}/engines/{engine}`
   // engine should be 1-63 characters, and valid characters are
   // /[a-z0-9][a-z0-9-_]*/. Otherwise, an INVALID_ARGUMENT error is returned.
-  string name = 1 [(google.api.field_behavior) = IMMUTABLE];
+  string name = 1 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = IDENTIFIER
+  ];
 
   // Required. The display name of the engine. Should be human readable. UTF-8
   // encoded string with limit of 1024 characters.
@@ -194,7 +318,7 @@ message Engine {
   google.protobuf.Timestamp update_time = 4
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // The data stores associated with this engine.
+  // Optional. The data stores associated with this engine.
   //
   // For
   // [SOLUTION_TYPE_SEARCH][google.cloud.discoveryengine.v1.SolutionType.SOLUTION_TYPE_SEARCH]
@@ -212,16 +336,17 @@ message Engine {
   // [CreateEngineRequest][google.cloud.discoveryengine.v1.CreateEngineRequest],
   // one DataStore id must be provided as the system will use it for necessary
   // initializations.
-  repeated string data_store_ids = 5;
+  repeated string data_store_ids = 5 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. The solutions of the engine.
   SolutionType solution_type = 6 [(google.api.field_behavior) = REQUIRED];
 
-  // The industry vertical that the engine registers.
+  // Optional. The industry vertical that the engine registers.
   // The restriction of the Engine industry vertical is based on
   // [DataStore][google.cloud.discoveryengine.v1.DataStore]: Vertical on Engine
   // has to match vertical of the DataStore linked to the engine.
-  IndustryVertical industry_vertical = 16;
+  IndustryVertical industry_vertical = 16
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Common config spec that specifies the metadata of the engine.
   CommonConfig common_config = 15;
