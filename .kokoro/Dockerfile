@@ -15,6 +15,9 @@ RUN apt-get update && \
     libxml2-dev \
     libcurl4-openssl-dev \
     libssl-dev \
+    libreadline-dev \
+    zlib1g-dev \
+    libyaml-dev \
     git \
     && apt-get clean
 
