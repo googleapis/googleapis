@@ -24,6 +24,7 @@ import "google/cloud/alloydb/v1alpha/gemini.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/wrappers.proto";
+import "google/type/date.proto";
 import "google/type/dayofweek.proto";
 import "google/type/timeofday.proto";
 
@@ -355,13 +356,20 @@ message ContinuousBackupInfo {
   google.protobuf.Timestamp enabled_time = 2
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. Days of the week on which a continuous backup is taken. Output
-  // only field. Ignored if passed into the request.
+  // Output only. Days of the week on which a continuous backup is taken.
   repeated google.type.DayOfWeek schedule = 3
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. The earliest restorable time that can be restored to. Output
-  // only field.
+  // Output only. The earliest restorable time that can be restored to. If
+  // continuous backups and recovery was recently enabled, the earliest
+  // restorable time is the creation time of the earliest eligible backup within
+  // this cluster's continuous backup recovery window. After a cluster has had
+  // continuous backups enabled for the duration of its recovery window, the
+  // earliest restorable time becomes "now minus the recovery window". For
+  // example, assuming a point in time recovery is attempted at 04/16/2025
+  // 3:23:00PM with a 14d recovery window, the earliest restorable time would be
+  // 04/02/2025 3:23:00PM. This field is only visible if the
+  // CLUSTER_VIEW_CONTINUOUS_BACKUP cluster view is provided.
   google.protobuf.Timestamp earliest_restorable_time = 4
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
@@ -405,8 +413,34 @@ message MaintenanceUpdatePolicy {
     google.type.TimeOfDay start_time = 2;
   }
 
+  // DenyMaintenancePeriod definition. Excepting emergencies, maintenance
+  // will not be scheduled to start within this deny period. The start_date must
+  // be less than the end_date.
+  message DenyMaintenancePeriod {
+    // Deny period start date.
+    // This can be:
+    // * A full date, with non-zero year, month and day values OR
+    // * A month and day value, with a zero year for recurring
+    google.type.Date start_date = 1;
+
+    // Deny period end date.
+    // This can be:
+    // * A full date, with non-zero year, month and day values OR
+    // * A month and day value, with a zero year for recurring
+    google.type.Date end_date = 2;
+
+    // Time in UTC when the deny period starts on start_date and ends on
+    // end_date. This can be:
+    // * Full time OR
+    // * All zeros for 00:00:00 UTC
+    google.type.TimeOfDay time = 3;
+  }
+
   // Preferred windows to perform maintenance. Currently limited to 1.
   repeated MaintenanceWindow maintenance_windows = 1;
+
+  // Periods to deny maintenance. Currently limited to 1.
+  repeated DenyMaintenancePeriod deny_maintenance_periods = 2;
 }
 
 // MaintenanceSchedule stores the maintenance schedule generated from
@@ -706,10 +740,10 @@ message Cluster {
   MaintenanceSchedule maintenance_schedule = 37
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Optional. Configuration parameters related to the Gemini in Databases
-  // add-on.
+  // Optional. Deprecated and unused. This field will be removed in the near
+  // future.
   GeminiClusterConfig gemini_config = 36
-      [(google.api.field_behavior) = OPTIONAL];
+      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
 
   // Optional. Subscription type of the cluster.
   SubscriptionType subscription_type = 38
@@ -729,6 +763,12 @@ message Cluster {
     (google.api.field_behavior) = IMMUTABLE,
     (google.api.field_behavior) = OPTIONAL
   ];
+
+  // Output only. AlloyDB per-cluster service agent email. This service account
+  // is created per-cluster per-project, and is different from that of the
+  // primary service agent which is created per-project. The service account
+  // naming format is subject to change.
+  string service_account_email = 46 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // An Instance is a computing unit that an end customer can connect to.
@@ -835,6 +875,9 @@ message Instance {
     // Track client address for an instance.
     // If not set, default value is "off".
     optional bool track_client_address = 9;
+
+    // Whether assistive experiences are enabled for this AlloyDB instance.
+    optional bool assistive_experiences_enabled = 10;
   }
 
   // Configuration for a read pool instance.
@@ -902,9 +945,33 @@ message Instance {
     ];
 
     // Output only. The status of the PSC service automation connection.
+    // Possible values:
+    //   "STATE_UNSPECIFIED" - An invalid state as the default case.
+    //   "ACTIVE" - The connection has been created successfully.
+    //   "FAILED" - The connection is not functional since some resources on the
+    // connection fail to be created.
+    //   "CREATING" - The connection is being created.
+    //   "DELETING" - The connection is being deleted.
+    //   "CREATE_REPAIRING" - The connection is being repaired to complete
+    // creation.
+    //   "DELETE_REPAIRING" - The connection is being repaired to complete
+    // deletion.
     string status = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 
     // Output only. The status of the service connection policy.
+    // Possible values:
+    //   "STATE_UNSPECIFIED" - Default state, when Connection Map is created
+    // initially.
+    //   "VALID" - Set when policy and map configuration is valid, and their
+    // matching can lead to allowing creation of PSC Connections subject to
+    // other constraints like connections limit.
+    //   "CONNECTION_POLICY_MISSING" - No Service Connection Policy found for
+    // this network and Service Class
+    //   "POLICY_LIMIT_REACHED" - Service Connection Policy limit reached for
+    //   this network and Service Class
+    //   "CONSUMER_INSTANCE_PROJECT_NOT_ALLOWLISTED" - The consumer instance
+    // project is not in AllowedGoogleProducersResourceHierarchyLevels of the
+    // matching ServiceConnectionPolicy.
     string consumer_network_status = 5
         [(google.api.field_behavior) = OUTPUT_ONLY];
   }
@@ -958,6 +1025,46 @@ message Instance {
     // Optional. Enabling an outbound public IP address to support a database
     // server sending requests out into the internet.
     bool enable_outbound_public_ip = 3 [(google.api.field_behavior) = OPTIONAL];
+
+    // Output only. The resource link for the VPC network in which instance
+    // resources are created and from which they are accessible via Private IP.
+    // This will be the same value as the parent cluster's network. It is
+    // specified in the form: //
+    // `projects/{project_number}/global/networks/{network_id}`.
+    string network = 4 [
+      (google.api.field_behavior) = OUTPUT_ONLY,
+      (google.api.resource_reference) = {
+        type: "compute.googleapis.com/Network"
+      }
+    ];
+
+    // Optional. Name of the allocated IP range for the private IP AlloyDB
+    // instance, for example: "google-managed-services-default". If set, the
+    // instance IPs will be created from this allocated range and will override
+    // the IP range used by the parent cluster. The range name must comply with
+    // [RFC 1035](http://datatracker.ietf.org/doc/html/rfc1035). Specifically,
+    // the name must be 1-63 characters long and match the regular expression
+    // [a-z]([-a-z0-9]*[a-z0-9])?.
+    string allocated_ip_range_override = 5
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Configuration for Managed Connection Pool (MCP).
+  message ConnectionPoolConfig {
+    // The pool mode. Defaults to `POOL_MODE_TRANSACTION`.
+    enum PoolMode {
+      // The pool mode is not specified. Defaults to `POOL_MODE_TRANSACTION`.
+      POOL_MODE_UNSPECIFIED = 0;
+
+      // Server is released back to pool after a client disconnects.
+      POOL_MODE_SESSION = 1;
+
+      // Server is released back to pool after a transaction finishes.
+      POOL_MODE_TRANSACTION = 2;
+    }
+
+    // Optional. Whether to enable Managed Connection Pool (MCP).
+    bool enabled = 12 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Instance State
@@ -1031,6 +1138,18 @@ message Instance {
 
     // Regional (or Highly) available instance.
     REGIONAL = 2;
+  }
+
+  // Specifies whether an instance needs to spin up.
+  enum ActivationPolicy {
+    // The policy is not specified.
+    ACTIVATION_POLICY_UNSPECIFIED = 0;
+
+    // The instance is running.
+    ALWAYS = 1;
+
+    // The instance is not running.
+    NEVER = 2;
   }
 
   // Output only. The name of the instance resource with the format:
@@ -1180,16 +1299,30 @@ message Instance {
   InstanceNetworkConfig network_config = 29
       [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Configuration parameters related to the Gemini in Databases
-  // add-on.
+  // Optional. Deprecated and unused. This field will be removed in the near
+  // future.
   GeminiInstanceConfig gemini_config = 33
-      [(google.api.field_behavior) = OPTIONAL];
+      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
 
   // Output only. All outbound public IP addresses configured for the instance.
   repeated string outbound_public_ip_addresses = 34 [
     (google.api.field_info).format = IPV4,
     (google.api.field_behavior) = OUTPUT_ONLY
   ];
+
+  // Optional. Specifies whether an instance needs to spin up. Once the instance
+  // is active, the activation policy can be updated to the `NEVER` to stop the
+  // instance. Likewise, the activation policy can be updated to `ALWAYS` to
+  // start the instance.
+  // There are restrictions around when an instance can/cannot be activated (for
+  // example, a read pool instance should be stopped before stopping primary
+  // etc.). Please refer to the API documentation for more details.
+  ActivationPolicy activation_policy = 35
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The configuration for Managed Connection Pool (MCP).
+  ConnectionPoolConfig connection_pool_config = 37
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. Configuration parameters related to Gemini Cloud Assist.
   GCAInstanceConfig gca_config = 38 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -1327,11 +1460,18 @@ message Backup {
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Update time stamp
+  //
+  // Users should not infer any meaning from this field. Its value is generally
+  // unrelated to the timing of the backup creation operation.
   google.protobuf.Timestamp update_time = 5
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Delete time stamp
   google.protobuf.Timestamp delete_time = 15
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Timestamp when the resource finished being created.
+  google.protobuf.Timestamp create_completion_time = 26
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Labels as key value pairs
