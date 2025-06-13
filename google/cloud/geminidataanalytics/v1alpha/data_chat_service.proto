@@ -1,0 +1,549 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.geminidataanalytics.v1alpha;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/geminidataanalytics/v1alpha/context.proto";
+import "google/cloud/geminidataanalytics/v1alpha/conversation.proto";
+import "google/cloud/geminidataanalytics/v1alpha/credentials.proto";
+import "google/cloud/geminidataanalytics/v1alpha/datasource.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "cloud.google.com/go/geminidataanalytics/apiv1alpha/geminidataanalyticspb;geminidataanalyticspb";
+option java_multiple_files = true;
+option java_outer_classname = "DataChatServiceProto";
+option java_package = "com.google.cloud.geminidataanalytics.v1alpha";
+
+// Service to ask a natural language question on top of BigQuery
+// and LookerStudio datasources to get back streamed responses of various kinds
+// to help provide a rich conversational answer.
+service DataChatService {
+  option (google.api.default_host) = "geminidataanalytics.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform";
+
+  // Answers a data question by generating a stream of [Message]s.
+  rpc Chat(ChatRequest) returns (stream Message) {
+    option (google.api.http) = {
+      post: "/v1alpha/{parent=projects/*/locations/*}:chat"
+      body: "*"
+    };
+  }
+
+  // Creates a new conversation to persist the conversation history. Each
+  // conversation will have multiple messages associated with it.
+  rpc CreateConversation(CreateConversationRequest) returns (Conversation) {
+    option (google.api.http) = {
+      post: "/v1alpha/{parent=projects/*/locations/*}/conversations"
+      body: "conversation"
+    };
+    option (google.api.method_signature) =
+        "parent,conversation,conversation_id";
+  }
+
+  // Gets details of a single conversation using conversation id and parent.
+  rpc GetConversation(GetConversationRequest) returns (Conversation) {
+    option (google.api.http) = {
+      get: "/v1alpha/{name=projects/*/locations/*/conversations/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Lists all conversations for a given parent.
+  rpc ListConversations(ListConversationsRequest)
+      returns (ListConversationsResponse) {
+    option (google.api.http) = {
+      get: "/v1alpha/{parent=projects/*/locations/*}/conversations"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Lists all messages for a given conversation.
+  rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse) {
+    option (google.api.http) = {
+      get: "/v1alpha/{parent=projects/*/locations/*/conversations/*}/messages"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+}
+
+// Request for listing chat messages based on parent and conversation_id.
+message ListMessagesRequest {
+  // Required. The conversation to list messages under.
+  // Format:
+  // projects/{project}/locations/{location}/conversations/{conversation_id}
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "geminidataanalytics.googleapis.com/Conversation"
+    }
+  ];
+
+  // Optional. Requested page size. Server may return fewer items than
+  // requested. The max page size is 100. All larger page sizes will be coerced
+  // to 100. If unspecified, server will pick 50 as an approperiate default.
+  int32 page_size = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A token identifying a page of results the server should return.
+  string page_token = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Filtering results. See [AIP-160](https://google.aip.dev/160) for
+  // syntax.
+  //
+  // ListMessages allows filtering by:
+  //  * create_time (e.g., `createTime > "2025-01-28T06:51:56-08:00"`)
+  //  * update_time
+  string filter = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response for listing chat messages.
+message ListMessagesResponse {
+  // The list of chat messages.
+  repeated StorageMessage messages = 1;
+
+  // A token identifying a page of results the server should return.
+  string next_page_token = 2;
+}
+
+// A stored message containing user message or system message.
+message StorageMessage {
+  // The unique resource name of a chat message.
+  string message_id = 1;
+
+  // The message content.
+  Message message = 2;
+}
+
+// Request for Chat.
+message ChatRequest {
+  // Context Provider for the chat request.
+  // It can either be -
+  // inline_context, which is a context provided inline in the request.
+  // data_agent, which is a reference to a data agent resource.
+  // conversation_reference, which is a reference to a persisted conversation
+  // and context using conversation_id and agent_id.
+  oneof context_provider {
+    // Optional. Inline context for the chat request. Use this to chat
+    // statelessly (without managed conversation persistence and without an
+    // Agent) by passing all context inline.
+    Context inline_context = 101 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Reference to a persisted conversation and agent context.
+    // Use this to chat with an Agent using managed conversation persistence.
+    ConversationReference conversation_reference = 103
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Context for the chat request. Use this to chat with an Agent
+    // statelessly, without managed conversation persistence.
+    DataAgentContext data_agent_context = 104
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Optional. The GCP project to be used for quota and billing.
+  string project = 1 [
+    deprecated = true,
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "cloudresourcemanager.googleapis.com/Project"
+    }
+  ];
+
+  // Required. The parent value for chat request.
+  // Pattern: projects/{project}/locations/{location}
+  string parent = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Content of current conversation.
+  repeated Message messages = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Context for the chat request using a data agent.
+message DataAgentContext {
+  // List of context versions supported by DCS.
+  // There are two versions of context. This is to maintain versioning for the
+  // data agent.
+  enum ContextVersion {
+    // Unspecified or unrecognized.
+    CONTEXT_VERSION_UNSPECIFIED = 0;
+
+    // Using this version, DCS will use the latest staging context for the
+    // data agent.
+    STAGING = 1;
+
+    // Using this version, DCS will use the latest published context for the
+    // data agent.
+    PUBLISHED = 2;
+  }
+
+  // Required. The name of the data agent resource.
+  string data_agent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "geminidataanalytics.googleapis.com/DataAgent"
+    }
+  ];
+
+  // Optional. The credentials to use when calling the looker datasource
+  //
+  // Currently supports both oauth token and api keys based credentials, as
+  // described in
+  // https://cloud.google.com/looker/docs/api-auth#authentication_with_an_sdk
+  Credentials credentials = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Version of context to be used by DCS (e.g. STAGING, PUBLISHED)
+  ContextVersion context_version = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Reference to a persisted conversation and agent context.
+message ConversationReference {
+  // Required. Name of the conversation resource.
+  // Format:
+  // projects/{project}/locations/{location}/conversations/{conversation_id}
+  string conversation = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "geminidataanalytics.googleapis.com/Conversation"
+    }
+  ];
+
+  // Required. Context for the chat request using a data agent.
+  DataAgentContext data_agent_context = 3
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// A message from an internaction between the user and the system.
+message Message {
+  // The kind of message.
+  oneof kind {
+    // A message from the user that is interacting with the system.
+    UserMessage user_message = 2;
+
+    // A message from the system in response to the user.
+    SystemMessage system_message = 3;
+  }
+
+  // Output only. For user messages, this is the time at which the system
+  // received the message. For system messages, this is the time at which the
+  // system generated the message.
+  google.protobuf.Timestamp timestamp = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. unique id of the message in the conversation for persistence.
+  string message_id = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A message from the user that is interacting with the system.
+message UserMessage {
+  // The kind of content in the user message.
+  oneof kind {
+    // Text should use this field instead of blob.
+    string text = 1;
+  }
+}
+
+// A message from the system in response to the user. This message can also be a
+// message from the user as historical context for multiturn conversations with
+// the system.
+message SystemMessage {
+  // The kind of content in the system message.
+  oneof kind {
+    // A direct natural language response to the user message.
+    TextMessage text = 1;
+
+    // A message produced during schema resolution.
+    SchemaMessage schema = 2;
+
+    // A message produced during data retrieval.
+    DataMessage data = 3;
+
+    // A message produced during analysis.
+    AnalysisMessage analysis = 4;
+
+    // A message produced during chart generation.
+    ChartMessage chart = 5;
+
+    // An error message.
+    ErrorMessage error = 6;
+  }
+}
+
+// A multi-part text message.
+message TextMessage {
+  // Output only. The parts of the message.
+  repeated string parts = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A message produced during schema resolution.
+message SchemaMessage {
+  // Whether this message contains the query or the result of the schema
+  // resolution.
+  oneof kind {
+    // A schema resolution query.
+    SchemaQuery query = 1;
+
+    // The result of a schema resolution query.
+    SchemaResult result = 2;
+  }
+}
+
+// A query for resolving the schema relevant to the posed question.
+message SchemaQuery {
+  // Output only. The question to send to the system for schema resolution.
+  string question = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The result of schema resolution.
+message SchemaResult {
+  // Output only. The datasources used to resolve the schema query.
+  repeated Datasource datasources = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A message produced during data retrieval.
+message DataMessage {
+  // Whether this message contains the query, the result, or generated SQL for
+  // the data retrieval.
+  oneof kind {
+    // A data retrieval query.
+    DataQuery query = 1;
+
+    // SQL generated by the system to retrieve data.
+    string generated_sql = 2;
+
+    // Retrieved data.
+    DataResult result = 3;
+
+    // Looker Query generated by the system to retrieve data.
+    LookerQuery generated_looker_query = 4;
+
+    // A BigQuery job executed by the system to retrieve data.
+    BigQueryJob big_query_job = 5;
+  }
+}
+
+// A query for retrieving data from a Looker explore. See
+// https://cloud.google.com/looker/docs/reference/looker-api/latest/methods/Query/run_inline_query
+message LookerQuery {
+  // A Looker query filter.
+  message Filter {
+    // Required. The field to filter on.
+    string field = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The value f field to filter on.
+    string value = 2 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Required. The LookML model used to generate the query.
+  string model = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The LookML explore used to generate the query.
+  string explore = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The fields to retrieve from the explore.
+  repeated string fields = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The filters to apply to the explore.
+  repeated Filter filters = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The sorts to apply to the explore.
+  repeated string sorts = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Limit in the query.
+  optional string limit = 6 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A query for retrieving data.
+message DataQuery {
+  // Output only. A natural language question to answer.
+  string question = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. A snake-case name for the query that reflects its intent. It
+  // is used to name the corresponding data result, so that it can be referenced
+  // in later steps.
+  //
+  // Example: "total_sales_by_product"
+  // Example: "sales_for_product_12345"
+  string name = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The datasources available to answer the question.
+  repeated Datasource datasources = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Retrieved data.
+message DataResult {
+  // Output only. A snake-case name for the data result that reflects its
+  // contents. The name is used to pass the result around by reference, and
+  // serves as a signal about its meaning.
+  //
+  // Example: "total_sales_by_product"
+  // Example: "sales_for_product_12345"
+  string name = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The schema of the data.
+  Schema schema = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The content of the data. Each row is a struct that matches the
+  // schema. Simple values are represented as strings, while nested structures
+  // are represented as lists or structs.
+  repeated google.protobuf.Struct data = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A BigQuery job executed by the system.
+message BigQueryJob {
+  // Required. The project the job belongs to.
+  //
+  // See https://cloud.google.com/bigquery/docs/reference/rest/v2/JobReference
+  string project_id = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The ID of the job.
+  //
+  // See https://cloud.google.com/bigquery/docs/reference/rest/v2/JobReference
+  string job_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The location of the job.
+  //
+  // See https://cloud.google.com/bigquery/docs/reference/rest/v2/JobReference
+  string location = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. A reference to the destination table of the job's query
+  // results.
+  //
+  // See
+  // https://cloud.google.com/bigquery/docs/reference/rest/v2/Job#jobconfigurationquery
+  BigQueryTableReference destination_table = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The schema of the job's query results.
+  //
+  // See
+  // https://cloud.google.com/bigquery/docs/reference/rest/v2/Job#jobstatistics2
+  Schema schema = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A message produced during analysis.
+message AnalysisMessage {
+  // Whether this message contains the query or one of the events from the
+  // analysis.
+  oneof kind {
+    // An analysis query.
+    AnalysisQuery query = 1;
+
+    // An event indicating the progress of the analysis.
+    AnalysisEvent progress_event = 2;
+  }
+}
+
+// A query for performing an analysis.
+message AnalysisQuery {
+  // Output only. An analysis question to help answer the user's original
+  // question.
+  string question = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The names of previously retrieved data results to analyze.
+  repeated string data_result_names = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// An event indicating the progress of an analysis.
+message AnalysisEvent {
+  // The kind of event that occurred during the analysis.
+  oneof kind {
+    // Python codegen planner's reasoning.
+    string planner_reasoning = 2;
+
+    // Instructions issued for code generation.
+    string coder_instruction = 3;
+
+    // Generated code.
+    string code = 4;
+
+    // Output from code execution.
+    string execution_output = 5;
+
+    // An error from code execution.
+    string execution_error = 6;
+
+    // Result as Vega chart JSON string.
+    string result_vega_chart_json = 7;
+
+    // Result as NL string.
+    string result_natural_language = 8;
+
+    // Result as CSV string.
+    string result_csv_data = 9;
+
+    // Result as a reference to a data source.
+    string result_reference_data = 10;
+
+    // A generic error message.
+    string error = 11;
+  }
+}
+
+// A message produced during chart generation.
+message ChartMessage {
+  // Whether this message contains the query or the result of the chart
+  // generation.
+  oneof kind {
+    // A query for generating a chart.
+    ChartQuery query = 1;
+
+    // The result of a chart generation query.
+    ChartResult result = 2;
+  }
+}
+
+// A query for generating a chart.
+message ChartQuery {
+  // Output only. Natural language instructions for generating the chart.
+  string instructions = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The name of a previously retrieved data result to use in the
+  // chart.
+  string data_result_name = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The result of a chart generation query.
+message ChartResult {
+  // Output only. A generated Vega chart config.
+  // See https://vega.github.io/vega/docs/config/
+  google.protobuf.Struct vega_config = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. A rendering of the chart if this was requested in the context.
+  Blob image = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// An error message.
+message ErrorMessage {
+  // Output only. The text of the error.
+  string text = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A blob of data with a MIME type.
+message Blob {
+  // Required. The IANA standard MIME type of the message data.
+  string mime_type = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The data represented as bytes.
+  bytes data = 2 [(google.api.field_behavior) = REQUIRED];
+}
