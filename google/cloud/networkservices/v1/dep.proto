@@ -163,6 +163,67 @@ service DepService {
       metadata_type: "OperationMetadata"
     };
   }
+
+  // Lists `AuthzExtension` resources in a given project and location.
+  rpc ListAuthzExtensions(ListAuthzExtensionsRequest)
+      returns (ListAuthzExtensionsResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*/locations/*}/authzExtensions"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Gets details of the specified `AuthzExtension` resource.
+  rpc GetAuthzExtension(GetAuthzExtensionRequest) returns (AuthzExtension) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/locations/*/authzExtensions/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Creates a new `AuthzExtension` resource in a given project
+  // and location.
+  rpc CreateAuthzExtension(CreateAuthzExtensionRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/locations/*}/authzExtensions"
+      body: "authz_extension"
+    };
+    option (google.api.method_signature) =
+        "parent,authz_extension,authz_extension_id";
+    option (google.longrunning.operation_info) = {
+      response_type: "AuthzExtension"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
+  // Updates the parameters of the specified `AuthzExtension`
+  // resource.
+  rpc UpdateAuthzExtension(UpdateAuthzExtensionRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      patch: "/v1/{authz_extension.name=projects/*/locations/*/authzExtensions/*}"
+      body: "authz_extension"
+    };
+    option (google.api.method_signature) = "authz_extension,update_mask";
+    option (google.longrunning.operation_info) = {
+      response_type: "AuthzExtension"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
+  // Deletes the specified `AuthzExtension` resource.
+  rpc DeleteAuthzExtension(DeleteAuthzExtensionRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      delete: "/v1/{name=projects/*/locations/*/authzExtensions/*}"
+    };
+    option (google.api.method_signature) = "name";
+    option (google.longrunning.operation_info) = {
+      response_type: "google.protobuf.Empty"
+      metadata_type: "OperationMetadata"
+    };
+  }
 }
 
 // The part of the request or response for which the extension is called.
@@ -195,10 +256,10 @@ enum EventType {
   RESPONSE_TRAILERS = 6;
 }
 
-// Load balancing schemes supported by the `LbTrafficExtension` resource and
-// `LbRouteExtension` resource.
-// For more information, refer to [Choosing a load
-// balancer](https://cloud.google.com/load-balancing/docs/backend-service).
+// Load balancing schemes supported by the `LbTrafficExtension`,
+// `LbRouteExtension`, and `LbEdgeExtension` resources.
+// For more information, refer to [Backend services
+// overview](https://cloud.google.com/load-balancing/docs/backend-service).
 enum LoadBalancingScheme {
   // Default value. Do not use.
   LOAD_BALANCING_SCHEME_UNSPECIFIED = 0;
@@ -209,6 +270,19 @@ enum LoadBalancingScheme {
   // Signifies that this is used for External Managed HTTP(S) Load
   // Balancing.
   EXTERNAL_MANAGED = 2;
+}
+
+// The format of communication supported by the extension.
+enum WireFormat {
+  // Not specified.
+  WIRE_FORMAT_UNSPECIFIED = 0;
+
+  // The extension service uses ext_proc gRPC API over a gRPC stream. This is
+  // the default value if the wire format is not specified. The backend service
+  // for the extension must use HTTP2 or H2C as the protocol. All
+  // `supported_events` for a client request are sent as part of the same
+  // gRPC stream.
+  EXT_PROC_GRPC = 1;
 }
 
 // A single extension chain wrapper that contains the match conditions and
@@ -237,11 +311,12 @@ message ExtensionChain {
     // Optional. The `:authority` header in the gRPC request sent from Envoy
     // to the extension service.
     // Required for Callout extensions.
+    //
+    // This field is not supported for plugin extensions. Setting it results in
+    // a validation error.
     string authority = 2 [(google.api.field_behavior) = OPTIONAL];
 
     // Required. The reference to the service that runs the extension.
-    //
-    // Currently only callout extensions are supported here.
     //
     // To configure a callout extension, `service` must be a fully-qualified
     // reference
@@ -251,18 +326,39 @@ message ExtensionChain {
     // `https://www.googleapis.com/compute/v1/projects/{project}/regions/{region}/backendServices/{backendService}`
     // or
     // `https://www.googleapis.com/compute/v1/projects/{project}/global/backendServices/{backendService}`.
+    //
+    // To configure a plugin extension, `service` must be a reference
+    // to a [`WasmPlugin`
+    // resource](https://cloud.google.com/service-extensions/docs/reference/rest/v1beta1/projects.locations.wasmPlugins)
+    // in the format:
+    // `projects/{project}/locations/{location}/wasmPlugins/{plugin}`
+    // or
+    // `//networkservices.googleapis.com/projects/{project}/locations/{location}/wasmPlugins/{wasmPlugin}`.
+    //
+    // Plugin extensions are currently supported for the
+    // `LbTrafficExtension`, the `LbRouteExtension`, and the `LbEdgeExtension`
+    // resources.
     string service = 3 [(google.api.field_behavior) = REQUIRED];
 
     // Optional. A set of events during request or response processing for which
-    // this extension is called. This field is required for the
-    // `LbTrafficExtension` resource. It must not be set for the
-    // `LbRouteExtension` resource.
+    // this extension is called.
+    //
+    // For the `LbTrafficExtension` resource, this field is required.
+    //
+    // For the `LbRouteExtension` resource, this field is optional. If
+    // unspecified, `REQUEST_HEADERS` event is assumed as supported.
+    //
+    // For the `LbEdgeExtension` resource, this field is required and must only
+    // contain `REQUEST_HEADERS` event.
     repeated EventType supported_events = 4
         [(google.api.field_behavior) = OPTIONAL];
 
     // Optional. Specifies the timeout for each individual message on the
-    // stream. The timeout must be between 10-1000 milliseconds. Required for
-    // Callout extensions.
+    // stream. The timeout must be between `10`-`10000` milliseconds. Required
+    // for callout extensions.
+    //
+    // This field is not supported for plugin extensions. Setting it results in
+    // a validation error.
     google.protobuf.Duration timeout = 5
         [(google.api.field_behavior) = OPTIONAL];
 
@@ -287,6 +383,37 @@ message ExtensionChain {
     // Each element is a string indicating the header name.
     repeated string forward_headers = 7
         [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The metadata provided here is included as part of the
+    // `metadata_context` (of type `google.protobuf.Struct`) in the
+    // `ProcessingRequest` message sent to the extension server.
+    //
+    // The metadata is available under the namespace
+    // `com.google.<extension_type>.<resource_name>.<extension_chain_name>.<extension_name>`.
+    // For example:
+    // `com.google.lb_traffic_extension.lbtrafficextension1.chain1.ext1`.
+    //
+    // The following variables are supported in the metadata:
+    //
+    // `{forwarding_rule_id}` - substituted with the forwarding rule's fully
+    //   qualified resource name.
+    //
+    // This field must not be set for plugin extensions. Setting it results in
+    // a validation error.
+    //
+    // You can set metadata at either the resource level or the extension level.
+    // The extension level metadata is recommended because you can pass a
+    // different set of metadata through each extension to the backend.
+    //
+    // This field is subject to following limitations:
+    //
+    // * The total size of the metadata must be less than 1KiB.
+    // * The total number of keys in the metadata must be less than 16.
+    // * The length of each key must be less than 64 characters.
+    // * The length of each value must be less than 1024 characters.
+    // * All values must be strings.
+    google.protobuf.Struct metadata = 9
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Required. The name for this extension chain.
@@ -304,7 +431,8 @@ message ExtensionChain {
   // At least one extension is required.
   // Up to 3 extensions can be defined for each extension chain
   // for `LbTrafficExtension` resource.
-  // `LbRouteExtension` chains are limited to 1 extension per extension chain.
+  // `LbRouteExtension` and `LbEdgeExtension` chains are limited to 1 extension
+  // per extension chain.
   repeated Extension extensions = 3 [(google.api.field_behavior) = REQUIRED];
 }
 
@@ -346,10 +474,11 @@ message LbTrafficExtension {
   // for Google Cloud resources.
   map<string, string> labels = 4 [(google.api.field_behavior) = OPTIONAL];
 
-  // Required. A list of references to the forwarding rules to which this
-  // service extension is attached to. At least one forwarding rule is required.
-  // There can be only one `LBTrafficExtension` resource per forwarding rule.
-  repeated string forwarding_rules = 5 [(google.api.field_behavior) = REQUIRED];
+  // Optional. A list of references to the forwarding rules to which this
+  // service extension is attached. At least one forwarding rule is required.
+  // Only one `LbTrafficExtension` resource can be associated with a forwarding
+  // rule.
+  repeated string forwarding_rules = 5 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. A set of ordered extension chains that contain the match
   // conditions and extensions to execute. Match conditions for each extension
@@ -362,27 +491,40 @@ message LbTrafficExtension {
 
   // Required. All backend services and forwarding rules referenced by this
   // extension must share the same load balancing scheme. Supported values:
-  // `INTERNAL_MANAGED`, `EXTERNAL_MANAGED`. For more information, refer to
-  // [Choosing a load
-  // balancer](https://cloud.google.com/load-balancing/docs/backend-service).
+  // `INTERNAL_MANAGED` and `EXTERNAL_MANAGED`. For more information, refer to
+  // [Backend services
+  // overview](https://cloud.google.com/load-balancing/docs/backend-service).
   LoadBalancingScheme load_balancing_scheme = 8
       [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. The metadata provided here is included in the
-  // `ProcessingRequest.metadata_context.filter_metadata` map field. The
-  // metadata is available under the key
+  // Optional. The metadata provided here is included as part of the
+  // `metadata_context` (of type `google.protobuf.Struct`) in the
+  // `ProcessingRequest` message sent to the extension server.
+  //
+  // The metadata applies to all extensions in all extensions chains in this
+  // resource.
+  //
+  // The metadata is available under the key
   // `com.google.lb_traffic_extension.<resource_name>`.
+  //
   // The following variables are supported in the metadata:
   //
   // `{forwarding_rule_id}` - substituted with the forwarding rule's fully
   //   qualified resource name.
+  //
+  // This field must not be set if at least one of the extension chains
+  // contains plugin extensions. Setting it results in a validation error.
+  //
+  // You can set metadata at either the resource level or the extension level.
+  // The extension level metadata is recommended because you can pass a
+  // different set of metadata through each extension to the backend.
   google.protobuf.Struct metadata = 10 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Message for requesting list of `LbTrafficExtension` resources.
 message ListLbTrafficExtensionsRequest {
   // Required. The project and location from which the `LbTrafficExtension`
-  // resources are listed, specified in the following format:
+  // resources are listed. These values are specified in the following format:
   // `projects/{project}/locations/{location}`.
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
@@ -401,7 +543,7 @@ message ListLbTrafficExtensionsRequest {
   // Optional. Filtering results.
   string filter = 4 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Hint for how to order the results.
+  // Optional. Hint about how to order the results.
   string order_by = 5 [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -452,12 +594,11 @@ message CreateLbTrafficExtensionRequest {
   // Optional. An optional request ID to identify requests. Specify a unique
   // request ID so that if you must retry your request, the server can ignore
   // the request if it has already been completed. The server guarantees
-  // that for at least 60 minutes since the first request.
+  // that for 60 minutes since the first request.
   //
   // For example, consider a situation where you make an initial request and the
   // request times out. If you make the request again with the same request
-  // ID, the server can check if original operation with the same request ID
-  // was received, and if so, ignores the second request. This prevents
+  // ID, the server ignores the second request This prevents
   // clients from accidentally creating duplicate commitments.
   //
   // The request ID must be a valid UUID with the exception that zero UUID is
@@ -472,7 +613,7 @@ message CreateLbTrafficExtensionRequest {
 message UpdateLbTrafficExtensionRequest {
   // Optional. Used to specify the fields to be overwritten in the
   // `LbTrafficExtension` resource by the update.
-  // The fields specified in the update_mask are relative to the resource, not
+  // The fields specified in the `update_mask` are relative to the resource, not
   // the full request. A field is overwritten if it is in the mask. If the
   // user does not specify a mask, then all fields are overwritten.
   google.protobuf.FieldMask update_mask = 1
@@ -485,12 +626,11 @@ message UpdateLbTrafficExtensionRequest {
   // Optional. An optional request ID to identify requests. Specify a unique
   // request ID so that if you must retry your request, the server can ignore
   // the request if it has already been completed. The server guarantees
-  // that for at least 60 minutes since the first request.
+  // that for 60 minutes since the first request.
   //
   // For example, consider a situation where you make an initial request and the
   // request times out. If you make the request again with the same request
-  // ID, the server can check if original operation with the same request ID
-  // was received, and if so, ignores the second request. This prevents
+  // ID, the server ignores the second request This prevents
   // clients from accidentally creating duplicate commitments.
   //
   // The request ID must be a valid UUID with the exception that zero UUID is
@@ -516,12 +656,11 @@ message DeleteLbTrafficExtensionRequest {
   // Optional. An optional request ID to identify requests. Specify a unique
   // request ID so that if you must retry your request, the server can ignore
   // the request if it has already been completed. The server guarantees
-  // that for at least 60 minutes after the first request.
+  // that for 60 minutes after the first request.
   //
   // For example, consider a situation where you make an initial request and the
   // request times out. If you make the request again with the same request
-  // ID, the server can check if original operation with the same request ID
-  // was received, and if so, ignores the second request. This prevents
+  // ID, the server ignores the second request This prevents
   // clients from accidentally creating duplicate commitments.
   //
   // The request ID must be a valid UUID with the exception that zero UUID is
@@ -569,8 +708,9 @@ message LbRouteExtension {
   map<string, string> labels = 4 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. A list of references to the forwarding rules to which this
-  // service extension is attached to. At least one forwarding rule is required.
-  // There can be only one `LbRouteExtension` resource per forwarding rule.
+  // service extension is attached. At least one forwarding rule is required.
+  // Only one `LbRouteExtension` resource can be associated with a forwarding
+  // rule.
   repeated string forwarding_rules = 5 [(google.api.field_behavior) = REQUIRED];
 
   // Required. A set of ordered extension chains that contain the match
@@ -585,27 +725,39 @@ message LbRouteExtension {
   // Required. All backend services and forwarding rules referenced by this
   // extension must share the same load balancing scheme. Supported values:
   // `INTERNAL_MANAGED`, `EXTERNAL_MANAGED`. For more information, refer to
-  // [Choosing a load
-  // balancer](https://cloud.google.com/load-balancing/docs/backend-service).
+  // [Backend services
+  // overview](https://cloud.google.com/load-balancing/docs/backend-service).
   LoadBalancingScheme load_balancing_scheme = 8
       [(google.api.field_behavior) = REQUIRED];
 
   // Optional. The metadata provided here is included as part of the
   // `metadata_context` (of type `google.protobuf.Struct`) in the
-  // `ProcessingRequest` message sent to the extension
-  // server. The metadata is available under the namespace
+  // `ProcessingRequest` message sent to the extension server.
+  //
+  // The metadata applies to all extensions in all extensions chains in this
+  // resource.
+  //
+  // The metadata is available under the key
   // `com.google.lb_route_extension.<resource_name>`.
-  // The following variables are supported in the metadata Struct:
+  //
+  // The following variables are supported in the metadata:
   //
   // `{forwarding_rule_id}` - substituted with the forwarding rule's fully
   //   qualified resource name.
+  //
+  // This field must not be set if at least one of the extension chains
+  // contains plugin extensions. Setting it results in a validation error.
+  //
+  // You can set metadata at either the resource level or the extension level.
+  // The extension level metadata is recommended because you can pass a
+  // different set of metadata through each extension to the backend.
   google.protobuf.Struct metadata = 10 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Message for requesting list of `LbRouteExtension` resources.
 message ListLbRouteExtensionsRequest {
   // Required. The project and location from which the `LbRouteExtension`
-  // resources are listed, specified in the following format:
+  // resources are listed. These values are specified in the following format:
   // `projects/{project}/locations/{location}`.
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
@@ -624,7 +776,7 @@ message ListLbRouteExtensionsRequest {
   // Optional. Filtering results.
   string filter = 4 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Hint for how to order the results.
+  // Optional. Hint about how to order the results.
   string order_by = 5 [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -675,12 +827,11 @@ message CreateLbRouteExtensionRequest {
   // Optional. An optional request ID to identify requests. Specify a unique
   // request ID so that if you must retry your request, the server can ignore
   // the request if it has already been completed. The server guarantees
-  // that for at least 60 minutes since the first request.
+  // that for 60 minutes since the first request.
   //
   // For example, consider a situation where you make an initial request and the
   // request times out. If you make the request again with the same request
-  // ID, the server can check if original operation with the same request ID
-  // was received, and if so, ignores the second request. This prevents
+  // ID, the server ignores the second request This prevents
   // clients from accidentally creating duplicate commitments.
   //
   // The request ID must be a valid UUID with the exception that zero UUID is
@@ -695,7 +846,7 @@ message CreateLbRouteExtensionRequest {
 message UpdateLbRouteExtensionRequest {
   // Optional. Used to specify the fields to be overwritten in the
   // `LbRouteExtension` resource by the update.
-  // The fields specified in the update_mask are relative to the resource, not
+  // The fields specified in the `update_mask` are relative to the resource, not
   // the full request. A field is overwritten if it is in the mask. If the
   // user does not specify a mask, then all fields are overwritten.
   google.protobuf.FieldMask update_mask = 1
@@ -708,12 +859,11 @@ message UpdateLbRouteExtensionRequest {
   // Optional. An optional request ID to identify requests. Specify a unique
   // request ID so that if you must retry your request, the server can ignore
   // the request if it has already been completed. The server guarantees
-  // that for at least 60 minutes since the first request.
+  // that for 60 minutes since the first request.
   //
   // For example, consider a situation where you make an initial request and the
   // request times out. If you make the request again with the same request
-  // ID, the server can check if original operation with the same request ID
-  // was received, and if so, ignores the second request. This prevents
+  // ID, the server ignores the second request This prevents
   // clients from accidentally creating duplicate commitments.
   //
   // The request ID must be a valid UUID with the exception that zero UUID is
@@ -739,12 +889,261 @@ message DeleteLbRouteExtensionRequest {
   // Optional. An optional request ID to identify requests. Specify a unique
   // request ID so that if you must retry your request, the server can ignore
   // the request if it has already been completed. The server guarantees
-  // that for at least 60 minutes after the first request.
+  // that for 60 minutes after the first request.
   //
   // For example, consider a situation where you make an initial request and the
   // request times out. If you make the request again with the same request
-  // ID, the server can check if original operation with the same request ID
-  // was received, and if so, ignores the second request. This prevents
+  // ID, the server ignores the second request This prevents
+  // clients from accidentally creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 2 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
+// `AuthzExtension` is a resource that allows traffic forwarding
+// to a callout backend service to make an authorization decision.
+message AuthzExtension {
+  option (google.api.resource) = {
+    type: "networkservices.googleapis.com/AuthzExtension"
+    pattern: "projects/{project}/locations/{location}/authzExtensions/{authz_extension}"
+    plural: "authzExtensions"
+    singular: "authzExtension"
+  };
+
+  // Required. Identifier. Name of the `AuthzExtension` resource in the
+  // following format:
+  // `projects/{project}/locations/{location}/authzExtensions/{authz_extension}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.field_behavior) = IDENTIFIER
+  ];
+
+  // Output only. The timestamp when the resource was created.
+  google.protobuf.Timestamp create_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The timestamp when the resource was updated.
+  google.protobuf.Timestamp update_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. A human-readable description of the resource.
+  string description = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Set of labels associated with the `AuthzExtension`
+  // resource.
+  //
+  // The format must comply with [the requirements for
+  // labels](/compute/docs/labeling-resources#requirements) for Google Cloud
+  // resources.
+  map<string, string> labels = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. All backend services and forwarding rules referenced by this
+  // extension must share the same load balancing scheme. Supported values:
+  // `INTERNAL_MANAGED`, `EXTERNAL_MANAGED`. For more information, refer to
+  // [Backend services
+  // overview](https://cloud.google.com/load-balancing/docs/backend-service).
+  LoadBalancingScheme load_balancing_scheme = 6
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The `:authority` header in the gRPC request sent from Envoy
+  // to the extension service.
+  string authority = 7 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The reference to the service that runs the extension.
+  //
+  // To configure a callout extension, `service` must be a fully-qualified
+  // reference
+  // to a [backend
+  // service](https://cloud.google.com/compute/docs/reference/rest/v1/backendServices)
+  // in the format:
+  // `https://www.googleapis.com/compute/v1/projects/{project}/regions/{region}/backendServices/{backendService}`
+  // or
+  // `https://www.googleapis.com/compute/v1/projects/{project}/global/backendServices/{backendService}`.
+  string service = 8 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Specifies the timeout for each individual message on the stream.
+  // The timeout must be between 10-10000 milliseconds.
+  google.protobuf.Duration timeout = 9 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Determines how the proxy behaves if the call to the extension
+  // fails or times out.
+  //
+  // When set to `TRUE`, request or response processing continues without
+  // error. Any subsequent extensions in the extension chain are also
+  // executed. When set to `FALSE` or the default setting of `FALSE` is used,
+  // one of the following happens:
+  //
+  // * If response headers have not been delivered to the downstream client,
+  // a generic 500 error is returned to the client. The error response can be
+  // tailored by configuring a custom error response in the load balancer.
+  //
+  // * If response headers have been delivered, then the HTTP stream to the
+  // downstream client is reset.
+  bool fail_open = 10 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The metadata provided here is included as part of the
+  // `metadata_context` (of type `google.protobuf.Struct`) in the
+  // `ProcessingRequest` message sent to the extension
+  // server. The metadata is available under the namespace
+  // `com.google.authz_extension.<resource_name>`.
+  // The following variables are supported in the metadata Struct:
+  //
+  // `{forwarding_rule_id}` - substituted with the forwarding rule's fully
+  //   qualified resource name.
+  google.protobuf.Struct metadata = 11 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. List of the HTTP headers to forward to the extension
+  // (from the client). If omitted, all headers are sent.
+  // Each element is a string indicating the header name.
+  repeated string forward_headers = 12 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The format of communication supported by the callout extension.
+  // If not specified, the default value `EXT_PROC_GRPC` is used.
+  WireFormat wire_format = 14 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Message for requesting list of `AuthzExtension` resources.
+message ListAuthzExtensionsRequest {
+  // Required. The project and location from which the `AuthzExtension`
+  // resources are listed. These values are specified in the following format:
+  // `projects/{project}/locations/{location}`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "networkservices.googleapis.com/AuthzExtension"
+    }
+  ];
+
+  // Optional. Requested page size. The server might return fewer items than
+  // requested. If unspecified, the server picks an appropriate default.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A token identifying a page of results that the server returns.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Filtering results.
+  string filter = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Hint about how to order the results.
+  string order_by = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Message for response to listing `AuthzExtension` resources.
+message ListAuthzExtensionsResponse {
+  // The list of `AuthzExtension` resources.
+  repeated AuthzExtension authz_extensions = 1;
+
+  // A token identifying a page of results that the server returns.
+  string next_page_token = 2;
+
+  // Locations that could not be reached.
+  repeated string unreachable = 3;
+}
+
+// Message for getting a `AuthzExtension` resource.
+message GetAuthzExtensionRequest {
+  // Required. A name of the `AuthzExtension` resource to get. Must be in
+  // the format
+  // `projects/{project}/locations/{location}/authzExtensions/{authz_extension}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkservices.googleapis.com/AuthzExtension"
+    }
+  ];
+}
+
+// Message for creating a `AuthzExtension` resource.
+message CreateAuthzExtensionRequest {
+  // Required. The parent resource of the `AuthzExtension` resource. Must
+  // be in the format `projects/{project}/locations/{location}`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "networkservices.googleapis.com/AuthzExtension"
+    }
+  ];
+
+  // Required. User-provided ID of the `AuthzExtension` resource to be
+  // created.
+  string authz_extension_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. `AuthzExtension` resource to be created.
+  AuthzExtension authz_extension = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. An optional request ID to identify requests. Specify a unique
+  // request ID so that if you must retry your request, the server can ignore
+  // the request if it has already been completed. The server guarantees
+  // that for 60 minutes since the first request.
+  //
+  // For example, consider a situation where you make an initial request and the
+  // request times out. If you make the request again with the same request
+  // ID, the server ignores the second request This prevents
+  // clients from accidentally creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 4 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
+// Message for updating a `AuthzExtension` resource.
+message UpdateAuthzExtensionRequest {
+  // Required. Used to specify the fields to be overwritten in the
+  // `AuthzExtension` resource by the update.
+  // The fields specified in the `update_mask` are relative to the resource, not
+  // the full request. A field is overwritten if it is in the mask. If the
+  // user does not specify a mask, then all fields are overwritten.
+  google.protobuf.FieldMask update_mask = 1
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Required. `AuthzExtension` resource being updated.
+  AuthzExtension authz_extension = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. An optional request ID to identify requests. Specify a unique
+  // request ID so that if you must retry your request, the server can ignore
+  // the request if it has already been completed. The server guarantees
+  // that for 60 minutes since the first request.
+  //
+  // For example, consider a situation where you make an initial request and the
+  // request times out. If you make the request again with the same request
+  // ID, the server ignores the second request This prevents
+  // clients from accidentally creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 3 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
+// Message for deleting a `AuthzExtension` resource.
+message DeleteAuthzExtensionRequest {
+  // Required. The name of the `AuthzExtension` resource to delete. Must
+  // be in the format
+  // `projects/{project}/locations/{location}/authzExtensions/{authz_extension}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkservices.googleapis.com/AuthzExtension"
+    }
+  ];
+
+  // Optional. An optional request ID to identify requests. Specify a unique
+  // request ID so that if you must retry your request, the server can ignore
+  // the request if it has already been completed. The server guarantees
+  // that for 60 minutes after the first request.
+  //
+  // For example, consider a situation where you make an initial request and the
+  // request times out. If you make the request again with the same request
+  // ID, the server ignores the second request This prevents
   // clients from accidentally creating duplicate commitments.
   //
   // The request ID must be a valid UUID with the exception that zero UUID is
