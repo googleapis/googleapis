@@ -316,6 +316,19 @@ message Step {
 
 // For display only. Metadata associated with a Compute Engine instance.
 message InstanceInfo {
+  // The status of the instance. We treat all states other than "RUNNING" as
+  // not running.
+  enum Status {
+    // Default unspecified value.
+    STATUS_UNSPECIFIED = 0;
+
+    // The instance is running.
+    RUNNING = 1;
+
+    // The instance has any status other than "RUNNING".
+    NOT_RUNNING = 2;
+  }
+
   // Name of a Compute Engine instance.
   string display_name = 1;
 
@@ -342,10 +355,16 @@ message InstanceInfo {
 
   // URI of the PSC network attachment the NIC is attached to (if relevant).
   string psc_network_attachment_uri = 9;
+
+  // Indicates whether the Compute Engine instance is running.
+  // Deprecated: use the `status` field instead.
+  bool running = 10 [deprecated = true];
+
+  // The status of the instance.
+  Status status = 11;
 }
 
 // For display only. Metadata associated with a Compute Engine network.
-// Next ID: 7
 message NetworkInfo {
   // Name of a Compute Engine network.
   string display_name = 1;
@@ -459,6 +478,11 @@ message FirewallInfo {
 
   // The firewall rule's type.
   FirewallRuleType firewall_rule_type = 10;
+
+  // The priority of the firewall policy that this rule is associated with.
+  // This field is not applicable to VPC firewall rules and implied VPC firewall
+  // rules.
+  int32 policy_priority = 12;
 }
 
 // For display only. Metadata associated with a Compute Engine route.
@@ -544,6 +568,9 @@ message RouteInfo {
     // Next hop is an NCC hub. This scenario only happens when the user doesn't
     // have permissions to the project where the next hop resource is located.
     NEXT_HOP_NCC_HUB = 12;
+
+    // Next hop is Secure Web Proxy Gateway.
+    SECURE_WEB_PROXY_GATEWAY = 13;
   }
 
   // Indicates where routes are applicable.
@@ -986,6 +1013,35 @@ message DeliverInfo {
     REDIS_CLUSTER = 17;
   }
 
+  // Recognized type of a Google Service.
+  enum GoogleServiceType {
+    // Unspecified Google Service.
+    GOOGLE_SERVICE_TYPE_UNSPECIFIED = 0;
+
+    // Identity aware proxy.
+    // https://cloud.google.com/iap/docs/using-tcp-forwarding
+    IAP = 1;
+
+    // One of two services sharing IP ranges:
+    // * Load Balancer proxy
+    // * Centralized Health Check prober
+    // https://cloud.google.com/load-balancing/docs/firewall-rules
+    GFE_PROXY_OR_HEALTH_CHECK_PROBER = 2;
+
+    // Connectivity from Cloud DNS to forwarding targets or alternate name
+    // servers that use private routing.
+    // https://cloud.google.com/dns/docs/zones/forwarding-zones#firewall-rules
+    // https://cloud.google.com/dns/docs/policies#firewall-rules
+    CLOUD_DNS = 3;
+
+    // private.googleapis.com and restricted.googleapis.com
+    PRIVATE_GOOGLE_ACCESS = 4;
+
+    // Google API via Serverless VPC Access.
+    // https://cloud.google.com/vpc/docs/serverless-vpc-access
+    SERVERLESS_VPC_ACCESS = 5;
+  }
+
   // Target type where the packet is delivered to.
   Target target = 1;
 
@@ -1001,6 +1057,10 @@ message DeliverInfo {
 
   // PSC Google API target the packet is delivered to (if applicable).
   string psc_google_api_target = 5;
+
+  // Recognized type of a Google Service the packet is delivered to (if
+  // applicable).
+  GoogleServiceType google_service_type = 6;
 }
 
 // Details of the final state "forward" and associated resource.
@@ -1036,6 +1096,9 @@ message ForwardInfo {
 
     // Forwarded to a router appliance.
     ROUTER_APPLIANCE = 9;
+
+    // Forwarded to a Secure Web Proxy Gateway.
+    SECURE_WEB_PROXY_GATEWAY = 10;
   }
 
   // Target type where this packet is forwarded to.
@@ -1162,9 +1225,13 @@ message AbortInfo {
     // Aborted because expected route configuration was missing.
     ROUTE_CONFIG_NOT_FOUND = 27;
 
-    // Aborted because a PSC endpoint selection for the Google-managed service
+    // Aborted because PSC endpoint selection for the Google-managed service
     // is ambiguous (several PSC endpoints satisfy test input).
     GOOGLE_MANAGED_SERVICE_AMBIGUOUS_PSC_ENDPOINT = 19;
+
+    // Aborted because endpoint selection for the Google-managed service is
+    // ambiguous (several endpoints satisfy test input).
+    GOOGLE_MANAGED_SERVICE_AMBIGUOUS_ENDPOINT = 39;
 
     // Aborted because tests with a PSC-based Cloud SQL instance as a source are
     // not supported.
@@ -1265,8 +1332,13 @@ message DropInfo {
     // rule of the internal passthrough load balancer).
     ROUTE_NEXT_HOP_FORWARDING_RULE_TYPE_INVALID = 53;
 
-    // Packet is sent from the Internet to the private IPv6 address.
+    // Packet is sent from the Internet or Google service to the private IPv6
+    // address.
     NO_ROUTE_FROM_INTERNET_TO_PRIVATE_IPV6_ADDRESS = 44;
+
+    // Packet is sent from the external IPv6 source address of an instance to
+    // the private IPv6 address of an instance.
+    NO_ROUTE_FROM_EXTERNAL_IPV6_SOURCE_TO_PRIVATE_IPV6_ADDRESS = 98;
 
     // The packet does not match a policy-based VPN tunnel local selector.
     VPN_TUNNEL_LOCAL_SELECTOR_MISMATCH = 45;
@@ -1277,8 +1349,9 @@ message DropInfo {
     // Packet with internal destination address sent to the internet gateway.
     PRIVATE_TRAFFIC_TO_INTERNET = 7;
 
-    // Instance with only an internal IP address tries to access Google API and
-    // services, but private Google access is not enabled in the subnet.
+    // Endpoint with only an internal IP address tries to access Google API and
+    // services, but Private Google Access is not enabled in the subnet or is
+    // not applicable.
     PRIVATE_GOOGLE_ACCESS_DISALLOWED = 8;
 
     // Source endpoint tries to access Google API and services through the VPN
@@ -1286,9 +1359,8 @@ message DropInfo {
     // in the source endpoint network.
     PRIVATE_GOOGLE_ACCESS_VIA_VPN_TUNNEL_UNSUPPORTED = 47;
 
-    // Instance with only an internal IP address tries to access external hosts,
-    // but Cloud NAT is not enabled in the subnet, unless special configurations
-    // on a VM allow this connection.
+    // Endpoint with only an internal IP address tries to access external hosts,
+    // but there is no matching Cloud NAT gateway in the subnet.
     NO_EXTERNAL_ADDRESS = 9;
 
     // Destination internal address cannot be resolved to a known target. If
@@ -1563,6 +1635,22 @@ message DropInfo {
     // Packet with destination IP address within the reserved NAT64 range is
     // dropped due to matching a route of an unsupported type.
     UNSUPPORTED_ROUTE_MATCHED_FOR_NAT64_DESTINATION = 88;
+
+    // Packet could be dropped because hybrid endpoint like a VPN gateway or
+    // Interconnect is not allowed to send traffic to the Internet.
+    TRAFFIC_FROM_HYBRID_ENDPOINT_TO_INTERNET_DISALLOWED = 89;
+
+    // Packet with destination IP address within the reserved NAT64 range is
+    // dropped due to no matching NAT gateway in the subnet.
+    NO_MATCHING_NAT64_GATEWAY = 90;
+
+    // Packet is dropped due to being sent to a backend of a passthrough load
+    // balancer that doesn't use the same IP version as the frontend.
+    LOAD_BALANCER_BACKEND_IP_VERSION_MISMATCH = 96;
+
+    // Packet from the unknown NCC network is dropped due to no known route
+    // from the source network to the destination IP address.
+    NO_KNOWN_ROUTE_FROM_NCC_NETWORK_TO_DESTINATION = 97;
   }
 
   // Cause that the packet is dropped.
