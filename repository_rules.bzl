@@ -267,6 +267,11 @@ def switched_rules_by_language(
         "@gapic_generator_typescript//rules_typescript_gapic:typescript_gapic_pkg.bzl",
         "typescript_gapic_assembly_pkg",
     )
+    rules["nodejs_gapic_combined_pkg"] = _switch(
+        nodejs and grpc and gapic,
+        "@gapic_generator_typescript//rules_typescript_gapic:typescript_gapic_combined_pkg.bzl",
+        "typescript_gapic_combined_pkg",
+    )
 
     #
     # Ruby

@@ -353,16 +353,14 @@ gapic_generator_register_toolchains()
 # TypeScript
 ##############################################################################
 
-_gapic_generator_typescript_version = "4.9.0"
+# _gapic_generator_typescript_version = "4.9.0"
 
-_gapic_generator_typescript_sha256 = "223fcf700ff27ab156b969f79ac802178a5fec73a9c09c603fa022ef998193df"
+# _gapic_generator_typescript_sha256 = "223fcf700ff27ab156b969f79ac802178a5fec73a9c09c603fa022ef998193df"
 
 ### TypeScript generator
-http_archive(
+local_repository(
     name = "gapic_generator_typescript",
-    sha256 = _gapic_generator_typescript_sha256,
-    strip_prefix = "gapic-generator-typescript-%s" % _gapic_generator_typescript_version,
-    urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v%s.tar.gz" % _gapic_generator_typescript_version],
+    path = "/usr/local/google/home/sofialeon/gapic-generator-typescript", # <--- **IMPORTANT: Change this to your actual local path**
 )
 
 load("@gapic_generator_typescript//:repositories.bzl", "gapic_generator_typescript_repositories")
