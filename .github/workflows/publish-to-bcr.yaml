@@ -19,9 +19,6 @@ jobs:
     uses: bazel-contrib/publish-to-bcr/.github/workflows/publish.yaml@main
     with:
       tag_name: ${{ needs.compute-tag.outputs.tag }}
-      # GitHub repository which is a fork of the upstream where the Pull Request will be opened.
-      registry_fork: diegomarquezp/bazel-central-registry
-      # see note on Attestation Support
       attest: false
     permissions:
       contents: write
@@ -32,3 +29,19 @@ jobs:
     secrets:
       # Necessary to push to the BCR fork, and to open a pull request against a registry
       publish_token: ${{ secrets.BCR_PUBLISH_TOKEN }}
+  add-waiver-comment:
+    needs: [publish, compute-tag]
+    runs-on: ubuntu-24.04
+    steps:
+      - id: add-waiver-comment-impl
+        run: |
+          set -ex
+          # We manually fetch the PR because the reusable action has no outputs
+          JSON=$(gh search prs --repo=bazelbuild/bazel-central-registry \
+            --state=open \
+            --match=title "Publish googleapis@${TAG}" \
+            --json=url,title --order=desc)
+          BCR_PR_URL=$(jq -r --arg tag "${TAG}" '.[] | select(.title | test("'$TAG'"))' <<< "${JSON}")
+          gh pr comment "${BCR_PR_URL}" --body '@bazel-io skip_check unstable_url'
+        env:
+          TAG: ${{ needs.compute-tag.outputs.tag }}
