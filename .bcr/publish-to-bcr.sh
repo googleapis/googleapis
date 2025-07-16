@@ -34,7 +34,7 @@ function update_shas_helper() {
 	base_path="$1"
 	files="$2"
 	for file in ${files}; do
-		sha256="$(sha256sum "${file}" | cut -d' ' -f1 | xxd -r -p | base64)"
+		sha256="sha256-$(sha256sum "${file}" | cut -d' ' -f1 | xxd -r -p | base64)"
 		value_path="$(sed "s|${BCR_FOLDER}/${base_path}/||" <<< "${file}")"
 		update_source_json_entry ".${base_path}.\"${value_path}\"" "${sha256}" ".bcr/source.template.json"
 	done
