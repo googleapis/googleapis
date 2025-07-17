@@ -74,7 +74,7 @@ function render_templates() {
 		sed -i "s|{OWNER}|${org}|" "${file}"
 		sed -i "s|{REPO}|${REPO}|" "${file}"
 		# we remove the .template string from the filename
-		mv "${file}" $(sed 's|.template||' <<< "${file}")
+		mv "${file}" $(sed 's|\.template||' <<< "${file}")
 	done
 }
 
@@ -87,9 +87,9 @@ function main() {
 	local template_folder="${target_folder}/.bcr/template"
 	readonly target_folder
 	local repo_url="https://github.com/${org}/${REPO}"
-	checkout_definitions "${template_folder}" "${repo_url}" "${commit_sha}"
-	update_shas "${template_folder}/.bcr"
-	render_templates "${template_folder}/.bcr" "${commit_sha}" "${protobuf_version}" "${org}"
+	checkout_definitions "${target_folder}" "${repo_url}" "${commit_sha}"
+	update_shas "${template_folder}"
+	render_templates "${template_folder}" "${commit_sha}" "${protobuf_version}" "${org}"
 	vi "${template_folder}"
 }
 
