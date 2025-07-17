@@ -1,8 +1,10 @@
 #!/bin/bash
 #set -e
 
-GOOGLEAPIS_ROOT=$(dirname "$(readlink -f "$0")")
-BCR_FOLDER="${GOOGLEAPIS_ROOT}/.bcr"
+readonly GOOGLEAPIS_ROOT=$(dirname "$(readlink -f "$0")")
+readonly BCR_FOLDER="${GOOGLEAPIS_ROOT}/.bcr"
+readonly REPO="goolgeapis"
+readonly OWNER="googleapis"
 
 # This function checks out the entirety of this repo
 # to the specified commit SHA, except for the script
@@ -51,9 +53,21 @@ function update_source_json_entry() {
 	cat <<< $(jq "${key} = \"${value}\"" "${source_json}") > "${source_json}"
 }
 
+function get_version() {
+	commit_sha="$1"
+	echo "0.0.0-$(date "+%Y%m%d")-${commit_sha:0:8}"
+}
+
 function render_templates() {
 	googleapis_version="$1"
 	protobuf_version="$2"
+	commit_sha="$3"
     template_files=$(find "${BCR_FOLDER}" -type f -name '*.template.*')
-    
+	for file in "${template_files}"; do
+		sed -i "s|{GOOGLEAPIS_VERSION}|${googleapis_version}|" "${file}"
+		sed -i "s|{PROTOBUF_VERSION}|${protobuf_version}|" "${file}"
+		sed -i "s|{VERSION}|$(get_version)|" "${file}"
+		sed -i "s|{OWNER}|${OWNER}|" "${file}"
+		sed -i "s|{REPO}|${REPO}|" "${file}"
+	done
 }
