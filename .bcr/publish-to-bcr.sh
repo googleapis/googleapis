@@ -5,6 +5,7 @@ readonly GOOGLEAPIS_ROOT=$(dirname "$(readlink -f "$0")")
 readonly REPO="googleapis"
 readonly DEFAULT_ORG="googleapis"
 readonly DEFAULT_PROTOBUF_VERSION="21.7"
+readonly DEFAULT_BCR_ORGANIZATION="bazelbuild"
 
 # This function checks out the .bcr folder
 # to the specified commit SHA ($1) into the folder
@@ -49,7 +50,11 @@ function update_shas_helper() {
 }
 
 function get_version() {
-	local commit_sha="$1"
+	local target_folder="$1"
+	local ref="$2"
+	pushd "${target_folder}" &> /dev/null
+    local commit_sha=$(git rev-parse "${ref}")
+	popd &> /dev/null
 	echo "0.0.0-$(date "+%Y%m%d")-${commit_sha:0:8}"
 }
 
@@ -62,10 +67,7 @@ function render_templates() {
 	local org="$4"
 
     local template_files=$(find "${target_folder}" -type f -name '*.template.*')
-	pushd "${target_folder}"
-    local commit_sha=$(git rev-parse "${ref}")
-	popd
-	local version_string="$(get_version "${commit_sha}")"
+	local version_string="$(get_version "${target_folder}" "${ref}")"
 	for file in ${template_files}; do
 		# here render the values in each template file
 		sed -i "s|{VERSION}|${version_string}|" "${file}"
@@ -78,27 +80,48 @@ function render_templates() {
 	done
 }
 
+function create_pull_request() {
+	local target_folder="$1"
+	local bcr_folder="$2"
+	local ref="$3"
+	version=$(get_version "${target_folder}" "${ref}")
+	googleapis_module_root="${bcr_folder}/modules/googleapis"
+	cp -r "${target_folder}" "${googleapis_module_root}/${version}"
+	# append version to googleapis metadata file
+    cat <<< $(jq ".versions += \"${version}\"" "${googleapis_module_root}/metadata.json") > "${googleapis_module_root}/metadata.json"
+	pushd "${bcr_folder}"	
+	git status
+	popd
+}
+
 function main() {
-	local commit_sha="$1"
+	local ref="$1"
 	local org="$2"
 	local protobuf_version="$3"
+	local bcr_organization="$4"
+	local bcr_folder="$5"
 
 	local target_folder="$(mktemp -d)"
 	local template_folder="${target_folder}/.bcr/template"
 	readonly target_folder
 	local repo_url="https://github.com/${org}/${REPO}"
-	checkout_definitions "${target_folder}" "${repo_url}" "${commit_sha}"
+	checkout_definitions "${target_folder}" "${repo_url}" "${ref}"
 	update_shas "${template_folder}"
-	render_templates "${template_folder}" "${commit_sha}" "${protobuf_version}" "${org}"
-	vi "${template_folder}"
+	render_templates "${template_folder}" "${ref}" "${protobuf_version}" "${org}"
+	
+	if [[ -z "${bcr_folder}" ]] || [[ ! -d "${bcr_folder}" ]]; then
+		bcr_folder="${target_folder}/bazel-central-registry"
+		git clone "https://github.com/${bcr_organization}/bazel-central-registry" "${bcr_folder}"
+	fi
+	create_pull_request "${template_folder}" "${bcr_folder}" "${ref}"
 }
 
 # parse input parameters
 while [[ $# -gt 0 ]]; do
 key="$1"
 case $key in
-  -c|--commit_sha)
-    commit_sha="$2"
+  -r|--ref)
+    ref="$2"
     shift
     ;;
   -o|--org)
@@ -109,6 +132,14 @@ case $key in
     protobuf_version="$2"
     shift
     ;;
+  -b|--bcr_organization)
+    bcr_organization="$2"
+    shift
+    ;;
+  -f|--bcr_folder)
+    bcr_folder="$2"
+    shift
+    ;;
   *)
     echo "Invalid option: [$1]"
     exit 1
@@ -117,8 +148,8 @@ esac
 shift # past argument or value
 done
 
-if [[ -z "${commit_sha}" ]]; then
-	echo "Missing option --commit_sha"
+if [[ -z "${ref}" ]]; then
+	echo "Missing option --ref"
 	exit 0
 fi
 
@@ -132,4 +163,9 @@ if [[ -z "${protobuf_version}" ]]; then
 	protobuf_version="${DEFAULT_PROTOBUF_VERSION}"
 fi
 
-main "${commit_sha}" "${org}" "${protobuf_version}"
+if [[ -z "${bcr_organization}" ]]; then
+	echo "Using default value for --bcr_organization: ${DEFAULT_BCR_ORGANIZATION}"
+	bcr_organization="${DEFAULT_BCR_ORGANIZATION}"
+fi
+
+main "${ref}" "${org}" "${protobuf_version}" "${bcr_organization}" "${bcr_folder}"
