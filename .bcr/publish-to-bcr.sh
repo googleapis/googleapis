@@ -22,8 +22,8 @@ function checkout_definitions() {
 # Takes the files in the .bcr folder meant to go in the PR
 # and computes the sha256 of each one
 function update_shas() {
-	patch_files=$(find "${BCR_FOLDER}/patches" -type f -mindepth 1)
-	overlay_files=$(find "${BCR_FOLDER}/overlay" -type f -mindepth 1)
+	patch_files=$(find "${BCR_FOLDER}/patches" -mindepth 1 -type f)
+	overlay_files=$(find "${BCR_FOLDER}/overlay" -mindepth 1 -type f)
 
 	update_shas_helper 'patches' "${patch_files}"
 	update_shas_helper 'overlay' "${overlay_files}"
@@ -49,4 +49,11 @@ function update_source_json_entry() {
 	source_json="$3"
 	#"${BCR_FOLDER}/source.template.json
 	cat <<< $(jq "${key} = \"${value}\"" "${source_json}") > "${source_json}"
+}
+
+function render_templates() {
+	googleapis_version="$1"
+	protobuf_version="$2"
+    template_files=$(find "${BCR_FOLDER}" -type f -name '*.template.*')
+    
 }
