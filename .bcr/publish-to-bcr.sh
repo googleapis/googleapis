@@ -96,7 +96,6 @@ function update_integrity() {
 	rm "${temp_archive}"
 	b64sha=$(to_base_64_hash "${sha}")
     cat <<< $(jq ".integrity = \"${b64sha}\"" "${source_json}") > "${source_json}"
-	vi "${source_json}"
 }
 
 # append the version specified in $2 to the specified metadata file
@@ -106,6 +105,47 @@ function append_version_to_metadata() {
     cat <<< $(jq ".versions += [\"${version}\"]" "${metadata_file}") > "${metadata_file}"
 }
 
+function convert_line_endings() {
+	local target_folder="$1"
+	find "${target_folder}" -type f -exec dos2unix {} ';'
+}
+
+function create_module_symlink() {
+	local bcr_module_folder="$1"
+	local target_symlink="${bcr_module_folder}/overlay/MODULE.bazel"
+	local target_file="${bcr_module_folder}/MODULE.bazel"
+	if [[ -f "${target_file}" ]]; then
+		rm "${target_file}"
+	fi
+
+	# ln is unfortunately a tricky one for unix emulators. 
+	# We instead use powershell if running on windows (i.e. if powershell is available)
+	if [[ -n "$(which powershell.exe)" ]]; then
+        win_symlink=$(cygpath -w "${target_symlink}")
+        win_target=$(cygpath -w "${target_file}")
+		powershell.exe -noprofile -command 'New-Item -ItemType SymbolicLink -Path "'"${win_target}"'" -Target "'"${win_symlink}"'"'
+	else
+	  ln -s "${target_symlink}" "${target_file}"
+	fi
+	exit 0
+}
+
+function prepare_bcr_repo() {
+	local target_folder="$1"
+	local bcr_folder="$2"
+	local bcr_organization="$3"
+	local ref="$4"
+
+	convert_line_endings "${target_folder}"
+
+	local version=$(get_version "${target_folder}" "${ref}")
+	googleapis_module_root="${bcr_folder}/modules/googleapis"
+	cp -r "${target_folder}" "${googleapis_module_root}/${version}"
+	create_module_symlink "${googleapis_module_root}/${version}"
+	pushd "${bcr_folder}"	
+	append_version_to_metadata "${version}" "${googleapis_module_root}/metadata.json"
+}
+
 function create_pull_request() {
 	local target_folder="$1"
 	local bcr_folder="$2"
@@ -113,10 +153,6 @@ function create_pull_request() {
 	local ref="$4"
 
 	local version=$(get_version "${target_folder}" "${ref}")
-	googleapis_module_root="${bcr_folder}/modules/googleapis"
-	cp -r "${target_folder}" "${googleapis_module_root}/${version}"
-	pushd "${bcr_folder}"	
-	append_version_to_metadata "${version}" "${googleapis_module_root}/metadata.json"
 	# we create a branch with a random string in case of multiple local runs
 	git checkout -b "add-googleapis-${version}-$(openssl rand -hex 3)"
 	git add "modules"
@@ -155,6 +191,7 @@ function main() {
 		bcr_folder="${target_folder}/bazel-central-registry"
 		git clone "https://github.com/${bcr_organization}/bazel-central-registry" "${bcr_folder}"
 	fi
+	prepare_bcr_repo "${template_folder}" "${bcr_folder}" "${bcr_organization}" "${ref}"
 	create_pull_request "${template_folder}" "${bcr_folder}" "${bcr_organization}" "${ref}"
 }
 
