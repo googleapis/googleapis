@@ -90,9 +90,13 @@ function update_integrity() {
 	local target_folder="$1"
 	local source_json="${target_folder}/source.json"
 	url=$(jq -r '.url' "${source_json}")
-	sha=$(curl "${url}" | sha256sum)
+	temp_archive=$(mktemp)
+	curl -L "${url}" -o "${temp_archive}"
+	sha=$(sha256sum "${temp_archive}")
+	rm "${temp_archive}"
 	b64sha=$(to_base_64_hash "${sha}")
     cat <<< $(jq ".integrity = \"${b64sha}\"" "${source_json}") > "${source_json}"
+	vi "${source_json}"
 }
 
 # append the version specified in $2 to the specified metadata file
