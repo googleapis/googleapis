@@ -36,6 +36,11 @@ function update_shas() {
 	update_shas_helper "${target_folder}" 'overlay' "${overlay_files}" "${target_json}"
 }
 
+function to_base_64_hash() {
+	sha="$1"
+	echo "sha256-$(cut -d' ' -f1 <<< "${sha}" | xxd -r -p | base64)"
+}
+
 # Abstracts repeated logic in overlay and patches folder
 function update_shas_helper() {
 	local target_folder="$1"
@@ -43,7 +48,7 @@ function update_shas_helper() {
 	local files="$3"
 	local target_json="$4"
 	for file in ${files}; do
-		local sha256="sha256-$(sha256sum "${file}" | cut -d' ' -f1 | xxd -r -p | base64)"
+		local sha256=$(to_base_64_hash "$(sha256sum "${file}")")
 		local value_path="$(sed "s|${target_folder}/${base_path}/||" <<< "${file}")"
 		cat <<< $(jq ".${base_path}.\"${value_path}\" = \"${sha256}\"" "${target_json}") > "${target_json}"
 	done
@@ -69,8 +74,8 @@ function render_templates() {
     local template_files=$(find "${target_folder}" -type f -name '*.template.*')
 	local version_string="$(get_version "${target_folder}" "${ref}")"
 	for file in ${template_files}; do
-		# here render the values in each template file
-		sed -i "s|{VERSION}|${version_string}|" "${file}"
+		# here we render the values in each template file
+		sed -i "s|{VERSION}|${ref}|" "${file}"
 		sed -i "s|{GOOGLEAPIS_VERSION}|${version_string}|" "${file}"
 		sed -i "s|{PROTOBUF_VERSION}|${protobuf_version}|" "${file}"
 		sed -i "s|{OWNER}|${org}|" "${file}"
@@ -80,17 +85,49 @@ function render_templates() {
 	done
 }
 
+# updates the integrity entry of source.json
+function update_integrity() {
+	local target_folder="$1"
+	local source_json="${target_folder}/source.json"
+	url=$(jq -r '.url' "${source_json}")
+	sha=$(curl "${url}" | sha256sum)
+	b64sha=$(to_base_64_hash "${sha}")
+    cat <<< $(jq ".integrity = \"${b64sha}\"" "${source_json}") > "${source_json}"
+}
+
+# append the version specified in $2 to the specified metadata file
+function append_version_to_metadata() {
+	local version="$1"
+	local metadata_file="$2"
+    cat <<< $(jq ".versions += [\"${version}\"]" "${metadata_file}") > "${metadata_file}"
+}
+
 function create_pull_request() {
 	local target_folder="$1"
 	local bcr_folder="$2"
-	local ref="$3"
-	version=$(get_version "${target_folder}" "${ref}")
+	local bcr_organization="$3"
+	local ref="$4"
+
+	local version=$(get_version "${target_folder}" "${ref}")
 	googleapis_module_root="${bcr_folder}/modules/googleapis"
 	cp -r "${target_folder}" "${googleapis_module_root}/${version}"
-	# append version to googleapis metadata file
-    cat <<< $(jq ".versions += \"${version}\"" "${googleapis_module_root}/metadata.json") > "${googleapis_module_root}/metadata.json"
 	pushd "${bcr_folder}"	
-	git status
+	append_version_to_metadata "${version}" "${googleapis_module_root}/metadata.json"
+	# we create a branch with a random string in case of multiple local runs
+	git checkout -b "add-googleapis-${version}-$(openssl rand -hex 3)"
+	git add "modules"
+	commit_message="Add googleapis ${version}"
+	git commit -m "${commit_message}"
+	pr_command="gh pr create --title \"\${commit_message}\" --body \"\" --repo \"\${bcr_organization}/bazel-central-registry\""
+	read -p "The PR is ready to be raised. Do you wish to proceed? [y/N]: " -n 1 -r confirmation
+	if [[ "${confirmation}" =~ ^[Yy]$ ]]
+	then
+	  echo "Creating Pull Request"
+      eval ${pr_command}
+	else
+      echo "The branch is ready. You can create a PR by runing:"
+	  echo "cd $(pwd) && ${pr_command}"
+	fi
 	popd
 }
 
@@ -102,18 +139,19 @@ function main() {
 	local bcr_folder="$5"
 
 	local target_folder="$(mktemp -d)"
-	local template_folder="${target_folder}/.bcr/template"
 	readonly target_folder
+	local template_folder="${target_folder}/.bcr/template"
 	local repo_url="https://github.com/${org}/${REPO}"
 	checkout_definitions "${target_folder}" "${repo_url}" "${ref}"
 	update_shas "${template_folder}"
 	render_templates "${template_folder}" "${ref}" "${protobuf_version}" "${org}"
+	update_integrity "${template_folder}"
 	
 	if [[ -z "${bcr_folder}" ]] || [[ ! -d "${bcr_folder}" ]]; then
 		bcr_folder="${target_folder}/bazel-central-registry"
 		git clone "https://github.com/${bcr_organization}/bazel-central-registry" "${bcr_folder}"
 	fi
-	create_pull_request "${template_folder}" "${bcr_folder}" "${ref}"
+	create_pull_request "${template_folder}" "${bcr_folder}" "${bcr_organization}" "${ref}"
 }
 
 # parse input parameters
@@ -138,6 +176,10 @@ case $key in
     ;;
   -f|--bcr_folder)
     bcr_folder="$2"
+    shift
+    ;;
+  -d|--dry_run)
+    dry_run="$2"
     shift
     ;;
   *)
