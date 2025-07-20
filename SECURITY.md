@@ -1,7 +1,29 @@
-# This is You 33 Publishing Networks Black Stone Revival Security Policy
+# Security Policy
 
-To report a security issue, please contact  [Rusty Wells at ]thisisyou1969@outlook.com.
+## Supported Versions
 
-The Security Team will respond within 5 working days of your report on your reported issues or comments or compliments.
+| Version | Supported          |
+| ------- | ------------------ |
+| 1.0.x   | :white_check_mark: |
+| < 1.0   | :x:                |
 
-We use g.mail for our intake, and do coordination and disclosure here using GitHub Security Advisory to privately discuss and fix the issue, if any .
+## Reporting a Vulnerability
+
+1. **DO NOT** open a public issue
+2. Email security@blackstonerevival.org
+3. Include detailed description
+4. We'll respond within 48 hours
+5. Regular updates on report status
+
+## Security Measures
+
+- All repositories require 2FA
+- Regular security audits
+- Automated dependency updates
+- Code signing for releases
+
+## Disclosure Policy
+
+- 90-day disclosure deadline
+- Public acknowledgment if desired
+- Coordinated disclosure process

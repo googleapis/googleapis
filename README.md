@@ -1,113 +1,102 @@
-# Google APIs
+Google Service Management manages a set of *services*. Service
+Management allows *service producers* to
+publish their services on Google Cloud Platform so that they can be discovered
+and used by *service consumers*. It also handles the tasks of tracking
+service lifecycle and programming various backend systems -- such as
+[Stackdriver Logging](https://cloud.google.com/stackdriver),
+[Stackdriver Monitoring](https://cloud.google.com/stackdriver) -- to support
+the managed services.
 
-This repository contains the original interface definitions of public
-Google APIs that support both REST and gRPC protocols. Reading the
-original interface definitions can provide a better understanding of
-Google APIs and help you to utilize them more efficiently. You can also
-use these definitions with open source tools to generate client
-libraries, documentation, and other artifacts.
+If you are a service producer, you can use the Google Service Management API
+and [Google Cloud SDK (gcloud)](/sdk) to publish and manage your services.
+Each managed service has a service configuration which declares various aspects
+of the service such as its API surface, along with parameters to configure the
+supporting backend
+systems, such as logging and monitoring. If you build your service using
+[Google Cloud Endpoints](https://cloud.google.com/endpoints/), the service
+configuration will be handled automatically.
 
-## Building
-### Bazel
+If you are a service consumer and want to use a managed service, you can use the
+Google Service Management API or [Google Cloud Console](https://console.cloud.google.com)
+to activate the
+service for your [Google developer project](https://developers.google.com/console/help/new/),
+then start using its APIs and functions.
 
-The recommended way to build the API client libraries is through
-[Bazel](https://bazel.build/) >= 4.2.2.
+## Managed services
 
-First, [install bazel](https://docs.bazel.build/versions/master/install.html).
+REST URL: `https://servicemanagement.googleapis.com/v1/services/{service-name}` <br />
+REST schema is defined [here](/service-management/reference/rest/v1/services).
 
-To build all libraries:
+A managed service refers to a network service managed by
+Service Management. Each managed service has a unique name, such as
+`example.googleapis.com`, which must be a valid fully-qualified DNS name, as per
+RFC 1035.
 
-```
-bazel build //...
-```
+A managed service typically provides some REST APIs and/or other
+functions to their service consumers, such as mobile apps or cloud services.
 
-To test all libraries:
+Service producers can use methods, such as
+[services.create](/service-management/reference/rest/v1/services/create),
+[services.delete](/service-management/reference/rest/v1/services/delete),
+[services.undelete](/service-management/reference/rest/v1/services/undelete),
+to manipulate their managed services.
 
-```
-bazel test //...
-```
+## Service producers
 
-To build one library in all languages:
+A service producer is the Google developer project responsible for publishing
+and maintaining a managed service. Each managed service is owned by exactly one
+service producer.
 
-```
-bazel build //google/example/library/v1/...
-```
+## Service consumers
 
-To build the Java package for one library:
+A service consumer is a Google developer project that has enabled and can
+invoke APIs on a managed service. A managed service can have many service
+consumers.
 
-```
-bazel build //google/example/library/v1:google-cloud-example-library-v1-java
-```
+## Service configuration
 
-Bazel packages exist in all the libraries for Java, Go, Python, Ruby, Node.js, PHP and C#.
+REST URL: `https://servicemanagement.googleapis.com/v1/services/{service-name}/configs/{config_id}` <br />
+REST schema is defined [here](/service-management/reference/rest/v1/services.configs).
 
-## Overview
+Each managed service is described by a service configuration which covers a wide
+range of features, including its name, title, RPC API definitions,
+REST API definitions, documentation, authentication, and more.
 
-Google APIs are typically deployed as API services that are hosted
-under different DNS names. One API service may implement multiple APIs
-and multiple versions of the same API.
+To change the configuration of a managed service, the service producer needs to
+publish an updated service configuration to Service Management.
+Service Management keeps a history of published
+service configurations, making it possible to easily retrace how a service's
+configuration evolved over time. Service configurations can be published using
+the
+[services.configs.create](/service-management/reference/rest/v1/services.configs/create)
+or [services.configs.submit](/service-management/reference/rest/v1/services.configs/submit)
+methods.
 
-Google APIs use [Protocol Buffers](https://github.com/google/protobuf)
-version 3 (proto3) as their Interface Definition Language (IDL) to
-define the API interface and the structure of the payload messages. The
-same interface definition is used for both REST and RPC versions of the
-API, which can be accessed over different wire protocols.
+Alternatively, `services.configs.submit` allows publishing an
+[OpenAPI](https://github.com/OAI/OpenAPI-Specification) specification, formerly
+known as the Swagger Specification, which is automatically converted to a
+corresponding service configuration.
 
-There are several ways of accessing Google APIs:
+## Service rollout
 
-1.  JSON over HTTP: You can access all Google APIs directly using JSON
-over HTTP, using
-[Google API client library](https://developers.google.com/api-client-library)
-or third-party API client libraries.
+REST URL: `https://servicemanagement.googleapis.com/v1/services/{service-name}/rollouts/{rollout-id}` <br />
+REST schema is defined [here](/service-management/reference/rest/v1/services.rollouts).
 
-2.  Protocol Buffers over gRPC: You can access Google APIs published
-in this repository through [GRPC](https://github.com/grpc), which is
-a high-performance binary RPC protocol over HTTP/2. It offers many
-useful features, including request/response multiplex and full-duplex
-streaming.
+A `Rollout` defines how Google Service Management should deploy service
+configurations to backend systems and how the configurations take effect at
+runtime. It lets service producers specify multiple service configuration
+versions to be deployed together, and a strategy that indicates how they
+should be used.
 
-3.  [Google Cloud Client Libraries](https://cloud.google.com/apis/docs/cloud-client-libraries):
-You can use these libraries to access Google Cloud APIs. They are based
-on gRPC for better performance and provide idiomatic client surface for
-better developer experience.
+Updating a managed service's configuration can be dangerous, as a configuration
+error can lead to a service outage. To mitigate risks, Service Management
+supports gradual rollout of service configuration changes. This feature gives
+service producers time to identity potential issues and rollback service
+configuration changes in case of errors, thus minimizing the customer
+impact of bad configurations. For example, you could specify that 5% of traffic
+uses configuration 1, while the remaining 95% uses configuration 2.
 
-## Discussions
-
-This repo contains copies of Google API definitions and related files.  For
-discussions or to raise issues about
-[Google API client libraries](https://github.com/googleapis),
-[GRPC](https://github.com/grpc) or
-[Google Cloud Client Libraries](https://github.com/googlecloudplatform) please
-refer to the repos associated with each area.
-
-## Repository Structure
-
-This repository uses a directory hierarchy that reflects the Google
-API product structure. In general, every API has its own root
-directory, and each major version of the API has its own subdirectory.
-The proto package names exactly match the directory: this makes it
-easy to locate the proto definitions and ensures that the generated
-client libraries have idiomatic namespaces in most programming
-languages. Alongside the API directories live the configuration files
-for the [GAPIC toolkit](https://github.com/googleapis/toolkit).
-
-**NOTE:** The major version of an API is used to indicate breaking
-change to the API.
-
-## Generate gRPC Source Code
-
-To generate gRPC source code for Google APIs in this repository, you
-first need to install both Protocol Buffers and gRPC on your local
-machine, then you can run `make LANGUAGE=xxx all` to generate the
-source code. You need to integrate the generated source code into
-your application build system.
-
-**NOTE:** The Makefile is only intended to generate source code for the
-entire repository. It is not for generating linkable client library
-for a specific API. Please see other repositories under
-https://github.com/googleapis for generating linkable client libraries.
-
-### Go gRPC Source Code
-It is difficult to generate Go gRPC source code from this repository,
-since Go has different directory structure.
-Please use [this repository](https://github.com/google/go-genproto) instead.
+Service Management keeps a history of rollouts so that service
+producers can undo to previous configuration versions. You can rollback a configuration
+by initiating a new `Rollout` that clones a previously submitted
+rollout record.
