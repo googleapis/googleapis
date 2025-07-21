@@ -149,15 +149,15 @@ function create_pull_request() {
   git add "modules"
   commit_message="Add googleapis ${version}"
   git commit -m "${commit_message}"
-  pr_command="gh pr create --title \"\${commit_message}\" --body \"\" --repo \"\${bcr_organization}/bazel-central-registry\""
+  pr_command="gh pr create --title \"${commit_message}\" --body \"\" --repo \"${bcr_organization}/bazel-central-registry\""
   read -p "The PR is ready to be raised. Do you wish to proceed? [y/N]: " -n 1 -r confirmation
   if [[ "${confirmation}" =~ ^[Yy]$ ]]
   then
     echo "Creating Pull Request"
-      eval ${pr_command}
+    bash -c "${pr_command}"
   else
     echo "The branch is ready. You can create a PR by runing:"
-    eval echo "cd $(pwd) && ${pr_command}"
+    echo "cd $(pwd) && ${pr_command}"
   fi
   popd
 }
