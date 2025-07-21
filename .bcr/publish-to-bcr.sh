@@ -2,7 +2,7 @@
 set -e
 
 readonly GOOGLEAPIS_ROOT=$(dirname "$(readlink -f "$0")")
-readonly REPO="googleapis"
+readonly DEFAULT_REPO="googleapis"
 readonly DEFAULT_ORG="googleapis"
 readonly DEFAULT_PROTOBUF_VERSION="21.7"
 readonly DEFAULT_BCR_ORGANIZATION="bazelbuild"
@@ -78,8 +78,8 @@ function render_templates() {
     sed -i "s|{VERSION}|${ref}|" "${file}"
     sed -i "s|{GOOGLEAPIS_VERSION}|${version_string}|" "${file}"
     sed -i "s|{PROTOBUF_VERSION}|${protobuf_version}|" "${file}"
-    sed -i "s|{OWNER}|${org}|" "${file}"
-    sed -i "s|{REPO}|${REPO}|" "${file}"
+    sed -i "s|{OWNER}|${DEFAULT_ORG}|" "${file}"
+    sed -i "s|{REPO}|${DEFAULT_REPO}|" "${file}"
     # we remove the .template string from the filename
     mv "${file}" $(sed 's|\.template||' <<< "${file}")
   done
@@ -171,7 +171,7 @@ function main() {
   local target_folder="$(mktemp -d)"
   readonly target_folder
   local template_folder="${target_folder}/.bcr/template"
-  local repo_url="https://github.com/${org}/${REPO}"
+  local repo_url="https://github.com/${org}/${DEFAULT_REPO}"
   checkout_definitions "${target_folder}" "${repo_url}" "${ref}"
   update_shas "${template_folder}"
   render_templates "${template_folder}" "${ref}" "${protobuf_version}" "${org}"
