@@ -107,7 +107,7 @@ function append_version_to_metadata() {
 
 function convert_line_endings() {
   local target_folder="$1"
-  find "${target_folder}" -type f -not -name 'presubmit.yml' -exec dos2unix {} ';'
+  find "${target_folder}" -type f -exec dos2unix {} ';'
 }
 
 function create_module_symlink() {
