@@ -163,16 +163,17 @@ function create_pull_request() {
 
 function main() {
   local ref="$1"
-  local org="$2"
-  local protobuf_version="$3"
-  local bcr_organization="$4"
-  local bcr_folder="$5"
+  local templates_ref="$2"
+  local org="$3"
+  local protobuf_version="$4"
+  local bcr_organization="$5"
+  local bcr_folder="$6"
 
   local target_folder="$(mktemp -d)"
   readonly target_folder
   local template_folder="${target_folder}/.bcr/template"
   local repo_url="https://github.com/${org}/${DEFAULT_REPO}"
-  checkout_definitions "${target_folder}" "${repo_url}" "${ref}"
+  checkout_definitions "${target_folder}" "${repo_url}" "${templates_ref}"
   update_shas "${template_folder}"
   render_templates "${template_folder}" "${ref}" "${protobuf_version}" "${org}"
   convert_line_endings "${template_folder}"
@@ -192,6 +193,10 @@ key="$1"
 case $key in
   -r|--ref)
     ref="$2"
+    shift
+    ;;
+  -t|--templates_ref)
+    templates_ref="$2"
     shift
     ;;
   -o|--org)
@@ -227,6 +232,11 @@ if [[ -z "${ref}" ]]; then
   exit 0
 fi
 
+if [[ -z "${templates_ref}" ]]; then
+  echo "assuming templates_ref to be the same as --ref"
+  templates_ref="${ref}"
+fi
+
 if [[ -z "${org}" ]]; then
   echo "Using default value for --org: ${DEFAULT_ORG}"
   org="${DEFAULT_ORG}"
@@ -242,4 +252,4 @@ if [[ -z "${bcr_organization}" ]]; then
   bcr_organization="${DEFAULT_BCR_ORGANIZATION}"
 fi
 
-main "${ref}" "${org}" "${protobuf_version}" "${bcr_organization}" "${bcr_folder}"
+main "${ref}" "${templates_ref}" "${org}" "${protobuf_version}" "${bcr_organization}" "${bcr_folder}"
