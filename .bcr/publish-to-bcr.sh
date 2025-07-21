@@ -6,6 +6,7 @@ readonly DEFAULT_REPO="googleapis"
 readonly DEFAULT_ORG="googleapis"
 readonly DEFAULT_PROTOBUF_VERSION="21.7"
 readonly DEFAULT_BCR_ORGANIZATION="bazelbuild"
+readonly SKIP_CHECK_COMMENT='@bazel-io skip_check unstable_url'
 
 # This function checks out the .bcr folder
 # to the specified commit SHA ($1) into the folder
@@ -148,15 +149,19 @@ function create_pull_request() {
   git add "modules"
   commit_message="Add googleapis ${version}"
   git commit -m "${commit_message}"
+  git push origin
   pr_command="gh pr create --title \"${commit_message}\" --body \"\" --repo \"${bcr_organization}/bazel-central-registry\""
   read -p "The PR is ready to be raised. Do you wish to proceed? [y/N]: " -n 1 -r confirmation
   if [[ "${confirmation}" =~ ^[Yy]$ ]]
   then
     echo "Creating Pull Request"
-    bash -c "${pr_command}"
+    export pr_creation_output=$(bash -c "${pr_command}")
+    pr_url=$(grep '/pull/' <<< "${pr_creation_output}")
+    gh pr comment --body "${SKIP_CHECK_COMMENT}" "${pr_url}"
   else
     echo "The branch is ready. You can create a PR by runing:"
     echo "cd $(pwd) && ${pr_command}"
+    echo "Make sure to add a comment with the content: '${SKIP_CHECK_COMMENT}'"
   fi
   popd
 }
