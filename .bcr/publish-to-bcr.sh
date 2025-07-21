@@ -28,7 +28,7 @@ function checkout_definitions() {
 # and computes the sha256 of each one
 function update_shas() {
   local target_folder="$1"
-  local target_json="${target_folder}/source.template.json"
+  local target_json="${target_folder}/source.json"
   local patch_files=$(find "${target_folder}/patches" -mindepth 1 -type f)
   local overlay_files=$(find "${target_folder}/overlay" -mindepth 1 -type f)
 
@@ -85,6 +85,17 @@ function render_templates() {
   done
 }
 
+# Creates a .patch file to indicate the introduction of MODULE.bazel
+function create_module_patch() {
+  target_googleapis_module="$1"
+  filename="$(basename "${target_googleapis_module}")"
+  destination="$2"
+  diff -Nau /dev/null "${target_googleapis_module}" \
+    | sed "1 s|.*|--- ${filename}|" \
+    | sed "2 s|.*|+++ ${filename}|" > "${destination}"
+}
+
+
 # updates the integrity entry of source.json
 function update_integrity() {
   local target_folder="$1"
@@ -121,6 +132,7 @@ function create_module_symlink() {
   ln -rs "${target_file}" "${target_symlink}" 
 }
 
+
 function prepare_bcr_repo() {
   local target_folder="$1"
   local bcr_folder="$2"
@@ -130,9 +142,9 @@ function prepare_bcr_repo() {
 
   local version=$(get_version "${target_folder}" "${ref}")
   googleapis_module_root="${bcr_folder}/modules/googleapis"
-  cp -r "${target_folder}" "${googleapis_module_root}/${version}"
-  create_module_symlink "${googleapis_module_root}/${version}"
-  pushd "${bcr_folder}"	
+  googleapis_target_module="${googleapis_module_root}/${version}"
+  cp -r "${target_folder}" "${googleapis_target_module}"
+  create_module_symlink "${googleapis_target_module}"
   append_version_to_metadata "${version}" "${googleapis_module_root}/metadata.json"
 }
 
@@ -178,9 +190,10 @@ function main() {
   local template_folder="${target_folder}/.bcr/template"
   local repo_url="https://github.com/${org}/${DEFAULT_REPO}"
   checkout_definitions "${target_folder}" "${repo_url}" "${templates_ref}"
-  update_shas "${template_folder}"
   render_templates "${template_folder}" "${ref}" "${protobuf_version}" "${org}"
+  create_module_patch "${template_folder}/MODULE.bazel" "${template_folder}/patches/module_dot_bazel.patch"
   convert_line_endings "${template_folder}"
+  update_shas "${template_folder}"
   update_integrity "${template_folder}"
 
   if [[ -z "${bcr_folder}" ]] || [[ ! -d "${bcr_folder}" ]]; then
