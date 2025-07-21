@@ -1,7 +1,6 @@
 #!/bin/bash
 set -e
 
-readonly GOOGLEAPIS_ROOT=$(dirname "$(readlink -f "$0")")
 readonly DEFAULT_REPO="googleapis"
 readonly DEFAULT_ORG="googleapis"
 readonly DEFAULT_PROTOBUF_VERSION="21.7"
