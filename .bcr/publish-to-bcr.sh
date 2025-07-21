@@ -114,20 +114,11 @@ function create_module_symlink() {
   local bcr_module_folder="$1"
   local target_symlink="${bcr_module_folder}/overlay/MODULE.bazel"
   local target_file="${bcr_module_folder}/MODULE.bazel"
-  if [[ -f "${target_file}" ]]; then
-    rm "${target_file}"
+  if [[ -f "${target_symlink}" ]]; then
+    rm "${target_symlink}"
   fi
 
-  # ln is unfortunately a tricky one for unix emulators. 
-  # We instead use powershell if running on windows (i.e. if powershell is available)
-  if [[ -n "$(which powershell.exe)" ]]; then
-        win_symlink=$(cygpath -w "${target_symlink}")
-        win_target=$(cygpath -w "${target_file}")
-    powershell.exe -noprofile -command 'New-Item -ItemType SymbolicLink -Path "'"${win_target}"'" -Target "'"${win_symlink}"'"'
-  else
-    ln -s "${target_symlink}" "${target_file}"
-  fi
-  exit 0
+  ln -rs "${target_file}" "${target_symlink}" 
 }
 
 function prepare_bcr_repo() {
@@ -165,8 +156,8 @@ function create_pull_request() {
     echo "Creating Pull Request"
       eval ${pr_command}
   else
-      echo "The branch is ready. You can create a PR by runing:"
-    echo "cd $(pwd) && ${pr_command}"
+    echo "The branch is ready. You can create a PR by runing:"
+    eval echo "cd $(pwd) && ${pr_command}"
   fi
   popd
 }
