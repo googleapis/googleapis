@@ -107,7 +107,7 @@ function append_version_to_metadata() {
 
 function convert_line_endings() {
   local target_folder="$1"
-  find "${target_folder}" -type f -exec dos2unix {} ';'
+  find "${target_folder}" -type f -not -name 'presubmit.yml' -exec dos2unix {} ';'
 }
 
 function create_module_symlink() {
@@ -175,7 +175,7 @@ function main() {
   checkout_definitions "${target_folder}" "${repo_url}" "${ref}"
   update_shas "${template_folder}"
   render_templates "${template_folder}" "${ref}" "${protobuf_version}" "${org}"
-  convert_line_endings "${target_folder}"
+  convert_line_endings "${template_folder}"
   update_integrity "${template_folder}"
 
   if [[ -z "${bcr_folder}" ]] || [[ ! -d "${bcr_folder}" ]]; then
