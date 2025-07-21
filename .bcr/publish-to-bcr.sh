@@ -127,7 +127,6 @@ function prepare_bcr_repo() {
   local bcr_organization="$3"
   local ref="$4"
 
-  convert_line_endings "${target_folder}"
 
   local version=$(get_version "${target_folder}" "${ref}")
   googleapis_module_root="${bcr_folder}/modules/googleapis"
@@ -176,8 +175,9 @@ function main() {
   checkout_definitions "${target_folder}" "${repo_url}" "${ref}"
   update_shas "${template_folder}"
   render_templates "${template_folder}" "${ref}" "${protobuf_version}" "${org}"
+  convert_line_endings "${target_folder}"
   update_integrity "${template_folder}"
-  
+
   if [[ -z "${bcr_folder}" ]] || [[ ! -d "${bcr_folder}" ]]; then
     bcr_folder="${target_folder}/bazel-central-registry"
     git clone "https://github.com/${bcr_organization}/bazel-central-registry" "${bcr_folder}"
