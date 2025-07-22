@@ -45,7 +45,7 @@ function get_version() {
   local target_folder="$1"
   local ref="$2"
   pushd "${target_folder}" &> /dev/null
-    local commit_sha=$(git rev-parse "${ref}")
+  local commit_sha=$(git rev-parse "${ref}")
   popd &> /dev/null
   echo "0.0.0-$(date "+%Y%m%d")-${commit_sha:0:8}"
 }
@@ -58,7 +58,7 @@ function render_templates() {
   local protobuf_version="$3"
   local org="$4"
 
-    local template_files=$(find "${target_folder}" -type f -name '*.template.*')
+  local template_files=$(find "${target_folder}" -type f -name '*.template.*')
   local version_string="$(get_version "${target_folder}" "${ref}")"
   for file in ${template_files}; do
     # here we render the values in each template file
@@ -86,7 +86,7 @@ function create_module_patch() {
 function append_version_to_metadata() {
   local version="$1"
   local metadata_file="$2"
-    cat <<< $(jq ".versions += [\"${version}\"]" "${metadata_file}") > "${metadata_file}"
+  cat <<< $(jq ".versions += [\"${version}\"]" "${metadata_file}") > "${metadata_file}"
 }
 
 function convert_line_endings() {
