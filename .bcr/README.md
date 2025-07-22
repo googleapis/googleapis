@@ -2,6 +2,16 @@
 
 This document explains how to use the `publish-to-bcr.sh` script to publish `googleapis` to the Bazel Central Registry (BCR).
 
+## Prerequisites
+
+Before running the script, make sure you have the following tools installed:
+
+*   `gh`: The GitHub CLI. Used to create Pull Requests.
+*   `git`: The version control system.
+*   `bazelisk`: A Bazel wrapper that automatically downloads and installs the correct version of Bazel.
+*   `jq`: A command-line JSON processor.
+*   `dos2unix`: A tool to convert text file line endings from DOS to Unix format.
+
 ## Usage
 
 The `publish-to-bcr.sh` script is used to automate the process of creating a new version of the `googleapis` module in the BCR.
