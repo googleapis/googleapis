@@ -33,7 +33,7 @@ function checkout_definitions() {
   local templates_ref="$3"
   local definitions_ref="$4"
 
-  pushd "${target_folder}"
+  pushd "${target_folder}" > /dev/null
   git init
   git remote add origin "${repo_url}"
   git sparse-checkout init --cone
@@ -42,7 +42,7 @@ function checkout_definitions() {
   git fetch --depth 2 origin "${definitions_ref}"
   git checkout "${definitions_ref}"
   git checkout "${templates_ref}"
-  popd
+  popd > /dev/null
 }
 
 function get_version() {

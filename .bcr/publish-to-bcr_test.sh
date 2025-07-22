@@ -21,11 +21,23 @@ set -e
 
 # --- Mocks ---
 function git() {
-  if [[ "$1" == "rev-parse" ]]; then
-    echo "mock_commit_sha"
-  elif [[ "$1" == "log" ]]; then
-    echo "20250101"
-  fi
+  case "$1" in
+    "rev-parse")
+      echo "mock_commit_sha" "$@"
+      ;;
+    "log")
+      echo "20250101"
+      ;;
+    "fetch")
+      echo "mock git fetch" "$@"
+      ;;
+    "checkout")
+      echo "mock git checkout" "$@"
+      ;;
+    *)
+      command git "$@"
+      ;;
+  esac
 }
 
 
@@ -44,7 +56,6 @@ function setUp() {
   TEST_DIR=$(mktemp -d)
   export TEST_DIR
   pushd "${TEST_DIR}" > /dev/null
-  command git init > /dev/null
   popd > /dev/null
 }
 
@@ -53,6 +64,20 @@ function tearDown() {
 }
 
 # --- Test functions ---
+function test_checkout_definitions() {
+  local output
+  output=$(checkout_definitions "${TEST_DIR}" "mock_repo_url" "mock_templates_ref" "mock_definitions_ref")
+  local expected_output="$(cat <<EOF
+Initialized empty Git repository in ${TEST_DIR}/.git/
+mock git fetch fetch --depth 1 origin mock_templates_ref
+mock git fetch fetch --depth 2 origin mock_definitions_ref
+mock git checkout checkout mock_definitions_ref
+mock git checkout checkout mock_templates_ref
+EOF
+  )"
+  assertEquals "${expected_output}" "${output}" "checkout_definitions"
+}
+
 function test_get_version() {
   local version
   version=$(get_version "${TEST_DIR}" "dummy_ref")
@@ -102,6 +127,7 @@ function assertEquals() {
 
 function run_tests() {
   setUp
+  test_checkout_definitions
   test_get_version
   test_render_templates
   test_append_version_to_metadata
