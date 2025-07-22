@@ -251,10 +251,10 @@ service Bigtable {
         "table_name,row_key,rules,app_profile_id";
   }
 
-  // NOTE: This API is intended to be used by Apache Beam BigtableIO.
   // Returns the current list of partitions that make up the table's
   // change stream. The union of partitions will cover the entire keyspace.
   // Partitions can be read with `ReadChangeStream`.
+  // NOTE: This API is only intended to be used by Apache Beam BigtableIO.
   rpc GenerateInitialChangeStreamPartitions(
       GenerateInitialChangeStreamPartitionsRequest)
       returns (stream GenerateInitialChangeStreamPartitionsResponse) {
@@ -266,10 +266,10 @@ service Bigtable {
     option (google.api.method_signature) = "table_name,app_profile_id";
   }
 
-  // NOTE: This API is intended to be used by Apache Beam BigtableIO.
   // Reads changes from a table's change stream. Changes will
   // reflect both user-initiated mutations and mutations that are caused by
   // garbage collection.
+  // NOTE: This API is only intended to be used by Apache Beam BigtableIO.
   rpc ReadChangeStream(ReadChangeStreamRequest)
       returns (stream ReadChangeStreamResponse) {
     option (google.api.http) = {
@@ -478,26 +478,11 @@ message ReadRowsResponse {
   // key, allowing the client to skip that work on a retry.
   bytes last_scanned_row_key = 2;
 
-  //
-  // If requested, provide enhanced query performance statistics. The semantics
-  // dictate:
-  //   * request_stats is empty on every (streamed) response, except
-  //   * request_stats has non-empty information after all chunks have been
-  //     streamed, where the ReadRowsResponse message only contains
-  //     request_stats.
-  //       * For example, if a read request would have returned an empty
-  //         response instead a single ReadRowsResponse is streamed with empty
-  //         chunks and request_stats filled.
-  //
-  // Visually, response messages will stream as follows:
-  //    ... -> {chunks: [...]} -> {chunks: [], request_stats: {...}}
-  //   \______________________/  \________________________________/
-  //       Primary response         Trailer of RequestStats info
-  //
-  // Or if the read did not return any values:
-  //   {chunks: [], request_stats: {...}}
-  //   \________________________________/
-  //      Trailer of RequestStats info
+  // If requested, return enhanced query performance statistics. The field
+  // request_stats is empty in a streamed response unless the ReadRowsResponse
+  // message contains request_stats in the last message of the stream. Always
+  // returned when requested, even when the read request returns an empty
+  // response.
   RequestStats request_stats = 3;
 }
 
@@ -598,8 +583,8 @@ message MutateRowRequest {
   // ones. Must contain at least one entry and at most 100000.
   repeated Mutation mutations = 3 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional parameter for ensuring a MutateRow request is only applied once.
-  // Currently applicable only for certain aggregate types.
+  // If set consistently across retries, prevents this mutation from being
+  // double applied to aggregate column families within a 15m window.
   Idempotency idempotency = 8;
 }
 
@@ -617,6 +602,10 @@ message MutateRowsRequest {
     // Mutations are applied in order, meaning that earlier mutations can be
     // masked by later ones. You must specify at least one mutation.
     repeated Mutation mutations = 2 [(google.api.field_behavior) = REQUIRED];
+
+    // If set consistently across retries, prevents this mutation from being
+    // double applied to aggregate column families within a 15m window.
+    Idempotency idempotency = 3;
   }
 
   // Optional. The unique name of the table to which the mutations should be
@@ -695,7 +684,7 @@ message RateLimitInfo {
   // target load should be 80. After adjusting, the client should ignore
   // `factor` until another `period` has passed.
   //
-  // The client can measure its load using any unit that's comparable over time
+  // The client can measure its load using any unit that's comparable over time.
   // For example, QPS can be used as long as each request involves a similar
   // amount of work.
   double factor = 2;
@@ -819,7 +808,8 @@ message ReadModifyWriteRowRequest {
 
   // Required. Rules specifying how the specified row's contents are to be
   // transformed into writes. Entries are applied in order, meaning that earlier
-  // rules will affect the results of later ones.
+  // rules will affect the results of later ones. At least one entry must be
+  // specified, and there can be at most 100000 rules.
   repeated ReadModifyWriteRule rules = 3
       [(google.api.field_behavior) = REQUIRED];
 }
@@ -892,10 +882,10 @@ message ReadChangeStreamRequest {
     // the position. Tokens are delivered on the stream as part of `Heartbeat`
     // and `CloseStream` messages.
     //
-    // If a single token is provided, the token’s partition must exactly match
-    // the request’s partition. If multiple tokens are provided, as in the case
+    // If a single token is provided, the token's partition must exactly match
+    // the request's partition. If multiple tokens are provided, as in the case
     // of a partition merge, the union of the token partitions must exactly
-    // cover the request’s partition. Otherwise, INVALID_ARGUMENT will be
+    // cover the request's partition. Otherwise, INVALID_ARGUMENT will be
     // returned.
     StreamContinuationTokens continuation_tokens = 6;
   }
@@ -1003,8 +993,8 @@ message ReadChangeStreamResponse {
     // An estimate of the commit timestamp that is usually lower than or equal
     // to any timestamp for a record that will be delivered in the future on the
     // stream. It is possible that, under particular circumstances that a future
-    // record has a timestamp is is lower than a previously seen timestamp. For
-    // an example usage see
+    // record has a timestamp that is lower than a previously seen timestamp.
+    // For an example usage see
     // https://beam.apache.org/documentation/basics/#watermarks
     google.protobuf.Timestamp estimated_low_watermark = 10;
   }
@@ -1019,8 +1009,8 @@ message ReadChangeStreamResponse {
     // An estimate of the commit timestamp that is usually lower than or equal
     // to any timestamp for a record that will be delivered in the future on the
     // stream. It is possible that, under particular circumstances that a future
-    // record has a timestamp is is lower than a previously seen timestamp. For
-    // an example usage see
+    // record has a timestamp that is lower than a previously seen timestamp.
+    // For an example usage see
     // https://beam.apache.org/documentation/basics/#watermarks
     google.protobuf.Timestamp estimated_low_watermark = 2;
   }
@@ -1031,17 +1021,19 @@ message ReadChangeStreamResponse {
   // If `continuation_tokens` & `new_partitions` are present, then a change in
   // partitioning requires the client to open a new stream for each token to
   // resume reading. Example:
-  //                                  [B,      D) ends
-  //                                       |
-  //                                       v
-  //               new_partitions:  [A,  C) [C,  E)
-  // continuation_tokens.partitions:  [B,C) [C,D)
-  //                                  ^---^ ^---^
-  //                                  ^     ^
-  //                                  |     |
-  //                                  |     StreamContinuationToken 2
-  //                                  |
-  //                                  StreamContinuationToken 1
+  //
+  //                                      [B,      D) ends
+  //                                           |
+  //                                           v
+  //                   new_partitions:  [A,  C) [C,  E)
+  //     continuation_tokens.partitions:  [B,C) [C,D)
+  //                                      ^---^ ^---^
+  //                                      ^     ^
+  //                                      |     |
+  //                                      |     StreamContinuationToken 2
+  //                                      |
+  //                                      StreamContinuationToken 1
+  //
   // To read the new partition [A,C), supply the continuation tokens whose
   // ranges cover the new partition, for example ContinuationToken[A,B) &
   // ContinuationToken[B,C).
