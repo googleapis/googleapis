@@ -30,14 +30,18 @@ readonly SKIP_FLAG_CHECK_COMMENT='@bazel-io skip_check incompatible_flags'
 function checkout_definitions() {
   local target_folder="$1"
   local repo_url="$2"
-  local ref="$3"
+  local templates_ref="$3"
+  local definitions_ref="$4"
+
   pushd "${target_folder}"
   git init
   git remote add origin "${repo_url}"
   git sparse-checkout init --cone
   git sparse-checkout set ".bcr"
-  git fetch --depth 1 origin "${ref}"
-  git checkout "${ref}"
+  git fetch --depth 1 origin "${templates_ref}"
+  git fetch --depth 2 origin "${definitions_ref}"
+  git checkout "${definitions_ref}"
+  git checkout "${templates_ref}"
   popd
 }
 
@@ -189,7 +193,7 @@ function main() {
   readonly target_folder
   local template_folder="${target_folder}/.bcr/template"
   local repo_url="https://github.com/${org}/${DEFAULT_REPO}"
-  checkout_definitions "${target_folder}" "${repo_url}" "${templates_ref}"
+  checkout_definitions "${target_folder}" "${repo_url}" "${templates_ref}" "${ref}"
   render_templates "${template_folder}" "${ref}" "${protobuf_version}" "${org}"
   create_module_patch "${template_folder}/MODULE.bazel" "${template_folder}/patches/module_dot_bazel.patch"
   convert_line_endings "${template_folder}"
