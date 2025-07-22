@@ -6,7 +6,7 @@ readonly DEFAULT_ORG="googleapis"
 readonly DEFAULT_PROTOBUF_VERSION="21.7"
 readonly DEFAULT_BCR_ORGANIZATION="bazelbuild"
 readonly SKIP_URL_CHECK_COMMENT='@bazel-io skip_check unstable_url'
-readonly SKIP_FLAG_CHECK_COMMENT='@bazel-io skip_check @bazel-io skip_check incompatible_flags'
+readonly SKIP_FLAG_CHECK_COMMENT='@bazel-io skip_check incompatible_flags'
 
 # This function checks out the .bcr folder
 # to the specified commit SHA ($1) into the folder
@@ -150,11 +150,12 @@ function create_pull_request() {
     pr_url=$(grep '/pull/' <<< "${pr_creation_output}")
     gh pr comment --body "${SKIP_URL_CHECK_COMMENT}" "${pr_url}"
     gh pr comment --body "${SKIP_FLAG_CHECK_COMMENT}" "${pr_url}"
+    echo "Done! You can see the created PR in ${pr_url}"
   else
     echo "The branch is ready. You can create a PR by runing:"
     echo "cd $(pwd) && ${pr_command}"
-    echo "Make sure to add a comment with the content: '${SKIP_URL_CHECK_COMMENT}'
-    echo as well as a comment with the content '${SKIP_FLAG_CHECK_COMMENT}'"
+    echo "Make sure to add a comment with the content: '${SKIP_URL_CHECK_COMMENT}'"
+    echo "as well as a comment with the content '${SKIP_FLAG_CHECK_COMMENT}'"
   fi
   popd
 }

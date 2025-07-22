@@ -33,6 +33,20 @@ After the script is executed, it will perform the following actions:
 
 Once the Pull Request has been created and all Continuous Integration (CI) checks are passing, a maintainer of the Bazel Central Registry will review and merge it.
 
+#### Note on re-running the script
+
+During development, you may need to run the script several times.
+Between each call, it's strongly recommended to reset your local fork of bazel-central-registry.
+For this, you can run the following command:
+
+```bash
+pushd "${fork_location}"
+git reset --hard
+git checkout main
+git clean -d -f
+popd
+```
+
 ## Testing
 
 To run the unit tests for the script, use the following command:
