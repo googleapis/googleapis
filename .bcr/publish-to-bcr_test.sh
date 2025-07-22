@@ -23,16 +23,12 @@ set -e
 function git() {
   if [[ "$1" == "rev-parse" ]]; then
     echo "mock_commit_sha"
+  elif [[ "$1" == "log" ]]; then
+    echo "20250101"
   fi
 }
 
-function date() {
-  if [[ "$1" == "+%Y%m%d" ]]; then
-    echo "20250101"
-  else
-    command date "$@"
-  fi
-}
+
 
 function jq() {
     # A simple mock for the append_version_to_metadata test

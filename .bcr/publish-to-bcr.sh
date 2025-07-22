@@ -46,8 +46,9 @@ function get_version() {
   local ref="$2"
   pushd "${target_folder}" &> /dev/null
   local commit_sha=$(git rev-parse "${ref}")
+  local commit_date=$(git log --format=%cd '--date=format:%Y%m%d' "${ref}~1..${ref}")
   popd &> /dev/null
-  echo "0.0.0-$(date "+%Y%m%d")-${commit_sha:0:8}"
+  echo "0.0.0-${commit_date}-${commit_sha:0:8}"
 }
 
 # Replaces values in all files containing the ".template." string in
