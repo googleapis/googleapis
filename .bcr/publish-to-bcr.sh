@@ -136,16 +136,32 @@ function create_module_symlink() {
 function prepare_bcr_repo() {
   local target_folder="$1"
   local bcr_folder="$2"
-  local bcr_organization="$3"
-  local ref="$4"
-
+  local ref="$3"
 
   local version=$(get_version "${target_folder}" "${ref}")
-  googleapis_module_root="${bcr_folder}/modules/googleapis"
-  googleapis_target_module="${googleapis_module_root}/${version}"
+  pushd "${bcr_folder}"
+  local googleapis_module_root="${bcr_folder}/modules/googleapis"
+  local googleapis_target_module="${googleapis_module_root}/${version}"
   cp -r "${target_folder}" "${googleapis_target_module}"
   create_module_symlink "${googleapis_target_module}"
   append_version_to_metadata "${version}" "${googleapis_module_root}/metadata.json"
+  popd
+}
+
+function validate_bcr_module() {
+  local target_folder="$1"
+  local bcr_folder="$2"
+  local ref="$3"
+
+  version="$(get_version "${target_folder}" "${ref}")"
+  pushd "${bcr_folder}"
+  # we skip the url stability check because we don't have releases of googleapis/googleapis
+  bazelisk run -- //tools:bcr_validation --skip_validation url_stability "--check=googleapis@${version}"
+  if [[ "$?" -ne "0" ]]; then
+    echo "bazelisk command exited with non-zero status"
+    exit 1
+  fi
+  popd
 }
 
 function create_pull_request() {
@@ -155,6 +171,7 @@ function create_pull_request() {
   local ref="$4"
 
   local version=$(get_version "${target_folder}" "${ref}")
+  pushd "${bcr_folder}"
   # we create a branch with a random string in case of multiple local runs
   git checkout -b "add-googleapis-${version}-$(openssl rand -hex 3)"
   git add "modules"
@@ -200,7 +217,8 @@ function main() {
     bcr_folder="${target_folder}/bazel-central-registry"
     git clone "https://github.com/${bcr_organization}/bazel-central-registry" "${bcr_folder}"
   fi
-  prepare_bcr_repo "${template_folder}" "${bcr_folder}" "${bcr_organization}" "${ref}"
+  prepare_bcr_repo "${template_folder}" "${bcr_folder}" "${ref}"
+  validate_bcr_module "${template_folder}" "${bcr_folder}" "${ref}"
   create_pull_request "${template_folder}" "${bcr_folder}" "${bcr_organization}" "${ref}"
 }
 
