@@ -19,6 +19,7 @@ package google.cloud.backupdr.v1;
 import "google/api/field_behavior.proto";
 import "google/api/field_info.proto";
 import "google/api/resource.proto";
+import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 import "google/type/dayofweek.proto";
 import "google/type/month.proto";
@@ -59,6 +60,9 @@ message BackupPlan {
 
     // The resource has been created but is not usable.
     INACTIVE = 4;
+
+    // The resource is being updated.
+    UPDATING = 5;
   }
 
   // Output only. Identifier. The resource name of the `BackupPlan`.
@@ -98,7 +102,8 @@ message BackupPlan {
 
   // Required. The resource type to which the `BackupPlan` will be applied.
   // Examples include, "compute.googleapis.com/Instance",
-  // "sqladmin.googleapis.com/Instance", or "alloydb.googleapis.com/Cluster".
+  // "sqladmin.googleapis.com/Instance", "alloydb.googleapis.com/Cluster",
+  // "compute.googleapis.com/Disk".
   string resource_type = 8 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. `etag` is returned from the service in the response. As a user of
@@ -121,6 +126,28 @@ message BackupPlan {
   // Vault Service Account.
   string backup_vault_service_account = 11
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Applicable only for CloudSQL resource_type.
+  //
+  // Configures how long logs will be stored. It is defined in “days”. This
+  // value should be greater than or equal to minimum enforced log retention
+  // duration of the backup vault.
+  int64 log_retention_days = 12 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. All resource types to which backupPlan can be applied.
+  repeated string supported_resource_types = 13
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The user friendly revision ID of the `BackupPlanRevision`.
+  //
+  // Example: v0, v1, v2, etc.
+  string revision_id = 14 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The resource id of the `BackupPlanRevision`.
+  //
+  // Format:
+  // `projects/{project}/locations/{location}/backupPlans/{backup_plan}/revisions/{revision_id}`
+  string revision_name = 15 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // `BackupRule` binds the backup schedule to a retention policy.
@@ -138,20 +165,18 @@ message BackupRule {
   // defined in “days”. The value should be greater than or equal to minimum
   // enforced retention of the backup vault.
   //
-  // Minimum value is 1 and maximum value is 90 for hourly backups.
-  // Minimum value is 1 and maximum value is 90 for daily backups.
-  // Minimum value is 7 and maximum value is 186 for weekly backups.
-  // Minimum value is 30 and maximum value is 732 for monthly backups.
-  // Minimum value is 365 and maximum value is 36159 for yearly backups.
+  // Minimum value is 1 and maximum value is 36159 for custom retention
+  // on-demand backup.
+  // Minimum and maximum values are workload specific for all other rules.
   int32 backup_retention_days = 4 [(google.api.field_behavior) = REQUIRED];
 
   // The schedule that defines the automated backup workloads for this
   // `BackupRule`.
   oneof backup_schedule_oneof {
-    // Required. Defines a schedule that runs within the confines of a defined
+    // Optional. Defines a schedule that runs within the confines of a defined
     // window of time.
     StandardSchedule standard_schedule = 5
-        [(google.api.field_behavior) = REQUIRED];
+        [(google.api.field_behavior) = OPTIONAL];
   }
 }
 
@@ -190,7 +215,7 @@ message StandardSchedule {
   // otherwise. A validation error will occur if a value is supplied and
   // `recurrence_type` is not `HOURLY`.
   //
-  // Value of hourly frequency should be between 6 and 23.
+  // Value of hourly frequency should be between 4 and 23.
   //
   // Reason for limit : We found that there is bandwidth limitation of 3GB/S for
   // GMI while taking a backup and 5GB/S while doing a restore. Given the amount
@@ -439,4 +464,159 @@ message DeleteBackupPlanRequest {
     (google.api.field_info).format = UUID4,
     (google.api.field_behavior) = OPTIONAL
   ];
+}
+
+// Request message for updating a backup plan.
+message UpdateBackupPlanRequest {
+  // Required. The resource being updated
+  BackupPlan backup_plan = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The list of fields to update.
+  // Field mask is used to specify the fields to be overwritten in the
+  // BackupPlan resource by the update.
+  // The fields specified in the update_mask are relative to the resource, not
+  // the full request. A field will be overwritten if it is in the mask. If the
+  // user does not provide a mask then the request will fail.
+  // Currently, these fields are supported in update: description, schedules,
+  // retention period, adding and removing Backup Rules.
+  google.protobuf.FieldMask update_mask = 2
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. An optional request ID to identify requests. Specify a unique
+  // request ID so that if you must retry your request, the server will know to
+  // ignore the request if it has already been completed. The server will
+  // guarantee that for at least 60 minutes since the first request.
+  //
+  // For example, consider a situation where you make an initial request and t
+  // he request times out. If you make the request again with the same request
+  // ID, the server can check if original operation with the same request ID
+  // was received, and if so, will ignore the second request. This prevents
+  // clients from accidentally creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 3 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
+// `BackupPlanRevision` represents a snapshot of a `BackupPlan` at a point in
+// time.
+message BackupPlanRevision {
+  option (google.api.resource) = {
+    type: "backupdr.googleapis.com/BackupPlanRevision"
+    pattern: "projects/{project}/locations/{location}/backupPlans/{backup_plan}/revisions/{revision}"
+    plural: "backupPlanRevisions"
+    singular: "backupPlanRevision"
+  };
+
+  // The state of the `BackupPlanRevision`.
+  enum State {
+    // State not set.
+    STATE_UNSPECIFIED = 0;
+
+    // The resource is being created.
+    CREATING = 1;
+
+    // The resource has been created and is fully usable.
+    ACTIVE = 2;
+
+    // The resource is being deleted.
+    DELETING = 3;
+
+    // The resource has been created but is not usable.
+    INACTIVE = 4;
+  }
+
+  // Output only. Identifier. The resource name of the `BackupPlanRevision`.
+  //
+  // Format:
+  // `projects/{project}/locations/{location}/backupPlans/{backup_plan}/revisions/{revision}`
+  string name = 1 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.field_behavior) = IDENTIFIER
+  ];
+
+  // Output only. The user friendly revision ID of the `BackupPlanRevision`.
+  //
+  // Example: v0, v1, v2, etc.
+  string revision_id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Resource State
+  State state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The Backup Plan being encompassed by this revision.
+  BackupPlan backup_plan_snapshot = 4;
+
+  // Output only. The timestamp that the revision was created.
+  google.protobuf.Timestamp create_time = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The request message for getting a `BackupPlanRevision`.
+message GetBackupPlanRevisionRequest {
+  // Required. The resource name of the `BackupPlanRevision` to retrieve.
+  //
+  // Format:
+  // `projects/{project}/locations/{location}/backupPlans/{backup_plan}/revisions/{revision}`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "backupdr.googleapis.com/BackupPlanRevision"
+    }
+  ];
+}
+
+// The request message for getting a list of `BackupPlanRevision`.
+message ListBackupPlanRevisionsRequest {
+  // Required. The project and location for which to retrieve
+  // `BackupPlanRevisions` information. Format:
+  // `projects/{project}/locations/{location}/backupPlans/{backup_plan}`. In
+  // Cloud BackupDR, locations map to GCP regions, for e.g. **us-central1**.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "backupdr.googleapis.com/BackupPlanRevision"
+    }
+  ];
+
+  // Optional. The maximum number of `BackupPlans` to return in a single
+  // response. If not specified, a default value will be chosen by the service.
+  // Note that the response may include a partial list and a caller should
+  // only rely on the response's
+  // [next_page_token][google.cloud.backupdr.v1.ListBackupPlansResponse.next_page_token]
+  // to determine if there are more instances left to be queried.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The value of
+  // [next_page_token][google.cloud.backupdr.v1.ListBackupPlansResponse.next_page_token]
+  // received from a previous `ListBackupPlans` call.
+  // Provide this to retrieve the subsequent page in a multi-page list of
+  // results. When paginating, all other parameters provided to
+  // `ListBackupPlans` must match the call that provided the page token.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The response message for getting a list of `BackupPlanRevision`.
+message ListBackupPlanRevisionsResponse {
+  // The list of `BackupPlanRevisions` in the project for the specified
+  // location.
+  //
+  // If the `{location}` value in the request is "-", the response contains a
+  // list of resources from all locations. In case any location is unreachable,
+  // the response will only return backup plans in reachable locations and
+  // the 'unreachable' field will be populated with a list of unreachable
+  // locations.
+  repeated BackupPlanRevision backup_plan_revisions = 1;
+
+  // A token which may be sent as
+  // [page_token][google.cloud.backupdr.v1.ListBackupPlanRevisionsRequest.page_token]
+  // in a subsequent `ListBackupPlanRevisions` call to retrieve the next page of
+  // results. If this field is omitted or empty, then there are no more results
+  // to return.
+  string next_page_token = 2;
+
+  // Locations that could not be reached.
+  repeated string unreachable = 3;
 }

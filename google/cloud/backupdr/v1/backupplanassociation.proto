@@ -19,6 +19,8 @@ package google.cloud.backupdr.v1;
 import "google/api/field_behavior.proto";
 import "google/api/field_info.proto";
 import "google/api/resource.proto";
+import "google/cloud/backupdr/v1/backupvault_cloudsql.proto";
+import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 
@@ -56,6 +58,9 @@ message BackupPlanAssociation {
 
     // The resource has been created but is not usable.
     INACTIVE = 4;
+
+    // The resource is being updated.
+    UPDATING = 5;
   }
 
   // Output only. Identifier. The resource name of BackupPlanAssociation in
@@ -73,8 +78,13 @@ message BackupPlanAssociation {
     (google.api.field_behavior) = REQUIRED
   ];
 
-  // Required. Immutable. Resource name of workload on which backupplan is
-  // applied
+  // Required. Immutable. Resource name of workload on which the backup plan is
+  // applied.
+  //
+  // The format can either be the resource name (e.g.,
+  // "projects/my-project/zones/us-central1-a/instances/my-instance") or the
+  // full resource URI (e.g.,
+  // "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a/instances/my-instance").
   string resource = 3 [
     (google.api.field_behavior) = IMMUTABLE,
     (google.api.field_behavior) = REQUIRED
@@ -109,6 +119,27 @@ message BackupPlanAssociation {
   // location for backups taken. Format :
   // projects/{project}/locations/{location}/backupVaults/{backupvault}/dataSources/{datasource}
   string data_source = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Properties of the protected GCP resource.
+  oneof resource_properties {
+    // Output only. Cloud SQL instance's backup plan association properties.
+    CloudSqlInstanceBackupPlanAssociationProperties
+        cloud_sql_instance_backup_plan_association_properties = 10
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Output only. The user friendly revision ID of the `BackupPlanRevision`.
+  //
+  // Example: v0, v1, v2, etc.
+  string backup_plan_revision_id = 11
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The resource id of the `BackupPlanRevision`.
+  //
+  // Format:
+  // `projects/{project}/locations/{location}/backupPlans/{backup_plan}/revisions/{revision_id}`
+  string backup_plan_revision_name = 12
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Message for rules config info.
@@ -234,6 +265,66 @@ message ListBackupPlanAssociationsResponse {
   repeated string unreachable = 3;
 }
 
+// Request for the FetchBackupPlanAssociationsForResourceType method.
+message FetchBackupPlanAssociationsForResourceTypeRequest {
+  // Required. The parent resource name.
+  // Format: projects/{project}/locations/{location}
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "backupdr.googleapis.com/BackupPlanAssociation"
+    }
+  ];
+
+  // Required. The type of the GCP resource.
+  // Ex: sql.googleapis.com/Instance
+  string resource_type = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The maximum number of BackupPlanAssociations to return. The
+  // service may return fewer than this value. If unspecified, at most 50
+  // BackupPlanAssociations will be returned. The maximum value is 100; values
+  // above 100 will be coerced to 100.
+  int32 page_size = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A page token, received from a previous call of
+  // `FetchBackupPlanAssociationsForResourceType`.
+  // Provide this to retrieve the subsequent page.
+  //
+  // When paginating, all other parameters provided to
+  // `FetchBackupPlanAssociationsForResourceType` must match
+  // the call that provided the page token.
+  string page_token = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A filter expression that filters the results fetched in the
+  // response. The expression must specify the field name, a comparison
+  // operator, and the value that you want to use for filtering. Supported
+  // fields:
+  // * resource
+  // * backup_plan
+  // * state
+  // * data_source
+  // * cloud_sql_instance_backup_plan_association_properties.instance_create_time
+  string filter = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A comma-separated list of fields to order by, sorted in ascending
+  // order. Use "desc" after a field name for descending.
+  //
+  // Supported fields:
+  // * name
+  string order_by = 6 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response for the FetchBackupPlanAssociationsForResourceType method.
+message FetchBackupPlanAssociationsForResourceTypeResponse {
+  // Output only. The BackupPlanAssociations from the specified parent.
+  repeated BackupPlanAssociation backup_plan_associations = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. A token, which can be sent as `page_token` to retrieve the
+  // next page. If this field is omitted, there are no subsequent pages.
+  string next_page_token = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
 // Request message for getting a BackupPlanAssociation resource.
 message GetBackupPlanAssociationRequest {
   // Required. Name of the backup plan association resource, in the format
@@ -271,6 +362,41 @@ message DeleteBackupPlanAssociationRequest {
   // The request ID must be a valid UUID with the exception that zero UUID is
   // not supported (00000000-0000-0000-0000-000000000000).
   string request_id = 2 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
+// Request message for updating a backup plan association.
+message UpdateBackupPlanAssociationRequest {
+  // Required. The resource being updated
+  BackupPlanAssociation backup_plan_association = 1
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The list of fields to update.
+  // Field mask is used to specify the fields to be overwritten in the
+  // BackupPlanAssociation resource by the update.
+  // The fields specified in the update_mask are relative to the resource, not
+  // the full request. A field will be overwritten if it is in the mask. If the
+  // user does not provide a mask then the request will fail.
+  // Currently backup_plan_association.backup_plan is the only supported field.
+  google.protobuf.FieldMask update_mask = 2
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. An optional request ID to identify requests. Specify a unique
+  // request ID so that if you must retry your request, the server will know to
+  // ignore the request if it has already been completed. The server will
+  // guarantee that for at least 60 minutes since the first request.
+  //
+  // For example, consider a situation where you make an initial request and t
+  // he request times out. If you make the request again with the same request
+  // ID, the server can check if original operation with the same request ID
+  // was received, and if so, will ignore the second request. This prevents
+  // clients from accidentally creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 3 [
     (google.api.field_info).format = UUID4,
     (google.api.field_behavior) = OPTIONAL
   ];

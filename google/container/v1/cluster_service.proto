@@ -575,6 +575,55 @@ message LinuxNodeConfig {
     optional int32 hugepage_size1g = 2 [(google.api.field_behavior) = OPTIONAL];
   }
 
+  // Possible values for transparent hugepage enabled support.
+  enum TransparentHugepageEnabled {
+    // Default value. GKE will not modify the kernel configuration.
+    TRANSPARENT_HUGEPAGE_ENABLED_UNSPECIFIED = 0;
+
+    // Transparent hugepage support for anonymous memory is enabled system wide.
+    TRANSPARENT_HUGEPAGE_ENABLED_ALWAYS = 1;
+
+    // Transparent hugepage support for anonymous memory is enabled inside
+    // MADV_HUGEPAGE regions. This is the default kernel configuration.
+    TRANSPARENT_HUGEPAGE_ENABLED_MADVISE = 2;
+
+    // Transparent hugepage support for anonymous memory is disabled.
+    TRANSPARENT_HUGEPAGE_ENABLED_NEVER = 3;
+  }
+
+  // Possible values for transparent hugepage defrag support.
+  enum TransparentHugepageDefrag {
+    // Default value. GKE will not modify the kernel configuration.
+    TRANSPARENT_HUGEPAGE_DEFRAG_UNSPECIFIED = 0;
+
+    // It means that an application requesting THP will stall on allocation
+    // failure and directly reclaim pages and compact memory in an effort to
+    // allocate a THP immediately.
+    TRANSPARENT_HUGEPAGE_DEFRAG_ALWAYS = 1;
+
+    // It means that an application will wake kswapd in the background to
+    // reclaim pages and wake kcompactd to compact memory so that THP is
+    // available in the near future. It’s the responsibility of khugepaged to
+    // then install the THP pages later.
+    TRANSPARENT_HUGEPAGE_DEFRAG_DEFER = 2;
+
+    // It means that an application will enter direct reclaim and compaction
+    // like always, but only for regions that have used madvise(MADV_HUGEPAGE);
+    // all other regions will wake kswapd in the background to reclaim pages and
+    // wake kcompactd to compact memory so that THP is available in the near
+    // future.
+    TRANSPARENT_HUGEPAGE_DEFRAG_DEFER_WITH_MADVISE = 3;
+
+    // It means that an application will enter direct reclaim like always but
+    // only for regions that are have used madvise(MADV_HUGEPAGE). This is the
+    // default kernel configuration.
+    TRANSPARENT_HUGEPAGE_DEFRAG_MADVISE = 4;
+
+    // It means that an application will never enter direct reclaim or
+    // compaction.
+    TRANSPARENT_HUGEPAGE_DEFRAG_NEVER = 5;
+  }
+
   // The Linux kernel parameters to be applied to the nodes and all pods running
   // on the nodes.
   //
@@ -592,6 +641,7 @@ message LinuxNodeConfig {
   // net.ipv4.tcp_rmem
   // net.ipv4.tcp_wmem
   // net.ipv4.tcp_tw_reuse
+  // net.ipv4.tcp_max_orphans
   // net.netfilter.nf_conntrack_max
   // net.netfilter.nf_conntrack_buckets
   // net.netfilter.nf_conntrack_tcp_timeout_close_wait
@@ -601,7 +651,22 @@ message LinuxNodeConfig {
   // kernel.shmmni
   // kernel.shmmax
   // kernel.shmall
+  // fs.aio-max-nr
+  // fs.file-max
+  // fs.inotify.max_user_instances
+  // fs.inotify.max_user_watches
+  // fs.nr_open
+  // vm.dirty_background_ratio
+  // vm.dirty_expire_centisecs
+  // vm.dirty_ratio
+  // vm.dirty_writeback_centisecs
   // vm.max_map_count
+  // vm.overcommit_memory
+  // vm.overcommit_ratio
+  // vm.vfs_cache_pressure
+  // vm.swappiness
+  // vm.watermark_scale_factor
+  // vm.min_free_kbytes
   map<string, string> sysctls = 1;
 
   // cgroup_mode specifies the cgroup mode to be used on the node.
@@ -609,6 +674,26 @@ message LinuxNodeConfig {
 
   // Optional. Amounts for 2M and 1G hugepages
   optional HugepagesConfig hugepages = 3
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Transparent hugepage support for anonymous memory can be entirely
+  // disabled (mostly for debugging purposes) or only enabled inside
+  // MADV_HUGEPAGE regions (to avoid the risk of consuming more memory
+  // resources) or enabled system wide.
+  //
+  // See https://docs.kernel.org/admin-guide/mm/transhuge.html
+  // for more details.
+  TransparentHugepageEnabled transparent_hugepage_enabled = 4
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Defines the transparent hugepage defrag configuration on the
+  // node. VM hugepage allocation can be managed by either limiting
+  // defragmentation for delayed allocation or skipping it entirely for
+  // immediate allocation only.
+  //
+  // See https://docs.kernel.org/admin-guide/mm/transhuge.html
+  // for more details.
+  TransparentHugepageDefrag transparent_hugepage_defrag = 5
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -771,6 +856,49 @@ message NodeKubeletConfig {
   // for more details.
   repeated string allowed_unsafe_sysctls = 16
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. eviction_soft is a map of signal names to quantities that defines
+  // soft eviction thresholds. Each signal is compared to its corresponding
+  // threshold to determine if a pod eviction should occur.
+  EvictionSignals eviction_soft = 17 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. eviction_soft_grace_period is a map of signal names to quantities
+  // that defines grace periods for each soft eviction signal. The grace period
+  // is the amount of time that a pod must be under pressure before an eviction
+  // occurs.
+  EvictionGracePeriod eviction_soft_grace_period = 18
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. eviction_minimum_reclaim is a map of signal names to quantities
+  // that defines minimum reclaims, which describe the minimum amount of a given
+  // resource the kubelet will reclaim when performing a pod eviction while that
+  // resource is under pressure.
+  EvictionMinimumReclaim eviction_minimum_reclaim = 19
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. eviction_max_pod_grace_period_seconds is the maximum allowed
+  // grace period (in seconds) to use when terminating pods in response to a
+  // soft eviction threshold being met. This value effectively caps the Pod's
+  // terminationGracePeriodSeconds value during soft evictions. Default: 0.
+  // Range: [0, 300].
+  int32 eviction_max_pod_grace_period_seconds = 20
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Defines the maximum number of image pulls in parallel.
+  // The range is 2 to 5, inclusive.
+  // The default value is 2 or 3 depending on the disk type.
+  //
+  // See
+  // https://kubernetes.io/docs/concepts/containers/images/#maximum-parallel-image-pulls
+  // for more details.
+  int32 max_parallel_image_pulls = 21 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Defines whether to enable single process OOM killer.
+  // If true, will prevent the memory.oom.group flag from being set for
+  // container cgroups in cgroups v2. This causes processes in the container to
+  // be OOM killed individually instead of as a group.
+  optional bool single_process_oom_kill = 22
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // TopologyManager defines the configuration options for Topology Manager
@@ -823,6 +951,131 @@ message MemoryManager {
   // * "static"
   // The default value is 'none' if unspecified.
   string policy = 1;
+}
+
+// Eviction signals are the current state of a particular resource at a specific
+// point in time. The kubelet uses eviction signals to make eviction decisions
+// by comparing the signals to eviction thresholds, which are the minimum amount
+// of the resource that should be available on the node.
+message EvictionSignals {
+  // Optional. Memory available (i.e. capacity - workingSet), in bytes. Defines
+  // the amount of "memory.available" signal in kubelet. Default is unset, if
+  // not specified in the kubelet config. Format: positive number + unit, e.g.
+  // 100Ki, 10Mi, 5Gi. Valid units are Ki, Mi, Gi. Must be >= 100Mi and <= 50%
+  // of the node's memory. See
+  // https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+  string memory_available = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Amount of storage available on filesystem that kubelet uses for
+  // volumes, daemon logs, etc. Defines the amount of "nodefs.available" signal
+  // in kubelet. Default is unset, if not specified in the kubelet config. It
+  // takses percentage value for now. Sample format: "30%". Must be >= 10% and
+  // <= 50%. See
+  // https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+  string nodefs_available = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Amount of inodes available on filesystem that kubelet uses for
+  // volumes, daemon logs, etc. Defines the amount of "nodefs.inodesFree" signal
+  // in kubelet. Default is unset, if not specified in the kubelet config. Linux
+  // only. It takses percentage value for now. Sample format: "30%". Must be >=
+  // 5% and <= 50%. See
+  // https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+  string nodefs_inodes_free = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Amount of storage available on filesystem that container runtime
+  // uses for storing images layers. If the container filesystem and image
+  // filesystem are not separate, then imagefs can store both image layers and
+  // writeable layers. Defines the amount of "imagefs.available" signal in
+  // kubelet. Default is unset, if not specified in the kubelet config. It
+  // takses percentage value for now. Sample format: "30%". Must be >= 15% and
+  // <= 50%. See
+  // https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+  string imagefs_available = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Amount of inodes available on filesystem that container runtime
+  // uses for storing images layers. Defines the amount of "imagefs.inodesFree"
+  // signal in kubelet. Default is unset, if not specified in the kubelet
+  // config. Linux only. It takses percentage value for now. Sample format:
+  // "30%". Must be >= 5% and <= 50%. See
+  // https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+  string imagefs_inodes_free = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Amount of PID available for pod allocation. Defines the amount of
+  // "pid.available" signal in kubelet. Default is unset, if not specified in
+  // the kubelet config. It takses percentage value for now. Sample format:
+  // "30%". Must be >= 10% and <= 50%. See
+  // https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+  string pid_available = 6 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Eviction grace periods are grace periods for each eviction signal.
+message EvictionGracePeriod {
+  // Optional. Grace period for eviction due to memory available signal. Sample
+  // format: "10s". Must be >= 0. See
+  // https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+  string memory_available = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Grace period for eviction due to nodefs available signal. Sample
+  // format: "10s". Must be >= 0. See
+  // https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+  string nodefs_available = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Grace period for eviction due to nodefs inodes free signal.
+  // Sample format: "10s". Must be >= 0. See
+  // https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+  string nodefs_inodes_free = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Grace period for eviction due to imagefs available signal. Sample
+  // format: "10s". Must be >= 0. See
+  // https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+  string imagefs_available = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Grace period for eviction due to imagefs inodes free signal.
+  // Sample format: "10s". Must be >= 0. See
+  // https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+  string imagefs_inodes_free = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Grace period for eviction due to pid available signal. Sample
+  // format: "10s". Must be >= 0. See
+  // https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+  string pid_available = 6 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Eviction minimum reclaims are the resource amounts of minimum reclaims for
+// each eviction signal.
+message EvictionMinimumReclaim {
+  // Optional. Minimum reclaim for eviction due to memory available signal. Only
+  // take percentage value for now. Sample format: "10%". Must be <=10%. See
+  // https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+  string memory_available = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Minimum reclaim for eviction due to nodefs available signal. Only
+  // take percentage value for now. Sample format: "10%". Must be <=10%. See
+  // https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+  string nodefs_available = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Minimum reclaim for eviction due to nodefs inodes free signal.
+  // Only take percentage value for now. Sample format: "10%". Must be <=10%.
+  // See
+  // https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+  string nodefs_inodes_free = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Minimum reclaim for eviction due to imagefs available signal.
+  // Only take percentage value for now. Sample format: "10%". Must be <=10%.
+  // See
+  // https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+  string imagefs_available = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Minimum reclaim for eviction due to imagefs inodes free signal.
+  // Only take percentage value for now. Sample format: "10%". Must be <=10%.
+  // See
+  // https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+  string imagefs_inodes_free = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Minimum reclaim for eviction due to pid available signal. Only
+  // take percentage value for now. Sample format: "10%". Must be <=10%. See
+  // https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+  string pid_available = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Parameters that describe the nodes in a cluster.
@@ -937,8 +1190,8 @@ message NodeConfig {
 
   // The image type to use for this node. Note that for a given image type,
   // the latest version of it will be used. Please see
-  // https://cloud.google.com/kubernetes-engine/docs/concepts/node-images for
-  // available image types.
+  // https://cloud.google.com/kubernetes-engine/docs/concepts/node-images
+  // for available image types.
   string image_type = 5;
 
   // The map of Kubernetes labels (key/value pairs) to be applied to each node.
@@ -966,13 +1219,14 @@ message NodeConfig {
   repeated string tags = 8;
 
   // Whether the nodes are created as preemptible VM instances. See:
-  // https://cloud.google.com/compute/docs/instances/preemptible for more
-  // information about preemptible VM instances.
+  // https://cloud.google.com/compute/docs/instances/preemptible
+  // for more information about preemptible VM instances.
   bool preemptible = 10;
 
   // A list of hardware accelerators to be attached to each node.
-  // See https://cloud.google.com/compute/docs/gpus for more information about
-  // support for GPUs.
+  // See
+  // https://cloud.google.com/compute/docs/gpus
+  // for more information about support for GPUs.
   repeated AcceleratorConfig accelerators = 11;
 
   // Type of the disk attached to each node (e.g. 'pd-standard', 'pd-ssd' or
@@ -1109,11 +1363,14 @@ message NodeConfig {
 
   // Flex Start flag for enabling Flex Start VM.
   optional bool flex_start = 56;
+
+  // The boot disk configuration for the node pool.
+  BootDisk boot_disk = 57;
 }
 
 // Specifies options for controlling advanced machine features.
 message AdvancedMachineFeatures {
-  // Level of PMU access
+  // Level of PMU access.
   enum PerformanceMonitoringUnit {
     // PMU not enabled.
     PERFORMANCE_MONITORING_UNIT_UNSPECIFIED = 0;
@@ -1234,6 +1491,13 @@ message NodeNetworkConfig {
   // Usage=numNodes*numZones*podIPsPerNode.
   double pod_ipv4_range_utilization = 16
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The subnetwork path for the node pool.
+  // Format: projects/{project}/regions/{region}/subnetworks/{subnetwork}
+  // If the cluster is associated with multiple subnetworks, the subnetwork for
+  // the node pool is picked based on the IP utilization during node pool
+  // creation and is immutable.
+  string subnetwork = 19 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // AdditionalNodeNetworkConfig is the configuration for additional node networks
@@ -1365,6 +1629,11 @@ message SoleTenantConfig {
 
   // NodeAffinities used to match to a shared sole tenant node group.
   repeated NodeAffinity node_affinities = 1;
+
+  // Optional. The minimum number of virtual CPUs this instance will consume
+  // when running on a sole-tenant node. This field can only be set if the node
+  // pool is created in a shared sole-tenant node group.
+  optional int32 min_node_cpus = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // ContainerdConfig contains configuration to customize containerd.
@@ -1376,7 +1645,8 @@ message ContainerdConfig {
     // domain names (FQDN) to a specific certificate.
     message CertificateAuthorityDomainConfig {
       // GCPSecretManagerCertificateConfig configures a secret from
-      // [Google Secret Manager](https://cloud.google.com/secret-manager).
+      // [Google Secret
+      // Manager](https://cloud.google.com/secret-manager).
       message GCPSecretManagerCertificateConfig {
         // Secret URI, in the form
         // "projects/$PROJECT_ID/secrets/$SECRET_NAME/versions/$VERSION".
@@ -1585,6 +1855,9 @@ message AddonsConfig {
 
   // Configuration for the High Scale Checkpointing add-on.
   HighScaleCheckpointingConfig high_scale_checkpointing_config = 22;
+
+  // Configuration for the Lustre CSI driver.
+  LustreCsiDriverConfig lustre_csi_driver_config = 23;
 }
 
 // Configuration options for the HTTP (L7) load balancing controller addon,
@@ -1761,6 +2034,16 @@ message HighScaleCheckpointingConfig {
   // Whether the High Scale Checkpointing is enabled for this
   // cluster.
   bool enabled = 1;
+}
+
+// Configuration for the Lustre CSI driver.
+message LustreCsiDriverConfig {
+  // Whether the Lustre CSI driver is enabled for this cluster.
+  bool enabled = 1;
+
+  // If set to true, the Lustre CSI driver will install Lustre kernel modules
+  // using port 6988.
+  bool enable_legacy_lustre_port = 3;
 }
 
 // Configuration options for the Ray Operator add-on.
@@ -2041,6 +2324,17 @@ message IPAllocationPolicy {
   // Usage=numNodes*numZones*podIPsPerNode.
   double default_pod_ipv4_range_utilization = 25
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The additional IP ranges that are added to the cluster.
+  // These IP ranges can be used by new node pools to allocate node and pod IPs
+  // automatically.
+  // Each AdditionalIPRangesConfig corresponds to a single subnetwork.
+  // Once a range is removed it will not show up in IPAllocationPolicy.
+  repeated AdditionalIPRangesConfig additional_ip_ranges_configs = 29
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. AutoIpamConfig contains all information related to Auto IPAM
+  AutoIpamConfig auto_ipam_config = 30 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // A Google Kubernetes Engine cluster.
@@ -2087,7 +2381,8 @@ message Cluster {
   string description = 2;
 
   // The number of nodes to create in this cluster. You must ensure that your
-  // Compute Engine [resource quota](https://cloud.google.com/compute/quotas)
+  // Compute Engine [resource
+  // quota](https://cloud.google.com/compute/quotas)
   // is sufficient for this number of instances. You must also have available
   // firewall and routes quota.
   // For requests, this field should only be used in lieu of a
@@ -2160,8 +2455,8 @@ message Cluster {
   AddonsConfig addons_config = 10;
 
   // The name of the Google Compute Engine
-  // [subnetwork](https://cloud.google.com/compute/docs/subnetworks) to which
-  // the cluster is connected.
+  // [subnetwork](https://cloud.google.com/compute/docs/subnetworks)
+  // to which the cluster is connected.
   string subnetwork = 11;
 
   // The node pools associated with this cluster.
@@ -2170,8 +2465,8 @@ message Cluster {
   repeated NodePool node_pools = 12;
 
   // The list of Google Compute Engine
-  // [zones](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster's nodes should be located.
+  // [zones](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster's nodes should be located.
   //
   // This field provides a default value if
   // [NodePool.Locations](https://cloud.google.com/kubernetes-engine/docs/reference/rest/v1/projects.locations.clusters.nodePools#NodePool.FIELDS.locations)
@@ -2288,8 +2583,9 @@ message Cluster {
   string self_link = 100 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field is deprecated, use location instead.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field is deprecated, use location
+  // instead.
   string zone = 101
       [deprecated = true, (google.api.field_behavior) = OUTPUT_ONLY];
 
@@ -2452,6 +2748,9 @@ message Cluster {
   // RoleBindings that can be created.
   optional RBACBindingConfig rbac_binding_config = 156;
 
+  // Configuration for GKE auto upgrades.
+  GkeAutoUpgradeConfig gke_auto_upgrade_config = 163;
+
   // Configuration for limiting anonymous access to all endpoints except the
   // health checks.
   AnonymousAuthenticationConfig anonymous_authentication_config = 164;
@@ -2533,7 +2832,23 @@ message UserManagedKeysConfig {
 
 // AnonymousAuthenticationConfig defines the settings needed to limit endpoints
 // that allow anonymous authentication.
-message AnonymousAuthenticationConfig {}
+message AnonymousAuthenticationConfig {
+  // Mode defines the mode of anonymous authentication
+  // allowed in the cluster.
+  enum Mode {
+    // Default value not specified.
+    MODE_UNSPECIFIED = 0;
+
+    // Anonymous authentication is allowed for all endpoints.
+    ENABLED = 1;
+
+    // Anonymous authentication is allowed for only health check endpoints.
+    LIMITED = 2;
+  }
+
+  // Defines the mode of limiting anonymous access in the cluster.
+  Mode mode = 1;
+}
 
 // CompliancePostureConfig defines the settings needed to enable/disable
 // features for the Compliance Posture.
@@ -2725,8 +3040,8 @@ message ClusterUpdate {
   NodePoolAutoscaling desired_node_pool_autoscaling = 9;
 
   // The desired list of Google Compute Engine
-  // [zones](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster's nodes should be located.
+  // [zones](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster's nodes should be located.
   //
   // This list must always include the cluster's primary zone.
   //
@@ -2933,14 +3248,25 @@ message ClusterUpdate {
   NodeKubeletConfig desired_node_pool_auto_config_kubelet_config = 142;
 
   // The Custom keys configuration for the cluster.
-  UserManagedKeysConfig user_managed_keys_config = 143;
+  //
+  // This field is deprecated.
+  // Use
+  // [ClusterUpdate.desired_user_managed_keys_config][google.container.v1.ClusterUpdate.desired_user_managed_keys_config]
+  // instead.
+  UserManagedKeysConfig user_managed_keys_config = 143 [deprecated = true];
 
   // RBACBindingConfig allows user to restrict ClusterRoleBindings an
   // RoleBindings that can be created.
   optional RBACBindingConfig desired_rbac_binding_config = 144;
 
+  // The desired config for additional subnetworks attached to the cluster.
+  DesiredAdditionalIPRangesConfig desired_additional_ip_ranges_config = 145;
+
   // The desired enterprise configuration for the cluster.
   DesiredEnterpriseConfig desired_enterprise_config = 147;
+
+  // AutoIpamConfig contains all information related to Auto IPAM
+  AutoIpamConfig desired_auto_ipam_config = 148;
 
   // Enable/Disable L4 LB VPC firewall reconciliation for the cluster.
   optional bool desired_disable_l4_lb_firewall_reconciliation = 149;
@@ -2951,9 +3277,15 @@ message ClusterUpdate {
   // Currently only `cgroup_mode` can be set here.
   LinuxNodeConfig desired_node_pool_auto_config_linux_node_config = 150;
 
+  // The desired user managed keys config for the cluster.
+  UserManagedKeysConfig desired_user_managed_keys_config = 152;
+
   // Configuration for limiting anonymous access to all endpoints except the
   // health checks.
   AnonymousAuthenticationConfig desired_anonymous_authentication_config = 156;
+
+  // Configuration for GKE auto upgrade.
+  GkeAutoUpgradeConfig gke_auto_upgrade_config = 154;
 }
 
 // AdditionalPodRangesConfig is the configuration for additional pod secondary
@@ -2966,6 +3298,33 @@ message AdditionalPodRangesConfig {
   repeated RangeInfo pod_range_info = 2
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
+
+// AdditionalIPRangesConfig is the configuration for individual additional
+// subnetwork attached to the cluster
+message AdditionalIPRangesConfig {
+  // Name of the subnetwork. This can be the full path of the subnetwork or
+  // just the name.
+  // Example1: my-subnet
+  // Example2: projects/gke-project/regions/us-central1/subnetworks/my-subnet
+  string subnetwork = 1;
+
+  // List of secondary ranges names within this subnetwork that can be used for
+  // pod IPs.
+  // Example1: gke-pod-range1
+  // Example2: gke-pod-range1,gke-pod-range2
+  repeated string pod_ipv4_range_names = 2;
+}
+
+// DesiredAdditionalIPRangesConfig is a wrapper used for cluster update
+// operation and contains multiple AdditionalIPRangesConfigs.
+message DesiredAdditionalIPRangesConfig {
+  // List of additional IP ranges configs where each AdditionalIPRangesConfig
+  // corresponds to one subnetwork's IP ranges
+  repeated AdditionalIPRangesConfig additional_ip_ranges_configs = 1;
+}
+
+// AutoIpamConfig contains all information related to Auto IPAM
+message AutoIpamConfig {}
 
 // RangeInfo contains the range name and the range utilization by this cluster.
 message RangeInfo {
@@ -3133,8 +3492,9 @@ message Operation {
   string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // operation is taking place. This field is deprecated, use location instead.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the operation is taking place. This field is deprecated, use
+  // location instead.
   string zone = 2
       [deprecated = true, (google.api.field_behavior) = OUTPUT_ONLY];
 
@@ -3251,9 +3611,9 @@ message CreateClusterRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the parent
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the parent field.
   string zone = 2 [deprecated = true];
 
   // Required. A [cluster
@@ -3273,9 +3633,9 @@ message GetClusterRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster to retrieve.
@@ -3295,9 +3655,9 @@ message UpdateClusterRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster to upgrade.
@@ -3320,9 +3680,9 @@ message UpdateNodePoolRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster to upgrade.
@@ -3347,8 +3707,8 @@ message UpdateNodePoolRequest {
   string node_version = 5 [(google.api.field_behavior) = REQUIRED];
 
   // Required. The desired image type for the node pool. Please see
-  // https://cloud.google.com/kubernetes-engine/docs/concepts/node-images for
-  // available image types.
+  // https://cloud.google.com/kubernetes-engine/docs/concepts/node-images
+  // for available image types.
   string image_type = 6 [(google.api.field_behavior) = REQUIRED];
 
   // The name (project, location, cluster, node pool) of the node pool to
@@ -3357,10 +3717,10 @@ message UpdateNodePoolRequest {
   string name = 8;
 
   // The desired list of Google Compute Engine
-  // [zones](https://cloud.google.com/compute/docs/zones#available) in which the
-  // node pool's nodes should be located. Changing the locations for a node pool
-  // will result in nodes being either created or removed from the node pool,
-  // depending on whether locations are being added or removed.
+  // [zones](https://cloud.google.com/compute/docs/zones#available)
+  // in which the node pool's nodes should be located. Changing the locations
+  // for a node pool will result in nodes being either created or removed from
+  // the node pool, depending on whether locations are being added or removed.
   repeated string locations = 13;
 
   // The desired workload metadata config for the node pool.
@@ -3422,14 +3782,15 @@ message UpdateNodePoolRequest {
   WindowsNodeConfig windows_node_config = 34;
 
   // A list of hardware accelerators to be attached to each node.
-  // See https://cloud.google.com/compute/docs/gpus for more information about
-  // support for GPUs.
+  // See
+  // https://cloud.google.com/compute/docs/gpus
+  // for more information about support for GPUs.
   repeated AcceleratorConfig accelerators = 35;
 
   // Optional. The desired [Google Compute Engine machine
-  // type](https://cloud.google.com/compute/docs/machine-types) for nodes in the
-  // node pool. Initiates an upgrade operation that migrates the nodes in the
-  // node pool to the specified machine type.
+  // type](https://cloud.google.com/compute/docs/machine-types)
+  // for nodes in the node pool. Initiates an upgrade operation that migrates
+  // the nodes in the node pool to the specified machine type.
   string machine_type = 36 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The desired disk type (e.g. 'pd-standard', 'pd-ssd' or
@@ -3467,6 +3828,11 @@ message UpdateNodePoolRequest {
 
   // Flex Start flag for enabling Flex Start VM.
   optional bool flex_start = 46;
+
+  // The desired boot disk config for nodes in the node pool.
+  // Initiates an upgrade operation that migrates the nodes in the
+  // node pool to the specified boot disk config.
+  BootDisk boot_disk = 47;
 }
 
 // SetNodePoolAutoscalingRequest sets the autoscaler settings of a node pool.
@@ -3477,9 +3843,9 @@ message SetNodePoolAutoscalingRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster to upgrade.
@@ -3507,9 +3873,9 @@ message SetLoggingServiceRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster to upgrade.
@@ -3542,9 +3908,9 @@ message SetMonitoringServiceRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster to upgrade.
@@ -3577,9 +3943,9 @@ message SetAddonsConfigRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster to upgrade.
@@ -3603,9 +3969,9 @@ message SetLocationsRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster to upgrade.
@@ -3613,10 +3979,10 @@ message SetLocationsRequest {
   string cluster_id = 3 [deprecated = true];
 
   // Required. The desired list of Google Compute Engine
-  // [zones](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster's nodes should be located. Changing the locations a cluster is in
-  // will result in nodes being either created or removed from the cluster,
-  // depending on whether locations are being added or removed.
+  // [zones](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster's nodes should be located. Changing the locations a
+  // cluster is in will result in nodes being either created or removed from the
+  // cluster, depending on whether locations are being added or removed.
   //
   // This list must always include the cluster's primary zone.
   repeated string locations = 4 [(google.api.field_behavior) = REQUIRED];
@@ -3634,9 +4000,9 @@ message UpdateMasterRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster to upgrade.
@@ -3686,9 +4052,9 @@ message SetMasterAuthRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster to upgrade.
@@ -3714,9 +4080,9 @@ message DeleteClusterRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster to delete.
@@ -3736,9 +4102,9 @@ message ListClustersRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides, or "-" for all zones. This field has been deprecated and
-  // replaced by the parent field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides, or "-" for all zones. This field has been
+  // deprecated and replaced by the parent field.
   string zone = 2 [deprecated = true];
 
   // The parent (project and location) where the clusters will be listed.
@@ -3766,9 +4132,9 @@ message GetOperationRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The server-assigned `name` of the operation.
@@ -3788,9 +4154,9 @@ message ListOperationsRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) to return
-  // operations for, or `-` for all zones. This field has been deprecated and
-  // replaced by the parent field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // to return operations for, or `-` for all zones. This field has been
+  // deprecated and replaced by the parent field.
   string zone = 2 [deprecated = true];
 
   // The parent (project and location) where the operations will be listed.
@@ -3807,9 +4173,9 @@ message CancelOperationRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // operation resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the operation resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The server-assigned `name` of the operation.
@@ -3839,9 +4205,9 @@ message GetServerConfigRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) to return
-  // operations for. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // to return operations for. This field has been deprecated and replaced by
+  // the name field.
   string zone = 2 [deprecated = true];
 
   // The name (project and location) of the server config to get,
@@ -3893,9 +4259,9 @@ message CreateNodePoolRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the parent
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the parent field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster.
@@ -3919,9 +4285,9 @@ message DeleteNodePoolRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster.
@@ -3946,9 +4312,9 @@ message ListNodePoolsRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the parent
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the parent field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster.
@@ -3968,9 +4334,9 @@ message GetNodePoolRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster.
@@ -4215,14 +4581,15 @@ message NodePool {
   NodeConfig config = 2;
 
   // The initial node count for the pool. You must ensure that your
-  // Compute Engine [resource quota](https://cloud.google.com/compute/quotas)
+  // Compute Engine [resource
+  // quota](https://cloud.google.com/compute/quotas)
   // is sufficient for this number of instances. You must also have available
   // firewall and routes quota.
   int32 initial_node_count = 3;
 
   // The list of Google Compute Engine
-  // [zones](https://cloud.google.com/compute/docs/zones#available) in which the
-  // NodePool's nodes should be located.
+  // [zones](https://cloud.google.com/compute/docs/zones#available)
+  // in which the NodePool's nodes should be located.
   //
   // If this value is unspecified during node pool creation, the
   // [Cluster.Locations](https://cloud.google.com/kubernetes-engine/docs/reference/rest/v1/projects.locations.clusters#Cluster.FIELDS.locations)
@@ -4478,9 +4845,9 @@ message SetNodePoolManagementRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster to update.
@@ -4508,9 +4875,9 @@ message SetNodePoolSizeRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster to update.
@@ -4549,9 +4916,9 @@ message RollbackNodePoolUpgradeRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster to rollback.
@@ -4610,9 +4977,12 @@ message ClusterAutoscaling {
   AutoprovisioningNodePoolDefaults autoprovisioning_node_pool_defaults = 4;
 
   // The list of Google Compute Engine
-  // [zones](https://cloud.google.com/compute/docs/zones#available) in which the
-  // NodePool's nodes can be created by NAP.
+  // [zones](https://cloud.google.com/compute/docs/zones#available)
+  // in which the NodePool's nodes can be created by NAP.
   repeated string autoprovisioning_locations = 5;
+
+  // Default compute class is a configuration for default compute class.
+  DefaultComputeClassConfig default_compute_class_config = 9;
 }
 
 // AutoprovisioningNodePoolDefaults contains defaults for a node pool created
@@ -4667,8 +5037,8 @@ message AutoprovisioningNodePoolDefaults {
   string boot_disk_kms_key = 9;
 
   // The image type to use for NAP created node. Please see
-  // https://cloud.google.com/kubernetes-engine/docs/concepts/node-images for
-  // available image types.
+  // https://cloud.google.com/kubernetes-engine/docs/concepts/node-images
+  // for available image types.
   string image_type = 10;
 
   // DEPRECATED. Use NodePoolAutoConfig.NodeKubeletConfig instead.
@@ -4686,6 +5056,13 @@ message ResourceLimit {
 
   // Maximum amount of the resource in the cluster.
   int64 maximum = 3;
+}
+
+// DefaultComputeClassConfig defines default compute class
+//  configuration.
+message DefaultComputeClassConfig {
+  // Enables default compute class.
+  bool enabled = 1;
 }
 
 // NodePoolAutoscaling contains information required by cluster autoscaler to
@@ -4745,9 +5122,9 @@ message SetLabelsRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster.
@@ -4780,9 +5157,9 @@ message SetLegacyAbacRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster to update.
@@ -4806,9 +5183,9 @@ message StartIPRotationRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster.
@@ -4831,9 +5208,9 @@ message CompleteIPRotationRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster.
@@ -4943,9 +5320,9 @@ message SetNetworkPolicyRequest {
   string project_id = 1 [deprecated = true];
 
   // Deprecated. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides. This field has been deprecated and replaced by the name
-  // field.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides. This field has been deprecated and replaced
+  // by the name field.
   string zone = 2 [deprecated = true];
 
   // Deprecated. The name of the cluster.
@@ -4967,8 +5344,8 @@ message SetMaintenancePolicyRequest {
   string project_id = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. The name of the Google Compute Engine
-  // [zone](https://cloud.google.com/compute/docs/zones#available) in which the
-  // cluster resides.
+  // [zone](https://cloud.google.com/compute/docs/zones#available)
+  // in which the cluster resides.
   string zone = 2 [(google.api.field_behavior) = REQUIRED];
 
   // Required. The name of the cluster to update.
@@ -5016,6 +5393,10 @@ message StatusCondition {
 
     // Node service account is missing permissions.
     NODE_SERVICE_ACCOUNT_MISSING_PERMISSIONS = 10;
+
+    // Cloud KMS key version used for etcd level encryption has been destroyed.
+    // This is a permanent error.
+    CLOUD_KMS_KEY_DESTROYED = 11;
   }
 
   // Machine-friendly representation of the condition
@@ -5053,8 +5434,8 @@ message NetworkConfig {
   string network = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The relative name of the Google Compute Engine
-  // [subnetwork](https://cloud.google.com/compute/docs/vpc) to which the
-  // cluster is connected. Example:
+  // [subnetwork](https://cloud.google.com/compute/docs/vpc)
+  // to which the cluster is connected. Example:
   // projects/my-project/regions/us-central1/subnetworks/my-subnet
   string subnetwork = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 
@@ -6397,6 +6778,22 @@ message SecretManagerConfig {
   optional bool enabled = 1;
 }
 
+// BootDisk specifies the boot disk configuration for nodepools.
+message BootDisk {
+  // Disk type of the boot disk.
+  // (i.e. Hyperdisk-Balanced, PD-Balanced, etc.)
+  string disk_type = 1;
+
+  // Disk size in GB. Replaces NodeConfig.disk_size_gb
+  int64 size_gb = 2;
+
+  // For Hyperdisk-Balanced only, the provisioned IOPS config value.
+  int64 provisioned_iops = 3;
+
+  // For Hyperdisk-Balanced only, the provisioned throughput config value.
+  int64 provisioned_throughput = 4;
+}
+
 // SecondaryBootDisk represents a persistent disk attached to a node
 // with special configurations based on its mode.
 message SecondaryBootDisk {
@@ -6641,4 +7038,24 @@ message NodePoolUpgradeInfo {
 
   // The nodepool's current minor version's end of extended support timestamp.
   optional string end_of_extended_support_timestamp = 7;
+}
+
+// GkeAutoUpgradeConfig is the configuration for GKE auto upgrades.
+message GkeAutoUpgradeConfig {
+  // PatchMode specifies how auto upgrade patch builds should be
+  // selected.
+  enum PatchMode {
+    // PATCH_MODE_UNSPECIFIED defaults to using the upgrade target from the
+    // channel's patch upgrade targets as the upgrade target for the
+    // version.
+    PATCH_MODE_UNSPECIFIED = 0;
+
+    // ACCELERATED denotes that the latest patch build in the channel should be
+    // used as the upgrade target for the version.
+    ACCELERATED = 1;
+  }
+
+  // PatchMode specifies how auto upgrade patch builds should be
+  // selected.
+  PatchMode patch_mode = 1;
 }
