@@ -24,36 +24,6 @@ function checkout_definitions() {
   popd
 }
 
-# Takes the files in the .bcr folder meant to go in the PR
-# and computes the sha256 of each one
-function update_shas() {
-  local target_folder="$1"
-  local target_json="${target_folder}/source.json"
-  local patch_files=$(find "${target_folder}/patches" -mindepth 1 -type f)
-  local overlay_files=$(find "${target_folder}/overlay" -mindepth 1 -type f)
-
-  update_shas_helper "${target_folder}" 'patches' "${patch_files}" "${target_json}"
-  update_shas_helper "${target_folder}" 'overlay' "${overlay_files}" "${target_json}"
-}
-
-function to_base_64_hash() {
-  sha="$1"
-  echo "sha256-$(cut -d' ' -f1 <<< "${sha}" | xxd -r -p | base64)"
-}
-
-# Abstracts repeated logic in overlay and patches folder
-function update_shas_helper() {
-  local target_folder="$1"
-  local base_path="$2"
-  local files="$3"
-  local target_json="$4"
-  for file in ${files}; do
-    local sha256=$(to_base_64_hash "$(sha256sum "${file}")")
-    local value_path="$(sed "s|${target_folder}/${base_path}/||" <<< "${file}")"
-    cat <<< $(jq ".${base_path}.\"${value_path}\" = \"${sha256}\"" "${target_json}") > "${target_json}"
-  done
-}
-
 function get_version() {
   local target_folder="$1"
   local ref="$2"
@@ -95,20 +65,6 @@ function create_module_patch() {
     | sed "2 s|.*|+++ ${filename}|" > "${destination}"
 }
 
-
-# updates the integrity entry of source.json
-function update_integrity() {
-  local target_folder="$1"
-  local source_json="${target_folder}/source.json"
-  url=$(jq -r '.url' "${source_json}")
-  temp_archive=$(mktemp)
-  curl -L "${url}" -o "${temp_archive}"
-  sha=$(sha256sum "${temp_archive}")
-  rm "${temp_archive}"
-  b64sha=$(to_base_64_hash "${sha}")
-    cat <<< $(jq ".integrity = \"${b64sha}\"" "${source_json}") > "${source_json}"
-}
-
 # append the version specified in $2 to the specified metadata file
 function append_version_to_metadata() {
   local version="$1"
@@ -129,9 +85,17 @@ function create_module_symlink() {
     rm "${target_symlink}"
   fi
 
-  ln -rs "${target_file}" "${target_symlink}" 
+  ln -rs "${target_file}" "${target_symlink}"
 }
 
+function update_module_integrity() {
+  bcr_folder="$1"
+  version="$2"
+  pushd "${bcr_folder}"
+  bazelisk run -- //tools:update_integrity "googleapis" \
+    || exit 1
+  popd
+}
 
 function prepare_bcr_repo() {
   local target_folder="$1"
@@ -145,6 +109,7 @@ function prepare_bcr_repo() {
   cp -r "${target_folder}" "${googleapis_target_module}"
   create_module_symlink "${googleapis_target_module}"
   append_version_to_metadata "${version}" "${googleapis_module_root}/metadata.json"
+  update_module_integrity "${bcr_folder}" "${version}"
   popd
 }
 
@@ -156,11 +121,8 @@ function validate_bcr_module() {
   version="$(get_version "${target_folder}" "${ref}")"
   pushd "${bcr_folder}"
   # we skip the url stability check because we don't have releases of googleapis/googleapis
-  bazelisk run -- //tools:bcr_validation --skip_validation url_stability "--check=googleapis@${version}"
-  if [[ "$?" -ne "0" ]]; then
-    echo "bazelisk command exited with non-zero status"
-    exit 1
-  fi
+  bazelisk run -- //tools:bcr_validation --skip_validation url_stability "--check=googleapis@${version}" \
+    || exit "$?"
   popd
 }
 
@@ -210,8 +172,6 @@ function main() {
   render_templates "${template_folder}" "${ref}" "${protobuf_version}" "${org}"
   create_module_patch "${template_folder}/MODULE.bazel" "${template_folder}/patches/module_dot_bazel.patch"
   convert_line_endings "${template_folder}"
-  update_shas "${template_folder}"
-  update_integrity "${template_folder}"
 
   if [[ -z "${bcr_folder}" ]] || [[ ! -d "${bcr_folder}" ]]; then
     bcr_folder="${target_folder}/bazel-central-registry"
