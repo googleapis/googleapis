@@ -47,6 +47,18 @@ function jq() {
     echo '{"versions": ["1.0.0", "2.0.0"]}'
 }
 
+function bazelisk() {
+  echo "mock bazelisk" "$@"
+}
+
+function dos2unix() {
+  echo "mock dos2unix" "$@"
+}
+
+function ln() {
+  echo "mock ln" "$@"
+}
+
 # Load functions from the script without executing the main logic
 functions_to_load=$(sed '/^# parse input parameters/,$d' "$(dirname "$0")/publish-to-bcr.sh")
 eval "$functions_to_load"
@@ -111,6 +123,41 @@ function test_append_version_to_metadata() {
   assertEquals '{"versions": ["1.0.0", "2.0.0"]}' "${content}" "append_version_to_metadata"
 }
 
+function test_validate_bcr_module() {
+  local output
+  output=$(validate_bcr_module "${TEST_DIR}" "${TEST_DIR}" "dummy_ref")
+  assertEquals "mock bazelisk run -- //tools:bcr_validation --skip_validation url_stability --check=googleapis@0.0.0-20250101-mock_com" "${output}" "validate_bcr_module"
+}
+
+function test_create_module_symlink() {
+  mkdir -p "${TEST_DIR}/overlay"
+  touch "${TEST_DIR}/MODULE.bazel"
+  local output
+  output=$(create_module_symlink "${TEST_DIR}")
+  assertEquals "mock ln -rs ${TEST_DIR}/MODULE.bazel ${TEST_DIR}/overlay/MODULE.bazel" "${output}" "create_module_symlink"
+}
+
+function test_convert_line_endings() {
+  local convert_dir="${TEST_DIR}/convert"
+  mkdir -p "${convert_dir}"
+  touch "${convert_dir}/file1"
+  touch "${convert_dir}/file2"
+  local output
+  output=$(convert_line_endings "${convert_dir}" | sort)
+  local expected_output="$(cat <<EOF | sort
+mock dos2unix ${convert_dir}/file1
+mock dos2unix ${convert_dir}/file2
+EOF
+)"
+  assertEquals "${expected_output}" "${output}" "convert_line_endings"
+}
+
+function test_update_module_integrity() {
+  local output
+  output=$(update_module_integrity "${TEST_DIR}" "dummy_version")
+  assertEquals "mock bazelisk run -- //tools:update_integrity googleapis" "${output}" "update_module_integrity"
+}
+
 
 # --- Test runner ---
 function assertEquals() {
@@ -131,6 +178,10 @@ function run_tests() {
   test_get_version
   test_render_templates
   test_append_version_to_metadata
+  test_validate_bcr_module
+  test_create_module_symlink
+  test_convert_line_endings
+  test_update_module_integrity
   tearDown
 }
 

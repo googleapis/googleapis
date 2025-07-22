@@ -96,7 +96,10 @@ function append_version_to_metadata() {
 
 function convert_line_endings() {
   local target_folder="$1"
-  find "${target_folder}" -type f -exec dos2unix {} ';'
+  local files=$(find "${target_folder}" -type f -not -path '*/.git/*')
+  for file in ${files}; do
+    dos2unix "${file}"
+  done
 }
 
 function create_module_symlink() {
@@ -113,13 +116,14 @@ function create_module_symlink() {
 function update_module_integrity() {
   bcr_folder="$1"
   version="$2"
-  pushd "${bcr_folder}"
+  pushd "${bcr_folder}" > /dev/null
   bazelisk run -- //tools:update_integrity "googleapis" \
     || exit 1
-  popd
+  popd > /dev/null
 }
 
 function prepare_bcr_repo() {
+
   local target_folder="$1"
   local bcr_folder="$2"
   local ref="$3"
@@ -141,11 +145,11 @@ function validate_bcr_module() {
   local ref="$3"
 
   version="$(get_version "${target_folder}" "${ref}")"
-  pushd "${bcr_folder}"
+  pushd "${bcr_folder}" > /dev/null
   # we skip the url stability check because we don't have releases of googleapis/googleapis
   bazelisk run -- //tools:bcr_validation --skip_validation url_stability "--check=googleapis@${version}" \
     || exit "$?"
-  popd
+  popd > /dev/null
 }
 
 function create_pull_request() {
