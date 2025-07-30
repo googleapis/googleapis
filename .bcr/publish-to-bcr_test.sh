@@ -51,10 +51,6 @@ function bazelisk() {
   echo "mock bazelisk" "$@"
 }
 
-function dos2unix() {
-  echo "mock dos2unix" "$@"
-}
-
 function ln() {
   echo "mock ln" "$@"
 }
@@ -84,7 +80,7 @@ Initialized empty Git repository in ${TEST_DIR}/.git/
 mock git fetch fetch --depth 1 origin mock_templates_ref
 mock git fetch fetch --depth 2 origin mock_definitions_ref
 mock git checkout checkout mock_definitions_ref
-mock git checkout checkout mock_templates_ref
+mock git checkout checkout mock_templates_ref -- .bcr/
 EOF
   )"
   assert_equals "${expected_output}" "${output}" "checkout_definitions"
@@ -137,21 +133,6 @@ function test_create_module_symlink() {
   assert_equals "mock ln -rs ${TEST_DIR}/MODULE.bazel ${TEST_DIR}/overlay/MODULE.bazel" "${output}" "create_module_symlink"
 }
 
-function test_convert_line_endings() {
-  local convert_dir="${TEST_DIR}/convert"
-  mkdir -p "${convert_dir}"
-  touch "${convert_dir}/file1"
-  touch "${convert_dir}/file2"
-  local output
-  output=$(convert_line_endings "${convert_dir}" | sort)
-  local expected_output="$(cat <<EOF | sort
-mock dos2unix ${convert_dir}/file1
-mock dos2unix ${convert_dir}/file2
-EOF
-)"
-  assert_equals "${expected_output}" "${output}" "convert_line_endings"
-}
-
 function test_update_module_integrity() {
   local output
   output=$(update_module_integrity "${TEST_DIR}" "dummy_version")
@@ -180,7 +161,6 @@ function run_tests() {
   test_append_version_to_metadata
   test_validate_bcr_module
   test_create_module_symlink
-  test_convert_line_endings
   test_update_module_integrity
   tear_down
 }

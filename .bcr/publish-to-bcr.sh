@@ -41,7 +41,7 @@ function checkout_definitions() {
   git fetch --depth 1 origin "${templates_ref}"
   git fetch --depth 2 origin "${definitions_ref}"
   git checkout "${definitions_ref}"
-  git checkout "${templates_ref}"
+  git checkout "${templates_ref}" -- .bcr/ || (echo "--templates_ref does not contain the templates .bcr folder" && exit 1)
   popd > /dev/null
 }
 
@@ -258,8 +258,8 @@ if [[ -z "${ref}" ]]; then
 fi
 
 if [[ -z "${templates_ref}" ]]; then
-  echo "assuming templates_ref to be the same as --ref"
-  templates_ref="${ref}"
+  echo "assuming templates_ref to be the HEAD of master"
+  templates_ref="$(git ls-remote https://github.com/googleapis/googleapis HEAD | awk '{ print $1}')"
 fi
 
 if [[ -z "${org}" ]]; then
@@ -275,6 +275,13 @@ fi
 if [[ -z "${bcr_organization}" ]]; then
   echo "Using default value for --bcr_organization: ${DEFAULT_BCR_ORGANIZATION}"
   bcr_organization="${DEFAULT_BCR_ORGANIZATION}"
+fi
+
+if [[ -z "${bcr_folder}" ]] && [[ "${bcr_organization}" == "${DEFAULT_BCR_ORGANIZATION}" ]]; then
+  echo "Cannot create branches in the ${DEFAULT_BCR_ORGANIZATION}/bazel-central-registry repo."
+	echo "Please specify either a --bcr_folder or --bcr_organization we can push to."
+	echo "(This needs a fork of the repo.)"
+  exit 1
 fi
 
 main "${ref}" "${templates_ref}" "${org}" "${protobuf_version}" "${bcr_organization}" "${bcr_folder}"
