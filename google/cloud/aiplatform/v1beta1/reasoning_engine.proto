@@ -20,6 +20,8 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/aiplatform/v1beta1/encryption_spec.proto";
 import "google/cloud/aiplatform/v1beta1/env_var.proto";
+import "google/cloud/aiplatform/v1beta1/service_networking.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -63,6 +65,34 @@ message ReasoningEngineSpec {
     // (roles/secretmanager.secretAccessor) to AI Platform Reasoning Engine
     // Service Agent.
     repeated SecretEnvVar secret_env = 2
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Configuration for PSC-I.
+    PscInterfaceConfig psc_interface_config = 4
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The minimum number of application instances that will be kept
+    // running at all times. Defaults to 1.
+    optional int32 min_instances = 5 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The maximum number of application instances that can be
+    // launched to handle increased traffic. Defaults to 100.
+    optional int32 max_instances = 6 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Resource limits for each container. Only 'cpu' and 'memory'
+    // keys are supported. Defaults to {"cpu": "4", "memory": "4Gi"}.
+    //
+    //   * The only supported values for CPU are '1', '2', '4', and '8'. For
+    //   more information, go to
+    //   https://cloud.google.com/run/docs/configuring/cpu.
+    //   * For supported 'memory' values and syntax, go to
+    //   https://cloud.google.com/run/docs/configuring/memory-limits
+    map<string, string> resource_limits = 7
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Concurrency for each container and agent server. Recommended
+    // value: 2 * cpu + 1. Defaults to 9.
+    optional int32 container_concurrency = 8
         [(google.api.field_behavior) = OPTIONAL];
   }
 
@@ -144,12 +174,50 @@ message ReasoningEngine {
 message ReasoningEngineContextSpec {
   // Specification for a Memory Bank.
   message MemoryBankConfig {
+    // Configuration for automatically setting the TTL ("time-to-live") of the
+    // memories in the Memory Bank.
+    message TtlConfig {
+      // Configuration for TTL of the memories in the Memory Bank based on the
+      // action that created or updated the memory.
+      message GranularTtlConfig {
+        // Optional. The TTL duration for memories uploaded via CreateMemory.
+        google.protobuf.Duration create_ttl = 1
+            [(google.api.field_behavior) = OPTIONAL];
+
+        // Optional. The TTL duration for memories newly generated via
+        // GenerateMemories
+        // ([GenerateMemoriesResponse.GeneratedMemory.Action.CREATED][google.cloud.aiplatform.v1beta1.GenerateMemoriesResponse.GeneratedMemory.Action.CREATED]).
+        google.protobuf.Duration generate_created_ttl = 2
+            [(google.api.field_behavior) = OPTIONAL];
+
+        // Optional. The TTL duration for memories updated via GenerateMemories
+        // ([GenerateMemoriesResponse.GeneratedMemory.Action.CREATED][google.cloud.aiplatform.v1beta1.GenerateMemoriesResponse.GeneratedMemory.Action.CREATED]).
+        // In the case of an UPDATE action, the `expire_time` of the existing
+        // memory will be updated to the new value (now + TTL).
+        google.protobuf.Duration generate_updated_ttl = 3
+            [(google.api.field_behavior) = OPTIONAL];
+      }
+
+      // Configuration for automatically setting the TTL of the memories in the
+      // Memory Bank.
+      oneof ttl {
+        // Optional. The default TTL duration of the memories in the Memory
+        // Bank. This applies to all operations that create or update a memory.
+        google.protobuf.Duration default_ttl = 1
+            [(google.api.field_behavior) = OPTIONAL];
+
+        // Optional. The granular TTL configuration of the memories in the
+        // Memory Bank.
+        GranularTtlConfig granular_ttl_config = 2
+            [(google.api.field_behavior) = OPTIONAL];
+      }
+    }
+
     // Configuration for how to generate memories.
     message GenerationConfig {
       // Required. The model used to generate memories.
       // Format:
-      // `projects/{project}/locations/{location}/publishers/google/models/{model}`
-      // or `projects/{project}/locations/{location}/endpoints/{endpoint}`.
+      // `projects/{project}/locations/{location}/publishers/google/models/{model}`.
       string model = 1 [
         (google.api.field_behavior) = REQUIRED,
         (google.api.resource_reference) = {
@@ -162,8 +230,7 @@ message ReasoningEngineContextSpec {
     message SimilaritySearchConfig {
       // Required. The model used to generate embeddings to lookup similar
       // memories. Format:
-      // `projects/{project}/locations/{location}/publishers/google/models/{model}`
-      // or `projects/{project}/locations/{location}/endpoints/{endpoint}`.
+      // `projects/{project}/locations/{location}/publishers/google/models/{model}`.
       string embedding_model = 1 [
         (google.api.field_behavior) = REQUIRED,
         (google.api.resource_reference) = {
@@ -181,6 +248,12 @@ message ReasoningEngineContextSpec {
     // `text-embedding-005`.
     SimilaritySearchConfig similarity_search_config = 2
         [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Configuration for automatic TTL ("time-to-live") of the
+    // memories in the Memory Bank. If not set, TTL will not be applied
+    // automatically. The TTL can be explicitly set by modifying the
+    // `expire_time` of each Memory resource.
+    TtlConfig ttl_config = 5 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Optional. Specification for a Memory Bank, which manages memories for the
