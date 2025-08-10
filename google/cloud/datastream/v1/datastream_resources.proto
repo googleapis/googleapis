@@ -32,6 +32,10 @@ option (google.api.resource_definition) = {
   type: "compute.googleapis.com/Networks"
   pattern: "projects/{project}/global/networks/{network}"
 };
+option (google.api.resource_definition) = {
+  type: "compute.googleapis.com/NetworkAttachment"
+  pattern: "projects/{project}/regions/{region}/networkAttachments/{network_attachment}"
+};
 
 // Oracle database profile.
 message OracleProfile {
@@ -240,6 +244,67 @@ message SalesforceProfile {
   }
 }
 
+// MongoDB profile.
+message MongodbProfile {
+  // Required. List of host addresses for a MongoDB cluster.
+  // For SRV connection format, this list must contain exactly one DNS host
+  // without a port. For Standard connection format, this list must contain all
+  // the required hosts in the cluster with their respective ports.
+  repeated HostAddress host_addresses = 1
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Name of the replica set. Only needed for self hosted replica set
+  // type MongoDB cluster. For SRV connection format, this field must be empty.
+  // For Standard connection format, this field must be specified.
+  string replica_set = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. Username for the MongoDB connection.
+  string username = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Password for the MongoDB connection. Mutually exclusive with the
+  // `secret_manager_stored_password` field.
+  string password = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A reference to a Secret Manager resource name storing the
+  // SQLServer connection password. Mutually exclusive with the `password`
+  // field.
+  string secret_manager_stored_password = 5
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. SSL configuration for the MongoDB connection.
+  MongodbSslConfig ssl_config = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // MongoDB connection format.
+  // Must specify either srv_connection_format or standard_connection_format.
+  oneof mongodb_connection_format {
+    // Srv connection format.
+    SrvConnectionFormat srv_connection_format = 101;
+
+    // Standard connection format.
+    StandardConnectionFormat standard_connection_format = 102;
+  }
+}
+
+// A HostAddress represents a transport end point, which is the combination
+// of an IP address or hostname and a port number.
+message HostAddress {
+  // Required. Hostname for the connection.
+  string hostname = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Port for the connection.
+  int32 port = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Srv connection format.
+message SrvConnectionFormat {}
+
+// Standard connection format.
+message StandardConnectionFormat {
+  // Optional. Specifies whether the client connects directly to the host[:port]
+  // in the connection URI.
+  bool direct_connection = 1 [(google.api.field_behavior) = OPTIONAL];
+}
+
 // Cloud Storage bucket profile.
 message GcsProfile {
   // Required. The Cloud Storage bucket name.
@@ -291,6 +356,20 @@ message VpcPeeringConfig {
 
   // Required. A free subnet for peering. (CIDR of /29)
   string subnet = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The PSC Interface configuration is used to create PSC Interface between
+// Datastream and the consumer's PSC.
+message PscInterfaceConfig {
+  // Required. Fully qualified name of the Network Attachment that Datastream
+  // will connect to. Format:
+  // `projects/{project}/regions/{region}/networkAttachments/{name}`
+  string network_attachment = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "compute.googleapis.com/NetworkAttachment"
+    }
+  ];
 }
 
 // The PrivateConnection resource is used to establish private connectivity
@@ -357,6 +436,9 @@ message PrivateConnection {
 
   // VPC Peering Config.
   VpcPeeringConfig vpc_peering_config = 100;
+
+  // PSC Interface Config.
+  PscInterfaceConfig psc_interface_config = 101;
 }
 
 // Private Connectivity
@@ -406,6 +488,51 @@ message Route {
   int32 destination_port = 7;
 }
 
+// MongoDB SSL configuration information.
+message MongodbSslConfig {
+  // Optional. Input only. PEM-encoded private key associated with the Client
+  // Certificate. If this field is used then the 'client_certificate' and the
+  // 'ca_certificate' fields are mandatory.
+  string client_key = 1 [
+    (google.api.field_behavior) = INPUT_ONLY,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+
+  // Output only. Indicates whether the client_key field is set.
+  bool client_key_set = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Input only. PEM-encoded certificate that will be used by the
+  // replica to authenticate against the source database server. If this field
+  // is used then the 'client_key' and the 'ca_certificate' fields are
+  // mandatory.
+  string client_certificate = 3 [
+    (google.api.field_behavior) = INPUT_ONLY,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+
+  // Output only. Indicates whether the client_certificate field is set.
+  bool client_certificate_set = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Input only. PEM-encoded certificate of the CA that signed the
+  // source database server's certificate.
+  string ca_certificate = 5 [
+    (google.api.field_behavior) = INPUT_ONLY,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+
+  // Output only. Indicates whether the ca_certificate field is set.
+  bool ca_certificate_set = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Input only. A reference to a Secret Manager resource name storing
+  // the PEM-encoded private key associated with the Client Certificate. If this
+  // field is used then the 'client_certificate' and the 'ca_certificate' fields
+  // are mandatory. Mutually exclusive with the `client_key` field.
+  string secret_manager_stored_client_key = 7 [
+    (google.api.field_behavior) = INPUT_ONLY,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
 // MySQL SSL configuration information.
 message MysqlSslConfig {
   // Optional. Input only. PEM-encoded private key associated with the Client
@@ -448,6 +575,14 @@ message OracleSslConfig {
   // Output only. Indicates whether the ca_certificate field has been set for
   // this Connection-Profile.
   bool ca_certificate_set = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The distinguished name (DN) mentioned in the server
+  // certificate. This corresponds to SSL_SERVER_CERT_DN sqlnet parameter.
+  // Refer
+  // https://docs.oracle.com/en/database/oracle/oracle-database/19/netrf/local-naming-parameters-in-tns-ora-file.html#GUID-70AB0695-A9AA-4A94-B141-4C605236EEB7
+  // If this field is not provided, the DN matching is not enforced.
+  string server_certificate_distinguished_name = 3
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // PostgreSQL SSL configuration information.
@@ -461,6 +596,12 @@ message PostgresqlSslConfig {
       (google.api.field_behavior) = INPUT_ONLY,
       (google.api.field_behavior) = REQUIRED
     ];
+
+    // Optional. The hostname mentioned in the Subject or SAN extension of the
+    // server certificate. If this field is not provided, the hostname in the
+    // server certificate is not validated.
+    string server_certificate_hostname = 2
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Message represents the option where Datastream will enforce the encryption
@@ -493,6 +634,12 @@ message PostgresqlSslConfig {
       (google.api.field_behavior) = INPUT_ONLY,
       (google.api.field_behavior) = REQUIRED
     ];
+
+    // Optional. The hostname mentioned in the Subject or SAN extension of the
+    // server certificate. If this field is not provided, the hostname in the
+    // server certificate is not validated.
+    string server_certificate_hostname = 5
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // The encryption settings available for PostgreSQL connection profiles.
@@ -567,6 +714,9 @@ message ConnectionProfile {
 
     // Salesforce Connection Profile configuration.
     SalesforceProfile salesforce_profile = 107;
+
+    // MongoDB Connection Profile configuration.
+    MongodbProfile mongodb_profile = 108;
   }
 
   // Connectivity options used to establish a connection to the profile.
@@ -1003,6 +1153,51 @@ message SalesforceField {
   bool nillable = 3;
 }
 
+// MongoDB source configuration.
+message MongodbSourceConfig {
+  // MongoDB collections to include in the stream.
+  MongodbCluster include_objects = 1;
+
+  // MongoDB collections to exclude from the stream.
+  MongodbCluster exclude_objects = 2;
+
+  // Optional. Maximum number of concurrent backfill tasks. The number should be
+  // non-negative and less than or equal to 50. If not set (or set to 0), the
+  // system's default value is used
+  int32 max_concurrent_backfill_tasks = 3
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// MongoDB Cluster structure.
+message MongodbCluster {
+  // MongoDB databases in the cluster.
+  repeated MongodbDatabase databases = 1;
+}
+
+// MongoDB Database.
+message MongodbDatabase {
+  // Database name.
+  string database = 1;
+
+  // Collections in the database.
+  repeated MongodbCollection collections = 2;
+}
+
+// MongoDB Collection.
+message MongodbCollection {
+  // Collection name.
+  string collection = 1;
+
+  // Fields in the collection.
+  repeated MongodbField fields = 2;
+}
+
+// MongoDB Field.
+message MongodbField {
+  // Field name.
+  string field = 1;
+}
+
 // The configuration of the stream source.
 message SourceConfig {
   // Required. Source connection profile resource.
@@ -1030,6 +1225,9 @@ message SourceConfig {
 
     // Salesforce data source configuration.
     SalesforceSourceConfig salesforce_source_config = 104;
+
+    // MongoDB data source configuration.
+    MongodbSourceConfig mongodb_source_config = 105;
   }
 }
 
@@ -1129,6 +1327,10 @@ message BigQueryDestinationConfig {
 
     // The dataset template to use for dynamic dataset creation.
     DatasetTemplate dataset_template = 2;
+
+    // Optional. The project id of the BigQuery dataset. If not specified, the
+    // project will be inferred from the stream resource.
+    optional string project_id = 3 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // The configuration for BLMT.
@@ -1284,6 +1486,9 @@ message Stream {
 
       // Salesforce data source objects to avoid backfilling
       SalesforceOrg salesforce_excluded_objects = 5;
+
+      // MongoDB data source objects to avoid backfilling
+      MongodbCluster mongodb_excluded_objects = 6;
     }
   }
 
@@ -1430,6 +1635,15 @@ message SourceObjectIdentifier {
     string object_name = 1 [(google.api.field_behavior) = REQUIRED];
   }
 
+  // MongoDB data source object identifier.
+  message MongodbObjectIdentifier {
+    // Required. The database name.
+    string database = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The collection name.
+    string collection = 2 [(google.api.field_behavior) = REQUIRED];
+  }
+
   // The identifier for an object in the data source.
   oneof source_identifier {
     // Oracle data source object identifier.
@@ -1446,6 +1660,9 @@ message SourceObjectIdentifier {
 
     // Salesforce data source object identifier.
     SalesforceObjectIdentifier salesforce_identifier = 5;
+
+    // MongoDB data source object identifier.
+    MongodbObjectIdentifier mongodb_identifier = 6;
   }
 }
 
