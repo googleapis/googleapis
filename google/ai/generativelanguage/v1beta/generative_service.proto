@@ -25,6 +25,7 @@ import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
 
 option go_package = "cloud.google.com/go/ai/generativelanguage/apiv1beta/generativelanguagepb;generativelanguagepb";
 option java_multiple_files = true;
@@ -255,10 +256,32 @@ message VoiceConfig {
   }
 }
 
+// The configuration for a single speaker in a multi speaker setup.
+message SpeakerVoiceConfig {
+  // Required. The name of the speaker to use. Should be the same as in the
+  // prompt.
+  string speaker = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The configuration for the voice to use.
+  VoiceConfig voice_config = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The configuration for the multi-speaker setup.
+message MultiSpeakerVoiceConfig {
+  // Required. All the enabled speaker voices.
+  repeated SpeakerVoiceConfig speaker_voice_configs = 2
+      [(google.api.field_behavior) = REQUIRED];
+}
+
 // The speech generation config.
 message SpeechConfig {
   // The configuration in case of single-voice output.
   VoiceConfig voice_config = 1;
+
+  // Optional. The configuration for the multi-speaker setup.
+  // It is mutually exclusive with the voice_config field.
+  MultiSpeakerVoiceConfig multi_speaker_voice_config = 3
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Language code (in BCP 47 format, e.g. "en-US") for speech
   // synthesis.
@@ -390,6 +413,45 @@ message GenerationConfig {
   // Refer to the [JSON text generation
   // guide](https://ai.google.dev/gemini-api/docs/json-mode) for more details.
   Schema response_schema = 14 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Output schema of the generated response. This is an alternative
+  // to `response_schema` that accepts [JSON Schema](https://json-schema.org/).
+  //
+  // If set, `response_schema` must be omitted, but `response_mime_type` is
+  // required.
+  //
+  // While the full JSON Schema may be sent, not all features are supported.
+  // Specifically, only the following properties are supported:
+  //
+  // - `$id`
+  // - `$defs`
+  // - `$ref`
+  // - `$anchor`
+  // - `type`
+  // - `format`
+  // - `title`
+  // - `description`
+  // - `enum` (for strings and numbers)
+  // - `items`
+  // - `prefixItems`
+  // - `minItems`
+  // - `maxItems`
+  // - `minimum`
+  // - `maximum`
+  // - `anyOf`
+  // - `oneOf` (interpreted the same as `anyOf`)
+  // - `properties`
+  // - `additionalProperties`
+  // - `required`
+  //
+  // The non-standard `propertyOrdering` property may also be set.
+  //
+  // Cyclic references are unrolled to a limited degree and, as such, may only
+  // be used within non-required properties. (Nullable properties are not
+  // sufficient.) If `$ref` is set on a sub-schema, no other properties, except
+  // for than those starting as a `$`, may be set.
+  google.protobuf.Value response_json_schema = 24
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Presence penalty applied to the next token's logprobs if the
   // token has already been seen in the response.
@@ -590,6 +652,9 @@ message GenerateContentResponse {
 
   // Output only. The model version used to generate the response.
   string model_version = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. response_id is used to identify each response.
+  string response_id = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A response candidate generated from the model.
@@ -634,6 +699,9 @@ message Candidate {
     // Token generation stopped because generated images contain safety
     // violations.
     IMAGE_SAFETY = 11;
+
+    // Model generated a tool call but no tools were enabled in the request.
+    UNEXPECTED_TOOL_CALL = 12;
   }
 
   // Output only. Index of the candidate in the list of response candidates.
@@ -685,6 +753,37 @@ message Candidate {
   // Output only. Log-likelihood scores for the response tokens and top tokens
   LogprobsResult logprobs_result = 11
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Metadata related to url context retrieval tool.
+  UrlContextMetadata url_context_metadata = 13
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Metadata related to url context retrieval tool.
+message UrlContextMetadata {
+  // List of url context.
+  repeated UrlMetadata url_metadata = 1;
+}
+
+// Context of the a single url retrieval.
+message UrlMetadata {
+  // Status of the url retrieval.
+  enum UrlRetrievalStatus {
+    // Default value. This value is unused.
+    URL_RETRIEVAL_STATUS_UNSPECIFIED = 0;
+
+    // Url retrieval is successful.
+    URL_RETRIEVAL_STATUS_SUCCESS = 1;
+
+    // Url retrieval is failed due to error.
+    URL_RETRIEVAL_STATUS_ERROR = 2;
+  }
+
+  // Retrieved url by the tool.
+  string retrieved_url = 1;
+
+  // Status of the url retrieval.
+  UrlRetrievalStatus url_retrieval_status = 2;
 }
 
 // Logprobs Result
@@ -859,7 +958,7 @@ message GenerateAnswerRequest {
     // Unspecified answer style.
     ANSWER_STYLE_UNSPECIFIED = 0;
 
-    // Succint but abstract style.
+    // Succinct but abstract style.
     ABSTRACTIVE = 1;
 
     // Very brief and extractive style.
@@ -1306,6 +1405,7 @@ message BidiGenerateContentSetup {
   //  - `response_mime_type`
   //  - `logprobs`
   //  - `response_schema`
+  //  - `response_json_schema`
   //  - `stop_sequence`
   //  - `routing_config`
   //  - `audio_timestamp`
@@ -1341,6 +1441,11 @@ message BidiGenerateContentSetup {
   // If included, the server will automatically reduce the size of the context
   // when it exceeds the configured length.
   ContextWindowCompressionConfig context_window_compression = 8
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If set, enables transcription of voice input. The transcription
+  // aligns with the input audio language, if configured.
+  AudioTranscriptionConfig input_audio_transcription = 10
       [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. If set, enables transcription of the model's audio output. The
@@ -1503,11 +1608,22 @@ message BidiGenerateContentServerContent {
   GroundingMetadata grounding_metadata = 4
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. Output audio transcription. The transcription is sent
+  // Output only. Input audio transcription. The transcription is sent
   // independently of the other server messages and there is no guaranteed
-  // ordering, in particular not between `server_content` and this
-  // `output_transcription`.
+  // ordering.
+  BidiGenerateContentTranscription input_transcription = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Output audio transcription. These transcriptions are part of
+  // the Generation output of the server. The last output transcription of this
+  // turn is sent before either `generation_complete` or `interrupted`, which in
+  // turn are followed by `turn_complete`. There is no guaranteed exact ordering
+  // between transcriptions and other `model_turn` output but the server tries
+  // to send the transcripts close to the corresponding audio output.
   BidiGenerateContentTranscription output_transcription = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  UrlContextMetadata url_context_metadata = 9
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
