@@ -46,11 +46,32 @@ service ConfidentialComputing {
     option (google.api.method_signature) = "parent,challenge";
   }
 
-  // Verifies the provided attestation info, returning a signed OIDC token.
+  // Verifies the provided attestation info, returning a signed attestation
+  // token.
   rpc VerifyAttestation(VerifyAttestationRequest)
       returns (VerifyAttestationResponse) {
     option (google.api.http) = {
       post: "/v1/{challenge=projects/*/locations/*/challenges/*}:verifyAttestation"
+      body: "*"
+    };
+  }
+
+  // Verifies whether the provided attestation info is valid, returning a signed
+  // attestation token if so.
+  rpc VerifyConfidentialSpace(VerifyConfidentialSpaceRequest)
+      returns (VerifyConfidentialSpaceResponse) {
+    option (google.api.http) = {
+      post: "/v1/{challenge=projects/*/locations/*/challenges/*}:verifyConfidentialSpace"
+      body: "*"
+    };
+  }
+
+  // Verifies the provided Confidential GKE attestation info, returning a signed
+  // OIDC token.
+  rpc VerifyConfidentialGke(VerifyConfidentialGkeRequest)
+      returns (VerifyConfidentialGkeResponse) {
+    option (google.api.http) = {
+      post: "/v1/{challenge=projects/*/locations/*/challenges/*}:verifyConfidentialGke"
       body: "*"
     };
   }
@@ -88,6 +109,30 @@ enum TokenType {
 
   // Principal-tag-based token for AWS integration
   TOKEN_TYPE_AWS_PRINCIPALTAGS = 4;
+}
+
+// SignatureType enumerates supported signature types for attestation tokens.
+enum SignatureType {
+  // Unspecified signature type.
+  SIGNATURE_TYPE_UNSPECIFIED = 0;
+
+  // Google OIDC signature.
+  SIGNATURE_TYPE_OIDC = 1;
+
+  // Public Key Infrastructure (PKI) signature.
+  SIGNATURE_TYPE_PKI = 2;
+}
+
+// TokenProfile enumerates the supported token claims profiles.
+enum TokenProfile {
+  // Unspecified token profile.
+  TOKEN_PROFILE_UNSPECIFIED = 0;
+
+  // EAT claims.
+  TOKEN_PROFILE_DEFAULT_EAT = 1;
+
+  // AWS Principal Tags claims.
+  TOKEN_PROFILE_AWS = 2;
 }
 
 // A Challenge from the server used to guarantee freshness of attestations
@@ -133,8 +178,8 @@ message CreateChallengeRequest {
   Challenge challenge = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
-// A request for an OIDC token, providing all the necessary information needed
-// for this service to verify the platform state of the requestor.
+// A request for an attestation token, providing all the necessary information
+// needed for this service to verify the platform state of the requestor.
 message VerifyAttestationRequest {
   // An optional tee attestation report, used to populate hardware rooted
   // claims.
@@ -214,7 +259,7 @@ message SevSnpAttestation {
 }
 
 // A response once an attestation has been successfully verified, containing a
-// signed OIDC token.
+// signed attestation token.
 message VerifyAttestationResponse {
   // Output only. Same as claims_token, but as a string.
   string oidc_claims_token = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -234,33 +279,9 @@ message GcpCredentials {
 
 // Options to modify claims in the token to generate custom-purpose tokens.
 message TokenOptions {
-  // Token options that only apply to the AWS Principal Tags token type.
-  message AwsPrincipalTagsOptions {
-    // Allowed principal tags is used to define what principal tags will be
-    // placed in the token.
-    message AllowedPrincipalTags {
-      // Allowed Container Image Signatures. Key IDs are required to allow this
-      // claim to fit within the narrow AWS IAM restrictions.
-      message ContainerImageSignatures {
-        // Optional. List of key ids to filter into the Principal tags. Only
-        // keys that have been validated and added to the token will be filtered
-        // into principal tags. Unrecognized key ids will be ignored.
-        repeated string key_ids = 1 [(google.api.field_behavior) = OPTIONAL];
-      }
-
-      // Optional. Container image signatures allowed in the token.
-      ContainerImageSignatures container_image_signatures = 1
-          [(google.api.field_behavior) = OPTIONAL];
-    }
-
-    // Optional. Principal tags to allow in the token.
-    AllowedPrincipalTags allowed_principal_tags = 1
-        [(google.api.field_behavior) = OPTIONAL];
-  }
-
   // An optional additional configuration per token type.
   oneof token_type_options {
-    // Optional. Options for the Limited AWS token type.
+    // Optional. Options for AWS token type.
     AwsPrincipalTagsOptions aws_principal_tags_options = 4
         [(google.api.field_behavior) = OPTIONAL];
   }
@@ -276,6 +297,30 @@ message TokenOptions {
 
   // Optional. Optional token type to select what type of token to return.
   TokenType token_type = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Token options that only apply to the AWS Principal Tags token type.
+message AwsPrincipalTagsOptions {
+  // Allowed principal tags is used to define what principal tags will be
+  // placed in the token.
+  message AllowedPrincipalTags {
+    // Allowed Container Image Signatures. Key IDs are required to allow
+    // this claim to fit within the narrow AWS IAM restrictions.
+    message ContainerImageSignatures {
+      // Optional. List of key ids to filter into the Principal tags. Only keys
+      // that have been validated and added to the token will be filtered into
+      // principal tags. Unrecognized key ids will be ignored.
+      repeated string key_ids = 1 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Optional. Container image signatures allowed in the token.
+    ContainerImageSignatures container_image_signatures = 1
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Optional. Principal tags to allow in the token.
+  AllowedPrincipalTags allowed_principal_tags = 1
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // TPM2 data containing everything necessary to validate any platform state
@@ -359,4 +404,135 @@ message ContainerImageSignature {
 
   // Optional. Reserved for future use.
   SigningAlgorithm sig_alg = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A request for an attestation token, providing all the necessary information
+// needed for this service to verify the platform state of the requestor.
+message VerifyConfidentialSpaceRequest {
+  // Token options for Confidential Space attestation.
+  message ConfidentialSpaceOptions {
+    // An optional additional configuration per token type.
+    oneof token_profile_options {
+      // Optional. Options for the AWS token type.
+      AwsPrincipalTagsOptions aws_principal_tags_options = 5
+          [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Optional. Optional string to issue the token with a custom audience
+    // claim. Required if custom nonces are specified.
+    string audience = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Optional specification for token claims profile.
+    TokenProfile token_profile = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Optional parameter to place one or more nonces in the eat_nonce
+    // claim in the output token. The minimum size for JSON-encoded EATs is 10
+    // bytes and the maximum size is 74 bytes.
+    repeated string nonce = 3 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Optional specification for how to sign the attestation token.
+    // Defaults to SIGNATURE_TYPE_OIDC if unspecified.
+    SignatureType signature_type = 4 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Required. A tee attestation report, used to populate hardware rooted
+  // claims.
+  oneof tee_attestation {
+    // Input only. A TDX with CCEL and RTMR Attestation Quote.
+    TdxCcelAttestation td_ccel = 3 [(google.api.field_behavior) = INPUT_ONLY];
+
+    // Input only. The TPM-specific data provided by the attesting platform,
+    // used to populate any of the claims regarding platform state.
+    TpmAttestation tpm_attestation = 4
+        [(google.api.field_behavior) = INPUT_ONLY];
+  }
+
+  // Required. The name of the Challenge whose nonce was used to generate the
+  // attestation, in the format `projects/*/locations/*/challenges/*`. The
+  // provided Challenge will be consumed, and cannot be used again.
+  string challenge = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "confidentialcomputing.googleapis.com/Challenge"
+    }
+  ];
+
+  // Optional. Credentials used to populate the "emails" claim in the
+  // claims_token. If not present, token will not contain the "emails" claim.
+  GcpCredentials gcp_credentials = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A list of signed entities containing container image signatures
+  // that can be used for server-side signature verification.
+  repeated SignedEntity signed_entities = 5
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Information about the associated Compute Engine instance.
+  // Required for td_ccel requests only - tpm_attestation requests will provide
+  // this information in the attestation.
+  GceShieldedIdentity gce_shielded_identity = 6
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A collection of fields that modify the token output.
+  ConfidentialSpaceOptions options = 7 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// GceShieldedIdentity contains information about a Compute Engine instance.
+message GceShieldedIdentity {
+  // Optional. DER-encoded X.509 certificate of the Attestation Key (otherwise
+  // known as an AK or a TPM restricted signing key) used to generate the
+  // quotes.
+  bytes ak_cert = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. List of DER-encoded X.509 certificates which, together with the
+  // ak_cert, chain back to a trusted Root Certificate.
+  repeated bytes ak_cert_chain = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// VerifyConfidentialSpaceResponse is returned once a Confidential Space
+// attestation has been successfully verified, containing a signed token.
+message VerifyConfidentialSpaceResponse {
+  // Output only. The attestation token issued by this service. It contains
+  // specific platform claims based on the contents of the provided attestation.
+  string attestation_token = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. A list of messages that carry the partial error details
+  // related to VerifyConfidentialSpace. This field is populated by errors
+  // during container image signature verification, which may reflect problems
+  // in the provided image signatures. This does not block the issuing of an
+  // attestation token, but the token will not contain claims for the failed
+  // image signatures.
+  repeated google.rpc.Status partial_errors = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A request for an attestation token, providing all the necessary information
+// needed for this service to verify Confidential GKE platform state of the
+// requestor.
+message VerifyConfidentialGkeRequest {
+  // Required. A tee attestation report, used to populate hardware rooted
+  // claims.
+  oneof tee_attestation {
+    // The TPM-specific data provided by the attesting platform, used to
+    // populate any of the claims regarding platform state.
+    TpmAttestation tpm_attestation = 2;
+  }
+
+  // Required. The name of the Challenge whose nonce was used to generate the
+  // attestation, in the format projects/*/locations/*/challenges/*. The
+  // provided Challenge will be consumed, and cannot be used again.
+  string challenge = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "confidentialcomputing.googleapis.com/Challenge"
+    }
+  ];
+}
+
+// VerifyConfidentialGkeResponse response is returened once a Confidential GKE
+// attestation has been successfully verified, containing a signed OIDC token.
+message VerifyConfidentialGkeResponse {
+  // Output only. The attestation token issued by this service for Confidential
+  // GKE. It contains specific platform claims based on the contents of the
+  // provided attestation.
+  string attestation_token = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 }

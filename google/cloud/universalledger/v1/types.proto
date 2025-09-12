@@ -1,0 +1,374 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.universalledger.v1;
+
+import "google/api/field_behavior.proto";
+import "google/cloud/universalledger/v1/common.proto";
+import "google/cloud/universalledger/v1/status_event.proto";
+import "google/protobuf/any.proto";
+
+option csharp_namespace = "Google.Cloud.UniversalLedger.V1";
+option go_package = "cloud.google.com/go/universalledger/apiv1/universalledgerpb;universalledgerpb";
+option java_multiple_files = true;
+option java_outer_classname = "TypesProto";
+option java_package = "com.google.cloud.universalledger.v1";
+option php_namespace = "Google\\Cloud\\UniversalLedger\\V1";
+option ruby_package = "Google::Cloud::UniversalLedger::V1";
+
+// Represents a transaction initiated by a client.
+message ClientTransaction {
+  // The client transaction-specific message.
+  oneof kind {
+    // Optional. A client transaction-specific message. Should be any one of:
+    //
+    // <!--
+    // clang-format off
+    // -->
+    // - [TransferPlatformOperator][google.cloud.universalledger.v1.TransferPlatformOperator]
+    // - [CreateCurrencyOperator][google.cloud.universalledger.v1.CreateCurrencyOperator]
+    // - [TransferCurrencyOperator][google.cloud.universalledger.v1.TransferCurrencyOperator]
+    // - [CreateAccountManager][google.cloud.universalledger.v1.CreateAccountManager]
+    // - [CreateTokenManager][google.cloud.universalledger.v1.CreateTokenManager]
+    // - [CreateClearinghouse][google.cloud.universalledger.v1.CreateClearinghouse]
+    // - [IncreaseTokenIssuanceLimit][google.cloud.universalledger.v1.IncreaseTokenIssuanceLimit]
+    // - [DecreaseTokenIssuanceLimit][google.cloud.universalledger.v1.DecreaseTokenIssuanceLimit]
+    // - [SettlementRequest][google.cloud.universalledger.v1.SettlementRequest]
+    // - [Mint][google.cloud.universalledger.v1.Mint]
+    // - [Burn][google.cloud.universalledger.v1.Burn]
+    // - [CreateAccount][google.cloud.universalledger.v1.CreateAccount]
+    // - [DeactivateAccount][google.cloud.universalledger.v1.DeactivateAccount]
+    // - [ActivateAccount][google.cloud.universalledger.v1.ActivateAccount]
+    // - [AddRoles][google.cloud.universalledger.v1.AddRoles]
+    // - [RemoveRoles][google.cloud.universalledger.v1.RemoveRoles]
+    // - [ChangeAccountManager][google.cloud.universalledger.v1.ChangeAccountManager]
+    // - [Transfer][google.cloud.universalledger.v1.Transfer]
+    // - [CreateContract][google.cloud.universalledger.v1.CreateContract]
+    // - [GrantContractPermissions][google.cloud.universalledger.v1.GrantContractPermissions]
+    // - [InvokeContractMethod][google.cloud.universalledger.v1.InvokeContractMethod]
+    // <!--
+    // clang-format on
+    // -->
+    google.protobuf.Any app = 5 [(google.api.field_behavior) = OPTIONAL];
+
+    // An operational transaction message. Note this can only be sent by the
+    // platform operator. Should be any one of:
+    //
+    // <!--
+    // clang-format off
+    // -->
+    // - [CreateSnapshot][google.cloud.universalledger.v1.CreateSnapshot]
+    // <!--
+    // clang-format on
+    // -->
+    google.protobuf.Any operational = 6;
+
+    // A transaction chain including multiple transaction units to execute
+    // in sequence.
+    TransactionChain chain = 8;
+  }
+
+  // Required. The transaction sender.
+  Entity source = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Accounts that, in addition to the sender, have signed this
+  // transaction.
+  repeated Entity signatories = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. A unique, monotonically increasing number, starting from 0.
+  //
+  // This number must be increased by one for each transaction previously
+  // submitted to the network by the same transaction sender.
+  //
+  // Note this does not include any transaction units that may have been
+  // submitted as part of a chain, which must not set a sequence number. But it
+  // does include the sender of the transaction chain itself.
+  int64 sequence_number = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Must be set to true if this client transaction is part of a transaction
+  // chain. Otherwise, it must be set to false.
+  //
+  // This is necessary to prevent a signed transaction intended to be part of a
+  // chain from being submitted on its own.
+  bool chained_unit = 7;
+}
+
+// A transaction with attached signatures. To submit a transaction, this message
+// should be serialized and included in a
+// [SubmitTransactionRequest][google.cloud.universalledger.v1.SubmitTransactionRequest].
+message SignedTransaction {
+  // Required. A serialized
+  // [ClientTransaction][google.cloud.universalledger.v1.ClientTransaction]
+  // with the transaction details.
+  bytes serialized_client_transaction = 1
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The signature of the transaction sender.
+  //
+  // The signature should be computed by signing the
+  // `serialized_client_transaction` bytes with their own private key.
+  //
+  // For a transaction chain, the bytes to be signed are computed as the
+  // concatenation of:
+  // - A digest of the serialized client transaction of the entire chain.
+  // - A digest of the serialized signed transaction of each unit in the chain,
+  //   in the order they appear in the chain.
+  // The digests are computed using SHA-256.
+  bytes sender_signature = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The signatures of accounts listed as additional transaction
+  // signatories. The number and order of these signatures must match the
+  // `signatories` field in the
+  // [ClientTransaction][google.cloud.universalledger.v1.ClientTransaction].
+  //
+  // The bytes to be signed are the same as those for the `sender_signature`,
+  // which each signatory should sign with their own private key.
+  //
+  // The number and identity of additional signatories depends on the particular
+  // transaction kind. For a transaction chain, one signature is needed for each
+  // account appearing either as the sender or as a signatory of a unit in the
+  // chain.
+  repeated bytes other_signatures = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A transaction chain including multiple transaction units to execute in
+// sequence.
+//
+// The units will be executed sequentially, in the order they are listed. If all
+// of the units succeed, their cumulative effects will be committed atomically
+// to the world state. Otherwise, if any of them fails, the whole chain will be
+// failed and none of its effects will be applied.
+message TransactionChain {
+  // The individual units of the chain. Each unit must be a serialized
+  // [SignedTransaction][google.cloud.universalledger.v1.SignedTransaction].
+  //
+  // Note that the serialized bytes are required in order to determine the bytes
+  // to be signed for the chain itself.
+  repeated bytes units = 1;
+}
+
+// A Merkle tree with a cryptographic digest of the root node.
+message MerkleTree {
+  // Output only. The cryptographic digest of the root node.
+  string root_hash_hex = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The number of transactions in the tree.
+  int64 num_transactions = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Certificate of the execution of a round by a specific validator.
+message RoundCertificate {
+  // Output only. The ID of the round for which the certificate is for.
+  int64 round_id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The human readable validator identifier. This is used to
+  // lookup the public key against which the `validator_signatures` is verified.
+  string validator_id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The hex representation of the homomorphic hash over the world
+  // state after the effects of this round are applied.
+  string round_state_checksum_hex = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The hex representation of the homomorphic hash over the
+  // aggregated transaction effects of this round.
+  string round_delta_checksum_hex = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Merkle tree having this round as root node and transaction
+  // batches (executed in the round) as the leaves.
+  MerkleTree merkle_tree = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The signature of the validator. This is signed over the hash
+  // digest of the preceding payload of this record.
+  repeated bytes validator_signatures = 5
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Boolean to indicate if the round is finalized, i.e., whether a
+  // sufficient quorum of validators have certified this round with the same
+  // certificate.
+  bool is_finalized = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Represents an update by some transaction to the world state.
+//
+// If it has a `delta_val`, it is assumed to be a delta (an integer offset)
+// applied to the previously stored value on a given key. In that case,
+// `new_val` and `old_val` should be empty.
+//
+// Otherwise, it is assumed to have at least one of `old_val` or `new_val` (or
+// both). An empty `old_val` indicates the value was inserted. An empty
+// `new_val` indicates the value was deleted.
+message TransactionEffect {
+  // Output only. The key in the world state that was updated.
+  bytes key = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The value of the key before the transaction was executed.
+  bytes old_val = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The value of the key after the transaction was executed.
+  bytes new_val = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. An integer offset that was applied to the previously stored
+  // value.
+  int64 delta_val = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Represents the status of a transaction execution.
+message TransactionStatus {
+  // Output only. The status code, a numeric value whose meaning is defined by
+  // the corresponding [gRPC status
+  // code](https://github.com/grpc/grpc/blob/master/doc/statuscodes.md).
+  int32 code = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The error message, if any. Set only if code is not `OK`. This
+  // is a string encoded as utf-8 bytes. Stored as bytes to prevent any issues
+  // with the determinism of the encoding.
+  bytes message = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Effects of the execution of a transaction in the world state.
+message TransactionEffects {
+  // The resulting status of the transaction execution.
+  TransactionStatus status = 1;
+
+  // Output only. The effects of the transaction in the world state.
+  repeated TransactionEffect effects = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// An event produced by a transaction.
+message TransactionEvent {
+  // An individual attribute as a key-value pair.
+  message EventAttribute {
+    // Output only. The key of the attribute.
+    string key = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The value of the attribute.
+    string value = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Output only. The type of event. A special event of type
+  // `transaction_output` contains the outputs produced by the transaction—for
+  // example, the account ID of a newly created account.
+  string type = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The event attributes as arbitrary key-value pairs.
+  repeated EventAttribute attributes = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Certificate of the execution of a specific transaction in a round.
+message TransactionCertificate {
+  // Output only. Hex encoded SHA-256 hash of the
+  // `serialized_signed_transaction` that uniquely identifies the transaction.
+  string transaction_digest_hex = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The ID of the execution round at which this transaction was
+  // executed in.
+  int64 round_id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The effects of the transaction in the world state.
+  TransactionEffects transaction_effects = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Events produced by the transaction.
+  repeated TransactionEvent events = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Homomorphic checksum of the effects. A 2048 byte value encoded
+  // as a hexadecimal string.
+  string transaction_effects_state_checksum_hex = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The cryptographic digest of all the previous fields in sequence.
+  // Used to build a Merkle tree for the proof of inclusion.
+  string certification_results_digest_hex = 5;
+}
+
+// Certificate of the inclusion of the effects of a transaction in the world
+// state.
+message ProofOfInclusion {
+  // Represents a node in a Merkle tree path.
+  message MerkleTreeNode {
+    // The hex representation of the hash of the left child of a node.
+    string left_child_hash_hex = 1;
+
+    // The hex representation of the hash of the right child of a node.
+    string right_child_hash_hex = 2;
+  }
+
+  // Certificate of the inclusion of the transaction effects in a specific
+  // round.
+  TransactionCertificate transaction_certificate = 1;
+
+  // Certificate of the execution of the round.
+  RoundCertificate round_certificate = 2;
+
+  // Output only. Cryptographic proof of inclusion of the transaction effects in
+  // the execution round.
+  //
+  // It is given as a path from a given leaf (a transaction hash) to the root of
+  // the execution round. The path is represented as a list of (left child,
+  // right child) pairs, and the first pair is the left and right children of
+  // the given leaf's parent node. For example, assuming the Merkle tree was
+  // built with eight leaf hashes `[t0, t1, t2, t3, t4, t5, t6, t7]`, having the
+  // following structure:
+  //
+  //            ______root_hash______
+  //           |                    |
+  //        __ h20__             __h21__
+  //       |        |           |       |
+  //      h10     h11          h12     h13
+  //      | |     | |          | |     | |
+  //     t0 t1   t2 t3        t4 t5   t6 t7
+  //
+  // In here, `path_to_round_root` for `t0` will contain:
+  // `[(t0, t1), (h10, h11), (h20, h21)]`.
+  //
+  // One can consecutively compute SHA-256 hashes of each
+  // path node to verify that the path hashes to the same value as the
+  // `round_certificate.merkle_tree.root_hash_hex`. Thus, verifying that the
+  // leaf was included in the round's Merkle tree.
+  repeated MerkleTreeNode path_to_round_root = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The state of an attempted transaction submission.
+message TransactionAttempt {
+  // The status of the transaction attempt.
+  enum TransactionStatus {
+    // Unknown or uninitialized state.
+    TRANSACTION_STATUS_UNSPECIFIED = 0;
+
+    // The transaction is known to this validator, but it is not finalized yet.
+    PENDING = 1;
+
+    // The transaction is finalized. Its effects have been persisted on the
+    // blockchain and cannot be reversed.
+    FINALIZED = 2;
+  }
+
+  // Output only. The current status of the transaction attempt.
+  TransactionStatus status = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Certificate of the inclusion of the transaction effects in the world state.
+  // Only provided if status is `FINALIZED`.
+  ProofOfInclusion proof_of_inclusion = 2;
+
+  // The ordered status events recorded for the transaction attempt.
+  repeated StatusEvent status_events = 3;
+}

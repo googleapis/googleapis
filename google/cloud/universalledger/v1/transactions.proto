@@ -1,0 +1,528 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.universalledger.v1;
+
+import "google/api/field_behavior.proto";
+import "google/cloud/universalledger/v1/accounts.proto";
+import "google/cloud/universalledger/v1/common.proto";
+
+option csharp_namespace = "Google.Cloud.UniversalLedger.V1";
+option go_package = "cloud.google.com/go/universalledger/apiv1/universalledgerpb;universalledgerpb";
+option java_multiple_files = true;
+option java_outer_classname = "TransactionsProto";
+option java_package = "com.google.cloud.universalledger.v1";
+option php_namespace = "Google\\Cloud\\UniversalLedger\\V1";
+option ruby_package = "Google::Cloud::UniversalLedger::V1";
+
+// Specifies who pays the transaction fees.
+enum FeePayer {
+  // Unspecified fee payer. This value is invalid.
+  FEE_PAYER_UNSPECIFIED = 0;
+
+  // Indicates that the sender should be charged the fees in addition to the
+  // transfer amount. For example, if A is sending `$100` to B and the fee is
+  // `$1`, then A's account is debited `$100 + $1 = $101` and B's account is
+  // credited `$100`.
+  FEE_PAYER_SENDER = 1;
+
+  // Indicates that the receiver should be charged the fees. For example,
+  // if A is sending `$100` to B and the fee is `$1`, then A's account is
+  // debited `$100` and B's account is credited `$100 - $1 = $99`.
+  FEE_PAYER_RECEIVER = 2;
+
+  // Indicates that a separate fee account should be charged the fees. For
+  // example, if A is sending `$100` to B and the fee is `$1`, then A's account
+  // is debited `$100` and B's account is credited `$100`. The fee of `$1` will
+  // be debited from a separate fee account specified elsewhere.
+  FEE_PAYER_OTHER = 3;
+}
+
+// The settlement mode for a clearinghouse.
+enum SettlementMode {
+  // The settlement mode is unspecified. This value is invalid and should not
+  // be used.
+  SETTLEMENT_MODE_UNSPECIFIED = 0;
+
+  // The clearinghouse is responsible for tracking the ownership of the
+  // off-chain funds, and periodically issuing
+  // [SettlementRequest][google.cloud.universalledger.v1.SettlementRequest]
+  // transactions to maintain the corresponding on-chain balances in sync.
+  SETTLEMENT_MODE_DEFERRED = 1;
+
+  // The clearinghouse maintains a single pool of funds and the ledger acts as
+  // the golden source for the allocation of those funds between the token
+  // managers. This settlement mode can also be described as "instant gross
+  // settlement."
+  SETTLEMENT_MODE_INSTANT = 2;
+}
+
+// Fee structure where the fee is proportional to some reference amount.
+// The reference amount would usually be the payment amount but the specific
+// choice is up to each transaction type that includes this fee stanza.
+message FractionalFee {
+  // Required. A percentage expressed in multiples of hundredths of a basis
+  // point, where 1 basis point = 0.01%. For example, 1% is expressed as an
+  // amount of 10000, while 0.01% (= 1 bp) is expressed as an amount of 100.
+  //
+  // The amount must be non-zero. All transactions with a zero amount will be
+  // rejected.
+  int64 amount = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Indicates who pays the fee. By default, it will be the
+  // transaction sender. If set to `FEE_PAYER_OTHER`, then a valid fee account
+  // must also be supplied.
+  FeePayer fee_payer = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional fee account in case the fee is to be paid from an
+  // account other than the transaction sender or receiver. If a fee account is
+  // specified, fee payer must be set to `FEE_PAYER_OTHER` and the transaction
+  // must also be signed by the fee account.
+  Entity fee_account = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Initiates a settlement operation between two token managers.
+// The sender must be a clearinghouse account.
+//
+// In the deferred
+// [SettlementMode][google.cloud.universalledger.v1.SettlementMode] where the
+// clearinghouse has custody of the token manager funds, this is the only
+// transaction that needs to be sent to execute a settlement between the two
+// token managers.
+//
+// If the clearinghouse does not have custody of the funds, this
+// transaction only initiates the settlement process. The settlement isn't
+// complete until the corresponding SettlementConfirmation transaction has
+// been processed by the network.
+message SettlementRequest {
+  // Required. Immutable. The account ID of the party that needs to make the
+  // fund transfer.
+  Entity payer = 1 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = REQUIRED
+  ];
+
+  // Required. Immutable. The account ID of the party that needs to be paid.
+  Entity beneficiary = 2 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = REQUIRED
+  ];
+
+  // Required. Immutable. The balance that needs to be transferred by the
+  // `payer` account to the `beneficiary` account in the backend.
+  CurrencyValue balance = 3 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = REQUIRED
+  ];
+
+  // Required. Immutable. The round ID at which this settlement amount was
+  // computed.
+  int64 round_id = 5 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = REQUIRED
+  ];
+}
+
+// Creates a new user account. The sender must be an account manager.
+//
+// If the transaction is successful, the ID of the newly created account is
+// returned as an event in the
+// [TransactionCertificate][google.cloud.universalledger.v1.TransactionCertificate]
+// of the finalized transaction.
+message CreateAccount {
+  // Required. Immutable. The public key of the account owner. Note that this is
+  // *not* the public key of the sender. This is the public key of the *new*
+  // account owner and it will be stored on the chain. It will be used to
+  // validate the signature of the transactions emanating from the created
+  // account.
+  //
+  // The public key must be provided as a binary serialized keyset in [Tink wire
+  // format](https://developers.google.com/tink/wire-format#keyset_serialization).
+  bytes public_key = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // Optional. The list of roles to grant to this account.
+  repeated Role roles = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The status of the account to be created. By default, the account
+  // status of a newly created account will be `ACCOUNT_STATUS_ACTIVE`.
+  AccountStatus account_status = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Immutable. An opaque comment field that is not interpreted by the
+  // system but stored on-chain in the account. Maximum length is 128
+  // characters. May be left empty. Once created, the field is immutable.
+  string account_comment = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // Optional. The token manager for this account. This field is optional and if
+  // not supplied, the default token manager associated to the account manager
+  // (that is, the sender of this transaction) will be used.
+  Entity token_manager = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Marks an account as `ACCOUNT_STATUS_INACTIVE`. The sender must be the account
+// manager of the account to deactivate.
+//
+// This implies that the account owner will not be able to make any transactions
+// on the account regardless of the roles.
+message DeactivateAccount {
+  // Required. The ID of the account to be deactivated.
+  Entity account = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Marks an account as `ACCOUNT_STATUS_ACTIVE`. The sender must be the account
+// manager of the account to activate.
+//
+// The account owner can resume normal operations permitted by the roles on the
+// account.
+message ActivateAccount {
+  // Required. The ID of the account to be activated.
+  Entity account = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Adds the specified roles to the account. The sender must be the account
+// manager of the account to modify.
+message AddRoles {
+  // Required. The ID of the account to be modified.
+  Entity account = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The roles to be added.
+  repeated Role roles = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Removes the specified roles from the account. The sender must be the account
+// manager of the account to modify.
+message RemoveRoles {
+  // Required. The ID of the account to be modified.
+  Entity account = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The roles to be removed.
+  repeated Role roles = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Transfers the responsibility of managing a particular account to another
+// manager. The sender must be the current account manager of the account and,
+// to provide consent, the new manager must also sign this transaction.
+message ChangeAccountManager {
+  // Required. The ID of the account whose manager is to be changed.
+  Entity account = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The ID of the new proposed account manager. Validation requires
+  // that the new manager has also signed this transaction.
+  Entity next_manager = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Transactions for token issuance and minting.
+// Notifies the network that the target account has deposited reserve funds and
+// increases its token issuance limit. The sender must be a clearinghouse
+// account.
+message IncreaseTokenIssuanceLimit {
+  // Required. The ID of the institutional account whose mint limit is to be
+  // raised. This account must be a token manager for the transaction to be
+  // valid.
+  Entity token_manager = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The amount by which to raise the limit. The amount must be
+  // positive.
+  CurrencyValue amount = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Notifies the network that the target account wishes to withdraw reserve funds
+// and decreases its token issuance limit. The sender must be a clearinghouse
+// account.
+//
+// Note that this transaction must be successfully finalized *before* the
+// reserve funds can be withdrawn. This is necessary because it is possible for
+// the transaction to fail (for example, if the minted amount is already above
+// the requested reduced limit).
+message DecreaseTokenIssuanceLimit {
+  // Required. The ID of the institutional account whose mint limit is to be
+  // lowered. This account must have the `ADMIN_ROLE_TOKEN_MANAGER` permission
+  // on it for the transaction to be valid.
+  Entity token_manager = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The amount by which to lower the limit. The amount must be
+  // positive. The transaction will fail if the reduced limit will fall below
+  // the currently issued tokens.
+  CurrencyValue amount = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Mints currency tokens and transfers them to a specified account. The sender
+// must be a token manager.
+message Mint {
+  // Required. The amount to mint. The amount must be such that the total tokens
+  // minted by the token manager do not exceed the mint limit. If the amount is
+  // higher than that, the transaction must be rejected
+  CurrencyValue mint_amount = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The account to which the minted amount should be transferred.
+  // The beneficiary account must have the `ROLE_RECEIVER` enabled on it.
+  Entity beneficiary = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Burns currency tokens. The sender must be a token manager and the account
+// supplying the tokens to burn must additionally sign the transaction.
+//
+// The expected flow is that the token manager will have its designated burn
+// account which customers would transfer the tokens to before they are burnt.
+// Alternatively, the customers could directly sign the transaction in which
+// case it would act as an atomic "transfer-and-burn" transaction.
+message Burn {
+  // Required. The amount to burn.
+  CurrencyValue burn_amount = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The account supplying the tokens to burn. The account must have
+  // the `ROLE_PAYER` enabled on it.
+  Entity payer = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Transfers tokens from one user account to another. The sender must be a
+// regular user account, as opposed to a privileged account like a token manager
+// or an account manager.
+//
+// Additionally, the transaction sender must have the `ROLE_PAYER` enabled on
+// it, while the receiver must have the `ROLE_RECEIVER` enabled on it.
+message Transfer {
+  // Required. The account that receives the tokens.
+  Entity beneficiary = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The amount to transfer. The amount must be positive.
+  CurrencyValue amount = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The transaction fee to be paid, as a fraction of the amount to
+  // transfer.
+  FractionalFee fractional_fee = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Creates a new token manager associated to the currency of the operator
+// sending the request. The sender must be a currency operator.
+//
+// If the transaction is successful, the ID of the newly created account is
+// returned as an event in the
+// [TransactionCertificate][google.cloud.universalledger.v1.TransactionCertificate]
+// of the finalized transaction.
+message CreateTokenManager {
+  // The public key of the new token manager. Note that this is *not* the public
+  // key of the operator. This public key will be associated with the token
+  // manager and stored on the chain. It will be used to validate the signature
+  // of the transactions emanating from the token manager's account.
+  //
+  // The public key must be provided as a binary serialized keyset in [Tink wire
+  // format](https://developers.google.com/tink/wire-format#keyset_serialization).
+  bytes public_key = 1;
+
+  // Optional. Immutable. An opaque comment field that is not interpreted by the
+  // system but stored on-chain in the account. Maximum length is 128
+  // characters. May be left empty. Once created, the field is immutable.
+  string account_comment = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+}
+
+// Creates a new account manager. The sender must be a currency operator.
+//
+// If the transaction is successful, the ID of the newly created account is
+// returned as an event in the
+// [TransactionCertificate][google.cloud.universalledger.v1.TransactionCertificate]
+// of the finalized transaction.
+message CreateAccountManager {
+  // The public key of the new account manager. Note that this is *not* the
+  // public key of the operator. This public key will be associated with the
+  // account manager and stored on the chain. It will be used to validate the
+  // signature of the transactions emanating from the account manager's account.
+  //
+  // The public key must be provided as a binary serialized keyset in [Tink wire
+  // format](https://developers.google.com/tink/wire-format#keyset_serialization).
+  bytes public_key = 1;
+
+  // The default token manager for the accounts that will be created by this
+  // manager.
+  Entity default_token_manager = 2;
+
+  // Optional. Immutable. An opaque comment field that is not interpreted by the
+  // system but stored on-chain in the account. Maximum length is 128
+  // characters. May be left empty. Once created, the field is immutable.
+  string account_comment = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+}
+
+// Creates a new clearinghouse. The sender must be a currency operator.
+//
+// If the transaction is successful, the ID of the newly created account is
+// returned as an event in the
+// [TransactionCertificate][google.cloud.universalledger.v1.TransactionCertificate]
+// of the finalized transaction.
+message CreateClearinghouse {
+  // The public key of the new clearinghouse. Note that this is *not* the public
+  // key of the operator. This public key will be associated with the
+  // clearinghouse and stored on the chain. It will be used to validate
+  // signature of the transactions emanating from the clearinghouse's account.
+  //
+  // The public key must be provided as a binary serialized keyset in [Tink wire
+  // format](https://developers.google.com/tink/wire-format#keyset_serialization).
+  bytes public_key = 1;
+
+  // Optional. Immutable. An opaque comment field that is not interpreted by the
+  // system but stored on-chain in the account. Maximum length is 128
+  // characters. May be left empty. Once created, the field is immutable.
+  string account_comment = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // The settlement mode for this clearinghouse. Required.
+  SettlementMode settlement_mode = 5;
+}
+
+// Transfers the ownership of the platform operator to a new account. The sender
+// must be the current platform operator.
+//
+// If the transaction is successful, deactivates the current platform operator,
+// and the ID of the newly created account is returned as an event in the
+// [TransactionCertificate][google.cloud.universalledger.v1.TransactionCertificate]
+// of the finalized transaction.
+message TransferPlatformOperator {
+  // The public key of the new platform operator. This public key will be
+  // associated with the platform operator and stored on the chain. It will be
+  // used to validate the signature of the transactions emanating from the
+  // platform operator's account.
+  //
+  // The public key must be provided as a binary serialized keyset in [Tink wire
+  // format](https://developers.google.com/tink/wire-format#keyset_serialization).
+  bytes public_key = 1;
+
+  // Optional. Immutable. An opaque comment field that is not interpreted by the
+  // system but stored on-chain in the account. Maximum length is 128
+  // characters. May be left empty. Once created, the field is immutable.
+  string account_comment = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+}
+
+// Creates a new currency operator. The sender must be the platform operator.
+//
+// If the transaction is successful, the ID of the newly created account is
+// returned as an event in the
+// [TransactionCertificate][google.cloud.universalledger.v1.TransactionCertificate]
+// of the finalized transaction.
+//
+// This transaction must introduce a new currency into the system. If the
+// specified currency already exists, this transaction will fail.
+// If the currency operator has to be replaced, the TransferCurrencyOperator
+// transaction should be sent instead.
+message CreateCurrencyOperator {
+  // The public key of the new currency operator. This public key will be
+  // associated with the currency operator and stored on the chain. It will be
+  // used to validate the signature of the transactions emanating from the
+  // operator's account.
+  //
+  // The public key must be provided as a binary serialized keyset in [Tink wire
+  // format](https://developers.google.com/tink/wire-format#keyset_serialization).
+  bytes public_key = 1;
+
+  // Optional. Immutable. An opaque comment field that is not interpreted by the
+  // system but stored on-chain in the account. Maximum length is 128
+  // characters. May be left empty. Once created, the field is immutable.
+  string account_comment = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // The fiat currency associated with this operator, represented as a
+  // 3-capital-letter ISO 4217 code.
+  string currency = 3;
+}
+
+// Transfers the ownership of the given currency operator to a new account. The
+// sender must be the platform operator.
+//
+// If the transaction is successful, deactivates the given currency operator,
+// and the ID of the newly created account is returned as an event in the
+// [TransactionCertificate][google.cloud.universalledger.v1.TransactionCertificate]
+// of the finalized transaction.
+message TransferCurrencyOperator {
+  // The public key of the new currency operator. This public key will be
+  // associated with the currency operator and stored on the chain. It will be
+  // used to validate the signature of the transactions emanating from the
+  // currency operator's account.
+  //
+  // The public key must be provided as a binary serialized keyset in [Tink wire
+  // format](https://developers.google.com/tink/wire-format#keyset_serialization).
+  bytes public_key = 1;
+
+  // Optional. Immutable. An opaque comment field that is not interpreted by the
+  // system but stored on-chain in the account. Maximum length is 128
+  // characters. May be left empty. Once created, the field is immutable.
+  string account_comment = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // The currency operator to be replaced. Must be active.
+  Entity currency_operator = 4;
+}
+
+// Triggers the creation of a snapshot of the network. The sender must be
+// the platform operator.
+message CreateSnapshot {}
+
+// Stores a contract on the blockchain.
+message CreateContract {
+  // Serialised biter_bytecode.Contract bytes.
+  bytes contract_bytes = 1;
+
+  // Arguments for the `__init__` method.
+  map<string, Value> arguments = 2;
+
+  // An immutable opaque comment field that is associated with the contract.
+  string contract_comment = 3;
+}
+
+// Grants permissions to the contract by the transaction sender.
+//
+// Note that, at the moment, there is no support for revoking permissions.
+message GrantContractPermissions {
+  // ID of the contract to which permissions are being granted.
+  Entity contract = 1;
+
+  // The permissions to be granted.
+  repeated ContractPermission permissions = 2;
+}
+
+// Invokes the execution of a contract method.
+message InvokeContractMethod {
+  // ID of the contract to run.
+  Entity contract = 1;
+
+  // Name of the method to run.
+  string method_name = 2;
+
+  // Arguments for the method.
+  map<string, Value> arguments = 3;
+
+  // The amount to be paid.
+  // Must be greater than zero when invoking payable methods; and zero for
+  // non-payable ones.
+  CurrencyValue payment = 4;
+}
