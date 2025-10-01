@@ -28,6 +28,7 @@ import "google/cloud/bigquery/v2/table_reference.proto";
 import "google/cloud/bigquery/v2/table_schema.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
 import "google/protobuf/wrappers.proto";
 
 option go_package = "cloud.google.com/go/bigquery/v2/apiv2/bigquerypb;bigquerypb";
@@ -221,8 +222,8 @@ message ExternalServiceCost {
   int64 reserved_slot_count = 5;
 
   // The billing method used for the external job.
-  // This field is only used when billed on the services sku, set to
-  // "SERVICES_SKU". Otherwise, it is unspecified for backward compatibility.
+  // This field, set to `SERVICES_SKU`, is only used when billing under the
+  // services SKU. Otherwise, it is unspecified for backward compatibility.
   string billing_method = 6;
 }
 
@@ -444,6 +445,18 @@ message IndexUnusedReason {
   optional string index_name = 4;
 }
 
+// Statistics for index pruning.
+message IndexPruningStats {
+  // The base table reference.
+  optional TableReference base_table = 1;
+
+  // The number of parallel inputs before index pruning.
+  optional int64 pre_index_pruning_parallel_input_count = 2;
+
+  // The number of parallel inputs after index pruning.
+  optional int64 post_index_pruning_parallel_input_count = 3;
+}
+
 // Indicates the stored columns usage in the query.
 message StoredColumnsUsage {
   // If the stored column was not used, explain why.
@@ -527,6 +540,12 @@ message SearchStatistics {
   // why indexes were not used in all or part of the search query. If
   // `indexUsageMode` is `FULLY_USED`, this field is not populated.
   repeated IndexUnusedReason index_unused_reasons = 2;
+
+  // Search index pruning statistics, one for each base table that has a search
+  // index. If a base table does not have a search index or the index does not
+  // help with pruning on the base table, then there is no pruning statistics
+  // for that table.
+  repeated IndexPruningStats index_pruning_stats = 3;
 }
 
 // Statistics for a vector search query.
@@ -603,6 +622,30 @@ message LoadQueryStatistics {
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
+// Statistics related to Incremental Query Results. Populated as part of
+// JobStatistics2. This feature is not yet available.
+message IncrementalResultStats {
+  // Reason why incremental query results are/were not written by the query.
+  enum DisabledReason {
+    // Disabled reason not specified.
+    DISABLED_REASON_UNSPECIFIED = 0;
+
+    // Some other reason.
+    OTHER = 1;
+  }
+
+  // Reason why incremental query results are/were not written by the query.
+  DisabledReason disabled_reason = 1;
+
+  // The time at which the result table's contents were completely replaced.
+  // May be absent if no results have been written or the query has completed.
+  google.protobuf.Timestamp result_set_last_replace_time = 2;
+
+  // The time at which the result table's contents were modified.
+  // May be absent if no results have been written or the query has completed.
+  google.protobuf.Timestamp result_set_last_modify_time = 3;
+}
+
 // Statistics for a query job.
 message JobStatistics2 {
   // Output only. Describes execution plan for the query.
@@ -656,10 +699,10 @@ message JobStatistics2 {
   google.protobuf.Int64Value total_slot_ms = 8
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. Total slot-milliseconds for the job that run on external
-  // services and billed on the service SKU. This field is only populated for
+  // Output only. Total slot milliseconds for the job that ran on external
+  // services and billed on the services SKU. This field is only populated for
   // jobs that have external service costs, and is the total of the usage for
-  // costs whose billing method is "SERVICES_SKU".
+  // costs whose billing method is `"SERVICES_SKU"`.
   optional int64 total_services_sku_slot_ms = 52
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
@@ -918,6 +961,11 @@ message JobStatistics2 {
   // Output only. Statistics of metadata cache usage in a query for BigLake
   // tables.
   MetadataCacheStatistics metadata_cache_statistics = 43
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Statistics related to incremental query results, if enabled
+  // for the query. This feature is not yet available.
+  IncrementalResultStats incremental_result_stats = 53
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
@@ -1192,6 +1240,14 @@ message JobStatistics {
   // Output only. Name of edition corresponding to the reservation for this job
   // at the time of this update.
   ReservationEdition edition = 24 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The reservation group path of the reservation assigned to this
+  // job. This field has a limit of 10 nested reservation groups. This is to
+  // maintain consistency between reservatins info schema and jobs info schema.
+  // The first reservation group is the root reservation group and the last is
+  // the leaf or lowest level reservation group.
+  repeated string reservation_group_path = 26
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Detailed statistics for DML statements
@@ -1455,6 +1511,18 @@ message MaterializedView {
   optional RejectedReason rejected_reason = 4;
 }
 
+// The column metadata index pruning statistics.
+message PruningStats {
+  // The number of partitions matched.
+  optional int64 post_cmeta_pruning_partition_count = 1;
+
+  // The number of parallel inputs scanned.
+  optional int64 pre_cmeta_pruning_parallel_input_count = 2;
+
+  // The number of parallel inputs matched.
+  optional int64 post_cmeta_pruning_parallel_input_count = 3;
+}
+
 // Table level detail on the usage of metadata caching. Only set for Metadata
 // caching eligible tables referenced in the query.
 message TableMetadataCacheUsage {
@@ -1492,6 +1560,9 @@ message TableMetadataCacheUsage {
   // [Table
   // type](https://cloud.google.com/bigquery/docs/reference/rest/v2/tables#Table.FIELDS.type).
   string table_type = 6;
+
+  // The column metadata index pruning statistics.
+  optional PruningStats pruning_stats = 7;
 }
 
 // Statistics for metadata caching in queried tables.
