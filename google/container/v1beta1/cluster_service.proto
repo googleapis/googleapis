@@ -48,6 +48,8 @@ option (google.api.resource_definition) = {
   pattern: "projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}/cryptoKeyVersions/{crypto_key_version}"
 };
 
+// LINT: LEGACY_NAMES
+
 // Google Kubernetes Engine Cluster Manager v1beta1
 service ClusterManager {
   option (google.api.default_host) = "container.googleapis.com";
@@ -591,7 +593,7 @@ message LinuxNodeConfig {
 
     // It means that an application will wake kswapd in the background to
     // reclaim pages and wake kcompactd to compact memory so that THP is
-    // available in the near future. It’s the responsibility of khugepaged to
+    // available in the near future. It's the responsibility of khugepaged to
     // then install the THP pages later.
     TRANSPARENT_HUGEPAGE_DEFRAG_DEFER = 2;
 
@@ -610,6 +612,99 @@ message LinuxNodeConfig {
     // It means that an application will never enter direct reclaim or
     // compaction.
     TRANSPARENT_HUGEPAGE_DEFRAG_NEVER = 5;
+  }
+
+  // Configuration for swap memory on a node pool.
+  message SwapConfig {
+    // Defines encryption settings for the swap space.
+    message EncryptionConfig {
+      // Optional. If true, swap space will not be encrypted.
+      // Defaults to false (encrypted).
+      optional bool disabled = 1 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Swap on the node's boot disk.
+    message BootDiskProfile {
+      // Optional. Specifies the size of the swap space. If omitted, GKE
+      // determines an optimal size based on node memory.
+      oneof swap_size {
+        // Specifies the size of the swap space in gibibytes (GiB).
+        int64 swap_size_gib = 1;
+
+        // Specifies the size of the swap space as a percentage of the boot disk
+        // size.
+        int32 swap_size_percent = 2;
+      }
+    }
+
+    // Swap on the local SSD shared with pod ephemeral storage.
+    message EphemeralLocalSsdProfile {
+      // Specifies the size of the swap space to be provisioned.
+      oneof swap_size {
+        // Specifies the size of the swap space in gibibytes (GiB).
+        int64 swap_size_gib = 1;
+
+        // Specifies the size of the swap space as a percentage of the ephemeral
+        // local SSD capacity.
+        int32 swap_size_percent = 2;
+      }
+    }
+
+    // Provisions a new, separate local NVMe SSD exclusively for swap.
+    message DedicatedLocalSsdProfile {
+      // The number of physical local NVMe SSD disks to attach.
+      int64 disk_count = 1;
+    }
+
+    // Optional. Enables or disables swap for the node pool.
+    optional bool enabled = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. If omitted, swap space is encrypted by default.
+    optional EncryptionConfig encryption_config = 2
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Defines the backing storage for the swap space.
+    // If omitted, defaults to the 'boot_disk_profile'.
+    oneof performance_profile {
+      // Swap on the node's boot disk.
+      BootDiskProfile boot_disk_profile = 3;
+
+      // Swap on the local SSD shared with pod ephemeral storage.
+      EphemeralLocalSsdProfile ephemeral_local_ssd_profile = 4;
+
+      // Provisions a new, separate local NVMe SSD exclusively for swap.
+      DedicatedLocalSsdProfile dedicated_local_ssd_profile = 5;
+    }
+  }
+
+  // Configuration for kernel module loading on nodes.
+  message NodeKernelModuleLoading {
+    // Defines the kernel module loading policy for nodes in the nodepool.
+    enum Policy {
+      // Default behavior. GKE selects the image based on node type.
+      // For CPU and TPU nodes, the image will not allow loading external
+      // kernel modules.
+      // For GPU nodes, the image will allow loading any module, whether it
+      // is signed or not.
+      POLICY_UNSPECIFIED = 0;
+
+      // Enforced signature verification: Node pools will use a
+      // Container-Optimized OS image configured to allow loading of
+      // *Google-signed* external kernel modules.
+      // Loadpin is enabled but configured to exclude modules, and kernel
+      // module signature checking is enforced.
+      ENFORCE_SIGNED_MODULES = 1;
+
+      // Mirrors existing DEFAULT behavior:
+      // For CPU and TPU nodes, the image will not allow loading external
+      // kernel modules.
+      // For GPU nodes, the image will allow loading any module, whether it
+      // is signed or not.
+      DO_NOT_ENFORCE_SIGNED_MODULES = 2;
+    }
+
+    // Set the node module loading policy for nodes in the node pool.
+    Policy policy = 1;
   }
 
   // The Linux kernel parameters to be applied to the nodes and all pods running
@@ -683,6 +778,16 @@ message LinuxNodeConfig {
   // for more details.
   TransparentHugepageDefrag transparent_hugepage_defrag = 5
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Enables and configures swap space on nodes.
+  // If omitted, swap is disabled.
+  optional SwapConfig swap_config = 12 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Configuration for kernel module loading on nodes.
+  // When enabled, the node pool will be provisioned with a Container-Optimized
+  // OS image that enforces kernel module signature verification.
+  NodeKernelModuleLoading node_kernel_module_loading = 13
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Parameters that can be configured on Windows nodes.
@@ -746,7 +851,7 @@ message NodeKubeletConfig {
   // The string must be a sequence of decimal numbers, each with optional
   // fraction and a unit suffix, such as "300ms".
   // Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
-  // The value must be a positive duration.
+  // The value must be a positive duration between 1ms and 1 second, inclusive.
   string cpu_cfs_quota_period = 3;
 
   // Set the Pod PID limits. See
@@ -1496,6 +1601,19 @@ message NodeNetworkConfig {
   // the node pool is picked based on the IP utilization during node pool
   // creation and is immutable.
   string subnetwork = 19 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The network tier configuration for the node pool inherits from
+  // the cluster-level configuration and remains immutable throughout the node
+  // pool's lifecycle, including during upgrades.
+  NetworkTierConfig network_tier_config = 20
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Immutable. The accelerator network profile for the node pool. For now the
+  // only valid value is "auto". If specified, the network configuration of the
+  // nodes in this node pool will be managed by this profile for the supported
+  // machine types, zone, etc.
+  string accelerator_network_profile = 21
+      [(google.api.field_behavior) = IMMUTABLE];
 }
 
 // AdditionalNodeNetworkConfig is the configuration for additional node networks
@@ -1737,7 +1855,7 @@ message ContainerdConfig {
       // Certificate access config. The following are supported:
       // - GCPSecretManagerCertificateConfig
       oneof certificate_config {
-        // Google Secret Manager (GCP) certificate configuration.
+        // Secret Manager certificate configuration.
         GCPSecretManagerCertificateConfig
             gcp_secret_manager_certificate_config = 2;
       }
@@ -1751,9 +1869,19 @@ message ContainerdConfig {
         certificate_authority_domain_config = 2;
   }
 
+  // Defines writable cgroups configuration.
+  message WritableCgroups {
+    // Optional. Whether writable cgroups is enabled.
+    bool enabled = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
   // PrivateRegistryAccessConfig is used to configure access configuration
   // for private container registries.
   PrivateRegistryAccessConfig private_registry_access_config = 1;
+
+  // Optional. WritableCgroups defines writable cgroups configuration for the
+  // node pool.
+  WritableCgroups writable_cgroups = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // HostMaintenancePolicy contains the maintenance policy for the hosts on which
@@ -1960,7 +2088,8 @@ message AddonsConfig {
   DnsCacheConfig dns_cache_config = 8;
 
   // Configuration for the ConfigConnector add-on, a Kubernetes
-  // extension to manage hosted GCP services through the Kubernetes API
+  // extension to manage hosted Google Cloud services through the Kubernetes
+  // API.
   ConfigConnectorConfig config_connector_config = 10;
 
   // Configuration for the Compute Engine Persistent Disk CSI driver.
@@ -1970,7 +2099,7 @@ message AddonsConfig {
   // applications.
   KalmConfig kalm_config = 12 [deprecated = true];
 
-  // Configuration for the GCP Filestore CSI driver.
+  // Configuration for the Filestore CSI driver.
   GcpFilestoreCsiDriverConfig gcp_filestore_csi_driver_config = 14;
 
   // Configuration for the Backup for GKE agent addon.
@@ -2066,9 +2195,9 @@ message GcePersistentDiskCsiDriverConfig {
   bool enabled = 1;
 }
 
-// Configuration for the GCP Filestore CSI driver.
+// Configuration for the Filestore CSI driver.
 message GcpFilestoreCsiDriverConfig {
-  // Whether the GCP Filestore CSI driver is enabled for this cluster.
+  // Whether the Filestore CSI driver is enabled for this cluster.
   bool enabled = 1;
 }
 
@@ -2099,7 +2228,13 @@ message LustreCsiDriverConfig {
 
   // If set to true, the Lustre CSI driver will install Lustre kernel modules
   // using port 6988.
-  bool enable_legacy_lustre_port = 3;
+  // This serves as a workaround for a port conflict with the
+  // gke-metadata-server. This field is required ONLY under the following
+  // conditions:
+  // 1. The GKE node version is older than 1.33.2-gke.4655000.
+  // 2. You're connecting to a Lustre instance that has the
+  // 'gke-support-enabled' flag.
+  bool enable_legacy_lustre_port = 3 [deprecated = true];
 }
 
 // Configuration options for the Ray Operator add-on.
@@ -2494,6 +2629,11 @@ message IPAllocationPolicy {
 
   // Optional. AutoIpamConfig contains all information related to Auto IPAM
   AutoIpamConfig auto_ipam_config = 30 [(google.api.field_behavior) = OPTIONAL];
+
+  // Cluster-level network tier configuration is used to determine the default
+  // network tier for external IP addresses on cluster resources, such as node
+  // pools and load balancers.
+  NetworkTierConfig network_tier_config = 31;
 }
 
 // Configuration for Binary Authorization.
@@ -2822,8 +2962,7 @@ message Cluster {
   // REGULAR channel with its default version.
   ReleaseChannel release_channel = 41;
 
-  // Configuration for the use of Kubernetes Service Accounts in GCP IAM
-  // policies.
+  // Configuration for the use of Kubernetes Service Accounts in IAM policies.
   WorkloadIdentityConfig workload_identity_config = 43;
 
   // Configuration for issuance of mTLS keys and certificates to Kubernetes
@@ -2834,7 +2973,9 @@ message Cluster {
   // pods.
   MeshCertificates mesh_certificates = 67;
 
-  // Configuration for direct-path (via ALTS) with workload identity.
+  // Configuration for direct-path (via ALTS) with workload identity. This
+  // feature is not officially supported for external customers in Kubernetes
+  // Engine when using Workload Identity.
   WorkloadALTSConfig workload_alts_config = 53;
 
   // Configuration for the fine-grained cost management feature.
@@ -3014,7 +3155,10 @@ message Cluster {
   ControlPlaneEndpointsConfig control_plane_endpoints_config = 146;
 
   // GKE Enterprise Configuration.
-  EnterpriseConfig enterprise_config = 149;
+  //
+  // Deprecated: GKE Enterprise features are now available without an Enterprise
+  // tier.
+  EnterpriseConfig enterprise_config = 149 [deprecated = true];
 
   // Secret CSI driver configuration.
   SecretManagerConfig secret_manager_config = 150;
@@ -3041,6 +3185,9 @@ message Cluster {
   // Configuration for limiting anonymous access to all endpoints except the
   // health checks.
   AnonymousAuthenticationConfig anonymous_authentication_config = 164;
+
+  // Configuration for sync Secret Manager secrets as k8s secrets.
+  SecretSyncConfig secret_sync_config = 166;
 }
 
 // RBACBindingConfig allows user to restrict ClusterRoleBindings an RoleBindings
@@ -3484,7 +3631,9 @@ message ClusterUpdate {
   // pods.
   MeshCertificates desired_mesh_certificates = 67;
 
-  // Configuration for direct-path (via ALTS) with workload identity.
+  // Configuration for direct-path (via ALTS) with workload identity. This
+  // feature is not officially supported for external customers in Kubernetes
+  // Engine when using Workload Identity.
   WorkloadALTSConfig desired_workload_alts_config = 62;
 
   // Configuration for Shielded Nodes.
@@ -3642,7 +3791,10 @@ message ClusterUpdate {
   DesiredAdditionalIPRangesConfig desired_additional_ip_ranges_config = 145;
 
   // The desired enterprise configuration for the cluster.
-  DesiredEnterpriseConfig desired_enterprise_config = 147;
+  //
+  // Deprecated: GKE Enterprise features are now available without an Enterprise
+  // tier.
+  DesiredEnterpriseConfig desired_enterprise_config = 147 [deprecated = true];
 
   // AutoIpamConfig contains all information related to Auto IPAM
   AutoIpamConfig desired_auto_ipam_config = 148;
@@ -3665,6 +3817,9 @@ message ClusterUpdate {
 
   // Configuration for GKE auto upgrade.
   GkeAutoUpgradeConfig gke_auto_upgrade_config = 154;
+
+  // The desired network tier configuration for the cluster.
+  NetworkTierConfig desired_network_tier_config = 155;
 }
 
 // AdditionalPodRangesConfig is the configuration for additional pod secondary
@@ -3703,7 +3858,10 @@ message DesiredAdditionalIPRangesConfig {
 }
 
 // AutoIpamConfig contains all information related to Auto IPAM
-message AutoIpamConfig {}
+message AutoIpamConfig {
+  // The flag that enables Auto IPAM on this cluster
+  optional bool enabled = 1;
+}
 
 // RangeInfo contains the range name and the range utilization by this cluster.
 message RangeInfo {
@@ -3715,7 +3873,12 @@ message RangeInfo {
 }
 
 // DesiredEnterpriseConfig is a wrapper used for updating enterprise_config.
+//
+// Deprecated: GKE Enterprise features are now available without an Enterprise
+// tier.
 message DesiredEnterpriseConfig {
+  option deprecated = true;
+
   // desired_tier specifies the desired tier of the cluster.
   EnterpriseConfig.ClusterTier desired_tier = 1;
 }
@@ -4095,6 +4258,14 @@ message UpdateNodePoolRequest {
   // in which the node pool's nodes should be located. Changing the locations
   // for a node pool will result in nodes being either created or removed from
   // the node pool, depending on whether locations are being added or removed.
+  //
+  // Warning: It is recommended to update node pool locations in a standalone
+  // API call. Do not combine a location update with changes to other fields
+  // (such as `tags`, `labels`, `taints`, etc.) in the same request.
+  // Otherwise, the API performs a structural modification where changes to
+  // other fields will only apply to newly created nodes and will not be
+  // applied to existing nodes in the node pool. To ensure all nodes are updated
+  // consistently, use a separate API call for location changes.
   repeated string locations = 13;
 
   // The desired workload metadata config for the node pool.
@@ -4797,9 +4968,15 @@ message BlueGreenSettings {
     optional google.protobuf.Duration batch_soak_duration = 3;
   }
 
-  // Autoscaled rollout policy uses cluster autoscaler during
-  // blue-green upgrades to scale both the green and blue pools.
-  message AutoscaledRolloutPolicy {}
+  // Autoscaled rollout policy utilizes the cluster autoscaler during
+  // blue-green upgrade to scale both the blue and green pools.
+  message AutoscaledRolloutPolicy {
+    // Optional. Time to wait after cordoning the blue pool before draining the
+    // nodes. Defaults to 3 days. The value can be set between 0 and 7 days,
+    // inclusive.
+    google.protobuf.Duration wait_for_drain_duration = 1
+        [(google.api.field_behavior) = OPTIONAL];
+  }
 
   // The rollout policy controls the general rollout progress of blue-green.
   oneof rollout_policy {
@@ -5197,9 +5374,23 @@ message MaintenanceExclusionOptions {
     NO_MINOR_OR_NODE_UPGRADES = 2;
   }
 
+  // EndTimeBehavior specifies the behavior of the exclusion end time.
+  enum EndTimeBehavior {
+    // END_TIME_BEHAVIOR_UNSPECIFIED is the default behavior, which is fixed
+    // end time.
+    END_TIME_BEHAVIOR_UNSPECIFIED = 0;
+
+    // UNTIL_END_OF_SUPPORT means the exclusion will be in effect until the end
+    // of the support of the cluster's current version.
+    UNTIL_END_OF_SUPPORT = 1;
+  }
+
   // Scope specifies the upgrade scope which upgrades are blocked by the
   // exclusion.
   Scope scope = 1;
+
+  // EndTimeBehavior specifies the behavior of the exclusion end time.
+  EndTimeBehavior end_time_behavior = 2;
 }
 
 // Represents an arbitrary window of time that recurs.
@@ -6247,8 +6438,7 @@ message MaxPodsConstraint {
   int64 max_pods_per_node = 1;
 }
 
-// Configuration for the use of Kubernetes Service Accounts in GCP IAM
-// policies.
+// Configuration for the use of Kubernetes Service Accounts in IAM policies.
 message WorkloadIdentityConfig {
   // IAM Identity Namespace to attach all Kubernetes Service Accounts to.
   string identity_namespace = 1 [deprecated = true];
@@ -6260,7 +6450,9 @@ message WorkloadIdentityConfig {
   string identity_provider = 3;
 }
 
-// Configuration for direct-path (via ALTS) with workload identity.
+// Configuration for direct-path (via ALTS) with workload identity. This
+// feature is not officially supported for external customers in Kubernetes
+// Engine when using Workload Identity.
 message WorkloadALTSConfig {
   // enable_alts controls whether the alts handshaker should be enabled or not
   // for direct-path.
@@ -6670,6 +6862,27 @@ message Autopilot {
   // Output only. ConversionStatus shows conversion status.
   AutopilotConversionStatus conversion_status = 3
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // PrivilegedAdmissionConfig is the configuration related to privileged
+  // admission control.
+  PrivilegedAdmissionConfig privileged_admission_config = 4;
+}
+
+// PrivilegedAdmissionConfig stores the list of authorized allowlist
+// paths for the cluster.
+message PrivilegedAdmissionConfig {
+  // The customer allowlist Cloud Storage paths for the cluster. These paths are
+  // used with the `--autopilot-privileged-admission` flag to authorize
+  // privileged workloads in Autopilot clusters.
+  //
+  // Paths can be GKE-owned, in the format
+  // `gke://<partner_name>/<app_name>/<allowlist_path>`, or customer-owned, in
+  // the format `gs://<bucket_name>/<allowlist_path>`.
+  //
+  // Wildcards (`*`) are supported to authorize all allowlists under specific
+  // paths or directories. Example: `gs://my-bucket/*` will authorize all
+  // allowlists under the `my-bucket` bucket.
+  repeated string allowlist_paths = 1;
 }
 
 // WorkloadPolicyConfig is the configuration related to GCW workload policy
@@ -6789,6 +7002,12 @@ message UpgradeEvent {
   // The target version for the upgrade.
   string target_version = 5;
 
+  // The current emulated version before the upgrade.
+  string current_emulated_version = 7;
+
+  // The target emulated version for the upgrade.
+  string target_emulated_version = 8;
+
   // Optional relative path to the resource. For example in node pool upgrades,
   // the relative path of the node pool.
   string resource = 6;
@@ -6850,6 +7069,12 @@ message UpgradeInfoEvent {
 
   // The target version for the upgrade.
   string target_version = 6;
+
+  // The current emulated version before the upgrade.
+  string current_emulated_version = 15;
+
+  // The target emulated version for the upgrade.
+  string target_emulated_version = 16;
 
   // Optional relative path to the resource. For example in node pool upgrades,
   // the relative path of the node pool.
@@ -7176,6 +7401,16 @@ message PodAutoscaling {
 
 // Fleet is the fleet configuration for the cluster.
 message Fleet {
+  // MembershipType describes if the membership supports all features or only
+  // lightweight compatible ones.
+  enum MembershipType {
+    // The MembershipType is not set.
+    MEMBERSHIP_TYPE_UNSPECIFIED = 0;
+
+    // The membership supports only lightweight compatible features.
+    LIGHTWEIGHT = 1;
+  }
+
   // The Fleet host project(project ID or project number) where this cluster
   // will be registered to. This field cannot be changed after the cluster has
   // been registered.
@@ -7189,6 +7424,9 @@ message Fleet {
   // Output only. Whether the cluster has been registered through the fleet
   // API.
   bool pre_registered = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The type of the cluster's fleet membership.
+  MembershipType membership_type = 4;
 }
 
 // Possible values for IP stack type
@@ -7215,8 +7453,15 @@ message ControlPlaneEndpointsConfig {
     string endpoint = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 
     // Controls whether user traffic is allowed over this endpoint. Note that
-    // GCP-managed services may still use the endpoint even if this is false.
+    // Google-managed services may still use the endpoint
+    // even if this is false.
     optional bool allow_external_traffic = 3;
+
+    // Controls whether the k8s token auth is allowed via DNS.
+    optional bool enable_k8s_tokens_via_dns = 5;
+
+    // Controls whether the k8s certs auth is allowed via DNS.
+    optional bool enable_k8s_certs_via_dns = 6;
   }
 
   // IP endpoints configuration.
@@ -7282,9 +7527,19 @@ message ResourceManagerTags {
 }
 
 // EnterpriseConfig is the cluster enterprise configuration.
+//
+// Deprecated: GKE Enterprise features are now available without an Enterprise
+// tier.
 message EnterpriseConfig {
+  option deprecated = true;
+
   // Premium tiers for GKE Cluster.
+  //
+  // Deprecated: GKE Enterprise features are now available without an Enterprise
+  // tier.
   enum ClusterTier {
+    option deprecated = true;
+
     // CLUSTER_TIER_UNSPECIFIED is when cluster_tier is not set.
     CLUSTER_TIER_UNSPECIFIED = 0;
 
@@ -7601,4 +7856,50 @@ message GkeAutoUpgradeConfig {
   // PatchMode specifies how auto upgrade patch builds should be
   // selected.
   PatchMode patch_mode = 1;
+}
+
+// NetworkTierConfig contains network tier information.
+message NetworkTierConfig {
+  // Network tier configuration.
+  enum NetworkTier {
+    // By default, use project-level configuration. When unspecified, the
+    // behavior defaults to NETWORK_TIER_DEFAULT. For cluster updates, this
+    // implies no action (no-op).
+    NETWORK_TIER_UNSPECIFIED = 0;
+
+    // Default network tier. Use project-level configuration. User can specify
+    // this value, meaning they want to keep the same behaviour as before
+    // cluster level network tier configuration is introduced. This field
+    // ensures backward compatibility for the network tier of cluster resources,
+    // such as node pools and load balancers, for their external IP addresses.
+    NETWORK_TIER_DEFAULT = 1;
+
+    // Premium network tier.
+    NETWORK_TIER_PREMIUM = 2;
+
+    // Standard network tier.
+    NETWORK_TIER_STANDARD = 3;
+  }
+
+  // Network tier configuration.
+  NetworkTier network_tier = 1;
+}
+
+// Configuration for sync Secret Manager secrets as k8s secrets.
+message SecretSyncConfig {
+  // SyncRotationConfig is config for secret manager auto rotation.
+  message SyncRotationConfig {
+    // Whether the rotation is enabled.
+    optional bool enabled = 1;
+
+    // The interval between two consecutive rotations. Default rotation interval
+    // is 2 minutes.
+    optional google.protobuf.Duration rotation_interval = 2;
+  }
+
+  // Enable/Disable Secret Sync Config.
+  optional bool enabled = 1;
+
+  // Rotation config for secret manager.
+  optional SyncRotationConfig rotation_config = 2;
 }
