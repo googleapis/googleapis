@@ -141,12 +141,53 @@ message Part {
   // Optional. An opaque signature for the thought so it can be reused in
   // subsequent requests.
   bytes thought_signature = 13 [(google.api.field_behavior) = OPTIONAL];
+
+  // Custom metadata associated with the Part.
+  // Agents using genai.Part as content representation may need to keep track
+  // of the additional information. For example it can be name of a file/source
+  // from which the Part originates or a way to multiplex multiple Part streams.
+  google.protobuf.Struct part_metadata = 8;
+}
+
+// A datatype containing media that is part of a `FunctionResponse` message.
+//
+// A `FunctionResponsePart` consists of data which has an associated datatype. A
+// `FunctionResponsePart` can only contain one of the accepted types in
+// `FunctionResponsePart.data`.
+//
+// A `FunctionResponsePart` must have a fixed IANA MIME type identifying the
+// type and subtype of the media if the `inline_data` field is filled with raw
+// bytes.
+message FunctionResponsePart {
+  // The data of the function response part.
+  oneof data {
+    // Inline media bytes.
+    FunctionResponseBlob inline_data = 1;
+  }
 }
 
 // Raw media bytes.
 //
 // Text should not be sent as raw bytes, use the 'text' field.
 message Blob {
+  // The IANA standard MIME type of the source data.
+  // Examples:
+  //   - image/png
+  //   - image/jpeg
+  // If an unsupported MIME type is provided, an error will be returned. For a
+  // complete list of supported types, see [Supported file
+  // formats](https://ai.google.dev/gemini-api/docs/prompting_with_media#supported_file_formats).
+  string mime_type = 1;
+
+  // Raw bytes for media formats.
+  bytes data = 2;
+}
+
+// Raw media bytes for function response.
+//
+// Text should not be sent as raw bytes, use the 'FunctionResponse.response'
+// field.
+message FunctionResponseBlob {
   // The IANA standard MIME type of the source data.
   // Examples:
   //   - image/png
@@ -242,6 +283,8 @@ message CodeExecutionResult {
 // A `Tool` is a piece of code that enables the system to interact with
 // external systems to perform an action, or set of actions, outside of
 // knowledge and scope of the model.
+//
+// Next ID: 12
 message Tool {
   // GoogleSearch tool type.
   // Tool to support Google Search in Model. Powered by Google.
@@ -250,6 +293,29 @@ message Tool {
     // If customers set a start time, they must set an end time (and vice
     // versa).
     google.type.Interval time_range_filter = 2
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Computer Use tool type.
+  message ComputerUse {
+    // Represents the environment being operated, such as a web browser.
+    enum Environment {
+      // Defaults to browser.
+      ENVIRONMENT_UNSPECIFIED = 0;
+
+      // Operates in a web browser.
+      ENVIRONMENT_BROWSER = 1;
+    }
+
+    // Required. The environment being operated.
+    Environment environment = 3 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. By default, predefined functions are included in the final
+    // model call. Some of them can be explicitly excluded from being
+    // automatically included. This can serve two purposes:
+    // 1. Using a more restricted / different action space.
+    // 2. Improving the definitions / instructions of predefined functions.
+    repeated string excluded_predefined_functions = 5
         [(google.api.field_behavior) = OPTIONAL];
   }
 
@@ -279,6 +345,11 @@ message Tool {
   // Optional. GoogleSearch tool type.
   // Tool to support Google Search in Model. Powered by Google.
   GoogleSearch google_search = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Tool to support the model interacting directly with the computer.
+  // If enabled, it automatically populates computer-use specific Function
+  // Declarations.
+  ComputerUse computer_use = 6 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Tool to support URL context retrieval.
   UrlContext url_context = 8 [(google.api.field_behavior) = OPTIONAL];
@@ -352,6 +423,9 @@ message FunctionCallingConfig {
     // Model decides to predict either a function call
     // or a natural language response, but will validate function calls with
     // constrained decoding.
+    // If "allowed_function_names" are set, the predicted function call will be
+    // limited to any one of "allowed_function_names", else the predicted
+    // function call will be any one of the provided "function_declarations".
     VALIDATED = 4;
   }
 
@@ -362,9 +436,9 @@ message FunctionCallingConfig {
   // Optional. A set of function names that, when provided, limits the functions
   // the model will call.
   //
-  // This should only be set when the Mode is ANY. Function names
-  // should match [FunctionDeclaration.name]. With mode set to ANY, model will
-  // predict a function call from the set of function names provided.
+  // This should only be set when the Mode is ANY or VALIDATED. Function names
+  // should match [FunctionDeclaration.name]. When set, model will
+  // predict a function call from only allowed function names.
   repeated string allowed_function_names = 2
       [(google.api.field_behavior) = OPTIONAL];
 }
@@ -392,8 +466,8 @@ message FunctionDeclaration {
   }
 
   // Required. The name of the function.
-  // Must be a-z, A-Z, 0-9, or contain underscores and dashes, with a maximum
-  // length of 63.
+  // Must be a-z, A-Z, 0-9, or contain underscores, colons, dots, and dashes,
+  // with a maximum length of 64.
   string name = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. A brief description of the function.
@@ -453,7 +527,7 @@ message FunctionCall {
 
   // Required. The name of the function to call.
   // Must be a-z, A-Z, 0-9, or contain underscores and dashes, with a maximum
-  // length of 63.
+  // length of 64.
   string name = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. The function parameters and values in JSON object format.
@@ -491,11 +565,20 @@ message FunctionResponse {
 
   // Required. The name of the function to call.
   // Must be a-z, A-Z, 0-9, or contain underscores and dashes, with a maximum
-  // length of 63.
+  // length of 64.
   string name = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. The function response in JSON object format.
+  // Callers can use any keys of their choice that fit the function's syntax
+  // to return the function output, e.g. "output", "result", etc.
+  // In particular, if the function call failed to execute, the response can
+  // have an "error" key to return error details to the model.
   google.protobuf.Struct response = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Ordered `Parts` that constitute a function response. Parts may
+  // have different IANA MIME types.
+  repeated FunctionResponsePart parts = 8
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Signals that function call continues, and more responses will be
   // returned, turning the function call into a generator.
@@ -521,11 +604,8 @@ message Schema {
   // Required. Data type.
   Type type = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. The format of the data. This is used only for primitive
-  // datatypes. Supported formats:
-  //  for NUMBER type: float, double
-  //  for INTEGER type: int32, int64
-  //  for STRING type: enum, date-time
+  // Optional. The format of the data. Any value is allowed, but most do not
+  // trigger any special functionality.
   string format = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The title of the schema.
