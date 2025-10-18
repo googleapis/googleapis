@@ -163,6 +163,7 @@ enum TaskType {
 }
 
 // Request to generate a completion from the model.
+// NEXT ID: 18
 message GenerateContentRequest {
   // Required. The name of the `Model` to use for generating the completion.
   //
@@ -303,8 +304,19 @@ message ThinkingConfig {
   optional int32 thinking_budget = 2;
 }
 
+// Config for image generation features.
+message ImageConfig {
+  // Optional. The aspect ratio of the image to generate. Supported aspect
+  // ratios: 1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9.
+  //
+  // If not specified, the model will choose a default aspect ratio based on any
+  // reference images provided.
+  optional string aspect_ratio = 1 [(google.api.field_behavior) = OPTIONAL];
+}
+
 // Configuration options for model generation and outputs. Not all parameters
 // are configurable for every model.
+// Next ID: 29
 message GenerationConfig {
   // Supported modalities of the response.
   enum Modality {
@@ -450,8 +462,17 @@ message GenerationConfig {
   // be used within non-required properties. (Nullable properties are not
   // sufficient.) If `$ref` is set on a sub-schema, no other properties, except
   // for than those starting as a `$`, may be set.
-  google.protobuf.Value response_json_schema = 24
-      [(google.api.field_behavior) = OPTIONAL];
+  google.protobuf.Value response_json_schema = 24 [
+    json_name = "_responseJsonSchema",
+    (google.api.field_behavior) = OPTIONAL
+  ];
+
+  // Optional. An internal detail. Use `responseJsonSchema` rather than this
+  // field.
+  google.protobuf.Value response_json_schema_ordered = 28 [
+    json_name = "responseJsonSchema",
+    (google.api.field_behavior) = OPTIONAL
+  ];
 
   // Optional. Presence penalty applied to the next token's logprobs if the
   // token has already been seen in the response.
@@ -494,6 +515,7 @@ message GenerationConfig {
   // [response_logprobs=True][google.ai.generativelanguage.v1beta.GenerationConfig.response_logprobs].
   // This sets the number of top logprobs to return at each decoding step in the
   // [Candidate.logprobs_result][google.ai.generativelanguage.v1beta.Candidate.logprobs_result].
+  // The number must be in the range of [0, 20].
   optional int32 logprobs = 18 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Enables enhanced civic answers. It may not be available for all
@@ -521,6 +543,12 @@ message GenerationConfig {
   // An error will be returned if this field is set for models that don't
   // support thinking.
   optional ThinkingConfig thinking_config = 22
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Config for image generation.
+  // An error will be returned if this field is set for models that don't
+  // support these config options.
+  optional ImageConfig image_config = 27
       [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. If specified, the media resolution specified will be used.
@@ -700,8 +728,25 @@ message Candidate {
     // violations.
     IMAGE_SAFETY = 11;
 
+    // Image generation stopped because generated images has other prohibited
+    // content.
+    IMAGE_PROHIBITED_CONTENT = 14;
+
+    // Image generation stopped because of other miscellaneous issue.
+    IMAGE_OTHER = 15;
+
+    // The model was expected to generate an image, but none was generated.
+    NO_IMAGE = 16;
+
+    // Image generation stopped due to recitation.
+    IMAGE_RECITATION = 17;
+
     // Model generated a tool call but no tools were enabled in the request.
     UNEXPECTED_TOOL_CALL = 12;
+
+    // Model called too many tools consecutively, thus the system exited
+    // execution.
+    TOO_MANY_TOOL_CALLS = 13;
   }
 
   // Output only. Index of the candidate in the list of response candidates.
@@ -714,6 +759,13 @@ message Candidate {
   //
   // If empty, the model has not stopped generating tokens.
   FinishReason finish_reason = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
+
+  // Optional. Output only. Details the reason why the model stopped generating
+  // tokens. This is populated only when `finish_reason` is set.
+  optional string finish_message = 4 [
     (google.api.field_behavior) = OPTIONAL,
     (google.api.field_behavior) = OUTPUT_ONLY
   ];
@@ -777,6 +829,12 @@ message UrlMetadata {
 
     // Url retrieval is failed due to error.
     URL_RETRIEVAL_STATUS_ERROR = 2;
+
+    // Url retrieval is failed because the content is behind paywall.
+    URL_RETRIEVAL_STATUS_PAYWALL = 3;
+
+    // Url retrieval is failed because the content is unsafe.
+    URL_RETRIEVAL_STATUS_UNSAFE = 4;
   }
 
   // Retrieved url by the tool.
@@ -805,6 +863,9 @@ message LogprobsResult {
     // Sorted by log probability in descending order.
     repeated Candidate candidates = 1;
   }
+
+  // Sum of log probabilities for all tokens.
+  optional float log_probability_sum = 3;
 
   // Length = total number of decoding steps.
   repeated TopCandidates top_candidates = 1;
@@ -1552,8 +1613,7 @@ message BidiGenerateContentToolResponse {
 message BidiGenerateContentClientMessage {
   // The type of the message.
   oneof message_type {
-    // Optional. Session configuration sent in the first and only first client
-    // message.
+    // Optional. Session configuration sent only in the first client message.
     BidiGenerateContentSetup setup = 1 [(google.api.field_behavior) = OPTIONAL];
 
     // Optional. Incremental update of the current conversation delivered from
@@ -1625,6 +1685,11 @@ message BidiGenerateContentServerContent {
 
   UrlContextMetadata url_context_metadata = 9
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. If true, indicates that the model is not generating content
+  // because it is waiting for more input from the user, e.g. because it expects
+  // the user to continue talking.
+  bool waiting_for_input = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Request for the client to execute the `function_calls` and return the

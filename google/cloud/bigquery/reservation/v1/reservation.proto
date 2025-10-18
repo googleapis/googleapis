@@ -20,6 +20,8 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/iam/v1/iam_policy.proto";
+import "google/iam/v1/policy.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
@@ -401,6 +403,112 @@ service ReservationService {
     };
     option (google.api.method_signature) = "bi_reservation,update_mask";
   }
+
+  // Gets the access control policy for a resource.
+  // May return:
+  //
+  // * A`NOT_FOUND` error if the resource doesn't exist or you don't have the
+  //   permission to view it.
+  // * An empty policy if the resource exists but doesn't have a set policy.
+  //
+  // Supported resources are:
+  // - Reservations
+  // - ReservationAssignments
+  //
+  // To call this method, you must have the following Google IAM permissions:
+  //
+  // - `bigqueryreservation.reservations.getIamPolicy` to get policies on
+  // reservations.
+  rpc GetIamPolicy(google.iam.v1.GetIamPolicyRequest)
+      returns (google.iam.v1.Policy) {
+    option (google.api.http) = {
+      get: "/v1/{resource=projects/*/locations/*/reservations/*}:getIamPolicy"
+      additional_bindings {
+        get: "/v1/{resource=projects/*/locations/*/reservations/*/assignments/*}:getIamPolicy"
+      }
+    };
+    option (google.api.method_signature) = "resource";
+  }
+
+  // Sets an access control policy for a resource. Replaces any existing
+  // policy.
+  //
+  // Supported resources are:
+  // - Reservations
+  //
+  // To call this method, you must have the following Google IAM permissions:
+  //
+  // - `bigqueryreservation.reservations.setIamPolicy` to set policies on
+  // reservations.
+  rpc SetIamPolicy(google.iam.v1.SetIamPolicyRequest)
+      returns (google.iam.v1.Policy) {
+    option (google.api.http) = {
+      post: "/v1/{resource=projects/*/locations/*/reservations/*}:setIamPolicy"
+      body: "*"
+      additional_bindings {
+        post: "/v1/{resource=projects/*/locations/*/reservations/*/assignments/*}:setIamPolicy"
+        body: "*"
+      }
+    };
+    option (google.api.method_signature) = "resource,policy";
+  }
+
+  // Gets your permissions on a resource. Returns an empty set of permissions if
+  // the resource doesn't exist.
+  //
+  // Supported resources are:
+  // - Reservations
+  //
+  // No Google IAM permissions are required to call this method.
+  rpc TestIamPermissions(google.iam.v1.TestIamPermissionsRequest)
+      returns (google.iam.v1.TestIamPermissionsResponse) {
+    option (google.api.http) = {
+      post: "/v1/{resource=projects/*/locations/*/reservations/*}:testIamPermissions"
+      body: "*"
+      additional_bindings {
+        post: "/v1/{resource=projects/*/locations/*/reservations/*/assignments/*}:testIamPermissions"
+        body: "*"
+      }
+    };
+  }
+
+  // Creates a new reservation group.
+  rpc CreateReservationGroup(CreateReservationGroupRequest)
+      returns (ReservationGroup) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/locations/*}/reservationGroups"
+      body: "reservation_group"
+    };
+  }
+
+  // Returns information about the reservation group.
+  rpc GetReservationGroup(GetReservationGroupRequest)
+      returns (ReservationGroup) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/locations/*/reservationGroups/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Deletes a reservation.
+  // Returns `google.rpc.Code.FAILED_PRECONDITION` when reservation has
+  // assignments.
+  rpc DeleteReservationGroup(DeleteReservationGroupRequest)
+      returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/v1/{name=projects/*/locations/*/reservationGroups/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Lists all the reservation groups for the project in the specified location.
+  rpc ListReservationGroups(ListReservationGroupsRequest)
+      returns (ListReservationGroupsResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*/locations/*}/reservationGroups"
+    };
+    option (google.api.method_signature) = "parent";
+  }
 }
 
 // A reservation is a mechanism used to guarantee slots to users.
@@ -419,8 +527,8 @@ message Reservation {
     // max_slots for that brief period (less than one minute)
     int64 current_slots = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-    // Number of slots to be scaled when needed.
-    int64 max_slots = 2;
+    // Optional. Number of slots to be scaled when needed.
+    int64 max_slots = 2 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // The scaling mode for the reservation. This enum determines how the
@@ -437,7 +545,8 @@ message Reservation {
     // slots and no idle slots will be used.
     //
     // Please note, in this mode, the ignore_idle_slots field must be set to
-    // true.
+    // true. Otherwise the request will be rejected with error code
+    // `google.rpc.Code.INVALID_ARGUMENT`.
     AUTOSCALE_ONLY = 1;
 
     // The reservation will scale up using only idle slots contributed by
@@ -457,7 +566,8 @@ message Reservation {
     // to max_slots.
     //
     // Please note, in this mode, the ignore_idle_slots field must be set to
-    // false.
+    // false. Otherwise the request will be rejected with error code
+    // `google.rpc.Code.INVALID_ARGUMENT`.
     IDLE_SLOTS_ONLY = 2;
 
     // The reservation will scale up using all slots available to it. It will
@@ -475,7 +585,8 @@ message Reservation {
     // scale up to 1000 slots with 200 baseline and 800 autoscaling slots.
     //
     // Please note, in this mode, the ignore_idle_slots field must be set to
-    // false.
+    // false. Otherwise the request will be rejected with error code
+    // `google.rpc.Code.INVALID_ARGUMENT`.
     ALL_SLOTS = 3;
   }
 
@@ -506,14 +617,14 @@ message Reservation {
         [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
-  // The resource name of the reservation, e.g.,
+  // Identifier. The resource name of the reservation, e.g.,
   // `projects/*/locations/*/reservations/team1-prod`.
   // The reservation_id must only contain lower case alphanumeric characters or
   // dashes. It must start with a letter and must not end with a dash. Its
   // maximum length is 64 characters.
-  string name = 1;
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
-  // Baseline slots available to this reservation. A slot is a unit of
+  // Optional. Baseline slots available to this reservation. A slot is a unit of
   // computational power in BigQuery, and serves as the unit of parallelism.
   //
   // Queries using this reservation might use more slots during runtime if
@@ -527,26 +638,25 @@ message Reservation {
   // you have recently changed your baseline slot capacity and your baseline
   // slots exceed your committed slots. Otherwise, you can decrease your
   // baseline slots every few minutes.
-  int64 slot_capacity = 2;
+  int64 slot_capacity = 2 [(google.api.field_behavior) = OPTIONAL];
 
-  // If false, any query or pipeline job using this reservation will use idle
-  // slots from other reservations within the same admin project. If true, a
-  // query or pipeline job using this reservation will execute with the slot
-  // capacity specified in the slot_capacity field at most.
-  bool ignore_idle_slots = 4;
+  // Optional. If false, any query or pipeline job using this reservation will
+  // use idle slots from other reservations within the same admin project. If
+  // true, a query or pipeline job using this reservation will execute with the
+  // slot capacity specified in the slot_capacity field at most.
+  bool ignore_idle_slots = 4 [(google.api.field_behavior) = OPTIONAL];
 
-  // The configuration parameters for the auto scaling feature.
-  Autoscale autoscale = 7;
+  // Optional. The configuration parameters for the auto scaling feature.
+  Autoscale autoscale = 7 [(google.api.field_behavior) = OPTIONAL];
 
-  // Job concurrency target which sets a soft upper bound on the number of jobs
-  // that can run concurrently in this reservation. This is a soft target due to
-  // asynchronous nature of the system and various optimizations for small
-  // queries.
-  // Default value is 0 which means that concurrency target will be
-  // automatically computed by the system.
-  // NOTE: this field is exposed as target job concurrency in the Information
-  // Schema, DDL and BigQuery CLI.
-  int64 concurrency = 16;
+  // Optional. Job concurrency target which sets a soft upper bound on the
+  // number of jobs that can run concurrently in this reservation. This is a
+  // soft target due to asynchronous nature of the system and various
+  // optimizations for small queries. Default value is 0 which means that
+  // concurrency target will be automatically computed by the system. NOTE: this
+  // field is exposed as target job concurrency in the Information Schema, DDL
+  // and BigQuery CLI.
+  int64 concurrency = 16 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. Creation time of the reservation.
   google.protobuf.Timestamp creation_time = 8
@@ -565,10 +675,10 @@ message Reservation {
   //
   // NOTE: this is a preview feature. Project must be allow-listed in order to
   // set this field.
-  bool multi_region_auxiliary = 14;
+  bool multi_region_auxiliary = 14 [deprecated = true];
 
-  // Edition of the reservation.
-  Edition edition = 17;
+  // Optional. Edition of the reservation.
+  Edition edition = 17 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. The current location of the reservation's primary replica.
   // This field is only set for reservations using the managed disaster recovery
@@ -612,10 +722,13 @@ message Reservation {
   // will never exceed the max_slots - baseline.
   //
   //
-  // This field must be set together with the scaling_mode enum value.
+  // This field must be set together with the scaling_mode enum value,
+  // otherwise the request will be rejected with error code
+  // `google.rpc.Code.INVALID_ARGUMENT`.
   //
   // If the max_slots and scaling_mode are set, the autoscale or
-  // autoscale.max_slots field must be unset. However, the
+  // autoscale.max_slots field must be unset. Otherwise the request will be
+  // rejected with error code `google.rpc.Code.INVALID_ARGUMENT`. However, the
   // autoscale field may still be in the output. The autopscale.max_slots will
   // always show as 0 and the autoscaler.current_slots will represent the
   // current slots from autoscaler excluding idle slots.
@@ -632,12 +745,14 @@ message Reservation {
   //
   // If the max_slots and scaling_mode are set, then the ignore_idle_slots field
   // must be aligned with the scaling_mode enum value.(See details in
-  // ScalingMode comments).
+  // ScalingMode comments). Otherwise the request will be rejected with
+  // error code `google.rpc.Code.INVALID_ARGUMENT`.
   //
   // Please note,  the max_slots is for user to manage the part of slots greater
   // than the baseline. Therefore, we don't allow users to set max_slots smaller
   // or equal to the baseline as it will not be meaningful. If the field is
-  // present and slot_capacity>=max_slots.
+  // present and slot_capacity>=max_slots, requests will be rejected with error
+  // code `google.rpc.Code.INVALID_ARGUMENT`.
   //
   // Please note that if max_slots is set to 0, we will treat it as unset.
   // Customers can set max_slots to 0 and set scaling_mode to
@@ -645,8 +760,23 @@ message Reservation {
   optional int64 max_slots = 21 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The scaling mode for the reservation.
-  // If the field is present but max_slots is not present.
+  // If the field is present but max_slots is not present, requests will be
+  // rejected with error code `google.rpc.Code.INVALID_ARGUMENT`.
   ScalingMode scaling_mode = 22 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The labels associated with this reservation. You can use these
+  // to organize and group your reservations.
+  // You can set this property when you create or update a reservation.
+  map<string, string> labels = 23 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The reservation group that this reservation belongs to.
+  // You can set this property when you create or update a reservation.
+  // Reservations do not need to belong to a reservation group.
+  // Format:
+  // projects/{project}/locations/{location}/reservationGroups/{reservation_group}
+  // or just {reservation_group}
+  string reservation_group = 25 [(google.api.field_behavior) = OPTIONAL];
+
   // Output only. The Disaster Recovery(DR) replication status of the
   // reservation. This is only available for the primary replicas of DR/failover
   // reservations and provides information about the both the staleness of the
@@ -657,6 +787,48 @@ message Reservation {
   // succeeded.
   ReplicationStatus replication_status = 24
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The scheduling policy to use for jobs and queries running under
+  // this reservation. The scheduling policy controls how the reservation's
+  // resources are distributed.
+  //
+  // This feature is not yet generally available.
+  SchedulingPolicy scheduling_policy = 27
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The scheduling policy controls how a reservation's resources are distributed.
+message SchedulingPolicy {
+  // Optional. If present and > 0, the reservation will attempt to limit the
+  // concurrency of jobs running for any particular project within it to the
+  // given value.
+  //
+  // This feature is not yet generally available.
+  optional int64 concurrency = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If present and > 0, the reservation will attempt to limit the
+  // slot consumption of queries running for any particular project within it to
+  // the given value.
+  //
+  // This feature is not yet generally available.
+  optional int64 max_slots = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A reservation group is a container for reservations.
+message ReservationGroup {
+  option (google.api.resource) = {
+    type: "bigqueryreservation.googleapis.com/ReservationGroup"
+    pattern: "projects/{project}/locations/{location}/reservationGroups/{reservation_group}"
+    plural: "reservationGroups"
+    singular: "reservationGroup"
+  };
+
+  // Identifier. The resource name of the reservation group, e.g.,
+  // `projects/*/locations/*/reservationGroups/team1-prod`.
+  // The reservation_group_id must only contain lower case alphanumeric
+  // characters or dashes. It must start with a letter and must not end with a
+  // dash. Its maximum length is 64 characters.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 }
 
 // Capacity commitment is a way to purchase compute capacity for BigQuery jobs
@@ -754,11 +926,11 @@ message CapacityCommitment {
   // with a dash. Its maximum length is 64 characters.
   string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Number of slots in this commitment.
-  int64 slot_count = 2;
+  // Optional. Number of slots in this commitment.
+  int64 slot_count = 2 [(google.api.field_behavior) = OPTIONAL];
 
-  // Capacity commitment commitment plan.
-  CommitmentPlan plan = 3;
+  // Optional. Capacity commitment commitment plan.
+  CommitmentPlan plan = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. State of the commitment.
   State state = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -772,7 +944,7 @@ message CapacityCommitment {
 
   // Output only. The end of the current commitment period. It is applicable
   // only for ACTIVE capacity commitments. Note after renewal,
-  // commitment_end_time is the time the renewed commitment expires. So it would
+  // commitment_end_time is the time the renewed commitment expires. So itwould
   // be at a time after commitment_start_time + committed period, because we
   // don't change commitment_start_time ,
   google.protobuf.Timestamp commitment_end_time = 5
@@ -782,10 +954,11 @@ message CapacityCommitment {
   google.rpc.Status failure_status = 7
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // The plan this capacity commitment is converted to after commitment_end_time
-  // passes. Once the plan is changed, committed period is extended according to
-  // commitment plan. Only applicable for ANNUAL and TRIAL commitments.
-  CommitmentPlan renewal_plan = 8;
+  // Optional. The plan this capacity commitment is converted to after
+  // commitment_end_time passes. Once the plan is changed, committed period is
+  // extended according to commitment plan. Only applicable for ANNUAL and TRIAL
+  // commitments.
+  CommitmentPlan renewal_plan = 8 [(google.api.field_behavior) = OPTIONAL];
 
   // Applicable only for commitments located within one of the BigQuery
   // multi-regions (US or EU).
@@ -796,10 +969,10 @@ message CapacityCommitment {
   //
   // NOTE: this is a preview feature. Project must be allow-listed in order to
   // set this field.
-  bool multi_region_auxiliary = 10;
+  bool multi_region_auxiliary = 10 [deprecated = true];
 
-  // Edition of the capacity commitment.
-  Edition edition = 12;
+  // Optional. Edition of the capacity commitment.
+  Edition edition = 12 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. If true, the commitment is a flat-rate commitment, otherwise,
   // it's an edition commitment.
@@ -908,6 +1081,84 @@ message FailoverReservationRequest {
   // replication are handled after a failover is initiated. If not specified,
   // HARD failover mode is used by default.
   FailoverMode failover_mode = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The request for
+// [ReservationService.CreateReservationGroup][google.cloud.bigquery.reservation.v1.ReservationService.CreateReservationGroup].
+message CreateReservationGroupRequest {
+  // Required. Project, location. E.g.,
+  // `projects/myproject/locations/US`
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "bigqueryreservation.googleapis.com/ReservationGroup"
+    }
+  ];
+
+  // Required. The reservation group ID. It must only contain lower case
+  // alphanumeric characters or dashes. It must start with a letter and must not
+  // end with a dash. Its maximum length is 64 characters.
+  string reservation_group_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. New Reservation Group to create.
+  ReservationGroup reservation_group = 3
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// The request for
+// [ReservationService.GetReservationGroup][google.cloud.bigquery.reservation.v1.ReservationService.GetReservationGroup].
+message GetReservationGroupRequest {
+  // Required. Resource name of the reservation group to retrieve. E.g.,
+  //    `projects/myproject/locations/US/reservationGroups/team1-prod`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "bigqueryreservation.googleapis.com/ReservationGroup"
+    }
+  ];
+}
+
+// The request for
+// [ReservationService.ListReservationGroups][google.cloud.bigquery.reservation.v1.ReservationService.ListReservationGroups].
+message ListReservationGroupsRequest {
+  // Required. The parent resource name containing project and location, e.g.:
+  //   `projects/myproject/locations/US`
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "bigqueryreservation.googleapis.com/ReservationGroup"
+    }
+  ];
+
+  // The maximum number of items to return per page.
+  int32 page_size = 2;
+
+  // The next_page_token value returned from a previous List request, if any.
+  string page_token = 3;
+}
+
+// The response for
+// [ReservationService.ListReservationGroups][google.cloud.bigquery.reservation.v1.ReservationService.ListReservationGroups].
+message ListReservationGroupsResponse {
+  // List of reservations visible to the user.
+  repeated ReservationGroup reservation_groups = 1;
+
+  // Token to retrieve the next page of results, or empty if there are no
+  // more results in the list.
+  string next_page_token = 2;
+}
+
+// The request for
+// [ReservationService.DeleteReservationGroup][google.cloud.bigquery.reservation.v1.ReservationService.DeleteReservationGroup].
+message DeleteReservationGroupRequest {
+  // Required. Resource name of the reservation group to retrieve. E.g.,
+  //    `projects/myproject/locations/US/reservationGroups/team1-prod`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "bigqueryreservation.googleapis.com/ReservationGroup"
+    }
+  ];
 }
 
 // The request for
@@ -1049,6 +1300,12 @@ message MergeCapacityCommitmentsRequest {
   // ID is the last portion of capacity commitment name e.g., 'abc' for
   // projects/myproject/locations/US/capacityCommitments/abc
   repeated string capacity_commitment_ids = 2;
+
+  // Optional. The optional resulting capacity commitment ID. Capacity
+  // commitment name will be generated automatically if this field is empty.
+  // This field must only contain lower case alphanumeric characters or dashes.
+  // The first and last character cannot be a dash. Max length is 64 characters.
+  string capacity_commitment_id = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // An assignment allows a project to submit jobs
@@ -1083,6 +1340,23 @@ message Assignment {
     // Continuous SQL jobs will use this reservation. Reservations with
     // continuous assignments cannot be mixed with non-continuous assignments.
     CONTINUOUS = 6;
+
+    // Finer granularity background jobs for capturing changes in a source
+    // database and streaming them into BigQuery. Reservations with this job
+    // type take priority over a default BACKGROUND reservation assignment (if
+    // it exists).
+    BACKGROUND_CHANGE_DATA_CAPTURE = 7;
+
+    // Finer granularity background jobs for refreshing cached metadata for
+    // BigQuery tables. Reservations with this job type take priority over a
+    // default BACKGROUND reservation assignment (if it exists).
+    BACKGROUND_COLUMN_METADATA_INDEX = 8;
+
+    // Finer granularity background jobs for refreshing search indexes upon
+    // BigQuery table columns. Reservations with this job type
+    // take priority over a default BACKGROUND reservation assignment (if it
+    // exists).
+    BACKGROUND_SEARCH_INDEX_REFRESH = 9;
   }
 
   // Assignment will remain in PENDING state if no active capacity commitment is
@@ -1106,12 +1380,12 @@ message Assignment {
   // dashes and the max length is 64 characters.
   string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // The resource which will use the reservation. E.g.
+  // Optional. The resource which will use the reservation. E.g.
   // `projects/myproject`, `folders/123`, or `organizations/456`.
-  string assignee = 4;
+  string assignee = 4 [(google.api.field_behavior) = OPTIONAL];
 
-  // Which type of jobs will use the reservation.
-  JobType job_type = 3;
+  // Optional. Which type of jobs will use the reservation.
+  JobType job_type = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. State of the assignment.
   State state = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -1125,6 +1399,15 @@ message Assignment {
   // give the grantee project/organization access to "Gemini in BigQuery"
   // features.
   bool enable_gemini_in_bigquery = 10 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The scheduling policy to use for jobs and queries of this
+  // assignee when running under the associated reservation. The scheduling
+  // policy controls how the reservation's resources are distributed. This
+  // overrides the default scheduling policy specified on the reservation.
+  //
+  // This feature is not yet generally available.
+  SchedulingPolicy scheduling_policy = 11
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // The request for
@@ -1332,14 +1615,14 @@ message UpdateAssignmentRequest {
 // Fully qualified reference to BigQuery table.
 // Internally stored as google.cloud.bi.v1.BqTableReference.
 message TableReference {
-  // The assigned project ID of the project.
-  string project_id = 1;
+  // Optional. The assigned project ID of the project.
+  string project_id = 1 [(google.api.field_behavior) = OPTIONAL];
 
-  // The ID of the dataset in the above project.
-  string dataset_id = 2;
+  // Optional. The ID of the dataset in the above project.
+  string dataset_id = 2 [(google.api.field_behavior) = OPTIONAL];
 
-  // The ID of the table in the above dataset.
-  string table_id = 3;
+  // Optional. The ID of the table in the above dataset.
+  string table_id = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Represents a BI Reservation.
@@ -1349,20 +1632,21 @@ message BiReservation {
     pattern: "projects/{project}/locations/{location}/biReservation"
   };
 
-  // The resource name of the singleton BI reservation.
+  // Identifier. The resource name of the singleton BI reservation.
   // Reservation names have the form
   // `projects/{project_id}/locations/{location_id}/biReservation`.
-  string name = 1;
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
   // Output only. The last update timestamp of a reservation.
   google.protobuf.Timestamp update_time = 3
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Size of a reservation, in bytes.
-  int64 size = 4;
+  // Optional. Size of a reservation, in bytes.
+  int64 size = 4 [(google.api.field_behavior) = OPTIONAL];
 
-  // Preferred tables to use BI capacity for.
-  repeated TableReference preferred_tables = 5;
+  // Optional. Preferred tables to use BI capacity for.
+  repeated TableReference preferred_tables = 5
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // A request to get a singleton BI reservation.
@@ -1404,7 +1688,7 @@ enum Edition {
 }
 
 // The failover mode when a user initiates a failover on a reservation
-// determines how writes that arepending replication are handled after the
+// determines how writes that are pending replication are handled after the
 // failover is initiated.
 enum FailoverMode {
   // Invalid value.

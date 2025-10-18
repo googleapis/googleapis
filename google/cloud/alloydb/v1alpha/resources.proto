@@ -43,6 +43,14 @@ option (google.api.resource_definition) = {
   type: "compute.googleapis.com/Network"
   pattern: "projects/{project}/global/networks/{network}"
 };
+option (google.api.resource_definition) = {
+  type: "cloudkms.googleapis.com/CryptoKey"
+  pattern: "projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}"
+};
+option (google.api.resource_definition) = {
+  type: "compute.googleapis.com/ServiceAttachment"
+  pattern: "projects/{project}/regions/{region}/serviceAttachments/{service_attachment}"
+};
 
 // View on Instance. Pass this enum to rpcs that returns an Instance message to
 // control which subsets of fields to get.
@@ -93,6 +101,9 @@ enum DatabaseVersion {
 
   // The database version is Postgres 16.
   POSTGRES_16 = 4;
+
+  // The database version is Postgres 17.
+  POSTGRES_17 = 5;
 }
 
 // Subscription_type added to distinguish between Standard and Trial
@@ -151,7 +162,9 @@ message EncryptionConfig {
   // The fully-qualified resource name of the KMS key.
   // Each Cloud KMS key is regionalized and has the following format:
   // projects/[PROJECT]/locations/[REGION]/keyRings/[RING]/cryptoKeys/[KEY_NAME]
-  string kms_key_name = 1;
+  string kms_key_name = 1 [(google.api.resource_reference) = {
+    type: "cloudkms.googleapis.com/CryptoKey"
+  }];
 }
 
 // EncryptionInfo describes the encryption information of a cluster or a backup.
@@ -496,7 +509,9 @@ message Cluster {
   message SecondaryConfig {
     // The name of the primary cluster name with the format:
     // * projects/{project}/locations/{region}/clusters/{cluster_id}
-    string primary_cluster_name = 1;
+    string primary_cluster_name = 1 [(google.api.resource_reference) = {
+      type: "alloydb.googleapis.com/Cluster"
+    }];
   }
 
   // Configuration for the primary cluster. It has the list of clusters that are
@@ -505,8 +520,12 @@ message Cluster {
   message PrimaryConfig {
     // Output only. Names of the clusters that are replicating from this
     // cluster.
-    repeated string secondary_cluster_names = 1
-        [(google.api.field_behavior) = OUTPUT_ONLY];
+    repeated string secondary_cluster_names = 1 [
+      (google.api.field_behavior) = OUTPUT_ONLY,
+      (google.api.resource_reference) = {
+        type: "alloydb.googleapis.com/Cluster"
+      }
+    ];
   }
 
   // PscConfig contains PSC related configuration at a cluster level.
@@ -544,11 +563,8 @@ message Cluster {
     // The cluster is active and running.
     READY = 1;
 
-    // The cluster is stopped. All instances in the cluster are stopped.
-    // Customers can start a stopped cluster at any point and all their
-    // instances will come back to life with same names and IP resources. In
-    // this state, customer pays for storage.
-    // Associated backups could also be present in a stopped cluster.
+    // This is unused. Even when all instances in the cluster are stopped, the
+    // cluster remains in READY state.
     STOPPED = 2;
 
     // The cluster is empty and has no associated resources.
@@ -764,10 +780,10 @@ message Cluster {
     (google.api.field_behavior) = OPTIONAL
   ];
 
-  // Output only. AlloyDB per-cluster service agent email. This service account
-  // is created per-cluster per-project, and is different from that of the
-  // primary service agent which is created per-project. The service account
-  // naming format is subject to change.
+  // Output only. AlloyDB per-cluster service account. This service account is
+  // created per-cluster per-project, and is different from the per-project
+  // service account. The per-cluster service account naming format is subject
+  // to change.
   string service_account_email = 46 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
@@ -983,8 +999,12 @@ message Instance {
     // Service Connect (PSC) is enabled for the instance.
     // The name of the resource will be in the format of
     // `projects/<alloydb-tenant-project-number>/regions/<region-name>/serviceAttachments/<service-attachment-name>`
-    string service_attachment_link = 1
-        [(google.api.field_behavior) = OUTPUT_ONLY];
+    string service_attachment_link = 1 [
+      (google.api.field_behavior) = OUTPUT_ONLY,
+      (google.api.resource_reference) = {
+        type: "compute.googleapis.com/ServiceAttachment"
+      }
+    ];
 
     // Optional. List of consumer projects that are allowed to create
     // PSC endpoints to service-attachments to this instance.
@@ -1051,20 +1071,14 @@ message Instance {
 
   // Configuration for Managed Connection Pool (MCP).
   message ConnectionPoolConfig {
-    // The pool mode. Defaults to `POOL_MODE_TRANSACTION`.
-    enum PoolMode {
-      // The pool mode is not specified. Defaults to `POOL_MODE_TRANSACTION`.
-      POOL_MODE_UNSPECIFIED = 0;
-
-      // Server is released back to pool after a client disconnects.
-      POOL_MODE_SESSION = 1;
-
-      // Server is released back to pool after a transaction finishes.
-      POOL_MODE_TRANSACTION = 2;
-    }
-
     // Optional. Whether to enable Managed Connection Pool (MCP).
     bool enabled = 12 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Connection Pool flags, as a list of "key": "value" pairs.
+    map<string, string> flags = 13 [(google.api.field_behavior) = OPTIONAL];
+
+    // Output only. The number of running poolers per instance.
+    int32 pooler_count = 14 [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
   // Instance State
@@ -1725,13 +1739,43 @@ message Database {
   // `projects/{project}/locations/{location}/clusters/{cluster}/databases/{database}`.
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
-  // Optional. Charset for the database.
+  // Optional. Immutable. Charset for the database.
   // This field can contain any PostgreSQL supported charset name.
   // Example values include "UTF8", "SQL_ASCII", etc.
-  string charset = 2 [(google.api.field_behavior) = OPTIONAL];
+  string charset = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
 
-  // Optional. Collation for the database.
-  // Name of the custom or native collation for postgres.
-  // Example values include "C", "POSIX", etc
-  string collation = 3 [(google.api.field_behavior) = OPTIONAL];
+  // Optional. Immutable. lc_collate for the database.
+  // String sort order.
+  // Example values include "C", "POSIX", etc.
+  string collation = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // Optional. Immutable. lc_ctype for the database.
+  // Character classification (What is a letter? The upper-case equivalent?).
+  // Example values include "C", "POSIX", etc.
+  string character_type = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // Optional. Whether the database is a template database.
+  // Deprecated in favor of is_template_database.
+  bool is_template = 5
+      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
+
+  // Input only. Immutable. Template of the database to be used for creating a
+  // new database.
+  string database_template = 6 [
+    (google.api.field_behavior) = INPUT_ONLY,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // Optional. Whether the database is a template database.
+  optional bool is_template_database = 7
+      [(google.api.field_behavior) = OPTIONAL];
 }

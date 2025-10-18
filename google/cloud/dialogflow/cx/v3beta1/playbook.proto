@@ -24,9 +24,12 @@ import "google/cloud/dialogflow/cx/v3beta1/advanced_settings.proto";
 import "google/cloud/dialogflow/cx/v3beta1/example.proto";
 import "google/cloud/dialogflow/cx/v3beta1/fulfillment.proto";
 import "google/cloud/dialogflow/cx/v3beta1/generative_settings.proto";
+import "google/cloud/dialogflow/cx/v3beta1/import_strategy.proto";
 import "google/cloud/dialogflow/cx/v3beta1/parameter_definition.proto";
+import "google/longrunning/operations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "Google.Cloud.Dialogflow.Cx.V3Beta1";
@@ -77,6 +80,35 @@ service Playbooks {
     option (google.api.method_signature) = "name";
   }
 
+  // Exports the specified playbook to a binary file.
+  //
+  // Note that resources (e.g. examples, tools) that the playbook
+  // references will also be exported.
+  rpc ExportPlaybook(ExportPlaybookRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v3beta1/{name=projects/*/locations/*/agents/*/playbooks/*}:export"
+      body: "*"
+    };
+    option (google.longrunning.operation_info) = {
+      response_type: "ExportPlaybookResponse"
+      metadata_type: "google.protobuf.Struct"
+    };
+  }
+
+  // Imports the specified playbook to the specified agent from a binary file.
+  rpc ImportPlaybook(ImportPlaybookRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v3beta1/{parent=projects/*/locations/*/agents/*}/playbooks:import"
+      body: "*"
+    };
+    option (google.longrunning.operation_info) = {
+      response_type: "ImportPlaybookResponse"
+      metadata_type: "google.protobuf.Struct"
+    };
+  }
+
   // Updates the specified Playbook.
   rpc UpdatePlaybook(UpdatePlaybookRequest) returns (Playbook) {
     option (google.api.http) = {
@@ -100,6 +132,17 @@ service Playbooks {
   rpc GetPlaybookVersion(GetPlaybookVersionRequest) returns (PlaybookVersion) {
     option (google.api.http) = {
       get: "/v3beta1/{name=projects/*/locations/*/agents/*/playbooks/*/versions/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Retrieves the specified version of the Playbook and stores it as the
+  // current playbook draft, returning the playbook with resources updated.
+  rpc RestorePlaybookVersion(RestorePlaybookVersionRequest)
+      returns (RestorePlaybookVersionResponse) {
+    option (google.api.http) = {
+      post: "/v3beta1/{name=projects/*/locations/*/agents/*/playbooks/*/versions/*}:restore"
+      body: "*"
     };
     option (google.api.method_signature) = "name";
   }
@@ -248,6 +291,18 @@ message Playbook {
     repeated Step steps = 2;
   }
 
+  // Type of the playbook.
+  enum PlaybookType {
+    // Unspecified type. Default to TASK.
+    PLAYBOOK_TYPE_UNSPECIFIED = 0;
+
+    // Task playbook.
+    TASK = 1;
+
+    // Routine playbook.
+    ROUTINE = 3;
+  }
+
   // The unique identifier of the playbook.
   // Format:
   // `projects/<ProjectID>/locations/<LocationID>/agents/<AgentID>/playbooks/<PlaybookID>`.
@@ -262,12 +317,12 @@ message Playbook {
   string goal = 3 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. Defined structured input parameters for this playbook.
-  repeated google.cloud.dialogflow.cx.v3beta1.ParameterDefinition
-      input_parameter_definitions = 5 [(google.api.field_behavior) = OPTIONAL];
+  repeated ParameterDefinition input_parameter_definitions = 5
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Defined structured output parameters for this playbook.
-  repeated google.cloud.dialogflow.cx.v3beta1.ParameterDefinition
-      output_parameter_definitions = 6 [(google.api.field_behavior) = OPTIONAL];
+  repeated ParameterDefinition output_parameter_definitions = 6
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Instruction to accomplish target goal.
   Instruction instruction = 17;
@@ -319,6 +374,9 @@ message Playbook {
   // Optional. A list of registered handlers to execute based on the specified
   // triggers.
   repeated Handler handlers = 16 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Type of the playbook.
+  PlaybookType playbook_type = 19 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // The request message for
@@ -382,6 +440,27 @@ message GetPlaybookVersionRequest {
 }
 
 // The request message for
+// [Playbooks.RestorePlaybookVersion][google.cloud.dialogflow.cx.v3beta1.Playbooks.RestorePlaybookVersion].
+message RestorePlaybookVersionRequest {
+  // Required. The name of the playbook version.
+  // Format:
+  // `projects/<ProjectID>/locations/<LocationID>/agents/<AgentID>/playbooks/<PlaybookID>/versions/<VersionID>`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dialogflow.googleapis.com/PlaybookVersion"
+    }
+  ];
+}
+
+// The response message for
+// [Playbooks.RestorePlaybookVersion][google.cloud.dialogflow.cx.v3beta1.Playbooks.RestorePlaybookVersion].
+message RestorePlaybookVersionResponse {
+  // The updated playbook.
+  Playbook playbook = 2;
+}
+
+// The request message for
 // [Playbooks.ListPlaybookVersions][google.cloud.dialogflow.cx.v3beta1.Playbooks.ListPlaybookVersions].
 message ListPlaybookVersionsRequest {
   // Required. The playbook to list versions for.
@@ -426,6 +505,152 @@ message DeletePlaybookVersionRequest {
       type: "dialogflow.googleapis.com/PlaybookVersion"
     }
   ];
+}
+
+// The request message for
+// [Playbooks.ExportPlaybook][google.cloud.dialogflow.cx.v3beta1.Playbooks.ExportPlaybook].
+message ExportPlaybookRequest {
+  // Data format of the exported playbook.
+  enum DataFormat {
+    // Unspecified format.
+    DATA_FORMAT_UNSPECIFIED = 0;
+
+    // Flow content will be exported as raw bytes.
+    BLOB = 1;
+
+    // Flow content will be exported in JSON format.
+    JSON = 2;
+  }
+
+  // Required. The name of the playbook to export.
+  // Format:
+  // `projects/<ProjectID>/locations/<LocationID>/agents/<AgentID>/playbooks/<PlaybookID>`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dialogflow.googleapis.com/Playbook"
+    }
+  ];
+
+  // Optional. The [Google Cloud
+  // Storage](https://cloud.google.com/storage/docs/) URI to export the playbook
+  // to. The format of this URI must be `gs://<bucket-name>/<object-name>`. If
+  // left unspecified, the serialized playbook is returned inline.
+  //
+  // Dialogflow performs a write operation for the Cloud Storage object
+  // on the caller's behalf, so your request authentication must
+  // have write permissions for the object. For more information, see
+  // [Dialogflow access
+  // control](https://cloud.google.com/dialogflow/cx/docs/concept/access-control#storage).
+  string playbook_uri = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The data format of the exported agent. If not specified, `BLOB`
+  // is assumed.
+  DataFormat data_format = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The request message for
+// [Playbooks.ImportPlaybook][google.cloud.dialogflow.cx.v3beta1.Playbooks.ImportPlaybook].
+message ImportPlaybookRequest {
+  // Required. The agent to import the playbook into.
+  // Format: `projects/<ProjectID>/locations/<LocationID>/agents/<AgentID>`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "dialogflow.googleapis.com/Playbook"
+    }
+  ];
+
+  // Required. The playbook to import.
+  // The [Google Cloud Storage](https://cloud.google.com/storage/docs/) URI
+  // to import playbook from. The format of this URI must be
+  // `gs://<bucket-name>/<object-name>`.
+  //
+  // Dialogflow performs a read operation for the Cloud Storage object
+  // on the caller's behalf, so your request authentication must
+  // have read permissions for the object. For more information, see
+  oneof playbook {
+    // [Dialogflow access
+    // control]
+    // (https://cloud.google.com/dialogflow/cx/docs/concept/access-control#storage).
+    string playbook_uri = 2;
+
+    // Uncompressed raw byte content for playbook.
+    bytes playbook_content = 3;
+  }
+
+  // Optional. Specifies the import strategy used when resolving resource
+  // conflicts.
+  PlaybookImportStrategy import_strategy = 4
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The playbook import strategy used for resource conflict resolution associated
+// with an
+// [ImportPlaybookRequest][google.cloud.dialogflow.cx.v3beta1.ImportPlaybookRequest].
+message PlaybookImportStrategy {
+  // Optional. Specifies the import strategy used when resolving conflicts with
+  // the main playbook. If not specified, 'CREATE_NEW' is assumed.
+  ImportStrategy main_playbook_import_strategy = 4
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Specifies the import strategy used when resolving referenced
+  // playbook/flow conflicts. If not specified, 'CREATE_NEW' is assumed.
+  ImportStrategy nested_resource_import_strategy = 5
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Specifies the import strategy used when resolving tool conflicts.
+  // If not specified, 'CREATE_NEW' is assumed. This will be applied after the
+  // main playbook and nested resource import strategies, meaning if the
+  // playbook that references the tool is skipped, the tool will also be
+  // skipped.
+  ImportStrategy tool_import_strategy = 6
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The response message for
+// [Playbooks.ImportPlaybook][google.cloud.dialogflow.cx.v3beta1.Playbooks.ImportPlaybook].
+message ImportPlaybookResponse {
+  // Conflicting resources detected during the import process. Only filled when
+  // [REPORT_CONFLICTS][ImportPlaybookResponse.REPORT_CONFLICTS] is set in the
+  // request and there are conflicts in the display names.
+  message ConflictingResources {
+    // Display name of conflicting main playbook.
+    string main_playbook_display_name = 1;
+
+    // Display names of conflicting nested playbooks.
+    repeated string nested_playbook_display_names = 2;
+
+    // Display names of conflicting tools.
+    repeated string tool_display_names = 3;
+  }
+
+  // The unique identifier of the new playbook.
+  // Format:
+  // `projects/<ProjectID>/locations/<LocationID>/agents/<AgentID>/playbooks/<PlaybookID>`.
+  string playbook = 1 [(google.api.resource_reference) = {
+    type: "dialogflow.googleapis.com/Playbook"
+  }];
+
+  // Info which resources have conflicts when
+  // [REPORT_CONFLICTS][ImportPlaybookResponse.REPORT_CONFLICTS] import strategy
+  // is set for all resources in ImportPlaybookRequest.
+  ConflictingResources conflicting_resources = 2;
+}
+
+// The response message for
+// [Playbooks.ExportPlaybook][google.cloud.dialogflow.cx.v3beta1.Playbooks.ExportPlaybook].
+message ExportPlaybookResponse {
+  // The exported playbook.
+  oneof playbook {
+    // The URI to a file containing the exported playbook. This field is
+    // populated only if `playbook_uri` is specified in
+    // [ExportPlaybookRequest][google.cloud.dialogflow.cx.v3beta1.ExportPlaybookRequest].
+    string playbook_uri = 1;
+
+    // Uncompressed raw byte content for playbook.
+    bytes playbook_content = 2;
+  }
 }
 
 // Handler can be used to define custom logic to be executed based on the

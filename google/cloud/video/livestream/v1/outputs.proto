@@ -19,6 +19,7 @@ package google.cloud.video.livestream.v1;
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/protobuf/duration.proto";
+import "google/rpc/status.proto";
 import "google/type/datetime.proto";
 
 option csharp_namespace = "Google.Cloud.Video.LiveStream.V1";
@@ -148,6 +149,112 @@ message Manifest {
   string key = 7 [(google.api.field_behavior) = OPTIONAL];
 }
 
+// Multiplexing settings for output streams used in
+// [Distribution][google.cloud.video.livestream.v1.Distribution].
+message DistributionStream {
+  // Required. A unique key for this distribution stream. The key must be 1-63
+  // characters in length. The key must begin and end with a letter (regardless
+  // of case) or a number, but can contain dashes or underscores in between.
+  string key = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The container format.
+  //
+  // Supported container formats:
+  //
+  // - `ts`, must contain exactly one audio stream and up to one video stream.
+  // - `flv`, must contain at most one audio stream and at most one video
+  // stream.
+  string container = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. List of `ElementaryStream`
+  // [key][google.cloud.video.livestream.v1.ElementaryStream.key]s multiplexed
+  // in this stream. Must contain at least one audio stream and up to one video
+  // stream.
+  repeated string elementary_streams = 3
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// Distribution configuration.
+message Distribution {
+  // State of this distribution.
+  enum State {
+    // State is not specified.
+    STATE_UNSPECIFIED = 0;
+
+    // Distribution has trouble to produce or deliver the output.
+    ERROR = 5;
+
+    // Distribution is not ready to be started.
+    NOT_READY = 6;
+
+    // Distribution is ready to be started.
+    READY = 7;
+
+    // Distribution is already started and is waiting for input.
+    AWAITING_INPUT = 8;
+
+    // Distribution is already started and is generating output.
+    DISTRIBUTING = 9;
+  }
+
+  // Required. A unique key for this distribution. The key must be 1-63
+  // characters in length. The key must begin and end with a letter (regardless
+  // of case) or a number, but can contain dashes or underscores in between.
+  string key = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. `DistributionStream`
+  // [key][google.cloud.video.livestream.v1.DistributionStream.key]s that should
+  // appear in this distribution output.
+  //
+  // - For SRT protocol, only `ts` distribution streams can be specified.
+  // - For RTMP protocol, only `flv` distribution streams can be specified.
+  string distribution_stream = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Output only. State of the distribution.
+  State state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Only present when the `state` is `ERROR`. The reason for the
+  // error state of the distribution.
+  google.rpc.Status error = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Configurations for the output endpoint by streaming protocols.
+  oneof endpoint {
+    // Output endpoint using SRT_PUSH.
+    SrtPushOutputEndpoint srt_push = 5;
+
+    // Output endpoint using RTMP_PUSH.
+    RtmpPushOutputEndpoint rtmp_push = 6;
+  }
+}
+
+// Configurations for an output endpoint using SRT_PUSH as the streaming
+// protocol.
+message SrtPushOutputEndpoint {
+  // Required. The full URI of the remote SRT server.
+  string uri = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Defines where SRT encryption passphrase are stored.
+  oneof passphrase_source {
+    // The name of the Secret Version containing the SRT encryption passphrase,
+    // which is stored in Google Secret Manager. It should be in the format of
+    // `projects/{project}/secrets/{secret_id}/versions/{version_number}`.
+    string passphrase_secret_version = 2 [(google.api.resource_reference) = {
+      type: "secretmanager.googleapis.com/SecretVersion"
+    }];
+  }
+}
+
+// Configurations for an output endpoint using RTMP_PUSH as the streaming
+// protocol.
+message RtmpPushOutputEndpoint {
+  // Required. The full URI of the remote RTMP server. For example:
+  // `rtmp://192.168.123.321/live/my-stream` or `rtmp://somedomain.com/someapp`.
+  string uri = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Stream key for RTMP protocol.
+  string stream_key = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
 // Sprite sheet configuration.
 message SpriteSheet {
   // Format type. The default is `jpeg`.
@@ -255,11 +362,11 @@ message VideoStream {
   // H264 codec settings.
   message H264CodecSettings {
     // Required. The width of the video in pixels. Must be an even integer.
-    // Valid range is [320, 1920].
+    // Valid range is [320, 4096].
     int32 width_pixels = 1;
 
     // Required. The height of the video in pixels. Must be an even integer.
-    // Valid range is [180, 1080].
+    // Valid range is [180, 2160].
     int32 height_pixels = 2;
 
     // Required. The target video frame rate in frames per second (FPS). Must be
@@ -275,6 +382,7 @@ message VideoStream {
     //
     // - For SD resolution (< 720p), must be <= 3,000,000 (3 Mbps).
     // - For HD resolution (<= 1080p), must be <= 15,000,000 (15 Mbps).
+    // - For UHD resolution (<= 2160p), must be <= 25,000,000 (25 Mbps).
     int32 bitrate_bps = 4 [(google.api.field_behavior) = REQUIRED];
 
     // Specifies whether an open Group of Pictures (GOP) structure should be
@@ -359,10 +467,91 @@ message VideoStream {
     string tune = 16;
   }
 
+  // H265 codec settings.
+  message H265CodecSettings {
+    // Optional. The width of the video in pixels. Must be an even integer.
+    // When not specified, the width is adjusted to match the specified height
+    // and input aspect ratio. If both are omitted, the input width is used.
+    // Valid range is [320, 4096].
+    int32 width_pixels = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The height of the video in pixels. Must be an even integer.
+    // When not specified, the height is adjusted to match the specified width
+    // and input aspect ratio. If both are omitted, the input height is used.
+    // Valid range is [180, 2160].
+    int32 height_pixels = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Required. The target video frame rate in frames per second (FPS). Must be
+    // less than or equal to 120. Will default to the input frame rate if larger
+    // than the input frame rate. The API will generate an output FPS that is
+    // divisible by the input FPS, and smaller or equal to the target FPS. See
+    // [Calculating frame
+    // rate](https://cloud.google.com/transcoder/docs/concepts/frame-rate) for
+    // more information.
+    double frame_rate = 3 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The video bitrate in bits per second. Minimum value is 10,000.
+    //
+    // - For SD resolution (< 720p), must be <= 3,000,000 (3 Mbps).
+    // - For HD resolution (<= 1080p), must be <= 15,000,000 (15 Mbps).
+    // - For UHD resolution (<= 2160p), must be <= 25,000,000 (25 Mbps).
+    int32 bitrate_bps = 4 [(google.api.field_behavior) = REQUIRED];
+
+    // GOP mode can be either by frame count or duration.
+    oneof gop_mode {
+      // Optional. Select the GOP size based on the specified frame count.
+      // If GOP frame count is set instead of GOP duration, GOP duration will be
+      // calculated by `gopFrameCount`/`frameRate`. The calculated GOP duration
+      // must satisfy the limitations on `gopDuration` as well.
+      // Valid range is [60, 600].
+      int32 gop_frame_count = 7 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Select the GOP size based on the specified duration. The
+      // default is `2s`. Note that `gopDuration` must be less than or equal to
+      // [segment_duration][google.cloud.video.livestream.v1.SegmentSettings.segment_duration],
+      // and
+      // [segment_duration][google.cloud.video.livestream.v1.SegmentSettings.segment_duration]
+      // must be divisible by `gopDuration`. Valid range is [2s, 20s].
+      //
+      // All video streams in the same channel must have the same GOP size.
+      google.protobuf.Duration gop_duration = 8
+          [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Optional. Size of the Video Buffering Verifier (VBV) buffer in bits. Must
+    // be greater than zero. The default is equal to
+    // [bitrate_bps][google.cloud.video.livestream.v1.VideoStream.H265CodecSettings.bitrate_bps].
+    int32 vbv_size_bits = 9 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Initial fullness of the Video Buffering Verifier (VBV) buffer
+    // in bits. Must be greater than zero. The default is equal to 90% of
+    // [vbv_size_bits][google.cloud.video.livestream.v1.VideoStream.H265CodecSettings.vbv_size_bits].
+    int32 vbv_fullness_bits = 10 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Allow B-pyramid for reference frame selection. This may not be
+    // supported on all decoders. The default is `false`.
+    bool b_pyramid = 11 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The number of consecutive B-frames. Must be greater than or
+    // equal to zero. Must be less than
+    // [gop_frame_count][google.cloud.video.livestream.v1.VideoStream.H265CodecSettings.gop_frame_count]
+    // if set. The default is 0.
+    int32 b_frame_count = 12 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Specify the intensity of the adaptive quantizer (AQ). Must be
+    // between 0 and 1, where 0 disables the quantizer and 1 maximizes the
+    // quantizer. A higher value equals a lower bitrate but smoother image. The
+    // default is 0.
+    double aq_strength = 13 [(google.api.field_behavior) = OPTIONAL];
+  }
+
   // Codec settings.
   oneof codec_settings {
     // H264 codec settings.
     H264CodecSettings h264 = 20;
+
+    // H265 codec settings.
+    H265CodecSettings h265 = 21;
   }
 }
 
@@ -438,13 +627,60 @@ message AudioStream {
 
 // Encoding of a text stream. For example, closed captions or subtitles.
 message TextStream {
+  // The mapping for the input streams and text tracks.
+  message TextMapping {
+    // Optional. The `Channel`
+    // [InputAttachment.key][google.cloud.video.livestream.v1.InputAttachment.key]
+    // that identifies the input that this text mapping applies to.
+    string input_key = 4 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The zero-based index of the track in the input stream.
+    int32 input_track = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The channel of the closed caption in the input stream.
+    // If this field is set, the output
+    // [codec][google.cloud.video.livestream.v1.TextStream.codec] must be
+    // `webvtt`. Must be one of `CC1`, `CC2`, `CC3`, and `CC4`, if the codec of
+    // the input closed caption is `cea608`; Must be one between `SERVICE1` and
+    // `SERVICE64`, if the codec of the input closed caption is `cea708`.
+    string input_cea_channel = 5 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The BCP-47 source language code, such as `en-US` or `sr-Latn`.
+    // If differ from the textStream's language code, enable translation. For
+    // more information on BCP-47 language codes, see
+    // https://www.unicode.org/reports/tr35/#Unicode_locale_identifier.
+    string from_language_code = 6 [(google.api.field_behavior) = OPTIONAL];
+  }
+
   // Required. The codec for this text stream.
   //
   // Supported text codecs:
   //
   // - `cea608`
   // - `cea708`
+  // - `webvtt`
   string codec = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The BCP-47 language code, such as `en-US` or `sr-Latn`. For more
+  // information, see
+  // https://www.unicode.org/reports/tr35/#Unicode_locale_identifier.
+  string language_code = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The name for this particular text stream that will be added to
+  // the HLS/DASH manifest.
+  string display_name = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The channel of the closed caption in the output stream.
+  // This field should only be set when textstream is used for partner
+  // distribution.
+  // Must be one of `CC1`, `CC2`, `CC3`, and `CC4`, if the
+  // [codec][google.cloud.video.livestream.v1.TextStream.codec] is `cea608`;
+  // Must be one between `SERVICE1` and `SERVICE63`, if the
+  // [codec][google.cloud.video.livestream.v1.TextStream.codec] is `cea708`.
+  string output_cea_channel = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The mapping for the input streams and text tracks.
+  repeated TextMapping mapping = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Segment settings for `fmp4` and `ts`.
