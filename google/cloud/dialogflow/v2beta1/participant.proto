@@ -130,6 +130,11 @@ service Participants {
   rpc StreamingAnalyzeContent(stream StreamingAnalyzeContentRequest)
       returns (stream StreamingAnalyzeContentResponse) {}
 
+  // Bidirectional endless streaming version of
+  // [StreamingAnalyzeContent][google.cloud.dialogflow.v2beta1.Participants.StreamingAnalyzeContent].
+  rpc BidiStreamingAnalyzeContent(stream BidiStreamingAnalyzeContentRequest)
+      returns (stream BidiStreamingAnalyzeContentResponse) {}
+
   // Gets suggested articles for a participant based on specific historical
   // messages.
   //
@@ -560,47 +565,51 @@ message AutomatedAgentReply {
   bytes call_companion_auth_code = 12;
 }
 
-// Represents the selection of a suggestion.
+// Represents the action to take for a tool call that requires confirmation.
 message SuggestionInput {
-  // Required. The ID of a suggestion selected by the human agent.
-  // The suggestion(s) were generated in a previous call to
-  // request Dialogflow assist.
-  // The format is:
-  // `projects/<Project ID>/locations/<Location ID>/answerRecords/<Answer Record
-  // ID>` where <Answer Record ID> is an alphanumeric string.
+  // Indicate what type of action to take with the tool call.
+  enum Action {
+    // Action not specified.
+    ACTION_UNSPECIFIED = 0;
+
+    // Indicates the user chooses to not make the tool call. It
+    // is only applicable to tool calls that are waiting for user
+    // confirmation.
+    CANCEL = 1;
+
+    // Makes the tool call with provided parameters. This action is intended
+    // for tool calls that only read but not write data.
+    REVISE = 2;
+
+    // Makes the tool call with provided parameters. This action is intended
+    // for tool calls that may write data.
+    CONFIRM = 3;
+  }
+
+  // Required. Format: `projects/<Project ID>/locations/<Location
+  // ID>/answerRecords/<Answer Record ID>`
+  // The answer record associated with the tool call.
   string answer_record = 1;
 
   // Optional. If the customer edited the suggestion before using it, include
   // the revised text here.
   TextInput text_override = 2;
 
-  // In Dialogflow assist for v3, the user can submit a form by sending
-  // a [SuggestionInput][google.cloud.dialogflow.v2beta1.SuggestionInput]. The
-  // form is uniquely determined by the
-  // [answer_record][google.cloud.dialogflow.v2beta1.SuggestionInput.answer_record]
-  // field, which identifies a v3
-  // [QueryResult][google.cloud.dialogflow.v3alpha1.QueryResult] containing the
-  // current [page][google.cloud.dialogflow.v3alpha1.Page]. The form parameters
-  // are specified via the
-  // [parameters][google.cloud.dialogflow.v2beta1.SuggestionInput.parameters]
-  // field.
-  //
-  // Depending on your protocol or client library language, this is a
-  // map, associative array, symbol table, dictionary, or JSON object
-  // composed of a collection of (MapKey, MapValue) pairs:
-  //
-  // * MapKey type: string
-  // * MapKey value: parameter name
-  // * MapValue type: If parameter's entity type is a composite entity then use
-  // map, otherwise, depending on the parameter value type, it could be one of
-  // string, number, boolean, null, list or map.
-  // * MapValue value: If parameter's entity type is a composite entity then use
-  // map from composite entity property names to property values, otherwise,
-  // use parameter value.
+  // Parameters to be used for the tool call.  If not provided, the tool
+  // will be called without any parameters.
   google.protobuf.Struct parameters = 4;
+
+  // Optional. The type of action to take with the tool.
+  Action action = 5 [(google.api.field_behavior) = OPTIONAL];
 
   // The intent to be triggered on V3 agent.
   IntentInput intent_input = 6;
+
+  // Optional. Time when the current suggest input is sent. For tool calls, this
+  // timestamp (along with the answer record) will be included in the
+  // corresponding tool call result so that it can be identified.
+  google.protobuf.Timestamp send_time = 7
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Represents the intent to trigger programmatically rather than as a result of
@@ -931,12 +940,13 @@ message StreamingAnalyzeContentRequest {
 
     // The intent to be triggered on V3 agent.
     // Format: `projects/<Project ID>/locations/<Location ID>/locations/
-    // <Location ID>/agents/<Agent ID>/intents/<Intent ID>`.
+    // <Location ID>/agents/<Agent ID>/intents/<Intent ID>`. This can only be
+    // used to trigger the Welcome intent id if you are using text_config.
     string input_intent = 17;
 
     // The input event name.
     // This can only be sent once and would cancel the ongoing speech
-    // recognition if any.
+    // recognition if any. To trigger the Welcome intent use the event "WELCOME"
     string input_event = 20;
   }
 
@@ -1872,4 +1882,142 @@ message KnowledgeAssistAnswer {
   // Format: `projects/<Project ID>/locations/<location ID>/answer
   // Records/<Answer Record ID>`.
   string answer_record = 3;
+}
+
+// The request message for
+// [Participants.BidiStreamingAnalyzeContent][google.cloud.dialogflow.v2beta1.Participants.BidiStreamingAnalyzeContent].
+message BidiStreamingAnalyzeContentRequest {
+  // The config of the session.
+  message Config {
+    // The config about how to process the audio for a voice-based session.
+    message VoiceSessionConfig {
+      // Required. The encoding of input audio.
+      AudioEncoding input_audio_encoding = 1
+          [(google.api.field_behavior) = REQUIRED];
+
+      // Required. The sample rate of input audio.
+      int32 input_audio_sample_rate_hertz = 2
+          [(google.api.field_behavior) = REQUIRED];
+
+      // Required. The encoding of output audio.
+      OutputAudioEncoding output_audio_encoding = 3
+          [(google.api.field_behavior) = REQUIRED];
+
+      // Required. The sample rate of output audio.
+      int32 output_audio_sample_rate_hertz = 4
+          [(google.api.field_behavior) = REQUIRED];
+
+      // Optional. Whether to enable CX proactive processing.
+      bool enable_cx_proactive_processing = 5
+          [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. If true, Dialogflow will stream the audio bytes from Cloud
+      // TTS for speech synthesis using the StreamingSynthesize api.
+      bool enable_streaming_synthesize = 23
+          [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Required. The name of the participant to fetch response for.
+    // Format: `projects/<Project ID>/locations/<Location
+    // ID>/conversations/<Conversation ID>/participants/<Participant ID>`.
+    string participant = 1 [
+      (google.api.field_behavior) = REQUIRED,
+      (google.api.resource_reference) = {
+        type: "dialogflow.googleapis.com/Participant"
+      }
+    ];
+
+    // The config of the session.
+    oneof config {
+      // Configure a voice-based session.
+      VoiceSessionConfig voice_session_config = 2;
+    }
+
+    // Parameters to be passed to the virtual agent at the beginning.
+    google.protobuf.Struct initial_virtual_agent_parameters = 3;
+
+    // Initial parameters for the virtual-agent.
+    QueryParameters initial_virtual_agent_query_params = 4;
+  }
+
+  // Input that forms data for a single turn.
+  message TurnInput {
+    // Content that indicates the end of the turn.
+    oneof main_content {
+      // The UTF-8 encoded natural language text to be processed.
+      string text = 1;
+
+      // The intent to be triggered on V3 agent.
+      // Format: `projects/<Project ID>/locations/<Location ID>/locations/
+      // <Location ID>/agents/<Agent ID>/intents/<Intent ID>`. This can only be
+      // used to trigger the Welcome intent id if the modality is text.
+      string intent = 2 [(google.api.resource_reference) = {
+        type: "dialogflow.googleapis.com/Intent"
+      }];
+
+      // The input event name.
+      // This can only be sent once and would cancel the ongoing speech
+      // recognition if any. To trigger the Welcome intent use the
+      // event "WELCOME"
+      string event = 3;
+    }
+
+    // Optional. Parameters to be passed to the virtual agent.
+    google.protobuf.Struct virtual_agent_parameters = 4
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Input for the conversation.
+  message Input {
+    oneof input {
+      // The content of audio stream to be recognized.
+      bytes audio = 1;
+
+      // The DTMF digits used to invoke intent and fill in parameter value.
+      //
+      // This input is ignored if the previous response indicated that DTMF
+      // input is not accepted.
+      TelephonyDtmfEvents dtmf = 2;
+
+      // Turn input.
+      TurnInput turn = 3;
+    }
+  }
+
+  // Required. Possible request types for BidiStreamingAnalyzeContent.
+  oneof request {
+    // The config message for this conversation.
+    Config config = 1;
+
+    // Text, audio or other multi-modality inputs.
+    // This is the second and following messages sent by the client.
+    Input input = 2;
+  }
+}
+
+// The response message for
+// [Participants.BidiStreamingAnalyzeContent][google.cloud.dialogflow.v2beta1.Participants.BidiStreamingAnalyzeContent].
+message BidiStreamingAnalyzeContentResponse {
+  // Indicate the user barge-in has been detected.
+  message BargeInSignal {}
+
+  // Indicate that the turn is complete.
+  message TurnComplete {}
+
+  // The output response.
+  oneof response {
+    // The result of speech recognition.
+    StreamingRecognitionResult recognition_result = 1;
+
+    //
+    // Indicate the user barge-in has been detected, and client should stop
+    // playing back the audio.
+    BargeInSignal barge_in_signal = 2;
+
+    // The agent response from analyze content.
+    AnalyzeContentResponse analyze_content_response = 3;
+
+    // Indicate that the turn is complete.
+    TurnComplete turn_complete = 4;
+  }
 }
