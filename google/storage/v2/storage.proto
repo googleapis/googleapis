@@ -42,23 +42,28 @@ option (google.api.resource_definition) = {
 //
 // The Cloud Storage gRPC API allows applications to read and write data through
 // the abstractions of buckets and objects. For a description of these
-// abstractions please see https://cloud.google.com/storage/docs.
+// abstractions please see [Cloud Storage
+// documentation](https://cloud.google.com/storage/docs).
 //
 // Resources are named as follows:
+//
 //   - Projects are referred to as they are defined by the Resource Manager API,
 //     using strings like `projects/123456` or `projects/my-string-id`.
 //   - Buckets are named using string names of the form:
-//     `projects/{project}/buckets/{bucket}`
-//     For globally unique buckets, `_` may be substituted for the project.
+//     `projects/{project}/buckets/{bucket}`.
+//     For globally unique buckets, `_` might be substituted for the project.
 //   - Objects are uniquely identified by their name along with the name of the
 //     bucket they belong to, as separate strings in this API. For example:
 //
-//       ReadObjectRequest {
+//         ```
+//         ReadObjectRequest {
 //         bucket: 'projects/_/buckets/my-bucket'
 //         object: 'my-object'
-//       }
-//     Note that object names can contain `/` characters, which are treated as
-//     any other character (no special directory semantics).
+//         }
+//         ```
+//
+// Note that object names can contain `/` characters, which are treated as
+// any other character (no special directory semantics).
 service Storage {
   option (google.api.default_host) = "storage.googleapis.com";
   option (google.api.oauth_scopes) =
@@ -69,6 +74,29 @@ service Storage {
       "https://www.googleapis.com/auth/devstorage.read_write";
 
   // Permanently deletes an empty bucket.
+  // The request fails if there are any live or
+  // noncurrent objects in the bucket, but the request succeeds if the
+  // bucket only contains soft-deleted objects or incomplete uploads, such
+  // as ongoing XML API multipart uploads. Does not permanently delete
+  // soft-deleted objects.
+  //
+  // When this API is used to delete a bucket containing an object that has a
+  // soft delete policy
+  // enabled, the object becomes soft deleted, and the
+  // `softDeleteTime` and `hardDeleteTime` properties are set on the
+  // object.
+  //
+  // Objects and multipart uploads that were in the bucket at the time of
+  // deletion are also retained for the specified retention duration. When
+  // a soft-deleted bucket reaches the end of its retention duration, it
+  // is permanently deleted. The `hardDeleteTime` of the bucket always
+  // equals
+  // or exceeds the expiration time of the last soft-deleted object in the
+  // bucket.
+  //
+  // **IAM Permissions**:
+  //
+  // Requires `storage.buckets.delete` IAM permission on the bucket.
   rpc DeleteBucket(DeleteBucketRequest) returns (google.protobuf.Empty) {
     option (google.api.routing) = {
       routing_parameters { field: "name" path_template: "{bucket=**}" }
@@ -77,6 +105,16 @@ service Storage {
   }
 
   // Returns metadata for the specified bucket.
+  //
+  // **IAM Permissions**:
+  //
+  // Requires `storage.buckets.get`
+  // IAM permission on
+  // the bucket. Additionally, to return specific bucket metadata, the
+  // authenticated user must have the following permissions:
+  //
+  // - To return the IAM policies: `storage.buckets.getIamPolicy`
+  // - To return the bucket IP filtering rules: `storage.buckets.getIpFilter`
   rpc GetBucket(GetBucketRequest) returns (Bucket) {
     option (google.api.routing) = {
       routing_parameters { field: "name" path_template: "{bucket=**}" }
@@ -85,6 +123,16 @@ service Storage {
   }
 
   // Creates a new bucket.
+  //
+  // **IAM Permissions**:
+  //
+  // Requires `storage.buckets.create` IAM permission on the bucket.
+  // Additionally, to enable specific bucket features, the authenticated user
+  // must have the following permissions:
+  //
+  // - To enable object retention using the `enableObjectRetention` query
+  // parameter: `storage.buckets.enableObjectRetention`
+  // - To set the bucket IP filtering rules: `storage.buckets.setIpFilter`
   rpc CreateBucket(CreateBucketRequest) returns (Bucket) {
     option (google.api.routing) = {
       routing_parameters { field: "parent" path_template: "{project=**}" }
@@ -96,7 +144,17 @@ service Storage {
     option (google.api.method_signature) = "parent,bucket,bucket_id";
   }
 
-  // Retrieves a list of buckets for a given project.
+  // Retrieves a list of buckets for a given project, ordered
+  // lexicographically by name.
+  //
+  // **IAM Permissions**:
+  //
+  // Requires `storage.buckets.list` IAM permission on the bucket.
+  // Additionally, to enable specific bucket features, the authenticated
+  // user must have the following permissions:
+  //
+  // - To list the IAM policies: `storage.buckets.getIamPolicy`
+  // - To list the bucket IP filtering rules: `storage.buckets.getIpFilter`
   rpc ListBuckets(ListBucketsRequest) returns (ListBucketsResponse) {
     option (google.api.routing) = {
       routing_parameters { field: "parent" path_template: "{project=**}" }
@@ -104,7 +162,25 @@ service Storage {
     option (google.api.method_signature) = "parent";
   }
 
-  // Locks retention policy on a bucket.
+  // Permanently locks the retention
+  // policy that is
+  // currently applied to the specified bucket.
+  //
+  // Caution: Locking a bucket is an
+  // irreversible action. Once you lock a bucket:
+  //
+  // - You cannot remove the retention policy from the bucket.
+  // - You cannot decrease the retention period for the policy.
+  //
+  // Once locked, you must delete the entire bucket in order to remove the
+  // bucket's retention policy. However, before you can delete the bucket, you
+  // must delete all the objects in the bucket, which is only
+  // possible if all the objects have reached the retention period set by the
+  // retention policy.
+  //
+  // **IAM Permissions**:
+  //
+  // Requires `storage.buckets.update` IAM permission on the bucket.
   rpc LockBucketRetentionPolicy(LockBucketRetentionPolicyRequest)
       returns (Bucket) {
     option (google.api.routing) = {
@@ -113,11 +189,17 @@ service Storage {
     option (google.api.method_signature) = "bucket";
   }
 
-  // Gets the IAM policy for a specified bucket.
+  // Gets the IAM policy for a specified bucket or managed folder.
   // The `resource` field in the request should be
   // `projects/_/buckets/{bucket}` for a bucket, or
   // `projects/_/buckets/{bucket}/managedFolders/{managedFolder}`
   // for a managed folder.
+  //
+  // **IAM Permissions**:
+  //
+  // Requires `storage.buckets.getIamPolicy` on the bucket or
+  // `storage.managedFolders.getIamPolicy` IAM permission on the
+  // managed folder.
   rpc GetIamPolicy(google.iam.v1.GetIamPolicyRequest)
       returns (google.iam.v1.Policy) {
     option (google.api.routing) = {
@@ -130,7 +212,7 @@ service Storage {
     option (google.api.method_signature) = "resource";
   }
 
-  // Updates an IAM policy for the specified bucket.
+  // Updates an IAM policy for the specified bucket or managed folder.
   // The `resource` field in the request should be
   // `projects/_/buckets/{bucket}` for a bucket, or
   // `projects/_/buckets/{bucket}/managedFolders/{managedFolder}`
@@ -148,9 +230,8 @@ service Storage {
   }
 
   // Tests a set of permissions on the given bucket, object, or managed folder
-  // to see which, if any, are held by the caller.
-  // The `resource` field in the request should be
-  // `projects/_/buckets/{bucket}` for a bucket,
+  // to see which, if any, are held by the caller. The `resource` field in the
+  // request should be `projects/_/buckets/{bucket}` for a bucket,
   // `projects/_/buckets/{bucket}/objects/{object}` for an object, or
   // `projects/_/buckets/{bucket}/managedFolders/{managedFolder}`
   // for a managed folder.
@@ -170,7 +251,19 @@ service Storage {
     option (google.api.method_signature) = "resource,permissions";
   }
 
-  // Updates a bucket. Equivalent to JSON API's storage.buckets.patch method.
+  // Updates a bucket. Changes to the bucket are readable immediately after
+  // writing, but configuration changes might take time to propagate. This
+  // method supports `patch` semantics.
+  //
+  // **IAM Permissions**:
+  //
+  // Requires `storage.buckets.update` IAM permission on the bucket.
+  // Additionally, to enable specific bucket features, the authenticated user
+  // must have the following permissions:
+  //
+  // - To set bucket IP filtering rules: `storage.buckets.setIpFilter`
+  // - To update public access prevention policies or access control lists
+  // (ACLs): `storage.buckets.setIamPolicy`
   rpc UpdateBucket(UpdateBucketRequest) returns (Bucket) {
     option (google.api.routing) = {
       routing_parameters { field: "bucket.name" path_template: "{bucket=**}" }
@@ -179,7 +272,16 @@ service Storage {
   }
 
   // Concatenates a list of existing objects into a new object in the same
-  // bucket.
+  // bucket. The existing source objects are unaffected by this operation.
+  //
+  // **IAM Permissions**:
+  //
+  // Requires the `storage.objects.create` and `storage.objects.get` IAM
+  // permissions to use this method. If the new composite object
+  // overwrites an existing object, the authenticated user must also have
+  // the `storage.objects.delete` permission. If the request body includes
+  // the retention property, the authenticated user must also have the
+  // `storage.objects.setRetention` IAM permission.
   rpc ComposeObject(ComposeObjectRequest) returns (Object) {
     option (google.api.routing) = {
       routing_parameters {
@@ -191,7 +293,7 @@ service Storage {
 
   // Deletes an object and its metadata. Deletions are permanent if versioning
   // is not enabled for the bucket, or if the generation parameter is used, or
-  // if [soft delete](https://cloud.google.com/storage/docs/soft-delete) is not
+  // if soft delete is not
   // enabled for the bucket.
   // When this API is used to delete an object from a bucket that has soft
   // delete policy enabled, the object becomes soft deleted, and the
@@ -206,9 +308,7 @@ service Storage {
   //
   // **IAM Permissions**:
   //
-  // Requires `storage.objects.delete`
-  // [IAM permission](https://cloud.google.com/iam/docs/overview#permissions) on
-  // the bucket.
+  // Requires `storage.objects.delete` IAM permission on the bucket.
   rpc DeleteObject(DeleteObjectRequest) returns (google.protobuf.Empty) {
     option (google.api.routing) = {
       routing_parameters { field: "bucket" path_template: "{bucket=**}" }
@@ -217,7 +317,43 @@ service Storage {
     option (google.api.method_signature) = "bucket,object,generation";
   }
 
-  // Restores a soft-deleted object.
+  // Restores a
+  // soft-deleted object.
+  // When a soft-deleted object is restored, a new copy of that object is
+  // created in the same bucket and inherits the same metadata as the
+  // soft-deleted object. The inherited metadata is the metadata that existed
+  // when the original object became soft deleted, with the following
+  // exceptions:
+  //
+  //   - The `createTime` of the new object is set to the time at which the
+  //   soft-deleted object was restored.
+  //   - The `softDeleteTime` and `hardDeleteTime` values are cleared.
+  //   - A new generation is assigned and the metageneration is reset to 1.
+  //   - If the soft-deleted object was in a bucket that had Autoclass enabled,
+  //   the new object is
+  //     restored to Standard storage.
+  //   - The restored object inherits the bucket's default object ACL, unless
+  //   `copySourceAcl` is `true`.
+  //
+  // If a live object using the same name already exists in the bucket and
+  // becomes overwritten, the live object becomes a noncurrent object if Object
+  // Versioning is enabled on the bucket. If Object Versioning is not enabled,
+  // the live object becomes soft deleted.
+  //
+  // **IAM Permissions**:
+  //
+  // Requires the following IAM permissions to use this method:
+  //
+  //   - `storage.objects.restore`
+  //   - `storage.objects.create`
+  //   - `storage.objects.delete` (only required if overwriting an existing
+  //   object)
+  //   - `storage.objects.getIamPolicy` (only required if `projection` is `full`
+  //   and the relevant bucket
+  //     has uniform bucket-level access disabled)
+  //   - `storage.objects.setIamPolicy` (only required if `copySourceAcl` is
+  //   `true` and the relevant
+  //     bucket has uniform bucket-level access disabled)
   rpc RestoreObject(RestoreObjectRequest) returns (Object) {
     option (google.api.routing) = {
       routing_parameters { field: "bucket" path_template: "{bucket=**}" }
@@ -228,9 +364,9 @@ service Storage {
   // Cancels an in-progress resumable upload.
   //
   // Any attempts to write to the resumable upload after cancelling the upload
-  // will fail.
+  // fail.
   //
-  // The behavior for currently in progress write operations is not guaranteed -
+  // The behavior for any in-progress write operations is not guaranteed;
   // they could either complete before the cancellation or fail if the
   // cancellation completes first.
   rpc CancelResumableWrite(CancelResumableWriteRequest)
@@ -248,9 +384,8 @@ service Storage {
   //
   // **IAM Permissions**:
   //
-  // Requires `storage.objects.get`
-  // [IAM permission](https://cloud.google.com/iam/docs/overview#permissions) on
-  // the bucket. To return object ACLs, the authenticated user must also have
+  // Requires `storage.objects.get` IAM permission on the bucket.
+  // To return object ACLs, the authenticated user must also have
   // the `storage.objects.getIamPolicy` permission.
   rpc GetObject(GetObjectRequest) returns (Object) {
     option (google.api.routing) = {
@@ -264,9 +399,7 @@ service Storage {
   //
   // **IAM Permissions**:
   //
-  // Requires `storage.objects.get`
-  // [IAM permission](https://cloud.google.com/iam/docs/overview#permissions) on
-  // the bucket.
+  // Requires `storage.objects.get` IAM permission on the bucket.
   rpc ReadObject(ReadObjectRequest) returns (stream ReadObjectResponse) {
     option (google.api.routing) = {
       routing_parameters { field: "bucket" path_template: "{bucket=**}" }
@@ -277,23 +410,18 @@ service Storage {
 
   // Reads an object's data.
   //
-  // This is a bi-directional API with the added support for reading multiple
-  // ranges within one stream both within and across multiple messages.
-  // If the server encountered an error for any of the inputs, the stream will
-  // be closed with the relevant error code.
-  // Because the API allows for multiple outstanding requests, when the stream
-  // is closed the error response will contain a BidiReadObjectRangesError proto
-  // in the error extension describing the error for each outstanding read_id.
+  // This bi-directional API reads data from an object, allowing you to
+  // request multiple data ranges within a single stream, even across
+  // several messages. If an error occurs with any request, the stream
+  // closes with a relevant error code. Since you can have multiple
+  // outstanding requests, the error response includes a
+  // `BidiReadObjectRangesError` field detailing the specific error for
+  // each pending `read_id`.
   //
   // **IAM Permissions**:
   //
-  // Requires `storage.objects.get`
+  // Requires `storage.objects.get` IAM permission on the bucket.
   //
-  // [IAM permission](https://cloud.google.com/iam/docs/overview#permissions) on
-  // the bucket.
-  //
-  // This API is currently in preview and is not yet available for general
-  // use.
   rpc BidiReadObject(stream BidiReadObjectRequest)
       returns (stream BidiReadObjectResponse) {
     option (google.api.routing) = {
@@ -305,7 +433,11 @@ service Storage {
   }
 
   // Updates an object's metadata.
-  // Equivalent to JSON API's storage.objects.patch.
+  // Equivalent to JSON API's `storage.objects.patch` method.
+  //
+  // **IAM Permissions**:
+  //
+  // Requires `storage.objects.update` IAM permission on the bucket.
   rpc UpdateObject(UpdateObjectRequest) returns (Object) {
     option (google.api.routing) = {
       routing_parameters { field: "object.bucket" path_template: "{bucket=**}" }
@@ -329,72 +461,73 @@ service Storage {
   // finishing the upload (either explicitly by the client or due to a network
   // error or an error response from the server), the client should do as
   // follows:
+  //
   //   - Check the result Status of the stream, to determine if writing can be
   //     resumed on this stream or must be restarted from scratch (by calling
-  //     `StartResumableWrite()`). The resumable errors are DEADLINE_EXCEEDED,
-  //     INTERNAL, and UNAVAILABLE. For each case, the client should use binary
-  //     exponential backoff before retrying.  Additionally, writes can be
-  //     resumed after RESOURCE_EXHAUSTED errors, but only after taking
-  //     appropriate measures, which may include reducing aggregate send rate
+  //     `StartResumableWrite()`). The resumable errors are `DEADLINE_EXCEEDED`,
+  //     `INTERNAL`, and `UNAVAILABLE`. For each case, the client should use
+  //     binary exponential backoff before retrying.  Additionally, writes can
+  //     be resumed after `RESOURCE_EXHAUSTED` errors, but only after taking
+  //     appropriate measures, which might include reducing aggregate send rate
   //     across clients and/or requesting a quota increase for your project.
   //   - If the call to `WriteObject` returns `ABORTED`, that indicates
   //     concurrent attempts to update the resumable write, caused either by
   //     multiple racing clients or by a single client where the previous
   //     request was timed out on the client side but nonetheless reached the
   //     server. In this case the client should take steps to prevent further
-  //     concurrent writes (e.g., increase the timeouts, stop using more than
-  //     one process to perform the upload, etc.), and then should follow the
-  //     steps below for resuming the upload.
+  //     concurrent writes. For example, increase the timeouts and stop using
+  //     more than one process to perform the upload. Follow the steps below for
+  //     resuming the upload.
   //   - For resumable errors, the client should call `QueryWriteStatus()` and
-  //     then continue writing from the returned `persisted_size`. This may be
+  //     then continue writing from the returned `persisted_size`. This might be
   //     less than the amount of data the client previously sent. Note also that
   //     it is acceptable to send data starting at an offset earlier than the
-  //     returned `persisted_size`; in this case, the service will skip data at
+  //     returned `persisted_size`; in this case, the service skips data at
   //     offsets that were already persisted (without checking that it matches
   //     the previously written data), and write only the data starting from the
-  //     persisted offset. Even though the data isn't written, it may still
+  //     persisted offset. Even though the data isn't written, it might still
   //     incur a performance cost over resuming at the correct write offset.
   //     This behavior can make client-side handling simpler in some cases.
   //   - Clients must only send data that is a multiple of 256 KiB per message,
   //     unless the object is being finished with `finish_write` set to `true`.
   //
-  // The service will not view the object as complete until the client has
+  // The service does not view the object as complete until the client has
   // sent a `WriteObjectRequest` with `finish_write` set to `true`. Sending any
   // requests on a stream after sending a request with `finish_write` set to
-  // `true` will cause an error. The client **should** check the response it
-  // receives to determine how much data the service was able to commit and
+  // `true` causes an error. The client must check the response it
+  // receives to determine how much data the service is able to commit and
   // whether the service views the object as complete.
   //
-  // Attempting to resume an already finalized object will result in an OK
+  // Attempting to resume an already finalized object results in an `OK`
   // status, with a `WriteObjectResponse` containing the finalized object's
   // metadata.
   //
-  // Alternatively, the BidiWriteObject operation may be used to write an
+  // Alternatively, you can use the `BidiWriteObject` operation to write an
   // object with controls over flushing and the ability to fetch the ability to
   // determine the current persisted size.
   //
   // **IAM Permissions**:
   //
   // Requires `storage.objects.create`
-  // [IAM permission](https://cloud.google.com/iam/docs/overview#permissions) on
+  // IAM permission on
   // the bucket.
   rpc WriteObject(stream WriteObjectRequest) returns (WriteObjectResponse) {}
 
   // Stores a new object and metadata.
   //
-  // This is similar to the WriteObject call with the added support for
+  // This is similar to the `WriteObject` call with the added support for
   // manual flushing of persisted state, and the ability to determine current
   // persisted size without closing the stream.
   //
-  // The client may specify one or both of the `state_lookup` and `flush` fields
-  // in each BidiWriteObjectRequest. If `flush` is specified, the data written
-  // so far will be persisted to storage. If `state_lookup` is specified, the
-  // service will respond with a BidiWriteObjectResponse that contains the
+  // The client might specify one or both of the `state_lookup` and `flush`
+  // fields in each `BidiWriteObjectRequest`. If `flush` is specified, the data
+  // written so far is persisted to storage. If `state_lookup` is specified, the
+  // service responds with a `BidiWriteObjectResponse` that contains the
   // persisted size. If both `flush` and `state_lookup` are specified, the flush
-  // will always occur before a `state_lookup`, so that both may be set in the
-  // same request and the returned state will be the state of the object
-  // post-flush. When the stream is closed, a BidiWriteObjectResponse will
-  // always be sent to the client, regardless of the value of `state_lookup`.
+  // always occurs before a `state_lookup`, so that both might be set in the
+  // same request and the returned state is the state of the object
+  // post-flush. When the stream is closed, a `BidiWriteObjectResponse`
+  // is always sent to the client, regardless of the value of `state_lookup`.
   rpc BidiWriteObject(stream BidiWriteObjectRequest)
       returns (stream BidiWriteObjectResponse) {}
 
@@ -403,8 +536,8 @@ service Storage {
   // **IAM Permissions**:
   //
   // The authenticated user requires `storage.objects.list`
-  // [IAM permission](https://cloud.google.com/iam/docs/overview#permissions)
-  // to use this method. To return object ACLs, the authenticated user must also
+  // IAM permission to use this method. To return object ACLs, the
+  // authenticated user must also
   // have the `storage.objects.getIamPolicy` permission.
   rpc ListObjects(ListObjectsRequest) returns (ListObjectsResponse) {
     option (google.api.routing) = {
@@ -426,8 +559,8 @@ service Storage {
   }
 
   // Starts a resumable write operation. This
-  // method is part of the [Resumable
-  // upload](https://cloud.google.com/storage/docs/resumable-uploads) feature.
+  // method is part of the Resumable
+  // upload feature.
   // This allows you to upload large objects in multiple chunks, which is more
   // resilient to network interruptions than a single upload. The validity
   // duration of the write operation, and the consequences of it becoming
@@ -435,9 +568,7 @@ service Storage {
   //
   // **IAM Permissions**:
   //
-  // Requires `storage.objects.create`
-  // [IAM permission](https://cloud.google.com/iam/docs/overview#permissions) on
-  // the bucket.
+  // Requires `storage.objects.create` IAM permission on the bucket.
   rpc StartResumableWrite(StartResumableWriteRequest)
       returns (StartResumableWriteResponse) {
     option (google.api.routing) = {
@@ -449,8 +580,8 @@ service Storage {
   }
 
   // Determines the `persisted_size` of an object that is being written. This
-  // method is part of the [resumable
-  // upload](https://cloud.google.com/storage/docs/resumable-uploads) feature.
+  // method is part of the resumable
+  // upload feature.
   // The returned value is the size of the object that has been persisted so
   // far. The value can be used as the `write_offset` for the next `Write()`
   // call.
@@ -477,6 +608,19 @@ service Storage {
   }
 
   // Moves the source object to the destination object in the same bucket.
+  // This operation moves a source object to a destination object in the
+  // same bucket by renaming the object. The move itself is an atomic
+  // transaction, ensuring all steps either complete successfully or no
+  // changes are made.
+  //
+  // **IAM Permissions**:
+  //
+  // Requires the following IAM permissions to use this method:
+  //
+  //   - `storage.objects.move`
+  //   - `storage.objects.create`
+  //   - `storage.objects.delete` (only required if overwriting an existing
+  //   object)
   rpc MoveObject(MoveObjectRequest) returns (Object) {
     option (google.api.routing) = {
       routing_parameters { field: "bucket" path_template: "{bucket=**}" }
@@ -486,7 +630,7 @@ service Storage {
   }
 }
 
-// Request message for DeleteBucket.
+// Request message for [DeleteBucket][google.storage.v2.Storage.DeleteBucket].
 message DeleteBucketRequest {
   // Required. Name of a bucket to delete.
   string name = 1 [
@@ -502,7 +646,7 @@ message DeleteBucketRequest {
   optional int64 if_metageneration_not_match = 3;
 }
 
-// Request message for GetBucket.
+// Request message for [GetBucket][google.storage.v2.Storage.GetBucket].
 message GetBucketRequest {
   // Required. Name of a bucket.
   string name = 1 [
@@ -510,25 +654,25 @@ message GetBucketRequest {
     (google.api.resource_reference) = { type: "storage.googleapis.com/Bucket" }
   ];
 
-  // If set, and if the bucket's current metageneration does not match the
-  // specified value, the request will return an error.
+  // If set, only gets the bucket metadata if its metageneration matches this
+  // value.
   optional int64 if_metageneration_match = 2;
 
   // If set, and if the bucket's current metageneration matches the specified
-  // value, the request will return an error.
+  // value, the request returns an error.
   optional int64 if_metageneration_not_match = 3;
 
   // Mask specifying which fields to read.
-  // A "*" field may be used to indicate all fields.
-  // If no mask is specified, will default to all fields.
+  // A `*` field might be used to indicate all fields.
+  // If no mask is specified, it defaults to all fields.
   optional google.protobuf.FieldMask read_mask = 5;
 }
 
-// Request message for CreateBucket.
+// Request message for [CreateBucket][google.storage.v2.Storage.CreateBucket].
 message CreateBucketRequest {
-  // Required. The project to which this bucket will belong. This field must
-  // either be empty or `projects/_`. The project ID that owns this bucket
-  // should be specified in the `bucket.project` field.
+  // Required. The project to which this bucket belongs. This field must either
+  // be empty or `projects/_`. The project ID that owns this bucket should be
+  // specified in the `bucket.project` field.
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -538,26 +682,26 @@ message CreateBucketRequest {
 
   // Optional. Properties of the new bucket being inserted.
   // The name of the bucket is specified in the `bucket_id` field. Populating
-  // `bucket.name` field will result in an error.
+  // `bucket.name` field results in an error.
   // The project of the bucket must be specified in the `bucket.project` field.
   // This field must be in `projects/{projectIdentifier}` format,
   // {projectIdentifier} can be the project ID or project number. The `parent`
   // field must be either empty or `projects/_`.
   Bucket bucket = 2 [(google.api.field_behavior) = OPTIONAL];
 
-  // Required. The ID to use for this bucket, which will become the final
-  // component of the bucket's resource name. For example, the value `foo` might
-  // result in a bucket with the name `projects/123456/buckets/foo`.
+  // Required. The ID to use for this bucket, which becomes the final component
+  // of the bucket's resource name. For example, the value `foo` might result in
+  // a bucket with the name `projects/123456/buckets/foo`.
   string bucket_id = 3 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. Apply a predefined set of access controls to this bucket.
-  // Valid values are "authenticatedRead", "private", "projectPrivate",
-  // "publicRead", or "publicReadWrite".
+  // Valid values are `authenticatedRead`, `private`, `projectPrivate`,
+  // `publicRead`, or `publicReadWrite`.
   string predefined_acl = 6 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Apply a predefined set of default object access controls to this
-  // bucket. Valid values are "authenticatedRead", "bucketOwnerFullControl",
-  // "bucketOwnerRead", "private", "projectPrivate", or "publicRead".
+  // bucket. Valid values are `authenticatedRead`, `bucketOwnerFullControl`,
+  // `bucketOwnerRead`, `private`, `projectPrivate`, or `publicRead`.
   string predefined_default_object_acl = 7
       [(google.api.field_behavior) = OPTIONAL];
 
@@ -565,7 +709,7 @@ message CreateBucketRequest {
   bool enable_object_retention = 9 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Request message for ListBuckets.
+// Request message for [ListBuckets][google.storage.v2.Storage.ListBuckets].
 message ListBucketsRequest {
   // Required. The project whose buckets we are listing.
   string parent = 1 [
@@ -576,9 +720,9 @@ message ListBucketsRequest {
   ];
 
   // Optional. Maximum number of buckets to return in a single response. The
-  // service will use this parameter or 1,000 items, whichever is smaller. If
-  // "acl" is present in the read_mask, the service will use this parameter of
-  // 200 items, whichever is smaller.
+  // service uses this parameter or `1,000` items, whichever is smaller. If
+  // `acl` is present in the `read_mask`, the service uses this parameter of
+  // `200` items, whichever is smaller.
   int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. A previously-returned page token representing part of the larger
@@ -589,13 +733,17 @@ message ListBucketsRequest {
   string prefix = 4 [(google.api.field_behavior) = OPTIONAL];
 
   // Mask specifying which fields to read from each result.
-  // If no mask is specified, will default to all fields except items.owner,
-  // items.acl, and items.default_object_acl.
-  // * may be used to mean "all fields".
+  // If no mask is specified, it defaults to all fields except `items.
+  // owner`, `items.acl`, and `items.default_object_acl`.
+  // `*` might be used to mean "all fields".
   optional google.protobuf.FieldMask read_mask = 5;
+
+  // Optional. Allows listing of buckets, even if there are buckets that are
+  // unreachable.
+  bool return_partial_success = 9 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// The result of a call to Buckets.ListBuckets
+// Response message for [ListBuckets][google.storage.v2.Storage.ListBuckets].
 message ListBucketsResponse {
   // The list of items.
   repeated Bucket buckets = 1;
@@ -603,9 +751,22 @@ message ListBucketsResponse {
   // The continuation token, used to page through large result sets. Provide
   // this value in a subsequent request to return the next page of results.
   string next_page_token = 2;
+
+  // Unreachable resources.
+  // This field can only be present if the caller specified
+  // return_partial_success to be true in the request to receive indications
+  // of temporarily missing resources.
+  // unreachable might be:
+  // unreachable = [
+  //  "projects/_/buckets/bucket1",
+  //  "projects/_/buckets/bucket2",
+  //  "projects/_/buckets/bucket3",
+  // ]
+  repeated string unreachable = 3;
 }
 
-// Request message for LockBucketRetentionPolicyRequest.
+// Request message for
+// [LockBucketRetentionPolicy][google.storage.v2.Storage.LockBucketRetentionPolicy].
 message LockBucketRetentionPolicyRequest {
   // Required. Name of a bucket.
   string bucket = 1 [
@@ -618,28 +779,28 @@ message LockBucketRetentionPolicyRequest {
   int64 if_metageneration_match = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
-// Request for UpdateBucket method.
+// Request for [UpdateBucket][google.storage.v2.Storage.UpdateBucket] method.
 message UpdateBucketRequest {
   // Required. The bucket to update.
-  // The bucket's `name` field will be used to identify the bucket.
+  // The bucket's `name` field is used to identify the bucket.
   Bucket bucket = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // If set, will only modify the bucket if its metageneration matches this
+  // If set, the request modifies the bucket if its metageneration matches this
   // value.
   optional int64 if_metageneration_match = 2;
 
-  // If set, will only modify the bucket if its metageneration does not match
-  // this value.
+  // If set, the request modifies the bucket if its metageneration doesn't
+  // match this value.
   optional int64 if_metageneration_not_match = 3;
 
   // Optional. Apply a predefined set of access controls to this bucket.
-  // Valid values are "authenticatedRead", "private", "projectPrivate",
-  // "publicRead", or "publicReadWrite".
+  // Valid values are `authenticatedRead`, `private`, `projectPrivate`,
+  // `publicRead`, or `publicReadWrite`.
   string predefined_acl = 8 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Apply a predefined set of default object access controls to this
-  // bucket. Valid values are "authenticatedRead", "bucketOwnerFullControl",
-  // "bucketOwnerRead", "private", "projectPrivate", or "publicRead".
+  // bucket. Valid values are `authenticatedRead`, `bucketOwnerFullControl`,
+  // `bucketOwnerRead`, `private`, `projectPrivate`, or `publicRead`.
   string predefined_default_object_acl = 9
       [(google.api.field_behavior) = OPTIONAL];
 
@@ -648,14 +809,14 @@ message UpdateBucketRequest {
   // To specify ALL fields, equivalent to the JSON API's "update" function,
   // specify a single field with the value `*`. Note: not recommended. If a new
   // field is introduced at a later time, an older client updating with the `*`
-  // may accidentally reset the new field's value.
+  // might accidentally reset the new field's value.
   //
   // Not specifying any fields is an error.
   google.protobuf.FieldMask update_mask = 6
       [(google.api.field_behavior) = REQUIRED];
 }
 
-// Request message for ComposeObject.
+// Request message for [ComposeObject][google.storage.v2.Storage.ComposeObject].
 message ComposeObjectRequest {
   // Description of a source object for a composition request.
   message SourceObject {
@@ -663,7 +824,7 @@ message ComposeObjectRequest {
     message ObjectPreconditions {
       // Only perform the composition if the generation of the source object
       // that would be used matches this value.  If this value and a generation
-      // are both specified, they must be the same value or the call will fail.
+      // are both specified, they must be the same value or the call fails.
       optional int64 if_generation_match = 1;
     }
 
@@ -682,14 +843,14 @@ message ComposeObjectRequest {
   // Required. Properties of the resulting object.
   Object destination = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. The list of source objects that will be concatenated into a
-  // single object.
+  // Optional. The list of source objects that is concatenated into a single
+  // object.
   repeated SourceObject source_objects = 2
       [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Apply a predefined set of access controls to the destination
-  // object. Valid values are "authenticatedRead", "bucketOwnerFullControl",
-  // "bucketOwnerRead", "private", "projectPrivate", or "publicRead".
+  // object. Valid values are `authenticatedRead`, `bucketOwnerFullControl`,
+  // `bucketOwnerRead`, `private`, `projectPrivate`, or `publicRead`.
   string destination_predefined_acl = 9
       [(google.api.field_behavior) = OPTIONAL];
 
@@ -704,7 +865,7 @@ message ComposeObjectRequest {
 
   // Optional. Resource name of the Cloud KMS key, of the form
   // `projects/my-project/locations/my-location/keyRings/my-kr/cryptoKeys/my-key`,
-  // that will be used to encrypt the object. Overrides the object
+  // that is used to encrypt the object. Overrides the object
   // metadata's `kms_key_name` value, if any.
   string kms_key = 6 [
     (google.api.field_behavior) = OPTIONAL,
@@ -718,14 +879,13 @@ message ComposeObjectRequest {
   CommonObjectRequestParams common_object_request_params = 7
       [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The checksums of the complete object. This will be validated
-  // against the combined checksums of the component objects.
+  // Optional. The checksums of the complete object. This is validated against
+  // the combined checksums of the component objects.
   ObjectChecksums object_checksums = 10
       [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Message for deleting an object.
-// `bucket` and `object` **must** be set.
+// Request message for deleting an object.
 message DeleteObjectRequest {
   // Required. Name of the bucket in which the object resides.
   string bucket = 1 [
@@ -767,7 +927,8 @@ message DeleteObjectRequest {
       [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Message for restoring an object.
+// Request message for
+// [RestoreObject][google.storage.v2.Storage.RestoreObject].
 // `bucket`, `object`, and `generation` **must** be set.
 message RestoreObjectRequest {
   // Required. Name of the bucket in which the object resides.
@@ -808,7 +969,7 @@ message RestoreObjectRequest {
   // metageneration does not match the given value.
   optional int64 if_metageneration_not_match = 7;
 
-  // If false or unset, the bucket's default object ACL will be used.
+  // If false or unset, the bucket's default object ACL is used.
   // If true, copy the source object's access controls.
   // Return an error if bucket has UBLA enabled.
   optional bool copy_source_acl = 9;
@@ -819,19 +980,19 @@ message RestoreObjectRequest {
       [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Message for canceling an in-progress resumable upload.
-// `upload_id` **must** be set.
+// Request message for
+// [CancelResumableWrite][google.storage.v2.Storage.CancelResumableWrite].
 message CancelResumableWriteRequest {
   // Required. The upload_id of the resumable upload to cancel. This should be
   // copied from the `upload_id` field of `StartResumableWriteResponse`.
   string upload_id = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
-// Empty response message for canceling an in-progress resumable upload, will be
+// Empty response message for canceling an in-progress resumable upload, is
 // extended as needed.
 message CancelResumableWriteResponse {}
 
-// Request message for ReadObject.
+// Request message for [ReadObject][google.storage.v2.Storage.ReadObject].
 message ReadObjectRequest {
   // Required. The name of the bucket containing the object to read.
   string bucket = 1 [
@@ -849,17 +1010,17 @@ message ReadObjectRequest {
   // Optional. The offset for the first byte to return in the read, relative to
   // the start of the object.
   //
-  // A negative `read_offset` value will be interpreted as the number of bytes
+  // A negative `read_offset` value is interpreted as the number of bytes
   // back from the end of the object to be returned. For example, if an object's
-  // length is 15 bytes, a ReadObjectRequest with `read_offset` = -5 and
-  // `read_limit` = 3 would return bytes 10 through 12 of the object. Requesting
-  // a negative offset with magnitude larger than the size of the object will
-  // return the entire object.
+  // length is `15` bytes, a `ReadObjectRequest` with `read_offset` = `-5` and
+  // `read_limit` = `3` would return bytes `10` through `12` of the object.
+  // Requesting a negative offset with magnitude larger than the size of the
+  // object returns the entire object.
   int64 read_offset = 4 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The maximum number of `data` bytes the server is allowed to
   // return in the sum of all `Object` messages. A `read_limit` of zero
-  // indicates that there is no limit, and a negative `read_limit` will cause an
+  // indicates that there is no limit, and a negative `read_limit` causes an
   // error.
   //
   // If the stream returns fewer bytes than allowed by the `read_limit` and no
@@ -892,14 +1053,14 @@ message ReadObjectRequest {
       [(google.api.field_behavior) = OPTIONAL];
 
   // Mask specifying which fields to read.
-  // The checksummed_data field and its children will always be present.
-  // If no mask is specified, will default to all fields except metadata.owner
-  // and metadata.acl.
-  // * may be used to mean "all fields".
+  // The `checksummed_data` field and its children are always present.
+  // If no mask is specified, it defaults to all fields except `metadata.
+  // owner` and `metadata.acl`.
+  // `*` might be used to mean "all fields".
   optional google.protobuf.FieldMask read_mask = 12;
 }
 
-// Request message for GetObject.
+// Request message for [GetObject][google.storage.v2.Storage.GetObject].
 message GetObjectRequest {
   // Required. Name of the bucket in which the object resides.
   string bucket = 1 [
@@ -942,22 +1103,22 @@ message GetObjectRequest {
       [(google.api.field_behavior) = OPTIONAL];
 
   // Mask specifying which fields to read.
-  // If no mask is specified, will default to all fields except metadata.acl and
-  // metadata.owner.
-  // * may be used to mean "all fields".
+  // If no mask is specified, it defaults to all fields except `metadata.
+  // acl` and `metadata.owner`.
+  // `*` might be used to mean "all fields".
   optional google.protobuf.FieldMask read_mask = 10;
 
   // Optional. Restore token used to differentiate soft-deleted objects with the
   // same name and generation. Only applicable for hierarchical namespace
-  // buckets and if soft_deleted is set to true. This parameter is optional, and
-  // is only required in the rare case when there are multiple soft-deleted
-  // objects with the same name and generation.
+  // buckets and if `soft_deleted` is set to `true`. This parameter is optional,
+  // and is only required in the rare case when there are multiple soft-deleted
+  // objects with the same `name` and `generation`.
   string restore_token = 12 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Response message for ReadObject.
+// Response message for [ReadObject][google.storage.v2.Storage.ReadObject].
 message ReadObjectResponse {
-  // A portion of the data for the object. The service **may** leave `data`
+  // A portion of the data for the object. The service might leave `data`
   // empty for any given `ReadResponse`. This enables the service to inform the
   // client that the request is still live while it is running an operation to
   // generate more data.
@@ -968,9 +1129,9 @@ message ReadObjectResponse {
   // and compare it against the value provided here.
   ObjectChecksums object_checksums = 2;
 
-  // If read_offset and or read_limit was specified on the
-  // ReadObjectRequest, ContentRange will be populated on the first
-  // ReadObjectResponse message of the read stream.
+  // If `read_offset` and or `read_limit` is specified on the
+  // `ReadObjectRequest`, `ContentRange` is populated on the first
+  // `ReadObjectResponse` message of the read stream.
   ContentRange content_range = 3;
 
   // Metadata of the object whose media is being returned.
@@ -1018,13 +1179,12 @@ message BidiReadObjectSpec {
       [(google.api.field_behavior) = OPTIONAL];
 
   // Mask specifying which fields to read.
-  // The checksummed_data field and its children will always be present.
-  // If no mask is specified, will default to all fields except metadata.owner
-  // and metadata.acl.
-  // * may be used to mean "all fields".
+  // The `checksummed_data` field and its children are always present.
+  // If no mask is specified, it defaults to all fields except `metadata.
+  // owner` and `metadata.acl`.
+  // `*` might be used to mean "all fields".
   // As per https://google.aip.dev/161, this field is deprecated.
-  // As an alternative, grpc metadata can be used:
-  // https://cloud.google.com/apis/docs/system-parameters#definitions
+  // As an alternative, `grpc metadata` can be used:
   optional google.protobuf.FieldMask read_mask = 12 [deprecated = true];
 
   // The client can optionally set this field. The read handle is an optimized
@@ -1037,32 +1197,34 @@ message BidiReadObjectSpec {
   optional string routing_token = 14;
 }
 
-// Request message for BidiReadObject.
+// Request message for
+// [BidiReadObject][google.storage.v2.Storage.BidiReadObject].
 message BidiReadObjectRequest {
   // Optional. The first message of each stream should set this field. If this
-  // is not the first message, an error will be returned. Describes the object
-  // to read.
+  // is not the first message, an error is returned. Describes the object to
+  // read.
   BidiReadObjectSpec read_object_spec = 1
       [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Provides a list of 0 or more (up to 100) ranges to read. If a
   // single range is large enough to require multiple responses, they are
-  // guaranteed to be delivered in increasing offset order. There are no
-  // ordering guarantees across ranges. When no ranges are provided, the
-  // response message will not include ObjectRangeData. For full object
-  // downloads, the offset and size can be set to 0.
+  // delivered in increasing offset order. There are no ordering guarantees
+  // across ranges. When no ranges are provided, the response message
+  // doesn't  include `ObjectRangeData`. For full object downloads, the
+  // offset and size can be set to `0`.
   repeated ReadRange read_ranges = 8 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Response message for BidiReadObject.
+// Response message for
+// [BidiReadObject][google.storage.v2.Storage.BidiReadObject].
 message BidiReadObjectResponse {
-  // A portion of the object's data. The service **may** leave data
-  // empty for any given ReadResponse. This enables the service to inform the
+  // A portion of the object's data. The service might leave data
+  // empty for any given `ReadResponse`. This enables the service to inform the
   // client that the request is still live while it is running an operation to
   // generate more data.
-  // The service **may** pipeline multiple responses belonging to different read
-  // requests. Each ObjectRangeData entry will have a read_id
-  // set to the same value as the corresponding source read request.
+  // The service might pipeline multiple responses belonging to different read
+  // requests. Each `ObjectRangeData` entry has a `read_id` that is set
+  // to the same value as the corresponding source read request.
   repeated ObjectRangeData object_data_ranges = 6;
 
   // Metadata of the object whose media is being returned.
@@ -1070,17 +1232,17 @@ message BidiReadObjectResponse {
   // the stream is opened with a read handle.
   Object metadata = 4;
 
-  // This field will be periodically refreshed, however it may not be set in
+  // This field is periodically refreshed, however it might not be set in
   // every response. It allows the client to more efficiently open subsequent
   // bidirectional streams to the same object.
   BidiReadHandle read_handle = 7;
 }
 
-// Error proto containing details for a redirected read. This error may be
+// Error proto containing details for a redirected read. This error might be
 // attached as details for an ABORTED response to BidiReadObject.
 message BidiReadObjectRedirectedError {
-  // The read handle for the redirected read. If set, the client may use this in
-  // the BidiReadObjectSpec when retrying the read stream.
+  // The read handle for the redirected read. If set, the client might use this
+  // in the BidiReadObjectSpec when retrying the read stream.
   BidiReadHandle read_handle = 1;
 
   // The routing token the client must use when retrying the read stream.
@@ -1089,7 +1251,7 @@ message BidiReadObjectRedirectedError {
   optional string routing_token = 2;
 }
 
-// Error proto containing details for a redirected write. This error may be
+// Error proto containing details for a redirected write. This error might be
 // attached as details for an ABORTED response to BidiWriteObject.
 message BidiWriteObjectRedirectedError {
   // The routing token the client must use when retrying the write stream.
@@ -1099,12 +1261,12 @@ message BidiWriteObjectRedirectedError {
 
   // Opaque value describing a previous write. If set, the client must use this
   // in an AppendObjectSpec first_message when retrying the write stream. If not
-  // set, clients may retry the original request.
+  // set, clients might retry the original request.
   optional BidiWriteHandle write_handle = 2;
 
-  // The generation of the object that triggered the redirect. This will be set
-  // iff write_handle is set. If set, the client must use this in an
-  // AppendObjectSpec first_message when retrying the write stream.
+  // The generation of the object that triggered the redirect. This is set
+  // iff `write_handle` is set. If set, the client must use this in an
+  // `AppendObjectSpec` first_message when retrying the write stream.
   optional int64 generation = 3;
 }
 
@@ -1124,33 +1286,33 @@ message ReadRangeError {
   google.rpc.Status status = 2;
 }
 
-// Describes a range of bytes to read in a BidiReadObjectRanges request.
+// Describes a range of bytes to read in a `BidiReadObjectRanges` request.
 message ReadRange {
   // Required. The offset for the first byte to return in the read, relative to
   // the start of the object.
   //
-  // A negative read_offset value will be interpreted as the number of bytes
+  // A negative read_offset value is interpreted as the number of bytes
   // back from the end of the object to be returned. For example, if an object's
-  // length is 15 bytes, a ReadObjectRequest with read_offset = -5 and
-  // read_length = 3 would return bytes 10 through 12 of the object. Requesting
-  // a negative offset with magnitude larger than the size of the object will
-  // return the entire object. A read_offset larger than the size of the object
-  // will result in an OutOfRange error.
+  // length is 15 bytes, a `ReadObjectRequest` with `read_offset` = -5 and
+  // `read_length` = 3 would return bytes 10 through 12 of the object.
+  // Requesting a negative offset with magnitude larger than the size of the
+  // object returns the entire object. A `read_offset` larger than the size
+  // of the object results in an `OutOfRange` error.
   int64 read_offset = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. The maximum number of data bytes the server is allowed to return
-  // across all response messages with the same read_id. A read_length of zero
-  // indicates to read until the resource end, and a negative read_length will
-  // cause an error. If the stream returns fewer bytes than allowed by the
-  // read_length and no error occurred, the stream includes all data from the
-  // read_offset to the resource end.
+  // across all response messages with the same `read_id`. A `read_length` of
+  // zero indicates to read until the resource end, and a negative `read_length`
+  // causes an error. If the stream returns fewer bytes than allowed by the
+  // `read_length` and no error occurred, the stream includes all data from the
+  // `read_offset` to the resource end.
   int64 read_length = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. Read identifier provided by the client. When the client issues
-  // more than one outstanding ReadRange on the same stream, responses can be
+  // more than one outstanding `ReadRange` on the same stream, responses can be
   // mapped back to their corresponding requests using this value. Clients must
   // ensure that all outstanding requests have different read_id values. The
-  // server may close the stream with an error if this condition is not met.
+  // server might close the stream with an error if this condition is not met.
   int64 read_id = 3 [(google.api.field_behavior) = REQUIRED];
 }
 
@@ -1159,28 +1321,28 @@ message ObjectRangeData {
   // A portion of the data for the object.
   ChecksummedData checksummed_data = 1;
 
-  // The ReadRange describes the content being returned with read_id set to the
-  // corresponding ReadObjectRequest in the stream. Multiple ObjectRangeData
-  // messages may have the same read_id but increasing offsets.
-  // ReadObjectResponse messages with the same read_id are guaranteed to be
-  // delivered in increasing offset order.
+  // The `ReadRange` describes the content being returned with `read_id` set to
+  // the corresponding `ReadObjectRequest` in the stream. Multiple
+  // `ObjectRangeData` messages might have the same read_id but increasing
+  // offsets. `ReadObjectResponse` messages with the same `read_id` are
+  // guaranteed to be delivered in increasing offset order.
   ReadRange read_range = 2;
 
   // If set, indicates there are no more bytes to read for the given ReadRange.
   bool range_end = 3;
 }
 
-// BidiReadHandle contains a handle from a previous BiDiReadObject
-// invocation. The client can use this instead of BidiReadObjectSpec as an
+// `BidiReadHandle` contains a handle from a previous `BiDiReadObject`
+// invocation. The client can use this instead of `BidiReadObjectSpec` as an
 // optimized way of opening subsequent bidirectional streams to the same object.
 message BidiReadHandle {
   // Required. Opaque value describing a previous read.
   bytes handle = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
-// BidiWriteHandle contains a handle from a previous BidiWriteObject
-// invocation. The client can use this as an optimized way of opening subsequent
-// bidirectional streams to the same object.
+// `BidiWriteHandle` contains a handle from a previous `BidiWriteObject`
+// invocation. The client can use this instead of `BidiReadObjectSpec` as an
+// optimized way of opening subsequent bidirectional streams to the same object.
 message BidiWriteHandle {
   // Required. Opaque value describing a previous write.
   bytes handle = 1 [(google.api.field_behavior) = REQUIRED];
@@ -1192,18 +1354,18 @@ message WriteObjectSpec {
   Object resource = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. Apply a predefined set of access controls to this object.
-  // Valid values are "authenticatedRead", "bucketOwnerFullControl",
-  // "bucketOwnerRead", "private", "projectPrivate", or "publicRead".
+  // Valid values are `authenticatedRead`, `bucketOwnerFullControl`,
+  // `bucketOwnerRead`, `private`, `projectPrivate`, or `publicRead`.
   string predefined_acl = 7 [(google.api.field_behavior) = OPTIONAL];
 
   // Makes the operation conditional on whether the object's current
-  // generation matches the given value. Setting to 0 makes the operation
+  // generation matches the given value. Setting to `0` makes the operation
   // succeed only if there are no live versions of the object.
   optional int64 if_generation_match = 3;
 
   // Makes the operation conditional on whether the object's live
   // generation does not match the given value. If no live object exists, the
-  // precondition fails. Setting to 0 makes the operation succeed only if
+  // precondition fails. Setting to `0` makes the operation succeed only if
   // there is a live version of the object.
   optional int64 if_generation_not_match = 4;
 
@@ -1217,19 +1379,19 @@ message WriteObjectSpec {
 
   // The expected final object size being uploaded.
   // If this value is set, closing the stream after writing fewer or more than
-  // `object_size` bytes will result in an OUT_OF_RANGE error.
+  // `object_size` bytes results in an `OUT_OF_RANGE` error.
   //
   // This situation is considered a client error, and if such an error occurs
   // you must start the upload over from scratch, this time sending the correct
   // number of bytes.
   optional int64 object_size = 8;
 
-  // If true, the object will be created in appendable mode.
-  // This field may only be set when using BidiWriteObject.
+  // If `true`, the object is created in appendable mode.
+  // This field might only be set when using `BidiWriteObject`.
   optional bool appendable = 9;
 }
 
-// Request message for WriteObject.
+// Request message for [WriteObject][google.storage.v2.Storage.WriteObject].
 message WriteObjectRequest {
   // The first message of each stream should set one of the following.
   oneof first_message {
@@ -1254,39 +1416,40 @@ message WriteObjectRequest {
   // first `write_offset` and the sizes of all `data` chunks sent previously on
   // this stream.
   //
-  // An incorrect value will cause an error.
+  // An incorrect value causes an error.
   int64 write_offset = 3 [(google.api.field_behavior) = REQUIRED];
 
   // A portion of the data for the object.
   oneof data {
     // The data to insert. If a crc32c checksum is provided that doesn't match
-    // the checksum computed by the service, the request will fail.
+    // the checksum computed by the service, the request fails.
     ChecksummedData checksummed_data = 4;
   }
 
   // Optional. Checksums for the complete object. If the checksums computed by
-  // the service don't match the specified checksums the call will fail. May
-  // only be provided in the first or last request (either with first_message,
-  // or finish_write set).
+  // the service don't match the specified checksums the call fails. This field
+  // might only be provided in the first or last request (either with
+  // `first_message`, or `finish_write` set).
   ObjectChecksums object_checksums = 6 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. If `true`, this indicates that the write is complete. Sending any
   // `WriteObjectRequest`s subsequent to one in which `finish_write` is `true`
-  // will cause an error.
-  // For a non-resumable write (where the upload_id was not set in the first
+  // causes an error.
+  // For a non-resumable write (where the `upload_id` was not set in the first
   // message), it is an error not to set this field in the final message of the
   // stream.
   bool finish_write = 7 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. A set of parameters common to Storage API requests concerning an
-  // object.
+  // Optional. A set of parameters common to Cloud Storage API requests
+  // concerning an object.
   CommonObjectRequestParams common_object_request_params = 8
       [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Response message for WriteObject.
+// Response message for
+// [WriteObject][google.storage.v2.Storage.WriteObject].
 message WriteObjectResponse {
-  // The response will set one of the following.
+  // The response sets one of the following.
   oneof write_status {
     // The total number of bytes that have been processed for the given object
     // from all `WriteObject` calls. Only set if the upload has not finalized.
@@ -1327,7 +1490,7 @@ message AppendObjectSpec {
   optional int64 if_metageneration_not_match = 5;
 
   // An optional routing token that influences request routing for the stream.
-  // Must be provided if a BidiWriteObjectRedirectedError is returned.
+  // Must be provided if a `BidiWriteObjectRedirectedError` is returned.
   optional string routing_token = 6;
 
   // An optional write handle returned from a previous BidiWriteObjectResponse
@@ -1338,7 +1501,8 @@ message AppendObjectSpec {
   optional BidiWriteHandle write_handle = 7;
 }
 
-// Request message for BidiWriteObject.
+// Request message for
+// [BidiWriteObject][google.storage.v2.Storage.BidiWriteObject].
 message BidiWriteObjectRequest {
   // The first message of each stream should set one of the following.
   oneof first_message {
@@ -1358,43 +1522,43 @@ message BidiWriteObjectRequest {
   // should be written.
   //
   // In the first `WriteObjectRequest` of a `WriteObject()` action, it
-  // indicates the initial offset for the `Write()` call. The value **must** be
+  // indicates the initial offset for the `Write()` call. The value must be
   // equal to the `persisted_size` that a call to `QueryWriteStatus()` would
   // return (0 if this is the first write to the object).
   //
-  // On subsequent calls, this value **must** be no larger than the sum of the
+  // On subsequent calls, this value must be no larger than the sum of the
   // first `write_offset` and the sizes of all `data` chunks sent previously on
   // this stream.
   //
-  // An invalid value will cause an error.
+  // An invalid value causes an error.
   int64 write_offset = 3 [(google.api.field_behavior) = REQUIRED];
 
   // A portion of the data for the object.
   oneof data {
     // The data to insert. If a crc32c checksum is provided that doesn't match
-    // the checksum computed by the service, the request will fail.
+    // the checksum computed by the service, the request fails.
     ChecksummedData checksummed_data = 4;
   }
 
   // Optional. Checksums for the complete object. If the checksums computed by
-  // the service don't match the specified checksums the call will fail. May
-  // only be provided in the first request or the last request (with
-  // finish_write set).
+  // the service don't match the specified checksums the call fails. Might only
+  // be provided in the first request or the last request (with finish_write
+  // set).
   ObjectChecksums object_checksums = 6 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. For each BidiWriteObjectRequest where state_lookup is `true` or
-  // the client closes the stream, the service will send a
-  // BidiWriteObjectResponse containing the current persisted size. The
+  // Optional. For each `BidiWriteObjectRequest` where `state_lookup` is `true`
+  // or the client closes the stream, the service sends a
+  // `BidiWriteObjectResponse` containing the current persisted size. The
   // persisted size sent in responses covers all the bytes the server has
   // persisted thus far and can be used to decide what data is safe for the
   // client to drop. Note that the object's current size reported by the
-  // BidiWriteObjectResponse may lag behind the number of bytes written by the
-  // client. This field is ignored if `finish_write` is set to true.
+  // `BidiWriteObjectResponse` might lag behind the number of bytes written by
+  // the client. This field is ignored if `finish_write` is set to true.
   bool state_lookup = 7 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Persists data written on the stream, up to and including the
   // current message, to permanent storage. This option should be used sparingly
-  // as it may reduce performance. Ongoing writes will periodically be persisted
+  // as it might reduce performance. Ongoing writes are periodically persisted
   // on the server even when `flush` is not set. This field is ignored if
   // `finish_write` is set to true since there's no need to checkpoint or flush
   // if this message completes the write.
@@ -1402,8 +1566,8 @@ message BidiWriteObjectRequest {
 
   // Optional. If `true`, this indicates that the write is complete. Sending any
   // `WriteObjectRequest`s subsequent to one in which `finish_write` is `true`
-  // will cause an error.
-  // For a non-resumable write (where the upload_id was not set in the first
+  // causes an error.
+  // For a non-resumable write (where the `upload_id` was not set in the first
   // message), it is an error not to set this field in the final message of the
   // stream.
   bool finish_write = 9 [(google.api.field_behavior) = OPTIONAL];
@@ -1416,7 +1580,7 @@ message BidiWriteObjectRequest {
 
 // Response message for BidiWriteObject.
 message BidiWriteObjectResponse {
-  // The response will set one of the following.
+  // The response sets one of the following.
   oneof write_status {
     // The total number of bytes that have been processed for the given object
     // from all `WriteObject` calls. Only set if the upload has not finalized.
@@ -1427,13 +1591,13 @@ message BidiWriteObjectResponse {
     Object resource = 2;
   }
 
-  // An optional write handle that will periodically be present in response
+  // An optional write handle that is returned periodically in response
   // messages. Clients should save it for later use in establishing a new stream
   // if a connection is interrupted.
   optional BidiWriteHandle write_handle = 3;
 }
 
-// Request message for ListObjects.
+// Request message for [ListObjects][google.storage.v2.Storage.ListObjects].
 message ListObjectsRequest {
   // Required. Name of the bucket in which to look for objects.
   string parent = 1 [
@@ -1443,23 +1607,23 @@ message ListObjectsRequest {
 
   // Optional. Maximum number of `items` plus `prefixes` to return
   // in a single page of responses. As duplicate `prefixes` are
-  // omitted, fewer total results may be returned than requested. The service
-  // will use this parameter or 1,000 items, whichever is smaller.
+  // omitted, fewer total results might be returned than requested. The service
+  // uses this parameter or 1,000 items, whichever is smaller.
   int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. A previously-returned page token representing part of the larger
   // set of results to view.
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. If set, returns results in a directory-like mode. `items` will
-  // contain only objects whose names, aside from the `prefix`, do not contain
+  // Optional. If set, returns results in a directory-like mode. `items`
+  // contains only objects whose names, aside from the `prefix`, do not contain
   // `delimiter`. Objects whose names, aside from the `prefix`, contain
-  // `delimiter` will have their name, truncated after the `delimiter`, returned
-  // in `prefixes`. Duplicate `prefixes` are omitted.
+  // `delimiter` has their name, truncated after the `delimiter`, returned in
+  // `prefixes`. Duplicate `prefixes` are omitted.
   string delimiter = 4 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. If true, objects that end in exactly one instance of `delimiter`
-  // will have their metadata included in `items` in addition to
+  // has their metadata included in `items` in addition to
   // `prefixes`.
   bool include_trailing_delimiter = 5 [(google.api.field_behavior) = OPTIONAL];
 
@@ -1467,51 +1631,51 @@ message ListObjectsRequest {
   string prefix = 6 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. If `true`, lists all versions of an object as distinct results.
-  // For more information, see
-  // [Object
-  // Versioning](https://cloud.google.com/storage/docs/object-versioning).
   bool versions = 7 [(google.api.field_behavior) = OPTIONAL];
 
   // Mask specifying which fields to read from each result.
-  // If no mask is specified, will default to all fields except items.acl and
-  // items.owner.
-  // * may be used to mean "all fields".
+  // If no mask is specified, defaults to all fields except `items.acl` and
+  // `items.owner`.
+  // `*` might be used to mean all fields.
   optional google.protobuf.FieldMask read_mask = 8;
 
   // Optional. Filter results to objects whose names are lexicographically equal
-  // to or after lexicographic_start. If lexicographic_end is also set, the
-  // objects listed have names between lexicographic_start (inclusive) and
-  // lexicographic_end (exclusive).
+  // to or after `lexicographic_start`. If `lexicographic_end` is also set, the
+  // objects listed have names between `lexicographic_start` (inclusive) and
+  // `lexicographic_end` (exclusive).
   string lexicographic_start = 10 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Filter results to objects whose names are lexicographically
-  // before lexicographic_end. If lexicographic_start is also set, the objects
-  // listed have names between lexicographic_start (inclusive) and
-  // lexicographic_end (exclusive).
+  // before `lexicographic_end`. If `lexicographic_start` is also set, the
+  // objects listed have names between `lexicographic_start` (inclusive) and
+  // `lexicographic_end` (exclusive).
   string lexicographic_end = 11 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. If true, only list all soft-deleted versions of the object.
   // Soft delete policy is required to set this option.
   bool soft_deleted = 12 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. If true, will also include folders and managed folders (besides
-  // objects) in the returned `prefixes`. Requires `delimiter` to be set to '/'.
+  // Optional. If true, includes folders and managed folders (besides objects)
+  // in the returned `prefixes`. Requires `delimiter` to be set to '/'.
   bool include_folders_as_prefixes = 13
       [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Filter results to objects and prefixes that match this glob
-  // pattern. See [List Objects Using
-  // Glob](https://cloud.google.com/storage/docs/json_api/v1/objects/list#list-objects-and-prefixes-using-glob)
+  // pattern. See [List objects using
+  // glob](https://cloud.google.com/storage/docs/json_api/v1/objects/list#list-objects-and-prefixes-using-glob)
   // for the full syntax.
   string match_glob = 14 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Filter the returned objects. Currently only supported for the
-  // `contexts` field. If `delimiter` is set, the returned `prefixes` are exempt
-  // from this filter.
+  // Optional. An expression used to filter the returned objects by the
+  // `context` field. For the full syntax, see [Filter objects by contexts
+  // syntax](https://cloud.google.com/storage/docs/listing-objects#filter-by-object-contexts-syntax).
+  // If a `delimiter` is set, the returned `prefixes` are exempt from this
+  // filter.
   string filter = 15 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Request object for `QueryWriteStatus`.
+// Request object for
+// [QueryWriteStatus][google.storage.v2.Storage.QueryWriteStatus].
 message QueryWriteStatusRequest {
   // Required. The name of the resume token for the object whose write status is
   // being requested.
@@ -1523,9 +1687,10 @@ message QueryWriteStatusRequest {
       [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Response object for `QueryWriteStatus`.
+// Response object for
+// [QueryWriteStatus][google.storage.v2.Storage.QueryWriteStatus].
 message QueryWriteStatusResponse {
-  // The response will set one of the following.
+  // The response sets one of the following.
   oneof write_status {
     // The total number of bytes that have been processed for the given object
     // from all `WriteObject` calls. This is the correct value for the
@@ -1539,14 +1704,15 @@ message QueryWriteStatusResponse {
   }
 }
 
-// Request message for RewriteObject.
+// Request message for [RewriteObject][google.storage.v2.Storage.RewriteObject].
 // If the source object is encrypted using a Customer-Supplied Encryption Key
-// the key information must be provided in the copy_source_encryption_algorithm,
-// copy_source_encryption_key_bytes, and copy_source_encryption_key_sha256_bytes
-// fields. If the destination object should be encrypted the keying information
-// should be provided in the encryption_algorithm, encryption_key_bytes, and
-// encryption_key_sha256_bytes fields of the
-// common_object_request_params.customer_encryption field.
+// the key information must be provided in the
+// `copy_source_encryption_algorithm`, `copy_source_encryption_key_bytes`, and
+// `copy_source_encryption_key_sha256_bytes` fields. If the destination object
+// should be encrypted the keying information should be provided in the
+// `encryption_algorithm`, `encryption_key_bytes`, and
+// `encryption_key_sha256_bytes` fields of the
+// `common_object_request_params.customer_encryption` field.
 message RewriteObjectRequest {
   // Required. Immutable. The name of the destination object.
   // See the
@@ -1568,7 +1734,7 @@ message RewriteObjectRequest {
     (google.api.resource_reference) = { type: "storage.googleapis.com/Bucket" }
   ];
 
-  // Optional. The name of the Cloud KMS key that will be used to encrypt the
+  // Optional. The name of the Cloud KMS key that is used to encrypt the
   // destination object. The Cloud KMS key must be located in same location as
   // the object. If the parameter is not specified, the request uses the
   // destination bucket's default encryption key, if any, or else the
@@ -1584,8 +1750,8 @@ message RewriteObjectRequest {
   // The `name`, `bucket` and `kms_key` fields must not be populated (these
   // values are specified in the `destination_name`, `destination_bucket`, and
   // `destination_kms_key` fields).
-  // If `destination` is present it will be used to construct the destination
-  // object's metadata; otherwise the destination object's metadata will be
+  // If `destination` is present it is used to construct the destination
+  // object's metadata; otherwise the destination object's metadata is
   // copied from the source object.
   Object destination = 1 [(google.api.field_behavior) = OPTIONAL];
 
@@ -1610,8 +1776,8 @@ message RewriteObjectRequest {
   string rewrite_token = 5 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Apply a predefined set of access controls to the destination
-  // object. Valid values are "authenticatedRead", "bucketOwnerFullControl",
-  // "bucketOwnerRead", "private", "projectPrivate", or "publicRead".
+  // object. Valid values are `authenticatedRead`, `bucketOwnerFullControl`,
+  // `bucketOwnerRead`, `private`, `projectPrivate`, or `publicRead`.
   string destination_predefined_acl = 28
       [(google.api.field_behavior) = OPTIONAL];
 
@@ -1650,7 +1816,7 @@ message RewriteObjectRequest {
   // metageneration does not match the given value.
   optional int64 if_source_metageneration_not_match = 14;
 
-  // Optional. The maximum number of bytes that will be rewritten per rewrite
+  // Optional. The maximum number of bytes that are rewritten per rewrite
   // request. Most callers shouldn't need to specify this parameter - it is
   // primarily in place to support testing. If specified the value must be an
   // integral multiple of 1 MiB (1048576). Also, this only applies to requests
@@ -1682,8 +1848,8 @@ message RewriteObjectRequest {
   CommonObjectRequestParams common_object_request_params = 19
       [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The checksums of the complete object. This will be used to
-  // validate the destination object after rewriting.
+  // Optional. The checksums of the complete object. This is used to validate
+  // the destination object after rewriting.
   ObjectChecksums object_checksums = 29
       [(google.api.field_behavior) = OPTIONAL];
 }
@@ -1711,7 +1877,7 @@ message RewriteResponse {
   Object resource = 5;
 }
 
-// Request message for MoveObject.
+// Request message for [MoveObject][google.storage.v2.Storage.MoveObject].
 message MoveObjectRequest {
   // Required. Name of the bucket in which the object resides.
   string bucket = 1 [
@@ -1790,7 +1956,8 @@ message MoveObjectRequest {
       [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Request message StartResumableWrite.
+// Request message for
+// [StartResumableWrite][google.storage.v2.Storage.StartResumableWrite].
 message StartResumableWriteRequest {
   // Required. Contains the information necessary to start a resumable write.
   WriteObjectSpec write_object_spec = 1
@@ -1809,7 +1976,8 @@ message StartResumableWriteRequest {
   ObjectChecksums object_checksums = 5 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Response object for `StartResumableWrite`.
+// Response object for
+// [StartResumableWrite][google.storage.v2.Storage.StartResumableWrite].
 message StartResumableWriteResponse {
   // A unique identifier for the initiated resumable write operation.
   // As the ID grants write access, you should keep it confidential during
@@ -1819,7 +1987,7 @@ message StartResumableWriteResponse {
   string upload_id = 1;
 }
 
-// Request message for UpdateObject.
+// Request message for [UpdateObject][google.storage.v2.Storage.UpdateObject].
 message UpdateObjectRequest {
   // Required. The object to update.
   // The object's bucket and name fields are used to identify the object to
@@ -1857,7 +2025,7 @@ message UpdateObjectRequest {
   // To specify ALL fields, equivalent to the JSON API's "update" function,
   // specify a single field with the value `*`. Note: not recommended. If a new
   // field is introduced at a later time, an older client updating with the `*`
-  // may accidentally reset the new field's value.
+  // might accidentally reset the new field's value.
   //
   // Not specifying any fields is an error.
   google.protobuf.FieldMask update_mask = 7
@@ -1883,8 +2051,8 @@ message CommonObjectRequestParams {
   // feature. In raw bytes format (not base64-encoded).
   bytes encryption_key_bytes = 4 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. SHA256 hash of encryption key used with the Customer-Supplied
-  // Encryption Keys feature.
+  // Optional. SHA256 hash of encryption key used with the Customer-supplied
+  // encryption keys feature.
   bytes encryption_key_sha256_bytes = 5
       [(google.api.field_behavior) = OPTIONAL];
 }
@@ -1898,8 +2066,8 @@ message ServiceConstants {
     // Unused. Proto3 requires first enum to be 0.
     VALUES_UNSPECIFIED = 0;
 
-    // The maximum size chunk that can will be returned in a single
-    // ReadRequest.
+    // The maximum size chunk that can be returned in a single
+    // `ReadRequest`.
     // 2 MiB.
     MAX_READ_CHUNK_BYTES = 2097152;
 
@@ -1992,26 +2160,27 @@ message Bucket {
   // https://cloud.google.com/storage/docs/cross-origin.
   // For more on CORS in general, see https://tools.ietf.org/html/rfc6454.
   message Cors {
-    // Optional. The list of Origins eligible to receive CORS response headers.
-    // See [https://tools.ietf.org/html/rfc6454][RFC 6454] for more on origins.
-    // Note: "*" is permitted in the list of origins, and means "any Origin".
+    // Optional. The list of origins eligible to receive CORS response headers.
+    // For more information about origins, see [RFC
+    // 6454](https://tools.ietf.org/html/rfc6454). Note: `*` is permitted in the
+    // list of origins, and means `any origin`.
     repeated string origin = 1 [(google.api.field_behavior) = OPTIONAL];
 
     // Optional. The list of HTTP methods on which to include CORS response
     // headers,
-    // (`GET`, `OPTIONS`, `POST`, etc) Note: "*" is permitted in the list of
+    // (`GET`, `OPTIONS`, `POST`, etc) Note: `*` is permitted in the list of
     // methods, and means "any method".
     repeated string method = 2 [(google.api.field_behavior) = OPTIONAL];
 
-    // Optional. The list of HTTP headers other than the
-    // [https://www.w3.org/TR/cors/#simple-response-header][simple response
-    // headers] to give permission for the user-agent to share across domains.
+    // Optional. The list of HTTP headers other than the [simple response
+    // headers](https://www.w3.org/TR/cors/#simple-response-headers) to give
+    // permission for the user-agent to share across domains.
     repeated string response_header = 3
         [(google.api.field_behavior) = OPTIONAL];
 
-    // Optional. The value, in seconds, to return in the
-    // [https://www.w3.org/TR/cors/#access-control-max-age-response-header][Access-Control-Max-Age
-    // header] used in preflight responses.
+    // Optional. The value, in seconds, to return in the [Access-Control-Max-Age
+    // header](https://www.w3.org/TR/cors/#access-control-max-age-response-header)
+    // used in preflight responses.
     int32 max_age_seconds = 4 [(google.api.field_behavior) = OPTIONAL];
   }
 
@@ -2020,7 +2189,7 @@ message Bucket {
     // Google Managed Encryption (GMEK) enforcement config of a bucket.
     message GoogleManagedEncryptionEnforcementConfig {
       // Restriction mode for google-managed encryption for new objects within
-      // the bucket. Valid values are: "NotRestricted", "FullyRestricted".
+      // the bucket. Valid values are: `NotRestricted` and `FullyRestricted`.
       // If `NotRestricted` or unset, creation of new objects with
       // google-managed encryption is allowed.
       // If `FullyRestricted`, new objects can't be created using google-managed
@@ -2034,7 +2203,7 @@ message Bucket {
     // Customer Managed Encryption (CMEK) enforcement config of a bucket.
     message CustomerManagedEncryptionEnforcementConfig {
       // Restriction mode for customer-managed encryption for new objects within
-      // the bucket. Valid values are: "NotRestricted", "FullyRestricted".
+      // the bucket. Valid values are: `NotRestricted` and `FullyRestricted`.
       // If `NotRestricted` or unset, creation of new objects with
       // customer-managed encryption is allowed.
       // If `FullyRestricted`, new objects can't be created using
@@ -2048,8 +2217,8 @@ message Bucket {
     // Customer Supplied Encryption (CSEK) enforcement config of a bucket.
     message CustomerSuppliedEncryptionEnforcementConfig {
       // Restriction mode for customer-supplied encryption for new objects
-      // within the bucket. Valid values are: "NotRestricted",
-      // "FullyRestricted".
+      // within the bucket. Valid values are: `NotRestricted` and
+      // `FullyRestricted`.
       // If `NotRestricted` or unset, creation of new objects with
       // customer-supplied encryption is allowed.
       // If `FullyRestricted`, new objects can't be created using
@@ -2060,8 +2229,8 @@ message Bucket {
       optional google.protobuf.Timestamp effective_time = 2;
     }
 
-    // Optional. The name of the Cloud KMS key that will be used to encrypt
-    // objects inserted into this bucket, if no encryption method is specified.
+    // Optional. The name of the Cloud KMS key that is used to encrypt objects
+    // inserted into this bucket, if no encryption method is specified.
     string default_kms_key = 1 [
       (google.api.field_behavior) = OPTIONAL,
       (google.api.resource_reference) = {
@@ -2115,17 +2284,18 @@ message Bucket {
     UniformBucketLevelAccess uniform_bucket_level_access = 1
         [(google.api.field_behavior) = OPTIONAL];
 
-    // Optional. Whether IAM will enforce public access prevention. Valid values
-    // are "enforced" or "inherited".
+    // Optional. Whether IAM enforces public access prevention. Valid values are
+    // `enforced` or `inherited`.
     string public_access_prevention = 3
         [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Lifecycle properties of a bucket.
-  // For more information, see https://cloud.google.com/storage/docs/lifecycle.
+  // For more information, see [Object Lifecycle
+  // Management](https://cloud.google.com/storage/docs/lifecycle).
   message Lifecycle {
     // A lifecycle Rule, combining an action to take on an object and a
-    // condition which will trigger that action.
+    // condition which triggers that action.
     message Rule {
       // An action to take on an object.
       message Action {
@@ -2163,8 +2333,8 @@ message Bucket {
         optional int32 num_newer_versions = 4;
 
         // Optional. Objects having any of the storage classes specified by this
-        // condition will be matched. Values include `MULTI_REGIONAL`,
-        // `REGIONAL`, `NEARLINE`, `COLDLINE`, `STANDARD`, and
+        // condition are matched. Values include `MULTI_REGIONAL`, `REGIONAL`,
+        // `NEARLINE`, `COLDLINE`, `STANDARD`, and
         // `DURABLE_REDUCED_AVAILABILITY`.
         repeated string matches_storage_class = 5
             [(google.api.field_behavior) = OPTIONAL];
@@ -2182,7 +2352,7 @@ message Bucket {
         // This condition is relevant only for versioned objects. An object
         // version satisfies this condition only if these many days have been
         // passed since it became noncurrent. The value of the field must be a
-        // nonnegative integer. If it's zero, the object version will become
+        // nonnegative integer. If it's zero, the object version becomes
         // eligible for Lifecycle action as soon as it becomes noncurrent.
         optional int32 days_since_noncurrent_time = 9;
 
@@ -2206,12 +2376,12 @@ message Bucket {
       // Optional. The action to take.
       Action action = 1 [(google.api.field_behavior) = OPTIONAL];
 
-      // Optional. The condition(s) under which the action will be taken.
+      // Optional. The condition under which the action is taken.
       Condition condition = 2 [(google.api.field_behavior) = OPTIONAL];
     }
 
     // Optional. A lifecycle management rule, which is made of an action to take
-    // and the condition(s) under which the action will be taken.
+    // and the condition under which the action is taken.
     repeated Rule rule = 1 [(google.api.field_behavior) = OPTIONAL];
   }
 
@@ -2249,7 +2419,7 @@ message Bucket {
     // duration must be greater than zero and less than 100 years. Note that
     // enforcement of retention periods less than a day is not guaranteed. Such
     // periods should only be used for testing purposes. Any `nanos` value
-    // specified will be rounded down to the nearest second.
+    // specified is rounded down to the nearest second.
     google.protobuf.Duration retention_duration = 4
         [(google.api.field_behavior) = OPTIONAL];
   }
@@ -2266,34 +2436,36 @@ message Bucket {
   }
 
   // Properties of a bucket related to versioning.
-  // For more on Cloud Storage versioning, see
-  // https://cloud.google.com/storage/docs/object-versioning.
+  // For more information about Cloud Storage versioning, see [Object
+  // versioning](https://cloud.google.com/storage/docs/object-versioning).
   message Versioning {
     // Optional. While set to true, versioning is fully enabled for this bucket.
     bool enabled = 1 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Properties of a bucket related to accessing the contents as a static
-  // website. For more on hosting a static website via Cloud Storage, see
-  // https://cloud.google.com/storage/docs/hosting-static-website.
+  // website. For details, see [hosting a static website using Cloud
+  // Storage](https://cloud.google.com/storage/docs/hosting-static-website).
   message Website {
-    // Optional. If the requested object path is missing, the service will
-    // ensure the path has a trailing '/', append this suffix, and attempt to
-    // retrieve the resulting object. This allows the creation of `index.html`
-    // objects to represent directory pages.
+    // Optional. If the requested object path is missing, the service ensures
+    // the path has a trailing '/', append this suffix, and attempt to retrieve
+    // the resulting object. This allows the creation of `index.html` objects to
+    // represent directory pages.
     string main_page_suffix = 1 [(google.api.field_behavior) = OPTIONAL];
 
     // Optional. If the requested object path is missing, and any
     // `mainPageSuffix` object is missing, if applicable, the service
-    // will return the named object from this bucket as the content for a
-    // [https://tools.ietf.org/html/rfc7231#section-6.5.4][404 Not Found]
+    // returns the named object from this bucket as the content for a
+    // [404 Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)
     // result.
     string not_found_page = 2 [(google.api.field_behavior) = OPTIONAL];
   }
 
-  // Configuration for Custom Dual Regions.  It should specify precisely two
-  // eligible regions within the same Multiregion. More information on regions
-  // may be found [here](https://cloud.google.com/storage/docs/locations).
+  // Configuration for [configurable dual-
+  // regions](https://cloud.google.com/storage/docs/locations#configurable). It
+  // should specify precisely two eligible regions within the same multi-region.
+  // For details, see
+  // [locations](https://cloud.google.com/storage/docs/locations).
   message CustomPlacementConfig {
     // Optional. List of locations to use for data placement.
     repeated string data_locations = 1 [(google.api.field_behavior) = OPTIONAL];
@@ -2306,12 +2478,12 @@ message Bucket {
 
     // Output only. Latest instant at which the `enabled` field was set to true
     // after being disabled/unconfigured or set to false after being enabled. If
-    // Autoclass is enabled when the bucket is created, the toggle_time is set
-    // to the bucket creation time.
+    // Autoclass is enabled when the bucket is created, the value of the
+    // `toggle_time` field is set to the bucket `create_time`.
     google.protobuf.Timestamp toggle_time = 2
         [(google.api.field_behavior) = OUTPUT_ONLY];
 
-    // An object in an Autoclass bucket will eventually cool down to the
+    // An object in an Autoclass bucket eventually cools down to the
     // terminal storage class if there is no access to the object.
     // The only valid values are NEARLINE and ARCHIVE.
     optional string terminal_storage_class = 3;
@@ -2357,7 +2529,7 @@ message Bucket {
     // `Disabled`. When set to `Enabled`, IP filtering rules are applied to a
     // bucket and all incoming requests to the bucket are evaluated against
     // these rules. When set to `Disabled`, IP filtering rules are not applied
-    // to a bucket.".
+    // to a bucket.
     optional string mode = 1;
 
     // Public IPs allowed to operate or access the bucket.
@@ -2371,12 +2543,12 @@ message Bucket {
     // Optional. Whether or not to allow VPCs from orgs different than the
     // bucket's parent org to access the bucket. When set to true, validations
     // on the existence of the VPCs won't be performed. If set to false, each
-    // VPC network source will be checked to belong to the same org as the
-    // bucket as well as validated for existence.
+    // VPC network source is checked to belong to the same org as the bucket as
+    // well as validated for existence.
     bool allow_cross_org_vpcs = 4 [(google.api.field_behavior) = OPTIONAL];
 
     // Whether or not to allow all P4SA access to the bucket. When set to true,
-    // IP filter config validation will not apply.
+    // IP filter config validation doesn't apply.
     optional bool allow_all_service_agent_access = 5;
   }
 
@@ -2392,18 +2564,18 @@ message Bucket {
 
   // Output only. The user-chosen part of the bucket name. The `{bucket}`
   // portion of the `name` field. For globally unique buckets, this is equal to
-  // the "bucket name" of other Cloud Storage APIs. Example: "pub".
+  // the `bucket name` of other Cloud Storage APIs. Example: `pub`.
   string bucket_id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // The etag of the bucket.
-  // If included in the metadata of an UpdateBucketRequest, the operation will
-  // only be performed if the etag matches that of the bucket.
+  // If included in the metadata of an `UpdateBucketRequest`, the operation is
+  // only performed if the `etag` matches that of the bucket.
   string etag = 29;
 
   // Immutable. The project which owns this bucket, in the format of
-  // "projects/{projectIdentifier}".
-  // {projectIdentifier} can be the project ID or project number.
-  // Output values will always be in project number format.
+  // `projects/{projectIdentifier}`.
+  // `{projectIdentifier}` can be the project ID or project number.
+  // Output values are always in the project number format.
   string project = 3 [
     (google.api.field_behavior) = IMMUTABLE,
     (google.api.resource_reference) = {
@@ -2416,10 +2588,8 @@ message Bucket {
 
   // Immutable. The location of the bucket. Object data for objects in the
   // bucket resides in physical storage within this region.  Defaults to `US`.
-  // See the
-  // [https://developers.google.com/storage/docs/concepts-techniques#specifyinglocations"][developer's
-  // guide] for the authoritative list. Attempting to update this field after
-  // the bucket is created will result in an error.
+  // Attempting to update this field after the bucket is created results in an
+  // error.
   string location = 5 [(google.api.field_behavior) = IMMUTABLE];
 
   // Output only. The location type of the bucket (region, dual-region,
@@ -2429,41 +2599,41 @@ message Bucket {
   // Optional. The bucket's default storage class, used whenever no storageClass
   // is specified for a newly-created object. This defines how objects in the
   // bucket are stored and determines the SLA and the cost of storage.
-  // If this value is not specified when the bucket is created, it will default
-  // to `STANDARD`. For more information, see
-  // https://developers.google.com/storage/docs/storage-classes.
+  // If this value is not specified when the bucket is created, it defaults
+  // to `STANDARD`. For more information, see [Storage
+  // classes](https://developers.google.com/storage/docs/storage-classes).
   string storage_class = 7 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The recovery point objective for cross-region replication of the
-  // bucket. Applicable only for dual- and multi-region buckets. "DEFAULT" uses
-  // default replication. "ASYNC_TURBO" enables turbo replication, valid for
+  // bucket. Applicable only for dual- and multi-region buckets. `DEFAULT` uses
+  // default replication. `ASYNC_TURBO` enables turbo replication, valid for
   // dual-region buckets only. If rpo is not specified when the bucket is
-  // created, it defaults to "DEFAULT". For more information, see
-  // https://cloud.google.com/storage/docs/availability-durability#turbo-replication.
+  // created, it defaults to `DEFAULT`. For more information, see [Turbo
+  // replication](https://cloud.google.com/storage/docs/availability-durability#turbo-replication).
   string rpo = 27 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Access controls on the bucket.
-  // If iam_config.uniform_bucket_level_access is enabled on this bucket,
+  // If `iam_config.uniform_bucket_level_access` is enabled on this bucket,
   // requests to set, read, or modify acl is an error.
   repeated BucketAccessControl acl = 8 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Default access controls to apply to new objects when no ACL is
-  // provided. If iam_config.uniform_bucket_level_access is enabled on this
+  // provided. If `iam_config.uniform_bucket_level_access` is enabled on this
   // bucket, requests to set, read, or modify acl is an error.
   repeated ObjectAccessControl default_object_acl = 9
       [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The bucket's lifecycle config. See
-  // [https://developers.google.com/storage/docs/lifecycle]Lifecycle Management]
-  // for more information.
+  // Optional. The bucket's lifecycle configuration. See [Lifecycle
+  // Management](https://developers.google.com/storage/docs/lifecycle) for more
+  // information.
   Lifecycle lifecycle = 10 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. The creation time of the bucket.
   google.protobuf.Timestamp create_time = 11
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Optional. The bucket's [https://www.w3.org/TR/cors/][Cross-Origin Resource
-  // Sharing] (CORS) config.
+  // Optional. The bucket's [CORS](https://www.w3.org/TR/cors/)
+  // configuration.
   repeated Cors cors = 12 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. The modification time of the bucket.
@@ -2473,11 +2643,11 @@ message Bucket {
   // Optional. The default value for event-based hold on newly created objects
   // in this bucket.  Event-based hold is a way to retain objects indefinitely
   // until an event occurs, signified by the hold's release. After being
-  // released, such objects will be subject to bucket-level retention (if any).
-  // One sample use case of this flag is for banks to hold loan documents for at
+  // released, such objects are subject to bucket-level retention (if any).  One
+  // sample use case of this flag is for banks to hold loan documents for at
   // least 3 years after loan is paid in full. Here, bucket-level retention is 3
   // years and the event is loan being paid in full. In this example, these
-  // objects will be held intact for any number of years until the event has
+  // objects are held intact for any number of years until the event has
   // occurred (event-based hold on the object is released) and then 3 more years
   // after that. That means retention duration of the objects begins from the
   // moment event-based hold transitioned from true to false.  Objects under
@@ -2489,12 +2659,12 @@ message Bucket {
   map<string, string> labels = 15 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The bucket's website config, controlling how the service behaves
-  // when accessing bucket contents as a web site. See the
-  // [https://cloud.google.com/storage/docs/static-website][Static Website
-  // Examples] for more information.
+  // when accessing bucket contents as a web site. See the [Static website
+  // examples](https://cloud.google.com/storage/docs/static-website) for more
+  // information.
   Website website = 16 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The bucket's versioning config.
+  // Optional. The bucket's versioning configuration.
   Versioning versioning = 17 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The bucket's logging config, which defines the destination bucket
@@ -2508,41 +2678,40 @@ message Bucket {
   // Optional. Encryption config for a bucket.
   Encryption encryption = 20 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The bucket's billing config.
+  // Optional. The bucket's billing configuration.
   Billing billing = 21 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The bucket's retention policy. The retention policy enforces a
   // minimum retention time for all objects contained in the bucket, based on
   // their creation time. Any attempt to overwrite or delete objects younger
-  // than the retention period will result in a PERMISSION_DENIED error.  An
+  // than the retention period results in a `PERMISSION_DENIED` error.  An
   // unlocked retention policy can be modified or removed from the bucket via a
   // storage.buckets.update operation. A locked retention policy cannot be
   // removed or shortened in duration for the lifetime of the bucket.
-  // Attempting to remove or decrease period of a locked retention policy will
-  // result in a PERMISSION_DENIED error.
+  // Attempting to remove or decrease period of a locked retention policy
+  // results in a `PERMISSION_DENIED` error.
   RetentionPolicy retention_policy = 22
       [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The bucket's IAM config.
+  // Optional. The bucket's IAM configuration.
   IamConfig iam_config = 23 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Reserved for future use.
   bool satisfies_pzs = 25 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Configuration that, if present, specifies the data placement for
-  // a
-  // [https://cloud.google.com/storage/docs/locations#location-dr][configurable
-  // dual-region].
+  // a [configurable
+  // dual-region](https://cloud.google.com/storage/docs/locations#location-dr).
   CustomPlacementConfig custom_placement_config = 26
       [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The bucket's Autoclass configuration. If there is no
-  // configuration, the Autoclass feature will be disabled and have no effect on
-  // the bucket.
+  // configuration, the Autoclass feature is disabled and has no effect on the
+  // bucket.
   Autoclass autoclass = 28 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The bucket's hierarchical namespace configuration. If there is no
-  // configuration, the hierarchical namespace feature will be disabled and have
+  // configuration, the hierarchical namespace feature is disabled and has
   // no effect on the bucket.
   HierarchicalNamespace hierarchical_namespace = 32
       [(google.api.field_behavior) = OPTIONAL];
@@ -2553,7 +2722,7 @@ message Bucket {
       [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The bucket's object retention configuration. Must be enabled
-  // before objects in the bucket may have retention configured.
+  // before objects in the bucket might have retention configured.
   ObjectRetention object_retention = 33
       [(google.api.field_behavior) = OPTIONAL];
 
@@ -2585,21 +2754,21 @@ message BucketAccessControl {
   // `group-example@googlegroups.com`
   // * All members of the Google Apps for Business domain `example.com` would be
   // `domain-example.com`
-  // For project entities, `project-{team}-{projectnumber}` format will be
+  // For project entities, `project-{team}-{projectnumber}` format is
   // returned on response.
   string entity = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. The alternative entity format, if exists. For project
-  // entities, `project-{team}-{projectid}` format will be returned on response.
+  // entities, `project-{team}-{projectid}` format is returned in the response.
   string entity_alt = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Optional. The ID for the entity, if any.
   string entity_id = 4 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The etag of the BucketAccessControl.
+  // Optional. The `etag` of the `BucketAccessControl`.
   // If included in the metadata of an update or delete request message, the
-  // operation operation will only be performed if the etag matches that of the
-  // bucket's BucketAccessControl.
+  // operation operation is only performed if the etag matches that of the
+  // bucket's `BucketAccessControl`.
   string etag = 8 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The email address associated with the entity, if any.
@@ -2626,17 +2795,16 @@ message ChecksummedData {
 message ObjectChecksums {
   // CRC32C digest of the object data. Computed by the Cloud Storage service for
   // all written objects.
-  // If set in a WriteObjectRequest, service will validate that the stored
+  // If set in a WriteObjectRequest, service validates that the stored
   // object matches this checksum.
   optional fixed32 crc32c = 1;
 
-  // Optional. 128 bit MD5 hash of the object data.
-  // For more information about using the MD5 hash, see
-  // [https://cloud.google.com/storage/docs/hashes-etags#json-api][Hashes and
-  // ETags: Best Practices].
-  // Not all objects will provide an MD5 hash. For example, composite objects
-  // provide only crc32c hashes. This value is equivalent to running `cat
-  // object.txt | openssl md5 -binary`
+  // Optional. 128 bit MD5 hash of the object data. For more information about
+  // using the MD5 hash, see [Data validation and change
+  // detection](https://cloud.google.com/storage/docs/data-validation). Not all
+  // objects provide an MD5 hash. For example, composite objects provide only
+  // crc32c hashes. This value is equivalent to running `cat object.txt |
+  // openssl md5 -binary`
   bytes md5_hash = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -2661,8 +2829,8 @@ message ObjectContexts {
       [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Describes the Customer-Supplied Encryption Key mechanism used to store an
-// Object's data at rest.
+// Describes the customer-supplied encryption key mechanism used to store an
+// object's data at rest.
 message CustomerEncryption {
   // Optional. The encryption algorithm.
   string encryption_algorithm = 1 [(google.api.field_behavior) = OPTIONAL];
@@ -2682,12 +2850,12 @@ message Object {
       // No specified mode. Object is not under retention.
       MODE_UNSPECIFIED = 0;
 
-      // Retention period may be decreased or increased.
-      // The Retention configuration may be removed.
-      // The mode may be changed to locked.
+      // Retention period might be decreased or increased.
+      // The Retention configuration might be removed.
+      // The mode might be changed to locked.
       UNLOCKED = 1;
 
-      // Retention period may be increased.
+      // Retention period might be increased.
       // The Retention configuration cannot be removed.
       // The mode cannot be changed.
       LOCKED = 2;
@@ -2717,9 +2885,9 @@ message Object {
     (google.api.resource_reference) = { type: "storage.googleapis.com/Bucket" }
   ];
 
-  // Optional. The etag of the object.
+  // Optional. The `etag` of an object.
   // If included in the metadata of an update or delete request message, the
-  // operation will only be performed if the etag matches that of the live
+  // operation is only performed if the etag matches that of the live
   // object.
   string etag = 27 [(google.api.field_behavior) = OPTIONAL];
 
@@ -2743,31 +2911,31 @@ message Object {
   string storage_class = 5 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. Content-Length of the object data in bytes, matching
-  // [https://tools.ietf.org/html/rfc7230#section-3.3.2][RFC 7230 §3.3.2].
+  // [RFC 7230 §3.3.2](https://tools.ietf.org/html/rfc7230#section-3.3.2]).
   int64 size = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Optional. Content-Encoding of the object data, matching
-  // [https://tools.ietf.org/html/rfc7231#section-3.1.2.2][RFC 7231 §3.1.2.2]
+  // [RFC 7231 §3.1.2.2](https://tools.ietf.org/html/rfc7231#section-3.1.2.2)
   string content_encoding = 7 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Content-Disposition of the object data, matching
-  // [https://tools.ietf.org/html/rfc6266][RFC 6266].
+  // [RFC 6266](https://tools.ietf.org/html/rfc6266).
   string content_disposition = 8 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Cache-Control directive for the object data, matching
-  // [https://tools.ietf.org/html/rfc7234#section-5.2"][RFC 7234 §5.2].
+  // [RFC 7234 §5.2](https://tools.ietf.org/html/rfc7234#section-5.2).
   // If omitted, and the object is accessible to all anonymous users, the
-  // default will be `public, max-age=3600`.
+  // default is `public, max-age=3600`.
   string cache_control = 9 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Access controls on the object.
-  // If iam_config.uniform_bucket_level_access is enabled on the parent
+  // If `iam_config.uniform_bucket_level_access` is enabled on the parent
   // bucket, requests to set, read, or modify acl is an error.
   repeated ObjectAccessControl acl = 10
       [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Content-Language of the object data, matching
-  // [https://tools.ietf.org/html/rfc7231#section-3.1.3.2][RFC 7231 §3.1.3.2].
+  // [RFC 7231 §3.1.3.2](https://tools.ietf.org/html/rfc7231#section-3.1.3.2).
   string content_language = 11 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. If this object is noncurrent, this is the time when the object
@@ -2780,7 +2948,7 @@ message Object {
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Optional. Content-Type of the object data, matching
-  // [https://tools.ietf.org/html/rfc7231#section-3.1.1.5][RFC 7231 §3.1.1.5].
+  // [RFC 7231 §3.1.1.5](https://tools.ietf.org/html/rfc7231#section-3.1.1.5).
   // If an object is stored without a Content-Type, it is served as
   // `application/octet-stream`.
   string content_type = 13 [(google.api.field_behavior) = OPTIONAL];
@@ -2794,7 +2962,7 @@ message Object {
   int32 component_count = 15 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Hashes for the data part of this object. This field is used
-  // for output only and will be silently ignored if provided in requests. The
+  // for output only and is silently ignored if provided in requests. The
   // checksums of the complete object regardless of data range. If the object is
   // downloaded in full, the client should compute one of these checksums over
   // the downloaded object and compare it against the value provided here.
@@ -2819,7 +2987,7 @@ message Object {
   ];
 
   // Output only. The time at which the object's storage class was last changed.
-  // When the object is initially created, it will be set to time_created.
+  // When the object is initially created, it is set to `time_created`.
   google.protobuf.Timestamp update_storage_class_time = 19
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
@@ -2851,21 +3019,21 @@ message Object {
   // Whether an object is under event-based hold.
   // An event-based hold is a way to force the retention of an object until
   // after some event occurs. Once the hold is released by explicitly setting
-  // this field to false, the object will become subject to any bucket-level
-  // retention policy, except that the retention duration will be calculated
+  // this field to `false`, the object becomes subject to any bucket-level
+  // retention policy, except that the retention duration is calculated
   // from the time the event based hold was lifted, rather than the time the
   // object was created.
   //
-  // In a WriteObject request, not setting this field implies that the value
-  // should be taken from the parent bucket's "default_event_based_hold" field.
-  // In a response, this field will always be set to true or false.
+  // In a `WriteObject` request, not setting this field implies that the value
+  // should be taken from the parent bucket's `default_event_based_hold` field.
+  // In a response, this field is always set to `true` or `false`.
   optional bool event_based_hold = 23;
 
-  // Output only. The owner of the object. This will always be the uploader of
-  // the object.
+  // Output only. The owner of the object. This is always the uploader of the
+  // object.
   Owner owner = 24 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Optional. Metadata of Customer-Supplied Encryption Key, if the object is
+  // Optional. Metadata of customer-supplied encryption key, if the object is
   // encrypted by such a key.
   CustomerEncryption customer_encryption = 25
       [(google.api.field_behavior) = OPTIONAL];
@@ -2877,19 +3045,19 @@ message Object {
   // Output only. This is the time when the object became soft-deleted.
   //
   // Soft-deleted objects are only accessible if a soft_delete_policy is
-  // enabled. Also see hard_delete_time.
+  // enabled. Also see `hard_delete_time`.
   optional google.protobuf.Timestamp soft_delete_time = 28
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. The time when the object will be permanently deleted.
+  // Output only. The time when the object is permanently deleted.
   //
-  // Only set when an object becomes soft-deleted with a soft_delete_policy.
-  // Otherwise, the object will not be accessible.
+  // Only set when an object becomes soft-deleted with a `soft_delete_policy`.
+  // Otherwise, the object is not accessible.
   optional google.protobuf.Timestamp hard_delete_time = 29
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Optional. Retention configuration of this object.
-  // May only be configured if the bucket has object retention enabled.
+  // Might only be configured if the bucket has object retention enabled.
   Retention retention = 30 [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -2921,12 +3089,12 @@ message ObjectAccessControl {
   // `group-example@googlegroups.com`.
   // * All members of the Google Apps for Business domain `example.com` would be
   // `domain-example.com`.
-  // For project entities, `project-{team}-{projectnumber}` format will be
-  // returned on response.
+  // For project entities, `project-{team}-{projectnumber}` format is
+  // returned in the response.
   string entity = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. The alternative entity format, if exists. For project
-  // entities, `project-{team}-{projectid}` format will be returned on response.
+  // entities, `project-{team}-{projectid}` format is returned in the response.
   string entity_alt = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Optional. The ID for the entity, if any.
@@ -2934,7 +3102,7 @@ message ObjectAccessControl {
 
   // Optional. The etag of the ObjectAccessControl.
   // If included in the metadata of an update or delete request message, the
-  // operation will only be performed if the etag matches that of the live
+  // operation is only performed if the etag matches that of the live
   // object's ObjectAccessControl.
   string etag = 8 [(google.api.field_behavior) = OPTIONAL];
 
