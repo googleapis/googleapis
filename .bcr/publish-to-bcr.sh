@@ -94,15 +94,15 @@ function append_version_to_metadata() {
   cat <<< $(jq ".versions += [\"${version}\"]" "${metadata_file}") > "${metadata_file}"
 }
 
-function create_module_symlink() {
+function copy_module() {
   local bcr_module_folder="$1"
-  local target_symlink="${bcr_module_folder}/overlay/MODULE.bazel"
-  local target_file="${bcr_module_folder}/MODULE.bazel"
-  if [[ -f "${target_symlink}" ]]; then
-    rm "${target_symlink}"
+  local file_dest="${bcr_module_folder}/overlay/MODULE.bazel"
+  local file_source="${bcr_module_folder}/MODULE.bazel"
+  if [[ -f "${file_dest}" ]]; then
+    rm "${file_dest}"
   fi
 
-  ln -rs "${target_file}" "${target_symlink}"
+  cp "${file_source}" "${file_dest}"
 }
 
 function update_module_integrity() {
@@ -125,7 +125,7 @@ function prepare_bcr_repo() {
   local googleapis_module_root="${bcr_folder}/modules/googleapis"
   local googleapis_target_module="${googleapis_module_root}/${version}"
   cp -r "${target_folder}" "${googleapis_target_module}"
-  create_module_symlink "${googleapis_target_module}"
+  copy_module "${googleapis_target_module}"
   append_version_to_metadata "${version}" "${googleapis_module_root}/metadata.json"
   update_module_integrity "${bcr_folder}" "${version}"
   popd
