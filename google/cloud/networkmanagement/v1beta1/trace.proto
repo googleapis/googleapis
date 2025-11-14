@@ -160,11 +160,18 @@ message Step {
     // used in new tests.
     ARRIVE_AT_EXTERNAL_LOAD_BALANCER = 11 [deprecated = true];
 
+    // Forwarding state: arriving at a hybrid subnet. Appropriate routing
+    // configuration will be determined here.
+    ARRIVE_AT_HYBRID_SUBNET = 38;
+
     // Forwarding state: arriving at a Cloud VPN gateway.
     ARRIVE_AT_VPN_GATEWAY = 12;
 
     // Forwarding state: arriving at a Cloud VPN tunnel.
     ARRIVE_AT_VPN_TUNNEL = 13;
+
+    // Forwarding state: arriving at an interconnect attachment.
+    ARRIVE_AT_INTERCONNECT_ATTACHMENT = 37;
 
     // Forwarding state: arriving at a VPC connector.
     ARRIVE_AT_VPC_CONNECTOR = 24;
@@ -177,7 +184,8 @@ message Step {
     // forwarded through public (external) connectivity.
     SERVERLESS_EXTERNAL_CONNECTION = 36;
 
-    // Transition state: packet header translated.
+    // Transition state: packet header translated. The `nat` field is populated
+    // with the translation information.
     NAT = 14;
 
     // Transition state: original connection is terminated and a new proxied
@@ -241,11 +249,17 @@ message Step {
     // Display information of a Compute Engine forwarding rule.
     ForwardingRuleInfo forwarding_rule = 9;
 
+    // Display information of a hybrid subnet.
+    HybridSubnetInfo hybrid_subnet = 36;
+
     // Display information of a Compute Engine VPN gateway.
     VpnGatewayInfo vpn_gateway = 10;
 
     // Display information of a Compute Engine VPN tunnel.
     VpnTunnelInfo vpn_tunnel = 11;
+
+    // Display information of an interconnect attachment.
+    InterconnectAttachmentInfo interconnect_attachment = 35;
 
     // Display information of a VPC connector.
     VpcConnectorInfo vpc_connector = 21;
@@ -438,6 +452,19 @@ message FirewallInfo {
     ANALYSIS_SKIPPED = 102;
   }
 
+  // Target type of the firewall rule.
+  enum TargetType {
+    // Target type is not specified. In this case we treat the rule as applying
+    // to INSTANCES target type.
+    TARGET_TYPE_UNSPECIFIED = 0;
+
+    // Firewall rule applies to instances.
+    INSTANCES = 1;
+
+    // Firewall rule applies to internal managed load balancers.
+    INTERNAL_MANAGED_LB = 2;
+  }
+
   // The display name of the firewall rule. This field might be empty for
   // firewall policy rules.
   string display_name = 1;
@@ -483,6 +510,9 @@ message FirewallInfo {
   // This field is not applicable to VPC firewall rules and implied VPC firewall
   // rules.
   int32 policy_priority = 12;
+
+  // Target type of the firewall rule.
+  TargetType target_type = 13;
 }
 
 // For display only. Metadata associated with a Compute Engine route.
@@ -853,6 +883,18 @@ message LoadBalancerBackend {
   repeated string health_check_blocking_firewall_rules = 5;
 }
 
+// For display only. Metadata associated with a hybrid subnet.
+message HybridSubnetInfo {
+  // Name of a hybrid subnet.
+  string display_name = 1;
+
+  // URI of a hybrid subnet.
+  string uri = 2;
+
+  // Name of a Google Cloud region where the hybrid subnet is configured.
+  string region = 3;
+}
+
 // For display only. Metadata associated with a Compute Engine VPN gateway.
 message VpnGatewayInfo {
   // Name of a VPN gateway.
@@ -920,6 +962,51 @@ message VpnTunnelInfo {
 
   // Type of the routing policy.
   RoutingType routing_type = 9;
+}
+
+// For display only. Metadata associated with an Interconnect attachment.
+message InterconnectAttachmentInfo {
+  // What type of interconnect attachment this is.
+  enum Type {
+    // Unspecified type.
+    TYPE_UNSPECIFIED = 0;
+
+    // Attachment to a dedicated interconnect.
+    DEDICATED = 1;
+
+    // Attachment to a partner interconnect, created by the customer.
+    PARTNER = 2;
+
+    // Attachment to a partner interconnect, created by the partner.
+    PARTNER_PROVIDER = 3;
+
+    // Attachment to a L2 interconnect, created by the customer.
+    L2_DEDICATED = 4;
+  }
+
+  // Name of an Interconnect attachment.
+  string display_name = 1;
+
+  // URI of an Interconnect attachment.
+  string uri = 2;
+
+  // URI of the Interconnect where the Interconnect attachment is
+  // configured.
+  string interconnect_uri = 3;
+
+  // Name of a Google Cloud region where the Interconnect attachment is
+  // configured.
+  string region = 4;
+
+  // URI of the Cloud Router to be used for dynamic routing.
+  string cloud_router_uri = 5;
+
+  // The type of interconnect attachment this is.
+  Type type = 6;
+
+  // Appliance IP address that was matched for L2_DEDICATED attachments.
+  string l2_attachment_matched_ip_address = 7
+      [(google.api.field_info).format = IPV4_OR_IPV6];
 }
 
 // For display only. The specification of the endpoints for the test.
@@ -1262,6 +1349,10 @@ message AbortInfo {
     // Aborted because the source endpoint is a Cloud Run revision with direct
     // VPC access enabled, but there are no reserved serverless IP ranges.
     NO_SERVERLESS_IP_RANGES = 37;
+
+    // Aborted because the used protocol is not supported for the used IP
+    // version.
+    IP_VERSION_PROTOCOL_MISMATCH = 40;
   }
 
   // Causes that the analysis is aborted.
@@ -1651,6 +1742,31 @@ message DropInfo {
     // Packet from the unknown NCC network is dropped due to no known route
     // from the source network to the destination IP address.
     NO_KNOWN_ROUTE_FROM_NCC_NETWORK_TO_DESTINATION = 97;
+
+    // Packet is dropped by Cloud NAT due to using an unsupported protocol.
+    CLOUD_NAT_PROTOCOL_UNSUPPORTED = 99;
+
+    // Packet is dropped due to using an unsupported protocol (any other than
+    // UDP) for L2 Interconnect.
+    L2_INTERCONNECT_UNSUPPORTED_PROTOCOL = 100;
+
+    // Packet is dropped due to using an unsupported port (any other than
+    // 6081) for L2 Interconnect.
+    L2_INTERCONNECT_UNSUPPORTED_PORT = 101;
+
+    // Packet is dropped due to destination IP not matching the appliance
+    // mapping IPs configured on the L2 Interconnect attachment.
+    L2_INTERCONNECT_DESTINATION_IP_MISMATCH = 102;
+
+    // Packet could be dropped because it matches a route associated with an NCC
+    // spoke in the hybrid subnet context, but such a configuration is not
+    // supported.
+    NCC_ROUTE_WITHIN_HYBRID_SUBNET_UNSUPPORTED = 104;
+
+    // Packet is dropped because the region of the hybrid subnet is different
+    // from the region of the next hop of the route matched within this hybrid
+    // subnet.
+    HYBRID_SUBNET_REGION_MISMATCH = 105;
   }
 
   // Cause that the packet is dropped.
@@ -1667,6 +1783,12 @@ message DropInfo {
 
   // Region of the dropped packet (if relevant).
   string region = 5;
+
+  // Geolocation (region code) of the source IP address (if relevant).
+  string source_geolocation_code = 6;
+
+  // Geolocation (region code) of the destination IP address (if relevant).
+  string destination_geolocation_code = 7;
 }
 
 // For display only. Metadata associated with a Google Kubernetes Engine (GKE)
@@ -1859,6 +1981,9 @@ message NatInfo {
 
     // Private service connect NAT.
     PRIVATE_SERVICE_CONNECT = 4;
+
+    // GKE Pod IP address masquerading.
+    GKE_POD_IP_MASQUERADING = 5;
   }
 
   // Type of NAT.

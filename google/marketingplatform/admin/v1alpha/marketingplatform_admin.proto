@@ -22,6 +22,8 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/marketingplatform/admin/v1alpha/resources.proto";
 import "google/protobuf/empty.proto";
+import "google/type/date.proto";
+import "google/type/money.proto";
 
 option csharp_namespace = "Google.Ads.MarketingPlatform.Admin.V1Alpha";
 option go_package = "google.golang.org/genproto/googleapis/marketingplatform/admin/v1alpha;admin";
@@ -48,6 +50,26 @@ service MarketingplatformAdminService {
       get: "/v1alpha/{name=organizations/*}"
     };
     option (google.api.method_signature) = "name";
+  }
+
+  // Returns a list of organizations that the user has access to.
+  rpc ListOrganizations(ListOrganizationsRequest)
+      returns (ListOrganizationsResponse) {
+    option (google.api.http) = {
+      get: "/v1alpha/organizations"
+    };
+  }
+
+  // Returns a list of clients managed by the sales partner organization.
+  //
+  // User needs to be an OrgAdmin/BillingAdmin on the sales partner organization
+  // in order to view the end clients.
+  rpc FindSalesPartnerManagedClients(FindSalesPartnerManagedClientsRequest)
+      returns (FindSalesPartnerManagedClientsResponse) {
+    option (google.api.http) = {
+      post: "/v1alpha/{organization=organizations/*}:findSalesPartnerManagedClients"
+      body: "*"
+    };
   }
 
   // Lists the Google Analytics accounts link to the specified Google Marketing
@@ -97,18 +119,25 @@ service MarketingplatformAdminService {
     };
     option (google.api.method_signature) = "analytics_account_link";
   }
-}
 
-// Various levels of service for Google Analytics.
-enum AnalyticsServiceLevel {
-  // Service level unspecified.
-  ANALYTICS_SERVICE_LEVEL_UNSPECIFIED = 0;
-
-  // The standard version of Google Analytics.
-  ANALYTICS_SERVICE_LEVEL_STANDARD = 1;
-
-  // The premium version of Google Analytics.
-  ANALYTICS_SERVICE_LEVEL_360 = 2;
+  // Get the usage and billing data for properties within the organization for
+  // the specified month.
+  //
+  // Per direct client org, user needs to be OrgAdmin/BillingAdmin on the
+  // organization in order to view the billing and usage data.
+  //
+  // Per sales partner client org, user needs to be OrgAdmin/BillingAdmin on
+  // the sales partner org in order to view the billing and usage data, or
+  // OrgAdmin/BillingAdmin on the sales partner client org in order to view the
+  // usage data only.
+  rpc ReportPropertyUsage(ReportPropertyUsageRequest)
+      returns (ReportPropertyUsageResponse) {
+    option (google.api.http) = {
+      post: "/v1alpha/{organization=organizations/*}:reportPropertyUsage"
+      body: "*"
+    };
+    option (google.api.method_signature) = "organization";
+  }
 }
 
 // Request message for GetOrganization RPC.
@@ -121,6 +150,68 @@ message GetOrganizationRequest {
       type: "marketingplatformadmin.googleapis.com/Organization"
     }
   ];
+}
+
+// Request message for ListOrganizations RPC.
+message ListOrganizationsRequest {
+  // Optional. The maximum number of organizations to return in one call. The
+  // service may return fewer than this value.
+  //
+  // If unspecified, at most 50 organizations will be returned. The
+  // maximum value is 1000; values above 1000 will be coerced to 1000.
+  int32 page_size = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A page token, received from a previous ListOrganizations call.
+  // Provide this to retrieve the subsequent page.
+  //
+  // When paginating, all other parameters provided to
+  // `ListOrganizations` must match the call that provided the page
+  // token.
+  string page_token = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message for ListOrganizations RPC.
+message ListOrganizationsResponse {
+  // The Organization resource that the user has access to, which includes the
+  // org id and display name.
+  repeated Organization organizations = 1;
+
+  // A token, which can be sent as `page_token` to retrieve the next page.
+  // If this field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
+}
+
+// Request message for FindSalesPartnerManagedClients RPC.
+message FindSalesPartnerManagedClientsRequest {
+  // Required. The name of the sales partner organization.
+  // Format: organizations/{org_id}
+  string organization = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "marketingplatformadmin.googleapis.com/Organization"
+    }
+  ];
+
+  // Optional. If set, only active and just ended clients will be returned.
+  bool is_active = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message for FindSalesPartnerManagedClients RPC.
+message FindSalesPartnerManagedClientsResponse {
+  // Contains the client data.
+  message ClientData {
+    // The end client that has/had contract with the requested sales org.
+    Organization organization = 1;
+
+    // The start date of the contract between the sales org and the end client.
+    google.type.Date start_date = 2;
+
+    // The end date of the contract between the sales org and the end client.
+    google.type.Date end_date = 3;
+  }
+
+  // The clients managed by the sales org.
+  repeated ClientData client_data = 1;
 }
 
 // Request message for ListAnalyticsAccountLinks RPC.
@@ -214,3 +305,72 @@ message SetPropertyServiceLevelRequest {
 
 // Response message for SetPropertyServiceLevel RPC.
 message SetPropertyServiceLevelResponse {}
+
+// Request message for ReportPropertyUsage RPC.
+message ReportPropertyUsageRequest {
+  // Required. Specifies the organization whose property usage will be listed.
+  //
+  // Format: organizations/{org_id}
+  string organization = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The target month to list property usages.
+  //
+  // Format: YYYY-MM. For example, "2025-05"
+  string month = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response message for ReportPropertyUsage RPC.
+message ReportPropertyUsageResponse {
+  // Contains the count of events received by the property, along with metadata
+  // that influences the volume of `billable` events.
+  message PropertyUsage {
+    // The name of the Google Analytics Admin API property resource.
+    //
+    // Format: analyticsadmin.googleapis.com/properties/{property_id}
+    string property = 1;
+
+    // The display name of the property.
+    string display_name = 2;
+
+    // The ID of the property's parent account.
+    int64 account_id = 3;
+
+    // The service level of the property.
+    AnalyticsServiceLevel service_level = 4;
+
+    // The subtype of the analytics property. This affects the billable event
+    // count.
+    AnalyticsPropertyType property_type = 5;
+
+    // Total event count that the property received during the requested month.
+    int64 total_event_count = 6;
+
+    // The number of events for which the property is billed in the requested
+    // month.
+    int64 billable_event_count = 7;
+  }
+
+  // Contains the bill amount.
+  message BillInfo {
+    // The amount of the monthly base fee.
+    google.type.Money base_fee = 1;
+
+    // The amount of the event fee.
+    google.type.Money event_fee = 2;
+
+    // The amount of the price protection credit, this is only available for
+    // eligible customers.
+    google.type.Money price_protection_credit = 3;
+
+    // The total amount of the bill.
+    google.type.Money total = 4;
+  }
+
+  // Usage data for all properties in the specified organization and month.
+  repeated PropertyUsage property_usages = 1;
+
+  // Bill amount in the specified organization and month.
+  //
+  // Will be empty if user only has access to usage data.
+  BillInfo bill_info = 2;
+}

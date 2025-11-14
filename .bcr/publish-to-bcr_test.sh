@@ -51,8 +51,8 @@ function bazelisk() {
   echo "mock bazelisk" "$@"
 }
 
-function ln() {
-  echo "mock ln" "$@"
+function cp() {
+  echo "mock cp" "$@"
 }
 
 # Load functions from the script without executing the main logic
@@ -125,12 +125,12 @@ function test_validate_bcr_module() {
   assert_equals "mock bazelisk run -- //tools:bcr_validation --skip_validation url_stability --check=googleapis@0.0.0-20250101-mock_com" "${output}" "validate_bcr_module"
 }
 
-function test_create_module_symlink() {
+function test_copy_module() {
   mkdir -p "${TEST_DIR}/overlay"
   touch "${TEST_DIR}/MODULE.bazel"
   local output
-  output=$(create_module_symlink "${TEST_DIR}")
-  assert_equals "mock ln -rs ${TEST_DIR}/MODULE.bazel ${TEST_DIR}/overlay/MODULE.bazel" "${output}" "create_module_symlink"
+  output=$(copy_module "${TEST_DIR}")
+  assert_equals "mock cp ${TEST_DIR}/MODULE.bazel ${TEST_DIR}/overlay/MODULE.bazel" "${output}" "copy_module"
 }
 
 function test_update_module_integrity() {
@@ -160,7 +160,7 @@ function run_tests() {
   test_render_templates
   test_append_version_to_metadata
   test_validate_bcr_module
-  test_create_module_symlink
+  test_copy_module
   test_update_module_integrity
   tear_down
 }
