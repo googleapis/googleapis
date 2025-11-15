@@ -1,0 +1,49 @@
+name: Publish to Bazel Central Registry
+on:
+  push:
+    tags:
+      - '*'
+jobs:
+  compute-tag:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.compute-tag-impl.outputs.TAG }}
+    steps:
+      - id: compute-tag-impl
+        run: |
+          set -ex
+          TAG=$(sed 's|refs/tags/||' <<< "${GITHUB_REF}")
+          echo "TAG=${TAG}" >> "${GITHUB_OUTPUT}"
+  publish:
+    needs: [compute-tag]
+    uses: bazel-contrib/publish-to-bcr/.github/workflows/publish.yaml@main
+    with:
+      tag_name: ${{ needs.compute-tag.outputs.tag }}
+      registry_fork: diegomarquezp/bazel-central-registry
+      attest: false
+    permissions:
+      contents: write
+      # Necessary if attest:true
+      id-token: write
+      # Necessary if attest:true
+      attestations: write
+    secrets:
+      # Necessary to push to the BCR fork, and to open a pull request against a registry
+      publish_token: ${{ secrets.BCR_PUBLISH_TOKEN }}
+  add-waiver-comment:
+    needs: [publish, compute-tag]
+    runs-on: ubuntu-24.04
+    steps:
+      - id: add-waiver-comment-impl
+        run: |
+          set -ex
+          # We manually fetch the PR because the reusable action has no outputs
+          JSON=$(gh search prs --repo=bazelbuild/bazel-central-registry \
+            --state=open \
+            --match=title "Publish googleapis@${TAG}" \
+            --json=url,title --order=desc)
+          BCR_PR_URL=$(jq -r --arg tag "${TAG}" '.[] | select(.title | test("'$TAG'")) | .url' <<< "${JSON}")
+          gh pr comment "${BCR_PR_URL}" --body '@bazel-io skip_check unstable_url'
+        env:
+          TAG: ${{ needs.compute-tag.outputs.tag }}
+          GH_TOKEN: ${{ secrets.BCR_PUBLISH_TOKEN }}
