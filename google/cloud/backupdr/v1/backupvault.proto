@@ -35,6 +35,14 @@ option java_outer_classname = "BackupVaultProto";
 option java_package = "com.google.cloud.backupdr.v1";
 option php_namespace = "Google\\Cloud\\BackupDR\\V1";
 option ruby_package = "Google::Cloud::BackupDR::V1";
+option (google.api.resource_definition) = {
+  type: "cloudkms.googleapis.com/CryptoKey"
+  pattern: "projects/{project}/locations/{location}/keyRings/{ring}/cryptoKeys/{key}"
+};
+option (google.api.resource_definition) = {
+  type: "cloudkms.googleapis.com/CryptoKeyVersion"
+  pattern: "projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}/cryptoKeyVersions/{crypto_key_version}"
+};
 
 // Message describing a BackupVault object.
 message BackupVault {
@@ -44,6 +52,28 @@ message BackupVault {
     plural: "backupVaults"
     singular: "backupVault"
   };
+
+  // How a backup's enforced retention end time is inherited.
+  enum BackupRetentionInheritance {
+    // Inheritance behavior not set. This will default to
+    // `INHERIT_VAULT_RETENTION`.
+    BACKUP_RETENTION_INHERITANCE_UNSPECIFIED = 0;
+
+    // The enforced retention end time of a backup will be inherited from the
+    // backup vault's `backup_minimum_enforced_retention_duration` field.
+    //
+    // This is the default behavior.
+    INHERIT_VAULT_RETENTION = 1;
+
+    // The enforced retention end time of a backup will always match the expire
+    // time of the backup.
+    //
+    // If this is set, the backup's enforced retention end time will be set to
+    // match the expire time during creation of the backup. When updating, the
+    // ERET and expire time must be updated together and have the same value.
+    // Invalid update requests will be rejected by the server.
+    MATCH_BACKUP_EXPIRE_TIME = 2;
+  }
 
   // Holds the state of the backup vault resource.
   enum State {
@@ -87,6 +117,21 @@ message BackupVault {
     WITHIN_ORG_BUT_UNRESTRICTED_FOR_BA = 4;
   }
 
+  // Message describing the EncryptionConfig of backup vault.
+  // This determines how data within the vault is encrypted at rest.
+  message EncryptionConfig {
+    // Optional. The Cloud KMS key name to encrypt backups in this backup vault.
+    // Must be in the same region as the vault. Some workload backups like
+    // compute disk backups may use their inherited source key instead. Format:
+    // projects/{project}/locations/{location}/keyRings/{ring}/cryptoKeys/{key}
+    optional string kms_key_name = 1 [
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.resource_reference) = {
+        type: "cloudkms.googleapis.com/CryptoKey"
+      }
+    ];
+  }
+
   // Output only. Identifier. Name of the backup vault to create. It must have
   // the
   // format`"projects/{project}/locations/{location}/backupVaults/{backupvault}"`.
@@ -117,6 +162,11 @@ message BackupVault {
   // the backup vault.  The enforced retention for each backup can be extended.
   optional google.protobuf.Duration backup_minimum_enforced_retention_duration =
       20 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Setting for how a backup's enforced retention end time is
+  // inherited.
+  optional BackupRetentionInheritance backup_retention_inheritance = 27
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. Set to true when there are no backups nested under this
   // resource.
@@ -160,6 +210,10 @@ message BackupVault {
   // Access restriction for the backup vault.
   // Default value is WITHIN_ORGANIZATION if not provided during creation.
   AccessRestriction access_restriction = 24
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The encryption config of the backup vault.
+  optional EncryptionConfig encryption_config = 29
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -569,6 +623,11 @@ message Backup {
   optional google.protobuf.Timestamp enforced_retention_end_time = 6
       [(google.api.field_behavior) = OPTIONAL];
 
+  // Output only. Setting for how the enforced retention end time is inherited.
+  // This value is copied from this backup's BackupVault.
+  optional BackupVault.BackupRetentionInheritance backup_retention_inheritance =
+      30 [(google.api.field_behavior) = OUTPUT_ONLY];
+
   // Optional. When this backup is automatically expired.
   optional google.protobuf.Timestamp expire_time = 7
       [(google.api.field_behavior) = OPTIONAL];
@@ -645,6 +704,15 @@ message Backup {
     BackupGcpResource gcp_resource = 31
         [(google.api.field_behavior) = OUTPUT_ONLY];
   }
+
+  // Optional. Output only. The list of KMS key versions used to encrypt the
+  // backup.
+  repeated string kms_key_versions = 33 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "cloudkms.googleapis.com/CryptoKeyVersion"
+    }
+  ];
 }
 
 // Message for creating a BackupVault.
@@ -1223,6 +1291,21 @@ message RestoreBackupRequest {
     // Disk properties to be overridden during restore.
     DiskRestoreProperties disk_restore_properties = 7;
   }
+
+  // Optional. A field mask used to clear server-side default values
+  // for fields within the `instance_properties` oneof.
+  //
+  // When a field in this mask is cleared, the server will not apply its
+  // default logic (like inheriting a value from the source) for that field.
+  //
+  // The most common current use case is clearing default encryption keys.
+  //
+  // Examples of field mask paths:
+  // - Compute Instance Disks:
+  // `compute_instance_restore_properties.disks.*.disk_encryption_key`
+  // - Single Disk: `disk_restore_properties.disk_encryption_key`
+  optional google.protobuf.FieldMask clear_overrides_field_mask = 8
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Response message for restoring from a Backup.
