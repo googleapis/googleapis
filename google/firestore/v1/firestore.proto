@@ -23,6 +23,8 @@ import "google/api/routing.proto";
 import "google/firestore/v1/aggregation_result.proto";
 import "google/firestore/v1/common.proto";
 import "google/firestore/v1/document.proto";
+import "google/firestore/v1/explain_stats.proto";
+import "google/firestore/v1/pipeline.proto";
 import "google/firestore/v1/query.proto";
 import "google/firestore/v1/query_profile.proto";
 import "google/firestore/v1/write.proto";
@@ -137,6 +139,25 @@ service Firestore {
       additional_bindings {
         post: "/v1/{parent=projects/*/databases/*/documents/*/**}:runQuery"
         body: "*"
+      }
+    };
+  }
+
+  // Executes a pipeline query.
+  rpc ExecutePipeline(ExecutePipelineRequest)
+      returns (stream ExecutePipelineResponse) {
+    option (google.api.http) = {
+      post: "/v1/{database=projects/*/databases/*}/documents:executePipeline"
+      body: "*"
+    };
+    option (google.api.routing) = {
+      routing_parameters {
+        field: "database"
+        path_template: "projects/{project_id=*}/**"
+      }
+      routing_parameters {
+        field: "database"
+        path_template: "projects/*/databases/{database_id=*}/**"
       }
     };
   }
@@ -626,6 +647,85 @@ message RunQueryResponse {
 }
 
 // The request for
+// [Firestore.ExecutePipeline][google.firestore.v1.Firestore.ExecutePipeline].
+message ExecutePipelineRequest {
+  // Required. Database identifier, in the form
+  // `projects/{project}/databases/{database}`.
+  string database = 1 [(google.api.field_behavior) = REQUIRED];
+
+  oneof pipeline_type {
+    // A pipelined operation.
+    StructuredPipeline structured_pipeline = 2;
+  }
+
+  // Optional consistency arguments, defaults to strong consistency.
+  oneof consistency_selector {
+    // Run the query within an already active transaction.
+    //
+    // The value here is the opaque transaction ID to execute the query in.
+    bytes transaction = 5;
+
+    // Execute the pipeline in a new transaction.
+    //
+    // The identifier of the newly created transaction will be returned in the
+    // first response on the stream. This defaults to a read-only transaction.
+    TransactionOptions new_transaction = 6;
+
+    // Execute the pipeline in a snapshot transaction at the given time.
+    //
+    // This must be a microsecond precision timestamp within the past one hour,
+    // or if Point-in-Time Recovery is enabled, can additionally be a whole
+    // minute timestamp within the past 7 days.
+    google.protobuf.Timestamp read_time = 7;
+  }
+}
+
+// The response for [Firestore.Execute][].
+message ExecutePipelineResponse {
+  // Newly created transaction identifier.
+  //
+  // This field is only specified as part of the first response from the server,
+  // alongside the `results` field when the original request specified
+  // [ExecuteRequest.new_transaction][].
+  bytes transaction = 1;
+
+  // An ordered batch of results returned executing a pipeline.
+  //
+  // The batch size is variable, and can even be zero for when only a partial
+  // progress message is returned.
+  //
+  // The fields present in the returned documents are only those that were
+  // explicitly requested in the pipeline, this includes those like
+  // [`__name__`][google.firestore.v1.Document.name] and
+  // [`__update_time__`][google.firestore.v1.Document.update_time]. This is
+  // explicitly a divergence from `Firestore.RunQuery` / `Firestore.GetDocument`
+  // RPCs which always return such fields even when they are not specified in
+  // the [`mask`][google.firestore.v1.DocumentMask].
+  repeated Document results = 2;
+
+  // The time at which the results are valid.
+  //
+  // This is a (not strictly) monotonically increasing value across multiple
+  // responses in the same stream. The API guarantees that all previously
+  // returned results are still valid at the latest `execution_time`. This
+  // allows the API consumer to treat the query if it ran at the latest
+  // `execution_time` returned.
+  //
+  // If the query returns no results, a response with `execution_time` and no
+  // `results` will be sent, and this represents the time at which the operation
+  // was run.
+  google.protobuf.Timestamp execution_time = 3;
+
+  // Query explain stats.
+  //
+  // This is present on the **last** response if the request configured explain
+  // to run in 'analyze' or 'explain' mode in the pipeline options. If the query
+  // does not return any results, a response with `explain_stats` and no
+  // `results` will still be sent.
+  ExplainStats explain_stats = 4;
+}
+
+// The request for
 // [Firestore.RunAggregationQuery][google.firestore.v1.Firestore.RunAggregationQuery].
 message RunAggregationQueryRequest {
   // Required. The parent resource name. In the format:
@@ -973,7 +1073,7 @@ message Target {
   // will immediately send a response with a `TargetChange::Remove` event.
   //
   // Note that if the client sends multiple `AddTarget` requests
-  // without an ID, the order of IDs returned in `TargetChage.target_ids` are
+  // without an ID, the order of IDs returned in `TargetChange.target_ids` are
   // undefined. Therefore, clients should provide a target ID instead of relying
   // on the server to assign one.
   //
