@@ -390,8 +390,8 @@ _gapic_generator_typescript_sha256 = generator_versions["typescript"]["sha"]
 http_archive(
     name = "gapic_generator_typescript",
     sha256 = _gapic_generator_typescript_sha256,
-    strip_prefix = "gapic-generator-typescript-%s" % _gapic_generator_typescript_version if _gapic_generator_typescript_version else "gapic-generator-typescript-%s" % _gapic_generator_typescript_commit,
-    urls = ["https://github.com/googleapis/gapic-generator-typescript/archive/v%s.tar.gz" % _gapic_generator_typescript_version if _gapic_generator_typescript_version else "https://github.com/googleapis/gapic-generator-typescript/archive/%s.tar.gz" % _gapic_generator_typescript_commit],
+    strip_prefix = "google-cloud-node-core-gapic-generator-v{version}/generator/gapic-generator-typescript".format(version = _gapic_generator_typescript_version),
+    urls = ["https://github.com/googleapis/google-cloud-node-core/archive/refs/tags/gapic-generator-v{version}.tar.gz".format(version = _gapic_generator_typescript_version)],
 )
 
 load("@gapic_generator_typescript//:repositories.bzl", "gapic_generator_typescript_repositories")
