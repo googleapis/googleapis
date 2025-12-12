@@ -20,6 +20,8 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/cloud/dialogflow/v2/agent_coaching_instruction.proto";
+import "google/cloud/dialogflow/v2/tool_call.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
@@ -30,6 +32,10 @@ option java_multiple_files = true;
 option java_outer_classname = "GeneratorProto";
 option java_package = "com.google.cloud.dialogflow.v2";
 option objc_class_prefix = "DF";
+option (google.api.resource_definition) = {
+  type: "discoveryengine.googleapis.com/Engine"
+  pattern: "projects/{project}/locations/{location}/collections/{collection}/engines/{engine}"
+};
 
 // Generator Service for LLM powered Agent Assist. This service manages the
 // configurations of user owned Generators, such as description, context and
@@ -283,6 +289,24 @@ message InferenceParameter {
   optional double top_p = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
+// Agent Coaching context that customer can configure.
+message AgentCoachingContext {
+  // Optional. The overarching guidance for the agent coaching. This should be
+  // set only for v1.5 and later versions.
+  string overarching_guidance = 7 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Customized instructions for agent coaching.
+  repeated AgentCoachingInstruction instructions = 1
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Version of the feature. If not set, default to latest version.
+  // Current candidates are ["1.2"].
+  string version = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Output language code.
+  string output_language_code = 9 [(google.api.field_behavior) = OPTIONAL];
+}
+
 // Represents the section of summarization.
 message SummarizationSection {
   // Type enum of the summarization sections.
@@ -392,6 +416,9 @@ message Generator {
     // Input of free from generator to LLM.
     FreeFormContext free_form_context = 11;
 
+    // Input of prebuilt Agent Coaching feature.
+    AgentCoachingContext agent_coaching_context = 12;
+
     // Input of prebuilt Summarization feature.
     SummarizationContext summarization_context = 13;
   }
@@ -423,6 +450,18 @@ message Generator {
   // Output only. Update time of this generator.
   google.protobuf.Timestamp update_time = 9
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Resource names of the tools that the generator can choose from.
+  // Format: `projects/<Project ID>/locations/<Location ID>/tools/<tool ID>`.
+  repeated string tools = 14 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = { type: "dialogflow.googleapis.com/Tool" }
+  ];
+
+  // Optional. Configuration for suggestion deduping. This is only applicable to
+  // AI Coach feature.
+  SuggestionDedupingConfig suggestion_deduping_config = 23
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Suggestion generated using free form generator.
@@ -447,8 +486,94 @@ message SummarySuggestion {
       [(google.api.field_behavior) = REQUIRED];
 }
 
+// Suggestion for coaching agents.
+message AgentCoachingSuggestion {
+  // Sources for the suggestion.
+  message Sources {
+    // Output only. Source instruction indexes for the suggestion. This is the
+    // index of the applicable_instructions field.
+    repeated int32 instruction_indexes = 2
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Duplication check for the suggestion.
+  message DuplicateCheckResult {
+    // The duplicate suggestion details.
+    // Keeping answer_record and sources together as they are identifiers for
+    // duplicate suggestions.
+    message DuplicateSuggestion {
+      // Output only. The answer record id of the past duplicate suggestion.
+      string answer_record = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+      // Output only. Sources for the suggestion.
+      Sources sources = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+      // Output only. The index of the duplicate suggestion in the past
+      // suggestion list.
+      int32 suggestion_index = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+      // Output only. The similarity score of between the past and current
+      // suggestion.
+      float similarity_score = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+    }
+
+    // Output only. The duplicate suggestions.
+    repeated DuplicateSuggestion duplicate_suggestions = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Actions suggested for the agent. This is based on applicable instructions.
+  message AgentActionSuggestion {
+    // Optional. The suggested action for the agent.
+    string agent_action = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Output only. Sources for the agent action suggestion.
+    Sources sources = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Duplicate check result for the agent action suggestion.
+    DuplicateCheckResult duplicate_check_result = 3
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Sample response that the agent can use. This could be based on applicable
+  // instructions and ingested data from other systems.
+  message SampleResponse {
+    // Optional. Sample response for Agent in text.
+    string response_text = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Output only. Sources for the Sample Response.
+    Sources sources = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Duplicate check result for the sample response.
+    DuplicateCheckResult duplicate_check_result = 3
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Optional. Instructions applicable based on the current context.
+  repeated AgentCoachingInstruction applicable_instructions = 1
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Suggested actions for the agent to take.
+  repeated AgentActionSuggestion agent_action_suggestions = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Sample response for the Agent.
+  repeated SampleResponse sample_responses = 3
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
 // Suggestion generated using a Generator.
 message GeneratorSuggestion {
+  // Request and response for a tool call.
+  message ToolCallInfo {
+    // Required. Request for a tool call.
+    ToolCall tool_call = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. Response for a tool call.
+    ToolCallResult tool_call_result = 2
+        [(google.api.field_behavior) = REQUIRED];
+  }
+
   // The suggestion could be one of the many types
   oneof suggestion {
     // Optional. Free form suggestion.
@@ -458,7 +583,83 @@ message GeneratorSuggestion {
     // Optional. Suggested summary.
     SummarySuggestion summary_suggestion = 2
         [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Suggestion to coach the agent.
+    AgentCoachingSuggestion agent_coaching_suggestion = 3
+        [(google.api.field_behavior) = OPTIONAL];
   }
+
+  // Optional. List of request and response for tool calls executed.
+  repeated ToolCallInfo tool_call_info = 9
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Config for suggestion deduping.
+// NEXT_ID: 3
+message SuggestionDedupingConfig {
+  // Optional. Whether to enable suggestion deduping.
+  bool enable_deduping = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The threshold for similarity between two suggestions.
+  // Acceptable value is [0.0, 1.0], default to 0.8
+  float similarity_threshold = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Settings for Responsible AI checks.
+message RaiSettings {
+  // Configuration for a specific RAI category.
+  message RaiCategoryConfig {
+    // Enum for RAI category.
+    enum RaiCategory {
+      // Default value.
+      RAI_CATEGORY_UNSPECIFIED = 0;
+
+      // Dangerous content.
+      DANGEROUS_CONTENT = 1;
+
+      // Sexually explicit content.
+      SEXUALLY_EXPLICIT = 2;
+
+      // Harassment content.
+      HARASSMENT = 3;
+
+      // Hate speech content.
+      HATE_SPEECH = 4;
+    }
+
+    // Enum for user-configurable sensitivity levels.
+    enum SensitivityLevel {
+      // Default value.
+      // If unspecified, the default behavior is:
+      // - DANGEROUS_CONTENT: BLOCK_FEW
+      // - SEXUALLY_EXPLICIT: BLOCK_SOME
+      // - HARASSMENT: BLOCK_SOME
+      // - HATE_SPEECH: BLOCK_SOME
+      SENSITIVITY_LEVEL_UNSPECIFIED = 0;
+
+      // Block most potentially sensitive responses.
+      BLOCK_MOST = 1;
+
+      // Block some potentially sensitive responses.
+      BLOCK_SOME = 2;
+
+      // Block a few potentially sensitive responses.
+      BLOCK_FEW = 3;
+
+      // No filtering for this category.
+      BLOCK_NONE = 4;
+    }
+
+    // Optional. The RAI category.
+    RaiCategory category = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The sensitivity level for this category.
+    SensitivityLevel sensitivity_level = 2
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Configuration for a set of RAI categories.
+  repeated RaiCategoryConfig rai_category_configs = 1;
 }
 
 // The event that triggers the generator and LLM execution.
