@@ -52,6 +52,10 @@ option (google.api.resource_definition) = {
   type: "cloudkms.googleapis.com/CryptoKey"
   pattern: "projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}"
 };
+option (google.api.resource_definition) = {
+  type: "cloudkms.googleapis.com/CryptoKeyVersion"
+  pattern: "projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}/cryptoKeyVersions/{crypto_key_version}"
+};
 
 // Service describing handlers for resources
 service Memorystore {
@@ -476,8 +480,12 @@ message Instance {
   // Optional. Number of shards for the instance.
   int32 shard_count = 11 [(google.api.field_behavior) = OPTIONAL];
 
-  // Output only. Deprecated: Use the endpoints.connections.psc_auto_connection
-  // or endpoints.connections.psc_connection values instead.
+  // Output only. Deprecated: The discovery_endpoints parameter is deprecated.
+  // As a result, it will not be populated if the connections are created using
+  // endpoints parameter. Instead of this parameter, for discovery, use
+  // endpoints.connections.pscConnection and
+  // endpoints.connections.pscAutoConnection
+  // with connectionType CONNECTION_TYPE_DISCOVERY.
   repeated DiscoveryEndpoint discovery_endpoints = 12
       [deprecated = true, (google.api.field_behavior) = OUTPUT_ONLY];
 
@@ -528,10 +536,29 @@ message Instance {
   // Optional. The mode config for the instance.
   Mode mode = 26 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Input only. Ondemand maintenance for the instance.
-  optional bool ondemand_maintenance = 28 [
+  // Optional. Input only. Simulate a maintenance event.
+  optional bool simulate_maintenance_event = 27 [
     (google.api.field_behavior) = OPTIONAL,
     (google.api.field_behavior) = INPUT_ONLY
+  ];
+
+  // Optional. Input only. Ondemand maintenance for the instance.
+  optional bool ondemand_maintenance = 28 [
+    deprecated = true,
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = INPUT_ONLY
+  ];
+
+  // Optional. Output only. Reserved for future use.
+  optional bool satisfies_pzs = 29 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+
+  // Optional. Output only. Reserved for future use.
+  optional bool satisfies_pzi = 30 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.field_behavior) = OPTIONAL
   ];
 
   // Optional. The maintenance policy for the instance. If not provided,
@@ -555,6 +582,18 @@ message Instance {
   optional bool async_instance_endpoints_deletion_enabled = 44
       [(google.api.field_behavior) = OPTIONAL];
 
+  // Optional. The KMS key used to encrypt the at-rest data of the cluster.
+  optional string kms_key = 45 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "cloudkms.googleapis.com/CryptoKey"
+    }
+  ];
+
+  // Output only. Encryption information of the data at rest of the cluster.
+  EncryptionInfo encryption_info = 46
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
   // Output only. The backup collection full resource name. Example:
   // projects/{project}/locations/{location}/backupCollections/{collection}
   optional string backup_collection = 47 [
@@ -567,6 +606,29 @@ message Instance {
   // Optional. The automated backup config for the instance.
   AutomatedBackupConfig automated_backup_config = 48
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. This field can be used to trigger self service update to indicate
+  // the desired maintenance version. The input to this field can be determined
+  // by the available_maintenance_versions field.
+  optional string maintenance_version = 49
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. This field represents the actual maintenance version of the
+  // instance.
+  optional string effective_maintenance_version = 50
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. This field is used to determine the available maintenance
+  // versions for the self service update.
+  repeated string available_maintenance_versions = 51
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Immutable. Deprecated, do not use.
+  bool allow_fewer_zones_deployment = 54 [
+    deprecated = true,
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
 }
 
 // The automated backup config for an instance.
@@ -656,6 +718,16 @@ message BackupCollection {
 
   // Output only. The time when the backup collection was created.
   google.protobuf.Timestamp create_time = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Total size of all backups in the backup collection.
+  int64 total_backup_size_bytes = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Total number of backups in the backup collection.
+  int64 total_backup_count = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The last time a backup was created in the backup collection.
+  google.protobuf.Timestamp last_backup_time = 11
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
@@ -751,6 +823,10 @@ message Backup {
 
   // Output only. State of the backup.
   State state = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Encryption information of the backup.
+  EncryptionInfo encryption_info = 14
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. System assigned unique identifier of the backup.
   string uid = 15 [
@@ -1602,4 +1678,73 @@ message OperationMetadata {
 
   // Output only. API version used to start the operation.
   string api_version = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// EncryptionInfo describes the encryption information of a cluster.
+message EncryptionInfo {
+  // Possible encryption types.
+  enum Type {
+    // Encryption type not specified. Defaults to GOOGLE_DEFAULT_ENCRYPTION.
+    TYPE_UNSPECIFIED = 0;
+
+    // The data is encrypted at rest with a key that is fully managed by Google.
+    // No key version will be populated. This is the default state.
+    GOOGLE_DEFAULT_ENCRYPTION = 1;
+
+    // The data is encrypted at rest with a key that is managed by the customer.
+    // KMS key versions will be populated.
+    CUSTOMER_MANAGED_ENCRYPTION = 2;
+  }
+
+  // The state of the KMS key perceived by the system. Refer to the public
+  // documentation for the impact of each state.
+  enum KmsKeyState {
+    // The default value. This value is unused.
+    KMS_KEY_STATE_UNSPECIFIED = 0;
+
+    // The KMS key is enabled and correctly configured.
+    ENABLED = 1;
+
+    // Permission denied on the KMS key.
+    PERMISSION_DENIED = 2;
+
+    // The KMS key is disabled.
+    DISABLED = 3;
+
+    // The KMS key is destroyed.
+    DESTROYED = 4;
+
+    // The KMS key is scheduled to be destroyed.
+    DESTROY_SCHEDULED = 5;
+
+    // The EKM key is unreachable.
+    EKM_KEY_UNREACHABLE_DETECTED = 6;
+
+    // Billing is disabled for the project.
+    BILLING_DISABLED = 7;
+
+    // All other unknown failures.
+    UNKNOWN_FAILURE = 8;
+  }
+
+  // Output only. Type of encryption.
+  Type encryption_type = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. KMS key versions that are being used to protect the data
+  // at-rest.
+  repeated string kms_key_versions = 2 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "cloudkms.googleapis.com/CryptoKeyVersion"
+    }
+  ];
+
+  // Output only. The state of the primary version of the KMS key perceived by
+  // the system. This field is not populated in backups.
+  KmsKeyState kms_key_primary_state = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The most recent time when the encryption info was updated.
+  google.protobuf.Timestamp last_update_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
