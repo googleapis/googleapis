@@ -1,0 +1,67 @@
+---
+name: DIREGAPIC Updater
+on:  # yamllint disable-line rule:truthy
+  schedule:
+  - cron: '19 */8 * * *'
+  workflow_dispatch:
+
+jobs:
+  regenerate-compute:
+    if: github.repository == 'googleapis/googleapis'
+    runs-on: ubuntu-latest
+    container: gcr.io/gapic-images/googleapis:prod
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["beta", "v1"]
+    steps:
+    - name: Check out branch that triggered the workflow
+      uses: actions/checkout@v3
+      with:
+        ref: ''
+    - name: Install jq
+      run: |
+        apt-get update
+        apt-get install -y jq
+    - name: Download discovery docs
+      run: |
+        curl https://raw.githubusercontent.com/googleapis/discovery-artifact-manager/refs/heads/master/discoveries/compute.${{ matrix.version }}.json --output /tmp/compute.${{ matrix.version }}.json
+        sed -i 's|^  "version": "beta"|  "version": "v1beta"|' /tmp/compute.${{ matrix.version }}.json
+        echo compute_revision=$(grep -oP '"revision":\s*"\d+"' /tmp/compute.${{ matrix.version }}.json | grep -oP '\d+') >> $GITHUB_ENV
+        echo compute_version="$(jq -r '.version' /tmp/compute.${{ matrix.version }}.json)" >> $GITHUB_ENV
+    - name: Regenerate API definitions
+      run: |
+        cp /tmp/compute.${{ matrix.version }}.json google/cloud/compute/${{ env.compute_version }}/compute.${{ env.compute_version }}.json
+        git config --global --add safe.directory /__w/googleapis/googleapis
+        bazelisk build --experimental_convenience_symlinks=normal //google/cloud/compute/${{ env.compute_version }}:compute_gen
+        cp bazel-bin/google/cloud/compute/${{ env.compute_version }}/compute_gen.proto google/cloud/compute/${{ env.compute_version }}/compute.proto
+        cp bazel-bin/google/cloud/compute/${{ env.compute_version }}/compute_gen.config.out.json google/cloud/compute/${{ env.compute_version }}/compute.config.json
+        bazelisk build --experimental_convenience_symlinks=normal //google/cloud/compute/${{ env.compute_version }}:compute_grpc_service_config_gen
+        cp bazel-bin/google/cloud/compute/${{ env.compute_version }}/compute_grpc_service_config_gen.json google/cloud/compute/${{ env.compute_version }}/compute_grpc_service_config.json
+        bazelisk build --experimental_convenience_symlinks=normal //google/cloud/compute/${{ env.compute_version }}:compute_gapic_gen
+        cp bazel-bin/google/cloud/compute/${{ env.compute_version }}/compute_gapic_gen.yaml google/cloud/compute/${{ env.compute_version }}/compute_gapic.yaml
+        # Skip any config-only changes when determining whether the API changed:
+        # - The execution timestamp recorded in the config will always differ from the previous one
+        # - Some schema hashes appear to change for no reason (internal issue 406083082)
+        echo api_changes=$( { git diff --stat | grep -v file | grep -v compute.config.json ; } && git diff-index --shortstat HEAD) >> $GITHUB_ENV
+    - name: Build GAPIC clients
+      if: contains(env.api_changes, 'file')
+      run: |
+        bazelisk build --experimental_convenience_symlinks=normal //google/cloud/compute/${{ env.compute_version }}/...
+    - name: Create PR
+      uses: googleapis/code-suggester@v2
+      if: contains(env.api_changes, 'file')
+      env:
+        ACCESS_TOKEN: ${{ secrets.YOSHI_CODE_BOT_TOKEN }}
+      with:
+        command: pr
+        upstream_owner: googleapis
+        upstream_repo: googleapis
+        title: 'feat: [DIREGAPIC] Update ${{ env.compute_version }} API definitions to revision ${{ env.compute_revision }}'
+        description: 'feat: Update Compute Engine ${{ env.compute_version }} API to revision ${{ env.compute_revision }}'
+        message: 'feat: Update Compute Engine ${{ env.compute_version }} API to revision ${{ env.compute_revision }}'
+        primary: 'master'
+        branch: "diregapic-${{ matrix.version }}-${{ env.compute_revision }}"
+        git_dir: '.'
+        force: true
+        fork: true
