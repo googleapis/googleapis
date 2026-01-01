@@ -1,28 +1,79 @@
-# How to contribute
+# Contributing to Black Stone Revival
 
-We definitely welcome feedback and contribution to Google APIs! Here
-is some guideline and information about how to do so.
+Welcome to the Black Stone Revival community! We're excited to have you join our digital renaissance movement.
 
-## Legal requirements
+## 🎯 Our Values
+1. **Openness**: All contributions are valuable and welcome
+2. **Respect**: Treat all community members with respect
+3. **Quality**: Maintain high standards while being inclusive
+4. **Freedom**: Preserve and promote digital freedoms
 
-In order to protect both you and ourselves, you will need to sign the
-[Contributor License Agreement](https://cla.developers.google.com/clas).
+## 🚀 Getting Started
 
-## Technical requirements
+### 1. Setting Up Your Development Environment
+```bash
+# Clone the repository
+git clone https://github.com/Black-Stone-Revival/[project-name]
+cd [project-name]
 
-You will need several tools to work with this repository. At minimum,
-you need both [Protocol Buffers](https://github.com/google/protobuf)
-and [gRPC](https://github.com/grpc) in order to compile this
-repository and generate client library source code in various
-programming languages.
+# Install dependencies
+npm install  # or yarn install
 
-To compile the generated code into usable client libraries, you will
-need to use appropriate development environments and setup proper
-build configurations.
+# Set up pre-commit hooks
+npm run prepare
+```
 
-## Additional note
+### 2. Development Workflow
+1. 🔍 Find an issue to work on
+2. 🌿 Create a new branch: `feature/issue-number-description`
+3. 💻 Make your changes
+4. ✅ Run tests: `npm test`
+5. 📝 Update documentation if needed
+6. 🚀 Submit your PR
 
-Currently, the root's Makefile only lets you generate source code for
-the client library in the programming languages supported by
-[gRPC](https://github.com/grpc). It does not generate the ready-to-use
-client libraries yet.
+## 📋 Pull Request Guidelines
+
+### PR Checklist
+- [ ] Tests are passing
+- [ ] Documentation is updated
+- [ ] Code follows our style guide
+- [ ] Commit messages are clear and descriptive
+- [ ] PR description explains changes and reasoning
+
+### Commit Message Format
+```
+type(scope): summary
+
+Detailed description if needed
+
+Fixes #issue-number
+```
+
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+
+## 🎨 Code Style Guide
+We follow strict coding standards to maintain consistency:
+
+```javascript
+// Example JavaScript Style
+class ExampleClass {
+    constructor() {
+        this.value = 'example';
+    }
+
+    getValue() {
+        return this.value;
+    }
+}
+```
+
+## 🔍 Code Review Process
+1. Submit PR
+2. Automated tests run
+3. Code review by maintainers
+4. Address feedback
+5. Final approval
+6. Merge
+
+## 📜 License
+By contributing, you agree that your contributions will be licensed under the GNU GPL v3 License.
