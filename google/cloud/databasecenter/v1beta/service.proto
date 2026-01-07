@@ -24,6 +24,7 @@ import "google/cloud/databasecenter/v1beta/maintenance.proto";
 import "google/cloud/databasecenter/v1beta/metric_data.proto";
 import "google/cloud/databasecenter/v1beta/product.proto";
 import "google/cloud/databasecenter/v1beta/signals.proto";
+import "google/type/date.proto";
 
 option csharp_namespace = "Google.Cloud.DatabaseCenter.V1Beta";
 option go_package = "cloud.google.com/go/databasecenter/apiv1beta/databasecenterpb;databasecenterpb";
@@ -44,6 +45,14 @@ service DatabaseCenter {
   rpc QueryProducts(QueryProductsRequest) returns (QueryProductsResponse) {
     option (google.api.http) = {
       get: "/v1beta:queryProducts"
+    };
+  }
+
+  // AggregateFleet provides statistics about the fleet grouped by various
+  // fields.
+  rpc AggregateFleet(AggregateFleetRequest) returns (AggregateFleetResponse) {
+    option (google.api.http) = {
+      get: "/v1beta:aggregateFleet"
     };
   }
 
@@ -107,6 +116,18 @@ enum SubResourceType {
 
   // For the rest of the categories.
   SUB_RESOURCE_TYPE_OTHER = 4;
+}
+
+// The management type of the resource.
+enum ManagementType {
+  // Unspecified.
+  MANAGEMENT_TYPE_UNSPECIFIED = 0;
+
+  // Google-managed resource.
+  MANAGEMENT_TYPE_GCP_MANAGED = 1;
+
+  // Self-managed resource.
+  MANAGEMENT_TYPE_SELF_MANAGED = 2;
 }
 
 // QueryProductsRequest is the request to get a list of products.
@@ -397,6 +418,200 @@ message Label {
   string source = 3;
 }
 
+// The request message to aggregate fleet which are grouped by a field.
+message AggregateFleetRequest {
+  // Required. Parent can be a project, a folder, or an organization. The search
+  // is limited to the resources within the `scope`.
+  //
+  // The allowed values are:
+  //
+  // * projects/{PROJECT_ID} (e.g., "projects/foo-bar")
+  // * projects/{PROJECT_NUMBER} (e.g., "projects/12345678")
+  // * folders/{FOLDER_NUMBER} (e.g., "folders/1234567")
+  // * organizations/{ORGANIZATION_NUMBER} (e.g.,
+  // "organizations/123456")
+  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The expression to filter resources.
+  //
+  // Supported fields are: `full_resource_name`, `resource_type`, `container`,
+  //   `product.type`, `product.engine`, `product.version`, `location`,
+  //   `labels`, `issues`, fields of availability_info, data_protection_info,
+  //   'resource_name', etc.
+  //
+  // The expression is a list of zero or more restrictions combined via logical
+  // operators `AND` and `OR`. When `AND` and `OR` are both used in the
+  // expression, parentheses must be appropriately used to group the
+  // combinations.
+  //
+  // Example: location="us-east1"
+  // Example: container="projects/123" OR container="projects/456"
+  // Example: (container="projects/123" OR
+  //           container="projects/456") AND location="us-east1"
+  string filter = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A field that statistics are grouped by.
+  // Valid values are any combination of the following:
+  //   * container
+  //   * product.type
+  //   * product.engine
+  //   * product.version
+  //   * location
+  //   * sub_resource_type
+  //   * management_type
+  //   * tag.key
+  //   * tag.value
+  //   * tag.source
+  //   * tag.inherited
+  //   * label.key
+  //   * label.value
+  //   * label.source
+  //   * has_maintenance_schedule
+  //   * has_deny_maintenance_schedules
+  // Comma separated list.
+  string group_by = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Valid values to order by are:
+  //   * resource_groups_count
+  //   * resources_count
+  //   * and all fields supported by `group_by`
+  // The default order is ascending. Add "DESC" after the field name to indicate
+  // descending order. Add "ASC" after the field name to indicate ascending
+  // order. It supports ordering using multiple fields.
+  // For example:
+  //  order_by = "resource_groups_count" sorts response in ascending order
+  //  order_by = "resource_groups_count DESC" sorts response in descending order
+  //  order_by = "product.type, product.version DESC, location" orders by type
+  //  in ascending order, version in descending order and location in ascending
+  //  order
+  string order_by = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If unspecified, at most 50 items will be returned.
+  // The maximum value is 1000; values above 1000 will be coerced to 1000.
+  int32 page_size = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A page token, received from a previous `AggregateFleet` call.
+  // Provide this to retrieve the subsequent page.
+  // All other parameters should match the parameters in the call that provided
+  // the page token except for page_size which can be different.
+  string page_token = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The baseline date w.r.t. which the delta counts are calculated.
+  // If not set, delta counts are not included in the response and the response
+  // indicates the current state of the fleet.
+  optional google.type.Date baseline_date = 7
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The response message to aggregate a fleet by some group by fields.
+message AggregateFleetResponse {
+  // Represents a row grouped by the fields in the input.
+  repeated AggregateFleetRow rows = 1;
+
+  // Count of all resource groups in the fleet. This includes counts from all
+  // pages.
+  int32 resource_groups_total_count = 2;
+
+  // Count of all resources in the fleet. This includes counts from all pages.
+  int32 resource_total_count = 3;
+
+  // A token that can be sent as `page_token` to retrieve the next page.
+  // If this field is omitted, there are no subsequent pages.
+  string next_page_token = 4;
+
+  // Unordered list. List of unreachable regions from where data could not be
+  // retrieved.
+  repeated string unreachable = 5
+      [(google.api.field_behavior) = UNORDERED_LIST];
+}
+
+// Individual row grouped by a particular dimension.
+message AggregateFleetRow {
+  // Group by dimension.
+  repeated Dimension dimension = 1;
+
+  // Number of resource groups that have a particular dimension.
+  int32 resource_groups_count = 2;
+
+  // Number of resources that have a particular dimension.
+  int32 resources_count = 3;
+
+  // Optional. Delta counts and details of resources which were added to/deleted
+  // from fleet.
+  optional DeltaDetails delta_details = 4
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Dimension used to aggregate the fleet.
+message Dimension {
+  // Followings are the dimensions to be used to aggregate the fleet.
+  oneof dimension {
+    // Specifies where the resource is created. For GCP, it is the full name of
+    // the project.
+    string container = 2;
+
+    // Type to identify a product
+    ProductType product_type = 3;
+
+    // Engine refers to underlying database binary running in an instance.
+    Engine product_engine = 4;
+
+    // Version of the underlying database engine
+    string product_version = 5;
+
+    // The location of the resources. It supports returning only regional
+    // locations in GCP.
+    string location = 6;
+
+    // The type of resource defined according to the pattern:
+    // {Service Name}/{Type}. Ex:
+    // sqladmin.googleapis.com/Instance
+    // alloydb.googleapis.com/Cluster
+    // alloydb.googleapis.com/Instance
+    // spanner.googleapis.com/Instance
+    string resource_type = 7;
+
+    // Subtype of the resource specified at creation time.
+    SubResourceType sub_resource_type = 8;
+
+    // The category of the resource.
+    ResourceCategory resource_category = 9;
+
+    // The management type of the resource.
+    ManagementType management_type = 10;
+
+    // The edition of the resource.
+    Edition edition = 11;
+
+    // Tag key of the resource.
+    string tag_key = 12;
+
+    // Tag value of the resource.
+    string tag_value = 13;
+
+    // Tag source of the resource.
+    string tag_source = 14;
+
+    // Tag inheritance value of the resource.
+    bool tag_inherited = 15;
+
+    // Label key of the resource.
+    string label_key = 16;
+
+    // Label value of the resource.
+    string label_value = 17;
+
+    // Label source of the resource.
+    string label_source = 18;
+
+    // Whether the resource has a maintenance schedule.
+    bool has_maintenance_schedule = 19;
+
+    // Whether the resource has deny maintenance schedules.
+    bool has_deny_maintenance_schedules = 20;
+  }
+}
+
 // BackupDRConfig to capture the backup and disaster recovery details of
 // database resource.
 message BackupDRConfig {
@@ -427,4 +642,34 @@ message Tag {
   // the resource's ancestors, inherited will be true. If false, then the tag
   // value is directly attached to the resource.
   bool inherited = 4;
+}
+
+// Capture the resource details for resources that are included in the delta
+// counts.
+message ResourceDetails {
+  // Full resource name of the resource.
+  string full_resource_name = 1;
+
+  // Specifies where the resource is created. For GCP, it is the full name of
+  // the project.
+  string container = 2;
+
+  // Product type of the resource.
+  Product product = 3;
+
+  // Location of the resource.
+  string location = 4;
+}
+
+// Captures the details of items that have increased or decreased in some bucket
+// when compared to some point in history.
+// It is currently used to capture the delta of resources that have been added
+// or removed in the fleet as well as to capture the resources that have a
+// change in Issue/Signal status.
+message DeltaDetails {
+  // Details of resources that have increased.
+  repeated ResourceDetails increased_resources = 1;
+
+  // Details of resources that have decreased.
+  repeated ResourceDetails decreased_resources = 2;
 }
