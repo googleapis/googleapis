@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -44,6 +44,9 @@ enum Protocols {
 
   // SMB protocol
   SMB = 3;
+
+  // ISCSI protocol
+  ISCSI = 4;
 }
 
 // AccessType is an enum of all the supported access types for a volume.
@@ -423,9 +426,18 @@ message Volume {
   // Optional. Throughput of the volume (in MiB/s)
   double throughput_mibps = 41 [(google.api.field_behavior) = OPTIONAL];
 
+  // Optional. Cache parameters for the volume.
+  CacheParameters cache_parameters = 42
+      [(google.api.field_behavior) = OPTIONAL];
+
   // Output only. Total hot tier data rounded down to the nearest GiB used by
   // the Volume. This field is only used for flex Service Level
   int64 hot_tier_size_used_gib = 44 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Block devices for the volume.
+  // Currently, only one block device is permitted per Volume.
+  repeated BlockDevice block_devices = 45
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Defines the export policy for the volume.
@@ -437,11 +449,11 @@ message ExportPolicy {
 
 // An export policy rule describing various export options.
 message SimpleExportPolicyRule {
-  // SquashMode defines how remote user privileges are restricted when accessing
-  // an NFS export. It controls how user identities (like root) are mapped to
-  // anonymous users to limit access and enforce security.
+  // `SquashMode` defines how remote user privileges are restricted when
+  // accessing an NFS export. It controls how user identities (like root) are
+  // mapped to anonymous users to limit access and enforce security.
   enum SquashMode {
-    // Defaults to NO_ROOT_SQUASH.
+    // Defaults to `NO_ROOT_SQUASH`.
     SQUASH_MODE_UNSPECIFIED = 0;
 
     // The root user (UID 0) retains full access. Other users are
@@ -510,7 +522,7 @@ message SimpleExportPolicyRule {
   optional SquashMode squash_mode = 12 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. An integer representing the anonymous user ID. Range is 0 to
-  // 4294967295. Required when squash_mode is ROOT_SQUASH or ALL_SQUASH.
+  // `4294967295`. Required when `squash_mode` is `ROOT_SQUASH` or `ALL_SQUASH`.
   optional int64 anon_uid = 13 [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -758,3 +770,193 @@ message HybridReplicationParameters {
   int32 large_volume_constituent_count = 11
       [(google.api.field_behavior) = OPTIONAL];
 }
+
+// Cache Parameters for the volume.
+message CacheParameters {
+  // State of the cache volume indicating the peering status.
+  enum CacheState {
+    // Default unspecified state.
+    CACHE_STATE_UNSPECIFIED = 0;
+
+    // State indicating waiting for cluster peering to be established.
+    PENDING_CLUSTER_PEERING = 1;
+
+    // State indicating waiting for SVM peering to be established.
+    PENDING_SVM_PEERING = 2;
+
+    // State indicating successful establishment of peering with origin
+    // volumes's ONTAP cluster.
+    PEERED = 3;
+
+    // Terminal state wherein peering with origin volume's ONTAP cluster
+    // has failed.
+    ERROR = 4;
+  }
+
+  // Required. Name of the origin volume for the cache volume.
+  string peer_volume_name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Name of the origin volume's ONTAP cluster.
+  string peer_cluster_name = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Name of the origin volume's SVM.
+  string peer_svm_name = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. List of IC LIF addresses of the origin volume's ONTAP cluster.
+  repeated string peer_ip_addresses = 4
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Indicates whether the cache volume has global file lock enabled.
+  optional bool enable_global_file_lock = 5
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Configuration of the cache volume.
+  CacheConfig cache_config = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. State of the cache volume indicating the peering status.
+  CacheState cache_state = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Copy-paste-able commands to be used on user's ONTAP to accept
+  // peering requests.
+  string command = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Expiration time for the peering command to be executed on user's
+  // ONTAP.
+  google.protobuf.Timestamp peering_command_expiry_time = 9
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Temporary passphrase generated to accept cluster peering
+  // command.
+  string passphrase = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Detailed description of the current cache state.
+  string state_details = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Configuration of the cache volume.
+message CacheConfig {
+  // State of the prepopulation job indicating how the prepopulation is
+  // progressing.
+  enum CachePrePopulateState {
+    // Default unspecified state.
+    CACHE_PRE_POPULATE_STATE_UNSPECIFIED = 0;
+
+    // State representing when the most recent create or update request did not
+    // require a prepopulation job.
+    NOT_NEEDED = 1;
+
+    // State representing when the most recent update request requested a
+    // prepopulation job but it has not yet completed.
+    IN_PROGRESS = 2;
+
+    // State representing when the most recent update request requested a
+    // prepopulation job and it has completed successfully.
+    COMPLETE = 3;
+
+    // State representing when the most recent update request requested a
+    // prepopulation job but the prepopulate job failed.
+    ERROR = 4;
+  }
+
+  // Optional. Pre-populate cache volume with data from the origin volume.
+  CachePrePopulate cache_pre_populate = 1
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Flag indicating whether writeback is enabled for the FlexCache
+  // volume.
+  optional bool writeback_enabled = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Flag indicating whether a CIFS change notification is enabled for
+  // the FlexCache volume.
+  optional bool cifs_change_notify_enabled = 5
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. State of the prepopulation job indicating how the
+  // prepopulation is progressing.
+  CachePrePopulateState cache_pre_populate_state = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Pre-populate cache volume with data from the origin volume.
+message CachePrePopulate {
+  // Optional. List of directory-paths to be pre-populated for the FlexCache
+  // volume.
+  repeated string path_list = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. List of directory-paths to be excluded for pre-population for the
+  // FlexCache volume.
+  repeated string exclude_path_list = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Flag indicating whether the directories listed with the
+  // `path_list` need to be recursively pre-populated.
+  optional bool recursion = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Block device represents the device(s) which are stored in the block volume.
+message BlockDevice {
+  // Optional. User-defined name for the block device, unique within the volume.
+  // In case no user input is provided, name will be auto-generated in the
+  // backend. The name must meet the following requirements:
+  // *   Be between 1 and 255 characters long.
+  // *   Contain only uppercase or lowercase letters (A-Z, a-z), numbers (0-9),
+  //     and the following special characters: "-", "_", "}", "{", ".".
+  // *   Spaces are not allowed.
+  optional string name = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A list of host groups that identify hosts that can mount the
+  // block volume. Format:
+  // `projects/{project_id}/locations/{location}/hostGroups/{host_group_id}`
+  // This field can be updated after the block device is created.
+  repeated string host_groups = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "netapp.googleapis.com/HostGroup"
+    }
+  ];
+
+  // Output only. Device identifier of the block volume. This represents
+  // `lun_serial_number` for iSCSI volumes.
+  string identifier = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The size of the block device in GiB.
+  // Any value provided for the `size_gib` field during volume creation is
+  // ignored. The block device's size is system-managed and will be set to match
+  // the parent Volume's `capacity_gib`.
+  optional int64 size_gib = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. Immutable. The OS type of the volume.
+  // This field can't be changed after the block device is created.
+  OsType os_type = 5 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+}
+
+// RestoreBackupFilesRequest restores files from a backup to a volume.
+message RestoreBackupFilesRequest {
+  // Required. The volume resource name, in the format
+  // `projects/{project_id}/locations/{location}/volumes/{volume_id}`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "netapp.googleapis.com/Volume" }
+  ];
+
+  // Required. The backup resource name, in the format
+  // `projects/{project_id}/locations/{location}/backupVaults/{backup_vault_id}/backups/{backup_id}`
+  string backup = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "netapp.googleapis.com/Backup" }
+  ];
+
+  // Required. List of files to be restored, specified by their absolute path in
+  // the source volume.
+  repeated string file_list = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Absolute directory path in the destination volume. This is
+  // required if the `file_list` is provided.
+  string restore_destination_path = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// RestoreBackupFilesResponse is the result of RestoreBackupFilesRequest.
+message RestoreBackupFilesResponse {}
