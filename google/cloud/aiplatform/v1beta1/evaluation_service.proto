@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,6 +24,8 @@ import "google/cloud/aiplatform/v1beta1/content.proto";
 import "google/cloud/aiplatform/v1beta1/io.proto";
 import "google/cloud/aiplatform/v1beta1/operation.proto";
 import "google/longrunning/operations.proto";
+import "google/protobuf/struct.proto";
+import "google/rpc/status.proto";
 
 option csharp_namespace = "Google.Cloud.AIPlatform.V1Beta1";
 option go_package = "cloud.google.com/go/aiplatform/apiv1beta1/aiplatformpb;aiplatformpb";
@@ -45,6 +47,7 @@ service EvaluationService {
     option (google.api.http) = {
       post: "/v1beta1/{location=projects/*/locations/*}:evaluateInstances"
       body: "*"
+      additional_bindings { post: "/v1beta1:evaluateInstances" body: "*" }
     };
   }
 
@@ -54,6 +57,7 @@ service EvaluationService {
     option (google.api.http) = {
       post: "/v1beta1/{location=projects/*/locations/*}:evaluateDataset"
       body: "*"
+      additional_bindings { post: "/v1beta1:evaluateDataset" body: "*" }
     };
     option (google.longrunning.operation_info) = {
       response_type: "EvaluateDatasetResponse"
@@ -83,18 +87,18 @@ message EvaluateDatasetOperationMetadata {
   GenericOperationMetadata generic_metadata = 1;
 }
 
-// Response in LRO for EvaluationService.EvaluateDataset.
+// The results from an evaluation run performed by the EvaluationService.
 message EvaluateDatasetResponse {
   // Output only. Aggregation statistics derived from results of
-  // EvaluationService.EvaluateDataset.
+  // EvaluationService.
   AggregationOutput aggregation_output = 1
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. Output info for EvaluationService.EvaluateDataset.
+  // Output only. Output info for EvaluationService.
   OutputInfo output_info = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
-// Describes the info for output of EvaluationService.EvaluateDataset.
+// Describes the info for output of EvaluationService.
 message OutputInfo {
   // The output location into which evaluation output is written.
   oneof output_location {
@@ -172,9 +176,10 @@ message OutputConfig {
   }
 }
 
-// The metric used for dataset level evaluation.
+// The metric used for running evaluations.
 message Metric {
-  // The aggregation metrics supported by EvaluationService.EvaluateDataset.
+  // The per-metric statistics on evaluation results supported by
+  // `EvaluationService.EvaluateDataset`.
   enum AggregationMetric {
     // Unspecified aggregation metric.
     AGGREGATION_METRIC_UNSPECIFIED = 0;
@@ -210,8 +215,18 @@ message Metric {
     PERCENTILE_P99 = 10;
   }
 
-  // The metric spec used for evaluation.
+  // The spec for the metric.
+  // It would be either a pre-defined metric, or a inline metric spec.
   oneof metric_spec {
+    // The spec for a pre-defined metric.
+    PredefinedMetricSpec predefined_metric_spec = 8;
+
+    // Spec for a computation based metric.
+    ComputationBasedMetricSpec computation_based_metric_spec = 9;
+
+    // Spec for an LLM based metric.
+    LLMBasedMetricSpec llm_based_metric_spec = 10;
+
     // Spec for pointwise metric.
     PointwiseMetricSpec pointwise_metric_spec = 2;
 
@@ -511,6 +526,92 @@ message EvaluateInstancesResponse {
     RubricBasedInstructionFollowingResult
         rubric_based_instruction_following_result = 38;
   }
+
+  // Metric results for each instance.
+  // The order of the metric results is guaranteed to be the same as the order
+  // of the instances in the request.
+  repeated MetricResult metric_results = 43;
+}
+
+// Result for a single metric on a single instance.
+message MetricResult {
+  // Output only. The score for the metric.
+  // Please refer to each metric's documentation for the meaning of the score.
+  optional float score = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The explanation for the metric result.
+  optional string explanation = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The error status for the metric result.
+  optional google.rpc.Status error = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The spec for a pre-defined metric.
+message PredefinedMetricSpec {
+  // Required. The name of a pre-defined metric, such as
+  // "instruction_following_v1" or "text_quality_v1".
+  string metric_spec_name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The parameters needed to run the pre-defined metric.
+  google.protobuf.Struct metric_spec_parameters = 2
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Specification for a computation based metric.
+message ComputationBasedMetricSpec {
+  // Types of computation based metrics.
+  enum ComputationBasedMetricType {
+    // Unspecified computation based metric type.
+    COMPUTATION_BASED_METRIC_TYPE_UNSPECIFIED = 0;
+
+    // Exact match metric.
+    EXACT_MATCH = 1;
+
+    // BLEU metric.
+    BLEU = 2;
+
+    // ROUGE metric.
+    ROUGE = 3;
+  }
+
+  // Required. The type of the computation based metric.
+  optional ComputationBasedMetricType type = 1
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. A map of parameters for the metric, e.g. {"rouge_type":
+  // "rougeL"}.
+  optional google.protobuf.Struct parameters = 2
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Specification for an LLM based metric.
+message LLMBasedMetricSpec {
+  // Source of the rubrics to be used for evaluation.
+  oneof rubrics_source {
+    // Use a pre-defined group of rubrics associated with the input.
+    // Refers to a key in the rubric_groups map of EvaluationInstance.
+    string rubric_group_key = 4;
+
+    // Dynamically generate rubrics using a predefined spec.
+    PredefinedMetricSpec predefined_rubric_generation_spec = 6;
+  }
+
+  // Required. Template for the prompt sent to the judge model.
+  optional string metric_prompt_template = 1
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. System instructions for the judge model.
+  optional string system_instruction = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional configuration for the judge LLM (Autorater).
+  optional AutoraterConfig judge_autorater_config = 3
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional additional configuration for the metric.
+  optional google.protobuf.Struct additional_config = 7
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Input for exact match metric.
