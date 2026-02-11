@@ -1,0 +1,302 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.ces.v1;
+
+import "google/api/field_behavior.proto";
+import "google/cloud/ces/v1/common.proto";
+import "google/cloud/ces/v1/data_store.proto";
+
+option go_package = "cloud.google.com/go/ces/apiv1/cespb;cespb";
+option java_multiple_files = true;
+option java_outer_classname = "DataStoreToolProto";
+option java_package = "com.google.cloud.ces.v1";
+
+// Tool to retrieve from Vertex AI Search datastore or engine for grounding.
+// Accepts either a datastore or an engine, but not both.
+// See Vertex AI Search:
+// https://cloud.google.com/generative-ai-app-builder/docs/enterprise-search-introduction.
+message DataStoreTool {
+  // Rewriter configuration.
+  message RewriterConfig {
+    // Required. Configurations for the LLM model.
+    ModelSettings model_settings = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. The prompt definition. If not set, default prompt will be used.
+    string prompt = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Whether the rewriter is disabled.
+    bool disabled = 3 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Summarization configuration.
+  message SummarizationConfig {
+    // Optional. Configurations for the LLM model.
+    ModelSettings model_settings = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The prompt definition. If not set, default prompt will be used.
+    string prompt = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Whether summarization is disabled.
+    bool disabled = 3 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Grounding configuration.
+  message GroundingConfig {
+    // Optional. The groundedness threshold of the answer based on the retrieved
+    // sources. The value has a configurable range of [1, 5]. The level is used
+    // to threshold the groundedness of the answer, meaning that all responses
+    // with a groundedness score below the threshold will fall back to returning
+    // relevant snippets only.
+    //
+    // For example, a level of 3 means that the groundedness score must be
+    // 3 or higher for the response to be returned.
+    float grounding_level = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Whether grounding is disabled.
+    bool disabled = 2 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Configuration for searching within a specific DataStore.
+  message DataStoreSource {
+    // Optional. Filter specification for the DataStore.
+    // See:
+    // https://cloud.google.com/generative-ai-app-builder/docs/filter-search-metadata
+    string filter = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The data store.
+    DataStore data_store = 4 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Configuration for searching within an Engine, potentially targeting
+  // specific DataStores.
+  message EngineSource {
+    // Required. Full resource name of the Engine.
+    // Format:
+    // `projects/{project}/locations/{location}/collections/{collection}/engines/{engine}`
+    string engine = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. Use to target specific DataStores within the Engine.
+    // If empty, the search applies to all DataStores associated with the
+    // Engine.
+    repeated DataStoreSource data_store_sources = 2
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. A filter applied to the search across the Engine. Not relevant
+    // and not used if 'data_store_sources' is provided. See:
+    // https://cloud.google.com/generative-ai-app-builder/docs/filter-search-metadata
+    string filter = 3 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Boost specifications to boost certain documents.
+  // For more information, please refer to
+  // https://cloud.google.com/generative-ai-app-builder/docs/boosting.
+  message BoostSpecs {
+    // Required. The Data Store where the boosting configuration is applied.
+    // Full resource name of DataStore, such as
+    // projects/{project}/locations/{location}/collections/{collection}/dataStores/{dataStore}.
+    repeated string data_stores = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. A list of boosting specifications.
+    repeated BoostSpec spec = 2 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Boost specification to boost certain documents.
+  message BoostSpec {
+    // Boost specification for a condition.
+    message ConditionBoostSpec {
+      // Specification for custom ranking based on customer specified attribute
+      // value. It provides more controls for customized ranking than the simple
+      // (condition, boost) combination above.
+      message BoostControlSpec {
+        // The control points used to define the curve. The curve defined
+        // through these control points can only be monotonically increasing
+        // or decreasing(constant values are acceptable).
+        message ControlPoint {
+          // Optional. Can be one of:
+          // 1. The numerical field value.
+          // 2. The duration spec for freshness:
+          // The value must be formatted as an XSD `dayTimeDuration` value (a
+          // restricted subset of an ISO 8601 duration value). The pattern for
+          // this is: `[nD][T[nH][nM][nS]]`.
+          string attribute_value = 1 [(google.api.field_behavior) = OPTIONAL];
+
+          // Optional. The value between -1 to 1 by which to boost the score if
+          // the attribute_value evaluates to the value specified above.
+          float boost_amount = 2 [(google.api.field_behavior) = OPTIONAL];
+        }
+
+        // The attribute(or function) for which the custom ranking is to be
+        // applied.
+        enum AttributeType {
+          // Unspecified AttributeType.
+          ATTRIBUTE_TYPE_UNSPECIFIED = 0;
+
+          // The value of the numerical field will be used to dynamically update
+          // the boost amount. In this case, the attribute_value (the x value)
+          // of the control point will be the actual value of the numerical
+          // field for which the boost_amount is specified.
+          NUMERICAL = 1;
+
+          // For the freshness use case the attribute value will be the duration
+          // between the current time and the date in the datetime field
+          // specified. The value must be formatted as an XSD `dayTimeDuration`
+          // value (a restricted subset of an ISO 8601 duration value). The
+          // pattern for this is: `[nD][T[nH][nM][nS]]`.
+          // E.g. `5D`, `3DT12H30M`, `T24H`.
+          FRESHNESS = 2;
+        }
+
+        // The interpolation type to be applied. Default will be linear
+        // (Piecewise Linear).
+        enum InterpolationType {
+          // Interpolation type is unspecified. In this case, it defaults to
+          // Linear.
+          INTERPOLATION_TYPE_UNSPECIFIED = 0;
+
+          // Piecewise linear interpolation will be applied.
+          LINEAR = 1;
+        }
+
+        // Optional. The name of the field whose value will be used to determine
+        // the boost amount.
+        string field_name = 1 [(google.api.field_behavior) = OPTIONAL];
+
+        // Optional. The attribute type to be used to determine the boost
+        // amount. The attribute value can be derived from the field value of
+        // the specified field_name. In the case of numerical it is
+        // straightforward i.e. attribute_value = numerical_field_value. In the
+        // case of freshness however, attribute_value = (time.now() -
+        // datetime_field_value).
+        AttributeType attribute_type = 2
+            [(google.api.field_behavior) = OPTIONAL];
+
+        // Optional. The interpolation type to be applied to connect the control
+        // points listed below.
+        InterpolationType interpolation_type = 3
+            [(google.api.field_behavior) = OPTIONAL];
+
+        // Optional. The control points used to define the curve. The monotonic
+        // function (defined through the interpolation_type above) passes
+        // through the control points listed here.
+        repeated ControlPoint control_points = 4
+            [(google.api.field_behavior) = OPTIONAL];
+      }
+
+      // Required. An expression which specifies a boost condition. The syntax
+      // is the same as filter expression syntax. Currently, the only supported
+      // condition is a list of BCP-47 lang codes. Example: To boost suggestions
+      // in languages en or fr: (lang_code: ANY("en", "fr"))
+      string condition = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // Optional. Strength of the boost, which should be in [-1, 1]. Negative
+      // boost means demotion. Default is 0.0.
+      //
+      // Setting to 1.0 gives the suggestions a big promotion. However, it does
+      // not necessarily mean that the top result will be a boosted suggestion.
+      //
+      // Setting to -1.0 gives the suggestions a big demotion. However, other
+      // suggestions that are relevant might still be shown.
+      //
+      // Setting to 0.0 means no boost applied. The boosting condition is
+      // ignored.
+      float boost = 2 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Complex specification for custom ranking based on customer
+      // defined attribute value.
+      BoostControlSpec boost_control_spec = 4
+          [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Required. A list of boosting specifications.
+    repeated ConditionBoostSpec condition_boost_specs = 1
+        [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // If specified, will apply the given configuration for the specified
+  // modality.
+  message ModalityConfig {
+    // The modality type.
+    enum ModalityType {
+      // Unspecified modality type.
+      MODALITY_TYPE_UNSPECIFIED = 0;
+
+      // Text modality.
+      TEXT = 1;
+
+      // Audio modality.
+      AUDIO = 2;
+    }
+
+    // Required. The modality type.
+    ModalityType modality_type = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. The rewriter config.
+    RewriterConfig rewriter_config = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The summarization config.
+    SummarizationConfig summarization_config = 3
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The grounding configuration.
+    GroundingConfig grounding_config = 4
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Filter parameter behavior.
+  enum FilterParameterBehavior {
+    // Default filter behavior.
+    // Include filter parameter for connector datastores.
+    // For the rest of the datastore types, the filter input parameter is
+    // omitted.
+    FILTER_PARAMETER_BEHAVIOR_UNSPECIFIED = 0;
+
+    // Always include filter parameter for all datastore types.
+    ALWAYS_INCLUDE = 2;
+
+    // The filter parameter is never included in the list of tool parameters,
+    // regardless of the datastore type.
+    NEVER_INCLUDE = 3;
+  }
+
+  // Defines the search source, either a single DataStore or an Engine.
+  oneof search_source {
+    // Optional. Search within a single specific DataStore.
+    DataStoreSource data_store_source = 3
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Search within an Engine (potentially across multiple
+    // DataStores).
+    EngineSource engine_source = 4 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Required. The data store tool name.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The tool description.
+  string description = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Boost specification to boost certain documents.
+  repeated BoostSpecs boost_specs = 8 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The modality configs for the data store.
+  repeated ModalityConfig modality_configs = 9
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The filter parameter behavior.
+  FilterParameterBehavior filter_parameter_behavior = 10
+      [(google.api.field_behavior) = OPTIONAL];
+}

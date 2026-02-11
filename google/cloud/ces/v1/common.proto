@@ -1,0 +1,344 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.ces.v1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "cloud.google.com/go/ces/apiv1/cespb;cespb";
+option java_multiple_files = true;
+option java_outer_classname = "CommonProto";
+option java_package = "com.google.cloud.ces.v1";
+option (google.api.resource_definition) = {
+  type: "servicedirectory.googleapis.com/Service"
+  pattern: "projects/{project}/locations/{location}/namespaces/{namespace}/services/{service}"
+};
+
+// The execution type of the tool or toolset.
+enum ExecutionType {
+  // The execution type is unspecified. Defaults to `SYNCHRONOUS` if
+  // unspecified.
+  EXECUTION_TYPE_UNSPECIFIED = 0;
+
+  // The tool is executed synchronously. The session is blocked
+  // until the tool returns.
+  SYNCHRONOUS = 1;
+
+  // The tool is executed asynchronously. The session will
+  // continue while the tool is executing.
+  ASYNCHRONOUS = 2;
+}
+
+// A callback defines the custom logic to be executed at various stages of
+// agent interaction.
+message Callback {
+  // The callback to execute.
+  oneof callback {
+    // Required. The python code to execute for the callback.
+    string python_code = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Optional. Human-readable description of the callback.
+  string description = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether the callback is disabled. Disabled callbacks are ignored
+  // by the agent.
+  bool disabled = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If enabled, the callback will also be executed on intermediate
+  // model outputs. This setting only affects after model callback.
+  // **ENABLE WITH CAUTION**. Typically after model callback only needs to be
+  // executed after receiving all model responses. Enabling proactive execution
+  // may have negative implication on the execution cost and latency, and
+  // should only be enabled in rare situations.
+  bool proactive_execution_enabled = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Model settings contains various configurations for the LLM model.
+message ModelSettings {
+  // Optional. The LLM model that the agent should use.
+  // If not set, the agent will inherit the model from its parent agent.
+  string model = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If set, this temperature will be used for the LLM model.
+  // Temperature controls the randomness of the model's responses. Lower
+  // temperatures produce responses that are more predictable. Higher
+  // temperatures produce responses that are more creative.
+  optional double temperature = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Action that is taken when a certain precondition is met.
+message TriggerAction {
+  // Represents a response from the agent.
+  message Response {
+    // Required. Text for the agent to respond with.
+    string text = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. Whether the response is disabled. Disabled responses are not
+    // used by the agent.
+    bool disabled = 2 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // The agent will immediately respond with a preconfigured response.
+  message RespondImmediately {
+    // Required. The canned responses for the agent to choose from. The response
+    // is chosen randomly.
+    repeated Response responses = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // The agent will immediately respond with a generative answer.
+  message GenerativeAnswer {
+    // Required. The prompt to use for the generative answer.
+    string prompt = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // The agent will transfer the conversation to a different agent.
+  message TransferAgent {
+    // Required. The name of the agent to transfer the conversation to. The
+    // agent must be in the same app as the current agent. Format:
+    // `projects/{project}/locations/{location}/apps/{app}/agents/{agent}`
+    string agent = 1 [
+      (google.api.field_behavior) = REQUIRED,
+      (google.api.resource_reference) = { type: "ces.googleapis.com/Agent" }
+    ];
+  }
+
+  // The action to take.
+  oneof action {
+    // Optional. Immediately respond with a preconfigured response.
+    RespondImmediately respond_immediately = 1
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Transfer the conversation to a different agent.
+    TransferAgent transfer_agent = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Respond with a generative answer.
+    GenerativeAnswer generative_answer = 3
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+}
+
+// The TLS configuration.
+message TlsConfig {
+  // The CA certificate.
+  message CaCert {
+    // Required. The name of the allowed custom CA certificates. This
+    // can be used to disambiguate the custom CA certificates.
+    string display_name = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The allowed custom CA certificates (in DER format) for
+    // HTTPS verification. This overrides the default SSL trust store. If this
+    // is empty or unspecified, CES will use Google's default trust
+    // store to verify certificates. N.B. Make sure the HTTPS server
+    // certificates are signed with "subject alt name". For instance a
+    // certificate can be self-signed using the following command,
+    //    openssl x509 -req -days 200 -in example.com.csr \
+    //      -signkey example.com.key \
+    //      -out example.com.crt \
+    //      -extfile <(printf "\nsubjectAltName='DNS:www.example.com'")
+    bytes cert = 2 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Required. Specifies a list of allowed custom CA certificates for HTTPS
+  // verification.
+  repeated CaCert ca_certs = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Configuration for tools using Service Directory.
+message ServiceDirectoryConfig {
+  // Required. The name of [Service
+  // Directory](https://cloud.google.com/service-directory) service.
+  // Format:
+  // `projects/{project}/locations/{location}/namespaces/{namespace}/services/{service}`.
+  // Location of the service directory must be the same as the location of the
+  // app.
+  string service = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "servicedirectory.googleapis.com/Service"
+    }
+  ];
+}
+
+// A ChannelProfile configures the agent's behavior for a specific communication
+// channel, such as web UI or telephony.
+message ChannelProfile {
+  // Represents the persona property of a channel.
+  message PersonaProperty {
+    // The persona of the channel.
+    enum Persona {
+      // UNKNOWN persona.
+      UNKNOWN = 0;
+
+      // The agent keeps the responses concise and to the point
+      CONCISE = 1;
+
+      // The agent provides additional context, explanations, and details
+      CHATTY = 2;
+    }
+
+    // Optional. The persona of the channel.
+    Persona persona = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Message for configuration for the web widget.
+  message WebWidgetConfig {
+    // Security settings for the web widget.
+    message SecuritySettings {
+      // Optional. Indicates whether public access to the web widget is enabled.
+      // If `true`, the web widget will be publicly accessible.
+      // If `false`, the web widget must be integrated with your own
+      // authentication and authorization system to return valid credentials for
+      // accessing the CES agent.
+      bool enable_public_access = 1 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Indicates whether origin check for the web widget is enabled.
+      // If `true`, the web widget will check the origin of the website that
+      // loads the web widget and only allow it to be loaded in the same origin
+      // or any of the allowed origins.
+      bool enable_origin_check = 4 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The origins that are allowed to host the web widget. An
+      // origin is defined by RFC 6454. If empty, all origins are allowed. A
+      // maximum of 100 origins is allowed. Example: "https://example.com"
+      repeated string allowed_origins = 2
+          [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Indicates whether reCAPTCHA verification for the web widget
+      // is enabled.
+      bool enable_recaptcha = 3 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Modality of the web widget.
+    enum Modality {
+      // Unknown modality.
+      MODALITY_UNSPECIFIED = 0;
+
+      // Widget supports both chat and voice input.
+      CHAT_AND_VOICE = 1;
+
+      // Widget supports only voice input.
+      VOICE_ONLY = 2;
+
+      // Widget supports only chat input.
+      CHAT_ONLY = 3;
+    }
+
+    // Theme of the web widget.
+    enum Theme {
+      // Unknown theme.
+      THEME_UNSPECIFIED = 0;
+
+      // Light theme.
+      LIGHT = 1;
+
+      // Dark theme.
+      DARK = 2;
+    }
+
+    // Optional. The modality of the web widget.
+    Modality modality = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The theme of the web widget.
+    Theme theme = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The title of the web widget.
+    string web_widget_title = 3 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The security settings of the web widget.
+    SecuritySettings security_settings = 4
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // The type of the channel profile.
+  enum ChannelType {
+    // Unknown channel type.
+    UNKNOWN = 0;
+
+    // Web UI channel.
+    WEB_UI = 2;
+
+    // API channel.
+    API = 3;
+
+    // Twilio channel.
+    TWILIO = 4;
+
+    // Google Telephony Platform channel.
+    GOOGLE_TELEPHONY_PLATFORM = 5;
+
+    // Contact Center as a Service (CCaaS) channel.
+    CONTACT_CENTER_AS_A_SERVICE = 6;
+
+    // Five9 channel.
+    FIVE9 = 7;
+  }
+
+  // Optional. The unique identifier of the channel profile.
+  string profile_id = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The type of the channel profile.
+  ChannelType channel_type = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The persona property of the channel profile.
+  PersonaProperty persona_property = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether to disable DTMF (dual-tone multi-frequency).
+  bool disable_dtmf = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether to disable user barge-in control in the conversation.
+  // - **true**: User interruptions are disabled while the agent is speaking.
+  // - **false**: The agent retains automatic control over when the user can
+  // interrupt.
+  bool disable_barge_in_control = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The configuration for the web widget.
+  WebWidgetConfig web_widget_config = 7
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The noise suppression level of the channel profile.
+  // Available values are "low", "moderate", "high", "very_high".
+  string noise_suppression_level = 8 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A span is a unit of work or a single operation during the request processing.
+message Span {
+  // Output only. The name of the span.
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The start time of the span.
+  google.protobuf.Timestamp start_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The end time of the span.
+  google.protobuf.Timestamp end_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The duration of the span.
+  google.protobuf.Duration duration = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Key-value attributes associated with the span.
+  google.protobuf.Struct attributes = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The child spans that are nested under this span.
+  repeated Span child_spans = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+}

@@ -1,0 +1,456 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.ces.v1;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/ces/v1/common.proto";
+import "google/cloud/ces/v1/example.proto";
+import "google/cloud/ces/v1/search_suggestions.proto";
+import "google/protobuf/struct.proto";
+
+option go_package = "cloud.google.com/go/ces/apiv1/cespb;cespb";
+option java_multiple_files = true;
+option java_outer_classname = "SessionServiceProto";
+option java_package = "com.google.cloud.ces.v1";
+option (google.api.resource_definition) = {
+  type: "ces.googleapis.com/Session"
+  pattern: "projects/{project}/locations/{location}/apps/{app}/sessions/{session}"
+};
+
+// Session service provides APIs for interacting with CES agents.
+service SessionService {
+  option (google.api.default_host) = "ces.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/ces,"
+      "https://www.googleapis.com/auth/cloud-platform";
+
+  // Initiates a single turn interaction with the CES agent within a
+  // session.
+  rpc RunSession(RunSessionRequest) returns (RunSessionResponse) {
+    option (google.api.http) = {
+      post: "/v1/{config.session=projects/*/locations/*/apps/*/sessions/*}:runSession"
+      body: "*"
+    };
+  }
+
+  // Establishes a bidirectional streaming connection with the CES agent.
+  // The agent processes continuous multimodal inputs (e.g., text, audio) and
+  // generates real-time multimodal output streams.
+  //
+  // --- Client Request Stream ---
+  // The client streams requests in the following order:
+  //
+  // 1.  Initialization:
+  //     The first message must contain
+  //     [SessionConfig][google.cloud.ces.v1.BidiSessionClientMessage.config].
+  //     For audio sessions, this should also include
+  //     [InputAudioConfig][google.cloud.ces.v1.SessionConfig.input_audio_config]
+  //     and
+  //     [OutputAudioConfig][google.cloud.ces.v1.SessionConfig.output_audio_config]
+  //     to define audio processing and synthesis parameters.
+  //
+  // 2.  Interaction:
+  //     Subsequent messages stream
+  //     [SessionInput][google.cloud.ces.v1.BidiSessionClientMessage.realtime_input]
+  //     containing real-time user input data.
+  //
+  // 3.  Termination:
+  //     The client should half-close the stream when there is no more user
+  //     input. It should also half-close upon receiving
+  //     [EndSession][google.cloud.ces.v1.BidiSessionServerMessage.end_session]
+  //     or [GoAway][google.cloud.ces.v1.BidiSessionServerMessage.go_away] from
+  //     the agent.
+  //
+  // --- Server Response Stream ---
+  // For each interaction turn, the agent streams messages in the following
+  // sequence:
+  //
+  // 1.  Speech Recognition (First N messages):
+  //     Contains
+  //     [RecognitionResult][google.cloud.ces.v1.BidiSessionServerMessage.recognition_result]
+  //     representing the concatenated user speech segments captured so far.
+  //     This is only populated for audio sessions.
+  //
+  // 2.  Response (Next M messages):
+  //     Contains
+  //     [SessionOutput][google.cloud.ces.v1.BidiSessionServerMessage.session_output]
+  //     delivering the agent's response in various modalities (e.g., text,
+  //     audio).
+  //
+  // 3.  Turn Completion (Final message of the turn):
+  //     Contains
+  //     [SessionOutput][google.cloud.ces.v1.BidiSessionServerMessage.session_output]
+  //     with [turn_completed][google.cloud.ces.v1.SessionOutput.turn_completed]
+  //     set to true. This signals the end of the current turn and includes
+  //     [DiagnosticInfo][google.cloud.ces.v1.SessionOutput.diagnostic_info]
+  //     with execution details.
+  //
+  // --- Audio Best Practices ---
+  // 1.  Streaming:
+  //     Stream [audio data][google.cloud.ces.v1.SessionInput.audio]
+  //     **CONTINUOUSLY**, even during silence. Recommended chunk size: 40-120ms
+  //     (balances latency vs. efficiency).
+  //
+  // 2.  Playback & Interruption:
+  //     Play [audio responses][google.cloud.ces.v1.SessionOutput.audio] upon
+  //     receipt. Stop playback immediately if an
+  //     [InterruptionSignal][google.cloud.ces.v1.BidiSessionServerMessage.interruption_signal]
+  //     is received (e.g., user barge-in or new agent response).
+  rpc BidiRunSession(stream BidiSessionClientMessage)
+      returns (stream BidiSessionServerMessage) {}
+}
+
+// AudioEncoding specifies the encoding format for audio data.
+enum AudioEncoding {
+  // Unspecified audio encoding.
+  AUDIO_ENCODING_UNSPECIFIED = 0;
+
+  // 16-bit linear PCM audio encoding.
+  LINEAR16 = 1;
+
+  // 8-bit samples that compand 14-bit audio samples using G.711 PCMU/mu-law.
+  MULAW = 2;
+
+  // 8-bit samples that compand 14-bit audio samples using G.711 PCMU/A-law.
+  ALAW = 3;
+}
+
+// InputAudioConfig configures how the CES agent should interpret the incoming
+// audio data.
+message InputAudioConfig {
+  // Required. The encoding of the input audio data.
+  AudioEncoding audio_encoding = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The sample rate (in Hertz) of the input audio data.
+  int32 sample_rate_hertz = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Whether to enable noise suppression on the input audio.
+  // Available values are "low", "moderate", "high", "very_high".
+  string noise_suppression_level = 6 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// OutputAudioConfig configures how the CES agent should synthesize outgoing
+// audio responses.
+message OutputAudioConfig {
+  // Required. The encoding of the output audio data.
+  AudioEncoding audio_encoding = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The sample rate (in Hertz) of the output audio data.
+  int32 sample_rate_hertz = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The configuration for the session.
+message SessionConfig {
+  // [QueryParameters](https://cloud.google.com/dialogflow/cx/docs/reference/rpc/google.cloud.dialogflow.cx.v3#queryparameters)
+  // to send to the remote
+  // [Dialogflow](https://cloud.google.com/dialogflow/cx/docs/concept/console-conversational-agents)
+  // agent when the session control is transferred to the remote agent.
+  message RemoteDialogflowQueryParameters {
+    // Optional. The HTTP headers to be sent as webhook_headers in
+    // [QueryParameters](https://cloud.google.com/dialogflow/cx/docs/reference/rpc/google.cloud.dialogflow.cx.v3#queryparameters).
+    map<string, string> webhook_headers = 1
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The payload to be sent in
+    // [QueryParameters](https://cloud.google.com/dialogflow/cx/docs/reference/rpc/google.cloud.dialogflow.cx.v3#queryparameters).
+    google.protobuf.Struct payload = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The end user metadata to be sent in
+    // [QueryParameters](https://cloud.google.com/dialogflow/cx/docs/reference/rpc/google.cloud.dialogflow.cx.v3#queryparameters).
+    google.protobuf.Struct end_user_metadata = 3
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Required. The unique identifier of the session.
+  // Format:
+  // `projects/{project}/locations/{location}/apps/{app}/sessions/{session}`
+  string session = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ces.googleapis.com/Session" }
+  ];
+
+  // Optional. Configuration for processing the input audio.
+  InputAudioConfig input_audio_config = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Configuration for generating the output audio.
+  OutputAudioConfig output_audio_config = 3
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The historical context of the session, including user inputs,
+  // agent responses, and other messages. Typically, CES agent would manage
+  // session automatically so client doesn't need to explicitly populate this
+  // field. However, client can optionally override the historical contexts to
+  // force the session start from certain state.
+  repeated Message historical_contexts = 5
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The entry agent to handle the session. If not specified, the
+  // session will be handled by the [root
+  // agent][google.cloud.ces.v1.App.root_agent] of the app. Format:
+  // `projects/{project}/locations/{location}/agents/{agent}`
+  string entry_agent = 12 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = { type: "ces.googleapis.com/Agent" }
+  ];
+
+  // Optional. The deployment of the app to use for the session.
+  // Format:
+  // `projects/{project}/locations/{location}/apps/{app}/deployments/{deployment}`
+  string deployment = 8 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The time zone of the user. If provided, the agent will use the
+  // time zone for date and time related variables. Otherwise, the agent will
+  // use the time zone specified in the App.time_zone_settings.
+  //
+  // The format is the IANA Time Zone Database time zone, e.g.
+  // "America/Los_Angeles".
+  string time_zone = 11 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional.
+  // [QueryParameters](https://cloud.google.com/dialogflow/cx/docs/reference/rpc/google.cloud.dialogflow.cx.v3#queryparameters)
+  // to send to the remote
+  // [Dialogflow](https://cloud.google.com/dialogflow/cx/docs/concept/console-conversational-agents)
+  // agent when the session control is transferred to the remote agent.
+  RemoteDialogflowQueryParameters remote_dialogflow_query_parameters = 15
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request for the client to execute the tools and return the execution results
+// before continuing the session.
+message ToolCalls {
+  // Optional. The list of tool calls to execute.
+  repeated ToolCall tool_calls = 1 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Execution results for the requested tool calls from the client.
+message ToolResponses {
+  // Optional. The list of tool execution results.
+  repeated ToolResponse tool_responses = 1
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Citations associated with the agent response.
+message Citations {
+  // Piece of cited information.
+  message CitedChunk {
+    // URI used for citation.
+    string uri = 1;
+
+    // Title of the cited document.
+    string title = 2;
+
+    // Text used for citation.
+    string text = 3;
+  }
+
+  // List of cited pieces of information.
+  repeated CitedChunk cited_chunks = 1;
+}
+
+// Event input.
+message Event {
+  // Required. The name of the event.
+  string event = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Input for the session.
+message SessionInput {
+  // The type of the input.
+  oneof input_type {
+    // Optional. Text data from the end user.
+    string text = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. DTMF digits from the end user.
+    string dtmf = 6 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Audio data from the end user.
+    bytes audio = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Execution results for the tool calls from the client.
+    ToolResponses tool_responses = 3 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Image data from the end user.
+    Image image = 4 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Blob data from the end user.
+    Blob blob = 7 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Contextual variables for the session, keyed by name. Only
+    // variables declared in the app will be used by the CES agent.
+    //
+    // Unrecognized variables will still be sent to the [Dialogflow
+    // agent][Agent.RemoteDialogflowAgent] as additional session parameters.
+    google.protobuf.Struct variables = 5
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Event input.
+    Event event = 9 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Optional. A flag to indicate if the current message is a fragment of a
+  // larger input in the bidi streaming session. When `true`, the agent will
+  // defer processing until a subsequent message with `will_continue` set to
+  // `false` is received.
+  //
+  // Note: This flag has no effect on audio and DTMF inputs, which are always
+  // processed in real-time.
+  bool will_continue = 8 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Output for the session.
+message SessionOutput {
+  // Contains execution details during the processing.
+  message DiagnosticInfo {
+    // List of the messages that happened during the processing.
+    repeated Message messages = 1;
+
+    // A trace of the entire request processing, represented as a root span.
+    // This span can contain nested child spans for specific operations.
+    Span root_span = 3;
+  }
+
+  // The type of the output.
+  oneof output_type {
+    // Output text from the CES agent.
+    string text = 1;
+
+    // Output audio from the CES agent.
+    bytes audio = 2;
+
+    // Request for the client to execute the tools.
+    ToolCalls tool_calls = 3;
+
+    // Citations that provide the source information for the agent's generated
+    // text.
+    Citations citations = 8;
+
+    // The suggestions returned from Google Search as a result of invoking the
+    // [GoogleSearchTool][google.cloud.ces.v1.GoogleSearchTool].
+    GoogleSearchSuggestions google_search_suggestions = 10;
+
+    // Indicates the session has ended.
+    EndSession end_session = 9;
+
+    // Custom payload with structured output from the CES agent.
+    google.protobuf.Struct payload = 11;
+  }
+
+  // Indicates the sequential order of conversation turn to which this output
+  // belongs to, starting from 1.
+  int32 turn_index = 6;
+
+  // If true, the CES agent has detected the end of the current conversation
+  // turn and will provide no further output for this turn.
+  bool turn_completed = 4;
+
+  // Optional. Diagnostic information contains execution details during the
+  // processing of the input. Only populated in the last SessionOutput (with
+  // `turn_completed=true`) for each turn.
+  DiagnosticInfo diagnostic_info = 7 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Speech recognition result for the audio input.
+message RecognitionResult {
+  // Optional. Concatenated user speech segments captured during the current
+  // turn.
+  string transcript = 1 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Indicates the agent's audio response has been interrupted. The client should
+// immediately stop any current audio playback (e.g., due to user barge-in or
+// a new agent response being generated).
+message InterruptionSignal {
+  // Whether the interruption is caused by a user barge-in event.
+  bool barge_in = 1;
+}
+
+// Indicates the session has terminated, due to either successful completion
+// (e.g. user says "Good bye!" ) or an agent escalation.
+//
+// The agent will not process any further inputs after session is terminated and
+// the client should half-close and disconnect after receiving all remaining
+// responses from the agent.
+message EndSession {
+  // Optional. Provides additional information about the end session signal,
+  // such as the reason for ending the session.
+  google.protobuf.Struct metadata = 1 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Indicates that the server will disconnect soon and the client should
+// half-close and restart the connection.
+message GoAway {}
+
+// Request message for
+// [SessionService.RunSession][google.cloud.ces.v1.SessionService.RunSession].
+message RunSessionRequest {
+  // Required. The configuration for the session.
+  SessionConfig config = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Inputs for the session.
+  repeated SessionInput inputs = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response message for
+// [SessionService.RunSession][google.cloud.ces.v1.SessionService.RunSession].
+message RunSessionResponse {
+  // Outputs for the session.
+  repeated SessionOutput outputs = 1;
+}
+
+// The top-level message sent by the client for the
+// [SessionService.BidiRunSession][google.cloud.ces.v1.SessionService.BidiRunSession]
+// method.
+message BidiSessionClientMessage {
+  // The type of the message.
+  oneof message_type {
+    // Optional. The initial config message for the session.
+    SessionConfig config = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Realtime input for the session.
+    SessionInput realtime_input = 2 [(google.api.field_behavior) = OPTIONAL];
+  }
+}
+
+// The top-level message returned from
+// [SessionService.BidiRunSession][google.cloud.ces.v1.SessionService.BidiRunSession]
+// method.
+message BidiSessionServerMessage {
+  // The type of the message.
+  oneof message_type {
+    // Optional. Processing result from the CES agent.
+    SessionOutput session_output = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Realtime speech recognition result for the audio input.
+    RecognitionResult recognition_result = 2
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Interruption signal detected from the audio input.
+    InterruptionSignal interruption_signal = 3
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Indicates that the session has ended.
+    EndSession end_session = 5 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Indicates that the server will disconnect soon and the client
+    // should half-close and restart the connection.
+    GoAway go_away = 6 [(google.api.field_behavior) = OPTIONAL];
+  }
+}
