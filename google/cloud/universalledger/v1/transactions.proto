@@ -28,29 +28,6 @@ option java_package = "com.google.cloud.universalledger.v1";
 option php_namespace = "Google\\Cloud\\UniversalLedger\\V1";
 option ruby_package = "Google::Cloud::UniversalLedger::V1";
 
-// Specifies who pays the transaction fees.
-enum FeePayer {
-  // Unspecified fee payer. This value is invalid.
-  FEE_PAYER_UNSPECIFIED = 0;
-
-  // Indicates that the sender should be charged the fees in addition to the
-  // transfer amount. For example, if A is sending `$100` to B and the fee is
-  // `$1`, then A's account is debited `$100 + $1 = $101` and B's account is
-  // credited `$100`.
-  FEE_PAYER_SENDER = 1;
-
-  // Indicates that the receiver should be charged the fees. For example,
-  // if A is sending `$100` to B and the fee is `$1`, then A's account is
-  // debited `$100` and B's account is credited `$100 - $1 = $99`.
-  FEE_PAYER_RECEIVER = 2;
-
-  // Indicates that a separate fee account should be charged the fees. For
-  // example, if A is sending `$100` to B and the fee is `$1`, then A's account
-  // is debited `$100` and B's account is credited `$100`. The fee of `$1` will
-  // be debited from a separate fee account specified elsewhere.
-  FEE_PAYER_OTHER = 3;
-}
-
 // Specifies the format a public key is provided in.
 enum KeyFormat {
   // The key format is unspecified. This value is invalid and should not be
@@ -83,37 +60,6 @@ enum SettlementMode {
   // managers. This settlement mode can also be described as "instant gross
   // settlement."
   SETTLEMENT_MODE_INSTANT = 2;
-}
-
-// Fee structure where the fee is proportional to some reference amount.
-// The reference amount would usually be the payment amount but the specific
-// choice is up to each transaction type that includes this fee stanza.
-message FractionalFee {
-  // Required. A percentage expressed in multiples of hundredths of a basis
-  // point, where 1 basis point = 0.01%. For example, 1% is expressed as an
-  // amount of 10000, while 0.01% (= 1 bp) is expressed as an amount of 100.
-  int64 amount = 1 [(google.api.field_behavior) = REQUIRED];
-
-  // Optional. Indicates who pays the fee. By default, it will be the
-  // transaction sender. If set to `FEE_PAYER_OTHER`, then a valid fee account
-  // must also be supplied in `fee_account_id` (or the deprecated `fee_account`
-  // field).
-  FeePayer fee_payer = 2 [(google.api.field_behavior) = OPTIONAL];
-
-  // Optional. Optional fee account in case the fee is to be paid from an
-  // account other than the transaction sender or receiver. If a fee account is
-  // specified, fee payer must be set to `FEE_PAYER_OTHER` and the transaction
-  // must also be signed by the fee account. Deprecated: use `fee_account_id`
-  // instead.
-  Entity fee_account = 3
-      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
-
-  // Optional. The ID of the account from which the fee is paid. This is an
-  // optional field which is only required if the fee is to be paid from an
-  // account other than the transaction sender or receiver. If a fee account ID
-  // is specified, fee payer must be set to `FEE_PAYER_OTHER` and the
-  // transaction must also be signed by the fee account.
-  string fee_account_id = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Initiates a settlement operation between two token managers.
@@ -422,10 +368,6 @@ message Transfer {
 
   // Required. The amount to transfer. The amount must be positive.
   CurrencyValue amount = 2 [(google.api.field_behavior) = REQUIRED];
-
-  // Optional. The transaction fee to be paid, as a fraction of the amount to
-  // transfer.
-  FractionalFee fractional_fee = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Creates a new token manager associated to the currency of the operator
@@ -709,4 +651,81 @@ message InvokeContractMethod {
   // Must be greater than zero when invoking payable methods; and zero for
   // non-payable ones.
   CurrencyValue payment = 4;
+}
+
+// Creates a new contract token manager associated with the currency of the
+// operator sending the request. The sender must be a currency operator.
+// The newly created contract token manager will be active by default. If the
+// contract token manager has to be replaced, the TransferContractTokenManager
+// transaction should be sent instead. If another contract token manager
+// associated to the same currency exists, this transaction will fail.
+//
+// Unlike regular token managers, contract token managers are not allowed to
+// execute transactions such as mint or burn. They can, however, participate in
+// settlement operations.
+//
+// If the transaction is successful, the ID of the newly created account is
+// returned as an event in the
+// [TransactionCertificate][google.cloud.universalledger.v1.TransactionCertificate]
+// of the finalized transaction.
+message CreateContractTokenManager {
+  // Required. The public key of the new contract token manager. Note that this
+  // is *not* the public key of the operator. This public key will be associated
+  // with the contract token manager and stored on the ledger. It will be used
+  // to validate the signature of the transactions emanating from the contract
+  // token manager's account.
+  //
+  // The format of the public key is defined by the `key_format` field.
+  bytes public_key = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Immutable. An opaque comment field that is not interpreted by the
+  // system but stored on the ledger in the account. Maximum length is 128
+  // characters. May be left empty. Once created, the field is immutable.
+  string account_comment = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // Optional. Immutable. The key format of the public key. If not
+  // specified, defaults to a binary serialized keyset in [Tink wire
+  // format](https://developers.google.com/tink/wire-format#keyset_serialization).
+  KeyFormat key_format = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+}
+
+// Transfers the ownership of the contract token manager to a new account. The
+// sender must be the current currency operator for the currency.
+//
+// If the transaction is successful, deactivates the current contract token
+// manager for the currency, and the ID of the newly created account is returned
+// as an event in the
+// [TransactionCertificate][google.cloud.universalledger.v1.TransactionCertificate]
+// of the finalized transaction.
+message TransferContractTokenManager {
+  // Required. The public key of the new contract token manager. Note that this
+  // is *not* the public key of the operator. This is the public key of the
+  // *new* contract token manager and it will be stored on the ledger. It will
+  // be used to validate the signature of the transactions emanating from the
+  // contract token manager's account.
+  //
+  // The format of the public key is defined by the `key_format` field.
+  bytes public_key = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Immutable. An opaque comment field that is not interpreted by the
+  // system but stored on the ledger in the account. Maximum length is 128
+  // characters. May be left empty. Once created, the field is immutable.
+  string account_comment = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // Optional. Immutable. The key format of the public key. If not
+  // specified, defaults to a binary serialized keyset in [Tink wire
+  // format](https://developers.google.com/tink/wire-format#keyset_serialization).
+  KeyFormat key_format = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
 }
