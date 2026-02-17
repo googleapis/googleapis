@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -135,6 +135,9 @@ message SpannerAction {
 
     // Query cancellation action for testing the cancellation of a query.
     QueryCancellationAction query_cancellation = 51;
+
+    // Action to adapt a message.
+    AdaptMessageAction adapt_message = 52;
   }
 }
 
@@ -185,12 +188,22 @@ message DmlAction {
   // Whether to autocommit the transaction after executing the DML statement,
   // if the Executor supports autocommit.
   optional bool autocommit_if_supported = 2;
+
+  // Whether to set this DML statement as the last statement in the
+  // transaction. The transaction should be committed after processing this DML
+  // statement.
+  optional bool last_statement = 3;
 }
 
 // Batch of DML statements invoked using batched execution.
 message BatchDmlAction {
   // DML statements.
   repeated QueryAction updates = 1;
+
+  // Whether to set this request with the last statement option in the
+  // transaction. The transaction should be committed after processing this
+  // request.
+  optional bool last_statements = 2;
 }
 
 // Value represents a single value that can be read or written to/from
@@ -396,7 +409,8 @@ message StartTransactionAction {
   // testing.
   string transaction_seed = 3;
 
-  // Execution options (e.g., whether transaction is opaque, optimistic).
+  // Execution options (e.g., whether transaction is opaque, optimistic,
+  // excluded from change streams).
   optional TransactionExecutionOptions execution_options = 4;
 }
 
@@ -460,10 +474,29 @@ message ColumnMetadata {
   google.spanner.v1.Type type = 2;
 }
 
-// Options for executing the transaction.
 message TransactionExecutionOptions {
   // Whether optimistic concurrency should be used to execute this transaction.
   bool optimistic = 1;
+
+  // Whether traffic from this transaction will be excluded from tracking change
+  // streams with allow_txn_exclusion=true.
+  bool exclude_from_change_streams = 2;
+
+  // Whether serializable isolation with optimistic mode concurrency should be
+  // used to execute this transaction.
+  bool serializable_optimistic = 3;
+
+  // Whether snapshot isolation with optimistic mode concurrency should be used
+  // to execute this transaction.
+  bool snapshot_isolation_optimistic = 4;
+
+  // Whether snapshot isolation with pessimistic mode concurrency should be used
+  // to execute this transaction.
+  bool snapshot_isolation_pessimistic = 5;
+
+  // Whether to exclude mutations of this transaction from the allowed tracking
+  // change streams.
+  bool exclude_txn_from_change_streams = 6;
 }
 
 // FinishTransactionAction defines an action of finishing a transaction.
@@ -573,6 +606,9 @@ message AdminAction {
 
     // Action that changes quorum of a Cloud Spanner database.
     ChangeQuorumCloudDatabaseAction change_quorum_cloud_database = 28;
+
+    // Action that adds splits to a Cloud Spanner database.
+    AddSplitPointsAction add_split_points = 29;
   }
 }
 
@@ -663,6 +699,9 @@ message CreateCloudInstanceAction {
 
   // labels.
   map<string, string> labels = 5;
+
+  // The edition of the instance.
+  google.spanner.admin.instance.v1.Instance.Edition edition = 8;
 }
 
 // Action that updates a Cloud Spanner instance.
@@ -693,6 +732,9 @@ message UpdateCloudInstanceAction {
 
   // labels.
   map<string, string> labels = 6;
+
+  // The edition of the instance.
+  google.spanner.admin.instance.v1.Instance.Edition edition = 8;
 }
 
 // Action that deletes a Cloud Spanner instance.
@@ -787,6 +829,29 @@ message ChangeQuorumCloudDatabaseAction {
   repeated string serving_locations = 2;
 }
 
+// A single Adapt message request.
+message AdaptMessageAction {
+  // The fully qualified uri of the database to send AdaptMessage to.
+  string database_uri = 1;
+
+  // The protocol to use for the request.
+  string protocol = 2;
+
+  // The payload of the request.
+  bytes payload = 3;
+
+  // Attachments to be sent with the request.
+  map<string, string> attachments = 4;
+
+  // The query to be sent with the request.
+  string query = 5;
+
+  // If true, the action will send a Prepare request first and then an
+  // Execute request right after to execute the query. This is only supported
+  // for Cloud Client path.
+  bool prepare_then_execute = 6;
+}
+
 // Action that lists Cloud Spanner databases.
 message ListCloudDatabasesAction {
   // Cloud project ID, e.g. "spanner-cloud-systest".
@@ -805,7 +870,7 @@ message ListCloudDatabasesAction {
   string page_token = 4;
 }
 
-// Action that lists Cloud Spanner databases.
+// Action that lists Cloud Spanner instances.
 message ListCloudInstancesAction {
   // Cloud project ID, e.g. "spanner-cloud-systest".
   string project_id = 1;
@@ -1067,6 +1132,21 @@ message CancelOperationAction {
   string operation = 1;
 }
 
+// Action that adds a split point to a Cloud Spanner database.
+message AddSplitPointsAction {
+  // Cloud project ID, e.g. "spanner-cloud-systest".
+  string project_id = 1;
+
+  // Cloud instance ID (not path), e.g. "test-instance".
+  string instance_id = 2;
+
+  // Cloud database ID (not full path), e.g. "db0".
+  string database_id = 3;
+
+  // The split points to add.
+  repeated google.spanner.admin.database.v1.SplitPoints split_points = 4;
+}
+
 // Starts a batch read-only transaction in executor. Successful outcomes of this
 // action will contain batch_txn_id--the identificator that can be used to start
 // the same transaction in other Executors to parallelize partition processing.
@@ -1260,6 +1340,10 @@ message SpannerActionOutcome {
 
   // Change stream records returned by a change stream query.
   repeated ChangeStreamRecord change_stream_records = 10;
+
+  // If not zero, it indicates the read timestamp to use for validating
+  // the SnapshotIsolation transaction.
+  optional int64 snapshot_isolation_txn_read_timestamp = 11;
 }
 
 // AdminResult contains admin action results, for database/backup/operation.
