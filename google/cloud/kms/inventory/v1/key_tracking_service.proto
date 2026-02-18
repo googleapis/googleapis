@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,13 +22,17 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/protobuf/timestamp.proto";
 
-option cc_enable_arenas = true;
 option csharp_namespace = "Google.Cloud.Kms.Inventory.V1";
 option go_package = "cloud.google.com/go/kms/inventory/apiv1/inventorypb;inventorypb";
 option java_multiple_files = true;
 option java_outer_classname = "KeyTrackingServiceProto";
 option java_package = "com.google.cloud.kms.inventory.v1";
 option php_namespace = "Google\\Cloud\\Kms\\Inventory\\V1";
+option (google.api.resource_definition) = {
+  type: "kmsinventory.googleapis.com/ProtectedResourceScope"
+  pattern: "organizations/{organization}/protectedResourceScope"
+  pattern: "projects/{project}/protectedResourceScope"
+};
 
 // Returns information about the resources in an org that are protected by a
 // given Cloud KMS key via CMEK.
@@ -38,10 +42,16 @@ service KeyTrackingService {
       "https://www.googleapis.com/auth/cloud-platform";
 
   // Returns aggregate information about the resources protected by the given
-  // Cloud KMS [CryptoKey][google.cloud.kms.v1.CryptoKey]. Only resources within
-  // the same Cloud organization as the key will be returned. The project that
-  // holds the key must be part of an organization in order for this call to
-  // succeed.
+  // Cloud KMS [CryptoKey][google.cloud.kms.v1.CryptoKey]. By default,
+  // summary of resources within the same Cloud organization as the key will be
+  // returned, which requires the KMS organization service account to be
+  // configured(refer
+  // https://docs.cloud.google.com/kms/docs/view-key-usage#required-roles).
+  // If the KMS organization service account is not configured or key's project
+  // is not part of an organization, set
+  // [fallback_scope][google.cloud.kms.inventory.v1.GetProtectedResourcesSummaryRequest.fallback_scope]
+  // to `FALLBACK_SCOPE_PROJECT` to retrieve a summary of protected resources
+  // within the key's project.
   rpc GetProtectedResourcesSummary(GetProtectedResourcesSummaryRequest)
       returns (ProtectedResourcesSummary) {
     option (google.api.http) = {
@@ -51,11 +61,15 @@ service KeyTrackingService {
   }
 
   // Returns metadata about the resources protected by the given Cloud KMS
-  // [CryptoKey][google.cloud.kms.v1.CryptoKey] in the given Cloud organization.
+  // [CryptoKey][google.cloud.kms.v1.CryptoKey] in the given Cloud
+  // organization/project.
   rpc SearchProtectedResources(SearchProtectedResourcesRequest)
       returns (SearchProtectedResourcesResponse) {
     option (google.api.http) = {
       get: "/v1/{scope=organizations/*}/protectedResources:search"
+      additional_bindings {
+        get: "/v1/{scope=projects/*}/protectedResources:search"
+      }
     };
     option (google.api.method_signature) = "scope, crypto_key";
   }
@@ -72,10 +86,14 @@ message GetProtectedResourcesSummaryRequest {
       type: "kmsinventory.googleapis.com/ProtectedResourcesSummary"
     }
   ];
+
+  // Optional. The scope to use if the kms organization service account is not
+  // configured.
+  FallbackScope fallback_scope = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Aggregate information about the resources protected by a Cloud KMS key in the
-// same Cloud organization as the key.
+// same Cloud organization/project as the key.
 message ProtectedResourcesSummary {
   option (google.api.resource) = {
     type: "kmsinventory.googleapis.com/ProtectedResourcesSummary"
@@ -104,17 +122,29 @@ message ProtectedResourcesSummary {
 
   // The number of resources protected by the key grouped by region.
   map<string, int64> locations = 4;
+
+  // Warning messages for the state of response
+  // [ProtectedResourcesSummary][google.cloud.kms.inventory.v1.ProtectedResourcesSummary]
+  // For example, if the organization service account is not configured,
+  // INSUFFICIENT_PERMISSIONS_PARTIAL_DATA warning will be returned.
+  repeated Warning warnings = 7;
 }
 
 // Request message for
 // [KeyTrackingService.SearchProtectedResources][google.cloud.kms.inventory.v1.KeyTrackingService.SearchProtectedResources].
 message SearchProtectedResourcesRequest {
-  // Required. Resource name of the organization.
-  // Example: organizations/123
+  // Required. A scope can be an organization or a project. Resources protected
+  // by the crypto key in provided scope will be returned.
+  //
+  // The following values are allowed:
+  //
+  // * organizations/{ORGANIZATION_NUMBER} (e.g., "organizations/12345678")
+  // * projects/{PROJECT_ID} (e.g., "projects/foo-bar")
+  // * projects/{PROJECT_NUMBER} (e.g., "projects/12345678")
   string scope = 2 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
-      type: "cloudresourcemanager.googleapis.com/Organization"
+      child_type: "kmsinventory.googleapis.com/ProtectedResourceScope"
     }
   ];
 
@@ -225,4 +255,51 @@ message ProtectedResource {
   // is in seconds. Timestamp.nanos will always be 0.
   google.protobuf.Timestamp create_time = 7
       [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A warning message that indicates potential problems with the response data.
+message Warning {
+  // Different types of warnings that can be returned to the user.
+  // The display_message contains detailed information regarding the
+  // warning_code.
+  enum WarningCode {
+    // Default value. This value is unused.
+    WARNING_CODE_UNSPECIFIED = 0;
+
+    // Indicates that the caller or service agent lacks necessary permissions
+    // to view some of the requested data. The response may be partial.
+    // Example:
+    // - KMS organization service agent {service_agent_name} lacks the
+    //   `cloudasset.assets.searchAllResources` permission on the scope.
+    INSUFFICIENT_PERMISSIONS_PARTIAL_DATA = 1;
+
+    // Indicates that a resource limit has been exceeded, resulting in partial
+    // data. Example:
+    // - The project has more than 10,000 assets (resources,
+    //   crypto keys, key handles, IAM policies, etc).
+    RESOURCE_LIMIT_EXCEEDED_PARTIAL_DATA = 2;
+
+    // Indicates that the project exists outside of an organization resource.
+    // Thus the analysis is only done for the project level data and results
+    // might be partial.
+    ORG_LESS_PROJECT_PARTIAL_DATA = 3;
+  }
+
+  // The specific warning code for the displayed message.
+  WarningCode warning_code = 1;
+
+  // The literal message providing context and details about the warnings.
+  string display_message = 2;
+}
+
+// Specifies the scope to use if the organization service agent is not
+// configured.
+enum FallbackScope {
+  // Unspecified scope type.
+  FALLBACK_SCOPE_UNSPECIFIED = 0;
+
+  // If set to `FALLBACK_SCOPE_PROJECT`, the API will fall back to using key's
+  // project as request scope if the kms organization service account is not
+  // configured.
+  FALLBACK_SCOPE_PROJECT = 1;
 }
