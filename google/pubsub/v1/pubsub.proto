@@ -1475,6 +1475,10 @@ message Subscription {
   CloudStorageConfig cloud_storage_config = 22
       [(google.api.field_behavior) = OPTIONAL];
 
+  // Optional. If delivery to Bigtable is used with this subscription, this
+  // field is used to configure it.
+  BigtableConfig bigtable_config = 27 [(google.api.field_behavior) = OPTIONAL];
+
   // Optional. The approximate amount of time (on a best-effort basis) Pub/Sub
   // waits for the subscriber to acknowledge receipt before resending the
   // message. In the interval after the message is delivered and before it is
@@ -1851,6 +1855,84 @@ message BigQueryConfig {
   // agent](https://cloud.google.com/iam/docs/service-agents),
   // service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com, is used.
   string service_account_email = 7 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Configuration for a Bigtable subscription. The Pub/Sub message will be
+// written to a Bigtable row as follows:
+// - row key: subscription name and message ID delimited by #.
+// - columns: message bytes written to a single column family "data" with an
+//   empty-string column qualifier.
+// - cell timestamp: the message publish timestamp.
+message BigtableConfig {
+  // Possible states for a Bigtable subscription.
+  // Note: more states could be added in the future. Please code accordingly.
+  enum State {
+    // Default value. This value is unused.
+    STATE_UNSPECIFIED = 0;
+
+    // The subscription can actively send messages to Bigtable.
+    ACTIVE = 1;
+
+    // Cannot write to Bigtable because the instance, table, or app profile
+    // does not exist.
+    NOT_FOUND = 2;
+
+    // Cannot write to Bigtable because the app profile is not configured for
+    // single-cluster routing.
+    APP_PROFILE_MISCONFIGURED = 3;
+
+    // Cannot write to Bigtable because of permission denied errors.
+    // This can happen if:
+    // - The Pub/Sub service agent has not been granted the
+    //   [appropriate Bigtable IAM permission
+    //   bigtable.tables.mutateRows]({$universe.dns_names.final_documentation_domain}/bigtable/docs/access-control#permissions)
+    // - The bigtable.googleapis.com API is not enabled for the project
+    //   ([instructions]({$universe.dns_names.final_documentation_domain}/service-usage/docs/enable-disable))
+    PERMISSION_DENIED = 4;
+
+    // Cannot write to Bigtable because of a missing column family ("data") or
+    // if there is no structured row key for the subscription name + message ID.
+    SCHEMA_MISMATCH = 5;
+
+    // Cannot write to the destination because enforce_in_transit is set to true
+    // and the destination locations are not in the allowed regions.
+    IN_TRANSIT_LOCATION_RESTRICTION = 6;
+
+    // Cannot write to Bigtable because the table is not in the same location as
+    // where Vertex AI models used in `message_transform`s are deployed.
+    VERTEX_AI_LOCATION_RESTRICTION = 7;
+  }
+
+  // Optional. The unique name of the table to write messages to.
+  //
+  // Values are of the form
+  // `projects/<project>/instances/<instance>/tables/<table>`.
+  string table = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The app profile to use for the Bigtable writes. If not specified,
+  // the "default" application profile will be used. The app profile must use
+  // single-cluster routing.
+  string app_profile_id = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The service account to use to write to Bigtable. The subscription
+  // creator or updater that specifies this field must have
+  // `iam.serviceAccounts.actAs` permission on the service account. If not
+  // specified, the Pub/Sub [service
+  // agent](https://cloud.google.com/iam/docs/service-agents),
+  // service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com, is used.
+  string service_account_email = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. When true, write the subscription name, message_id, publish_time,
+  // attributes, and ordering_key to additional columns in the table under the
+  // pubsub_metadata column family. The subscription name, message_id, and
+  // publish_time fields are put in their own columns while all other message
+  // properties (other than data) are written to a JSON object in the attributes
+  // column.
+  bool write_metadata = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. An output-only field that indicates whether or not the
+  // subscription can receive messages.
+  State state = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Configuration for a Cloud Storage subscription.
