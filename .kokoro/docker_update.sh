@@ -36,7 +36,7 @@ echo "Updating Ruby prebuilt binaries..."
 pushd gapic-generator-ruby
 git checkout -b "${BRANCH}"
 rm -rf rules_ruby_gapic/prebuilt/ruby-*.tar.gz
-gsutil cp 'gs://gapic-images/prebuild/ruby-*.tar.gz' rules_ruby_gapic/prebuilt
+gcloud storage cp 'gs://gapic-images/prebuild/ruby-*.tar.gz' rules_ruby_gapic/prebuilt
 git add rules_ruby_gapic/prebuilt/
 git commit -m "fix: update Ruby prebuilt binary"
 echo "Pushing Ruby branch to GitHub..."
@@ -51,7 +51,7 @@ echo "Updating PHP prebuilt binaries..."
 pushd gapic-generator-php
 git checkout -b "${BRANCH}"
 rm -rf rules_php_gapic/resources/php-*.tar.gz
-gsutil cp 'gs://gapic-images/prebuild/php-*.tar.gz' rules_php_gapic/resources
+gcloud storage cp 'gs://gapic-images/prebuild/php-*.tar.gz' rules_php_gapic/resources
 git add rules_php_gapic/resources/
 git commit -m "fix: update PHP prebuilt binary"
 echo "Pushing PHP branch to GitHub..."
