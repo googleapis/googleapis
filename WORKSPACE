@@ -30,6 +30,7 @@ switched_rules_by_language(
     csharp = True,
     gapic = True,
     go = True,
+    go_test = True,
     grpc = True,
     java = True,
     nodejs = True,
@@ -38,9 +39,9 @@ switched_rules_by_language(
     ruby = True,
 )
 
-_bazel_skylib_version = "1.4.0"
+_bazel_skylib_version = "1.7.1"
 
-_bazel_skylib_sha256 = "f24ab666394232f834f74d19e2ff142b0af17466ea0c69a3f4c276ee75f6efce"
+_bazel_skylib_sha256 = "bc283cdfcd526a52c3201279cda4bc298652efa898b10b4db0837dc51652756f"
 
 http_archive(
     name = "bazel_skylib",
@@ -48,9 +49,9 @@ http_archive(
     urls = ["https://github.com/bazelbuild/bazel-skylib/releases/download/{0}/bazel-skylib-{0}.tar.gz".format(_bazel_skylib_version)],
 )
 
-_bazel_features_version = "1.2.0"
+_bazel_features_version = "1.25.0"
 
-_bazel_features_sha256 = "b8789c83c893d7ef3041d3f2795774936b27ff61701a705df52fd41d6ddbf692"
+_bazel_features_sha256 = "66f363065d6693a6f958893114d246698188e63456c64350f58000490b8f2d59"
 
 http_archive(
     name = "bazel_features",
@@ -62,9 +63,9 @@ http_archive(
 # Protobuf depends on very old version of rules_jvm_external.
 # Importing older version of rules_jvm_external first (this is one of the things that protobuf_deps() call
 # below will do) breaks the Java client library generation process, so importing the proper version explicitly before calling protobuf_deps().
-RULES_JVM_EXTERNAL_TAG = "4.5"
+RULES_JVM_EXTERNAL_TAG = "5.3"
 
-RULES_JVM_EXTERNAL_SHA = "b17d7388feb9bfa7f2fa09031b32707df529f26c91ab9e5d909eb1676badd9a6"
+RULES_JVM_EXTERNAL_SHA = "6cc8444b20307113a62b676846c29ff018402fd4c7097fcd6d0a0fd5f2e86429"
 
 http_archive(
     name = "rules_jvm_external",
@@ -111,11 +112,11 @@ rules_pkg_dependencies()
 # rules_gapic_repositories because both depend on them and we need to manage
 # our versions explicitly rather than depend on the version those bring in
 # transitively.
-_io_bazel_rules_go_version = "0.46.0"
+_io_bazel_rules_go_version = "0.49.0"
 
 http_archive(
     name = "io_bazel_rules_go",
-    sha256 = "80a98277ad1311dacd837f9b16db62887702e9f1d1c4c9f796d0121a46c8e184",
+    sha256 = "d93ef02f1e72c82d8bb3d5169519b36167b33cf68c252525e3b9d3d5dd143de7",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v{0}/rules_go-v{0}.zip".format(_io_bazel_rules_go_version),
         "https://github.com/bazelbuild/rules_go/releases/download/v{0}/rules_go-v{0}.zip".format(_io_bazel_rules_go_version),
@@ -150,12 +151,26 @@ http_archive(
 # for most of the other languages as well, so they can be considered as the core cross-language
 # dependencies.
 
-_grpc_version = "1.60.0"
+_absl_version = "20250814.2"  # Matches requirements for gRPC 1.74
 
-_grpc_sha256 = "09640607a340ff0d97407ed22fe4adb177e5bb85329821122084359cd57c3dea"
+_absl_sha256 = "f9148fb00ec98a2396bdf875c99a78e6a70afa662b107862d92b285d857a8320"
+
+http_archive(
+    name = "com_google_absl",
+    sha256 = _absl_sha256,
+    strip_prefix = "abseil-cpp-%s" % _absl_version,
+    urls = ["https://github.com/abseil/abseil-cpp/archive/refs/tags/%s.tar.gz" % _absl_version],
+)
+
+_grpc_version = "1.78.1"
+
+_grpc_sha256 = "f9b1d9fe1648024150593efa077ee0f600f9823a21e9d618b4f304e6c09c9902"
 
 http_archive(
     name = "com_github_grpc_grpc",
+    repo_mapping = {
+        "@abseil-cpp": "@com_google_absl",
+    },
     sha256 = _grpc_sha256,
     strip_prefix = "grpc-%s" % _grpc_version,
     urls = ["https://github.com/grpc/grpc/archive/v%s.zip" % _grpc_version],
@@ -163,12 +178,16 @@ http_archive(
 
 # Explicitly declaring Protobuf version, while Protobuf dependency is already
 # instantiated in grpc_deps().
-_protobuf_version = "25.7"
+_protobuf_version = "31.0"
 
-_protobuf_sha256 = "af034f71287cff2f1691649772c61b13696787a06ff616cadf9869611491fabe"
+_protobuf_sha256 = "2b695cb1eaef8e173f884235ee6d55f57186e95d89ebb31361ee55cb5fd1b996"
 
 http_archive(
     name = "com_google_protobuf",
+    repo_mapping = {
+        "@abseil-cpp": "@com_google_absl",
+        "@protobuf_maven": "@maven",
+    },
     sha256 = _protobuf_sha256,
     strip_prefix = "protobuf-%s" % _protobuf_version,
     urls = ["https://github.com/protocolbuffers/protobuf/archive/v%s.tar.gz" % _protobuf_version],
@@ -178,10 +197,25 @@ load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
 
 grpc_deps()
 
+# Protobuf 31.0 and later use abseil-cpp name for Abseil.
+# We map it to com_google_absl which is the name used by gRPC.
+# Defining it before protobuf_deps() ensures that Protobuf won't try to download its own.
+
 load("@com_google_protobuf//:protobuf_deps.bzl", "PROTOBUF_MAVEN_ARTIFACTS", "protobuf_deps")
 
 # This is actually already done within grpc_deps but calling this for Bazel convention.
 protobuf_deps()
+
+load("@rules_python//python:repositories.bzl", "py_repositories")
+
+py_repositories()
+
+load("@rules_python//python:pip.bzl", "pip_parse")
+
+pip_parse(
+    name = "protobuf_pip_deps",
+    requirements_lock = "@com_google_protobuf//:python/requirements.txt",
+)
 
 # gRPC enforces a specific version of Go toolchain which conflicts with our build.
 # All the relevant parts of grpc_extra_deps() are imported in this  WORKSPACE file
@@ -197,22 +231,26 @@ load("@build_bazel_apple_support//lib:repositories.bzl", "apple_support_dependen
 apple_support_dependencies()
 
 # End of C++ section
-
 http_archive(
     name = "rules_proto",
-    sha256 = "602e7161d9195e50246177e7c55b2f39950a9cf7366f74ed5f22fd45750cd208",
-    strip_prefix = "rules_proto-97d8af4dc474595af3900dd85cb3a29ad28cc313",
-    urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_proto/archive/97d8af4dc474595af3900dd85cb3a29ad28cc313.tar.gz",
-        "https://github.com/bazelbuild/rules_proto/archive/97d8af4dc474595af3900dd85cb3a29ad28cc313.tar.gz",
-    ],
+    sha256 = "6fb6767d1bef535310547e03247f7518b03487740c11b6c6adb7952033fe1295",
+    strip_prefix = "rules_proto-6.0.2",
+    url = "https://github.com/bazelbuild/rules_proto/releases/download/6.0.2/rules_proto-6.0.2.tar.gz",
 )
 
-load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies", "rules_proto_toolchains")
+load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies")
 
 rules_proto_dependencies()
 
-rules_proto_toolchains()
+http_archive(
+    name = "rules_java",
+    sha256 = "6901869e94443ef199517548b792190f845a90757a31b40285a7309cf8c10557",
+    url = "https://github.com/bazelbuild/rules_java/releases/download/8.6.1/rules_java-8.6.1.tar.gz",
+)
+
+load("@rules_java//java:rules_java_deps.bzl", "rules_java_dependencies")
+
+rules_java_dependencies()
 
 ##############################################################################
 # Go
@@ -315,6 +353,7 @@ load("@envoy_api//bazel:repositories.bzl", "api_dependencies")
 api_dependencies()
 
 maven_install(
+    name = "maven",
     artifacts = [
                     "com.google.api:gapic-generator-java:" + _gapic_generator_java_version,
                 ] + PROTOBUF_MAVEN_ARTIFACTS +
@@ -324,17 +363,19 @@ maven_install(
     generate_compat_repositories = True,
     repositories = [
         "m2Local",
-        "https://repo.maven.apache.org/maven2/",
+        "https://repo.maven.apache.org/maven2",
     ],
 )
-
-load("@maven//:compat.bzl", "compat_repositories")
-
-compat_repositories()
 
 ##############################################################################
 # Python
 ##############################################################################
+
+# Load Python-specific gRPC deps
+load("@com_github_grpc_grpc//bazel:grpc_python_deps.bzl", "grpc_python_deps")
+
+grpc_python_deps()
+
 load("@rules_gapic//python:py_gapic_repositories.bzl", "py_gapic_repositories")
 
 py_gapic_repositories()
@@ -357,14 +398,14 @@ load(
     "gapic_generator_python",
     "gapic_generator_register_toolchains",
 )
-load("@rules_python//python:repositories.bzl", "py_repositories")
 
 py_repositories()
 
-load("@rules_python//python:pip.bzl", "pip_parse")
-
 pip_parse(
     name = "gapic_generator_python_pip_deps",
+    extra_pip_args = [
+        "--no-cache-dir",
+    ],
     requirements_lock = "@gapic_generator_python//:requirements.txt",
 )
 
