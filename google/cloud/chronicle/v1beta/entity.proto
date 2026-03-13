@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,15 +20,22 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/cloud/chronicle/backstory/entity.proto";
+import "google/cloud/chronicle/backstory/entity_risk.proto";
+import "google/cloud/chronicle/backstory/udm.proto";
+import "google/cloud/chronicle/common/field_and_value.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
+import "google/type/interval.proto";
 
 option csharp_namespace = "Google.Cloud.Chronicle.V1Beta";
 option go_package = "cloud.google.com/go/chronicle/apiv1beta/chroniclepb;chroniclepb";
 option java_multiple_files = true;
 option java_outer_classname = "EntityProto";
-option java_package = "google.cloud.chronicle.v1beta";
+option java_package = "com.google.cloud.chronicle.v1beta";
 option php_namespace = "Google\\Cloud\\Chronicle\\V1beta";
 option ruby_package = "Google::Cloud::Chronicle::V1beta";
 
@@ -36,7 +43,75 @@ option ruby_package = "Google::Cloud::Chronicle::V1beta";
 service EntityService {
   option (google.api.default_host) = "chronicle.googleapis.com";
   option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/chronicle,"
+      "https://www.googleapis.com/auth/chronicle.readonly,"
       "https://www.googleapis.com/auth/cloud-platform";
+
+  // Gets an entity by name.
+  rpc GetEntity(GetEntityRequest) returns (Entity) {
+    option (google.api.http) = {
+      get: "/v1beta/{name=projects/*/locations/*/instances/*/entities/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Returns all entity data over specified time. The API returns a maximum of
+  // 1000 entities.
+  rpc SummarizeEntity(SummarizeEntityRequest)
+      returns (SummarizeEntityResponse) {
+    option (google.api.http) = {
+      get: "/v1beta/{instance=projects/*/locations/*/instances/*}:summarizeEntity"
+    };
+    option (google.api.method_signature) = "instance";
+  }
+
+  // Finds all the entities associated with provided entity. The API returns a
+  // maximum of 100 entities.
+  rpc FindRelatedEntities(FindRelatedEntitiesRequest)
+      returns (FindRelatedEntitiesResponse) {
+    option (google.api.http) = {
+      get: "/v1beta/{instance=projects/*/locations/*/instances/*}:findRelatedEntities"
+    };
+    option (google.api.method_signature) = "instance";
+  }
+
+  // Identifies the entity type and retrieves relevant data associated with
+  // a specified indicator. The API returns a maximum of 1000 entities.
+  rpc SearchEntities(SearchEntitiesRequest) returns (SearchEntitiesResponse) {
+    option (google.api.http) = {
+      get: "/v1beta/{instance=projects/*/locations/*/instances/*}:searchEntities"
+    };
+    option (google.api.method_signature) = "instance";
+  }
+
+  // Parses the query and identifies the entities contained within the search
+  // query.
+  rpc SummarizeEntitiesFromQuery(SummarizeEntitiesFromQueryRequest)
+      returns (SummarizeEntitiesFromQueryResponse) {
+    option (google.api.http) = {
+      get: "/v1beta/{instance=projects/*/locations/*/instances/*}:summarizeEntitiesFromQuery"
+    };
+    option (google.api.method_signature) = "instance";
+  }
+
+  // Identifies the entity type and retrieves relevant data associated with
+  // a specified indicator.
+  rpc FindEntity(FindEntityRequest) returns (FindEntityResponse) {
+    option (google.api.http) = {
+      get: "/v1beta/{instance=projects/*/locations/*/instances/*}:findEntity"
+    };
+    option (google.api.method_signature) = "instance";
+  }
+
+  // Get alerts for an entity. The API returns a maximum of 1000 alerts for the
+  // requested entity.
+  rpc FindEntityAlerts(FindEntityAlertsRequest)
+      returns (FindEntityAlertsResponse) {
+    option (google.api.http) = {
+      get: "/v1beta/{instance=projects/*/locations/*/instances/*}:findEntityAlerts"
+    };
+    option (google.api.method_signature) = "instance";
+  }
 
   // Gets watchlist details for the given watchlist ID.
   rpc GetWatchlist(GetWatchlistRequest) returns (Watchlist) {
@@ -82,6 +157,461 @@ service EntityService {
   }
 }
 
+// Rule name with alert count.
+message AlertCountByRule {
+  // Rule name.
+  string rule = 1;
+
+  // Alert count.
+  int64 count = 3;
+}
+
+// Number of alerts in the timeline bucket.
+message Timeline {
+  // Data about a single timeline bucket.
+  message TimelineBucket {
+    // Number of alerts in the timeline bucket.
+    int32 alert_count = 1;
+  }
+
+  // Buckets in the timeline with alerts.
+  repeated TimelineBucket buckets = 1;
+
+  // Time unit for each bucket (in seconds and nanoseconds).
+  google.protobuf.Duration bucket_size = 2;
+}
+
+// An Entity provides additional context about an entity in a UDM event (asset,
+// user, etc.). For example, a PROCESS_LAUNCH event describes that user
+// 'abc@example.corp' launched process 'shady.exe'. The event does not include
+// information that user 'abc@example.com' is a recently terminated employee who
+// administers a server storing finance data. Information stored in one or more
+// Entities can add this additional context.
+message Entity {
+  option (google.api.resource) = {
+    type: "chronicle.googleapis.com/Entity"
+    pattern: "projects/{project}/locations/{location}/instances/{instance}/entities/{entity}"
+    pattern: "projects/{project}/locations/{location}/instances/{instance}/analytics/{analytic}/entities/{entity}"
+    pattern: "projects/{project}/locations/{location}/instances/{instance}/watchlists/{watchlist}/entities/{entity}"
+    plural: "entities"
+    singular: "entity"
+  };
+
+  // The resource name of the entity.
+  // Format:
+  // `projects/{project}/locations/{location}/instances/{instance}/entities/{entity}`
+  // `projects/{project}/locations/{location}/instances/{instance}/analytics/{analytic}/entities/{entity}`
+  // `projects/{project}/locations/{location}/instances/{instance}/watchlists/{watchlist}/entities/{entity}`
+  string name = 1;
+
+  // Entity metadata such as timestamp, product, etc.
+  backstory.EntityMetadata metadata = 2;
+
+  // Noun in the UDM event that this entity represents.
+  backstory.Noun entity = 3;
+
+  // Important entity data that cannot be adequately represented within
+  // the formal sections of the Entity.
+  google.protobuf.Struct additional = 5;
+
+  // Represents the entity risk scores resource
+  backstory.EntityRisk risk_score = 6;
+
+  // Metric details of the entity. Used if EntityType is METRIC.
+  backstory.Metric metric = 7;
+
+  // One or more relationships between the entity (a) and other entities,
+  // including the relationship type and related entity.
+  repeated backstory.Relation relations = 8;
+}
+
+// Request message to retrieve an entity given an ID.
+message GetEntityRequest {
+  // Required. The ID of the entity to retrieve.
+  // Format:
+  // `projects/{project}/locations/{location}/instances/{instance}/entities/{entity}`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "chronicle.googleapis.com/Entity"
+    }
+  ];
+}
+
+// Request to retrieve alerts for an entity.
+message FindEntityAlertsRequest {
+  // Identifier to find the entity.
+  oneof id {
+    // ID of the entity.
+    string entity_id = 2;
+
+    // Field path or type with value to identify entity.
+    google.cloud.chronicle.common.FieldAndValue field_and_value = 3;
+  }
+
+  // Required. The ID of the Instance to summarize entity for.
+  // Format:
+  // `projects/{project}/locations/{location}/instances/{instance}`
+  string instance = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "chronicle.googleapis.com/Instance"
+    }
+  ];
+
+  // Required. Time range to retrieve the alerts for [Inclusive start time,
+  // exclusive end time).
+  google.type.Interval time_range = 4 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response message to retrieve alerts for an entity.
+message FindEntityAlertsResponse {
+  // Rule names with alert count for each.
+  repeated AlertCountByRule alert_counts = 1;
+
+  // Indicates if there are more alerts than the limit (1000 currently).
+  bool has_more_alerts = 2;
+
+  // Bucketed timeline with alert count.
+  Timeline timeline = 3;
+}
+
+// Request message to retrieve snapshots of summarized entity data for an entity
+// indicator.
+message SummarizeEntityRequest {
+  // Identifier options to find the entity snapshots.
+  oneof id {
+    // ID of the entity indicator to list entity summary snapshots for.
+    string entity_id = 6;
+
+    // A set of fields which characterize the entity indicator to return
+    // entity summary snapshots for.
+    // This can use either an enumerated type or infer the type from a UDM path.
+    google.cloud.chronicle.common.FieldAndValue field_and_value = 7;
+  }
+
+  // Required. Time range to retrieve the summary for [Inclusive start time,
+  // exclusive end time).
+  google.type.Interval time_range = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The name of the parent resource, which is the SecOps instance to
+  // summarize an entity for. Format:
+  // `projects/{project}/locations/{location}/instances/{instance}`
+  string instance = 5 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "chronicle.googleapis.com/Instance"
+    }
+  ];
+
+  // Optional. Whether to return prevelance data for the entity.
+  bool return_prevalence = 8 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Entity to use in order to compute combined prevalences.
+  // `return_prevalence` needs to be set in order to compute prevalence.
+  google.cloud.chronicle.common.FieldAndValue prevalence_input = 9
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether to return alert_counts for the entity.
+  bool return_alerts = 10 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If true, it includes all types of events we show in UDM Search to
+  // calculate the first and last seen time of an entity.
+  bool include_all_udm_event_types_for_first_last_seen = 11
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message to retrieve summarized data for an entity.
+message SummarizeEntityResponse {
+  // Prevalence statistics for an artifact at a particular point of time.
+  message PrevalenceSnapshot {
+    // The timestamp that the prevalence statistic represents.
+    google.protobuf.Timestamp prevalence_time = 1;
+
+    // The prevalence count for the indicator at the prevalence_time.
+    int32 count = 2;
+  }
+
+  // Arbitrary risk metadata about an asset entity.
+  message AssetRiskMetadata {
+    // Source product that produces the risk metadata for the asset.
+    string source_product = 1;
+
+    // The timestamp of the event that uploaded this metadata version.
+    google.protobuf.Timestamp upload_time = 2;
+
+    // Map from a risk's name to its description.
+    map<string, string> risks = 3;
+  }
+
+  // File hash properties.
+  message FileHashProperties {
+    // Title of properties: for example, "PE Properties".
+    string title = 1;
+
+    // Repeated field of properties
+    repeated backstory.Label properties = 2;
+  }
+
+  // Data about a file hash entity.
+  message MetadataAndProperties {
+    // File hash query state.
+    enum QueryState {
+      // Unspecified state for file hash query.
+      QUERY_STATE_UNSPECIFIED = 0;
+
+      // Query is successful and has result.
+      QUERY_STATE_OK_HAS_RESULT = 1;
+
+      // Query is successful but has no result.
+      QUERY_STATE_OK_HAS_NO_RESULT = 2;
+
+      // Query is unsuccessful.
+      QUERY_STATE_ERROR = 3;
+    }
+
+    // File hash's metadata include file type and file size information.
+    repeated backstory.Label metadata = 1;
+
+    // Properties include PE properties (for windows file only) and signer
+    // details.
+    repeated FileHashProperties properties = 2;
+
+    // Special descriptions for risks of some well-known file types, e.g.,
+    // micsoroft office documents.
+    repeated string special_descriptions = 3;
+
+    // Output only. File hash query state.
+    QueryState query_state = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // VirusTotal widget metadata.
+  message WidgetMetadata {
+    // Widget rendering URL for the VirusTotal VT Augment widget.
+    // See https://docs.virustotal.com/reference/widgeturl
+    string uri = 1;
+
+    // Number of scanners which flagged this content.
+    int32 detections = 2;
+
+    // Total number of scanners.
+    int32 total = 3;
+  }
+
+  // A list of entities.
+  // Each "entity" is a snapshot of data about the requested entity indicator
+  // for a particular time range.
+  repeated Entity entities = 1;
+
+  // Rule display names with an alert count for each rule that has alerts that
+  // match the requested entity indicator.
+  // This will only be populated if return_alerts is true in the request.
+  repeated AlertCountByRule alert_counts = 3;
+
+  // Indicates if there are more alerts than the limit (1000 currently).
+  bool has_more_alerts = 9;
+
+  // Data representing the number of alerts associated with the entity indicator
+  // within the requested time range, bucketed by time ranges.
+  // This will only be populated if return_alerts is true in the request.
+  Timeline timeline = 4;
+
+  // Prevalence statistics for the requested indicator.
+  repeated PrevalenceSnapshot prevalence_result = 5;
+
+  // If the entity was a domain with a different top private domain, this will
+  // contain statistics for the top private domain.
+  repeated PrevalenceSnapshot tpd_prevalence_result = 6;
+
+  // Timestamps at which the asset was queried for the entity being summarized.
+  repeated google.protobuf.Timestamp asset_prevalence_times = 7;
+
+  // Vendor-defined risk metadata for an asset entity.
+  // This will only be populated if the requested entity indicator is for an
+  // asset entity (internal IP, hostname, MAC, etc.)
+  repeated AssetRiskMetadata asset_risk_metadata = 8;
+
+  // File hash metadata and properties.
+  // This data will be only be populated if the requested entity indicator is
+  // for a file entity (MD5, SHA1, SHA256 file hash).
+  MetadataAndProperties file_metadata_and_properties = 11;
+
+  // Widget metadata for the  VirusTotal VT Augment widget.
+  // This is included for entity indicators that are supported by VirusTotal
+  // including file hash (MD5, SHA1, SHA256), IP, and Domain.
+  WidgetMetadata widget_metadata = 12;
+
+  // Data describing the Top level domain entity for the requested indicator.
+  Entity top_level_domain = 10;
+}
+
+// Request message for finding related entities.
+message FindRelatedEntitiesRequest {
+  // Domain Type.
+  enum DomainType {
+    // Unspecified.
+    DOMAIN_TYPE_UNSPECIFIED = 0;
+
+    // Sibling domain.
+    DOMAIN_TYPE_SIBLING = 1;
+
+    // Subdomain.
+    DOMAIN_TYPE_SUBDOMAIN = 2;
+  }
+
+  // Identifier to find the entity.
+  oneof id {
+    // ID of the entity.
+    string entity_id = 6;
+
+    // Field path and value to identify entity.
+    google.cloud.chronicle.common.FieldAndValue field_and_value = 7;
+  }
+
+  // Required. Time range to search related entities for [inclusive start time,
+  // exclusive end time).
+  google.type.Interval time_range = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The name of the parent resource, which is the SecOps instance to
+  // find related entities for. Format:
+  // `projects/{project}/locations/{location}/instances/{instance}`
+  string instance = 5 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "chronicle.googleapis.com/Instance"
+    }
+  ];
+
+  // Optional. Entity types to filter related entities by. If unspecified, will
+  // return all related entities for the given entity.
+  repeated backstory.EntityMetadata.EntityType entity_types = 8
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The domain type to retrieve. This is taken into account when the
+  // entity type is specified as "DOMAIN_NAME".
+  DomainType domain_type = 9 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If true, then the related entities will not have first/last seen
+  // info and reduce latency of endpoint.
+  bool exclude_first_last_seen = 10 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If true, it includes all types of events we show in UDM Search to
+  // calculate the first and last seen time of an entity.
+  bool include_all_udm_event_types_for_first_last_seen = 11
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The maximum number of Entities to return. The service may return
+  // fewer than this value. If unspecified, at most 100 entities will be
+  // returned. The maximum value is 100; values above 100 will be coerced to
+  // 100. This field replaces the deprecated `page_size` field.
+  int32 limit = 12 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message for finding related entities.
+message FindRelatedEntitiesResponse {
+  // List of related entities.
+  repeated Entity related_entities = 1;
+
+  // Indicates if there are more related_entities available but were not
+  // returned due to the `page_size`.
+  bool has_more_entities = 3;
+
+  // Time range of related entities
+  google.type.Interval result_time_range = 4;
+}
+
+// Request message for search entities.
+message SearchEntitiesRequest {
+  // Required. The ID of the Instance to search entities for.
+  // Format:
+  // `projects/{project}/locations/{location}/instances/{instance}`
+  string instance = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "chronicle.googleapis.com/Instance"
+    }
+  ];
+
+  // Required. Value of indicator tied to an entity.
+  string indicator = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response message for search entities.
+message SearchEntitiesResponse {
+  // A list of entities.
+  repeated Entity entities = 1;
+}
+
+// Request message to retrieve entities by a search query.
+message SummarizeEntitiesFromQueryRequest {
+  // Required. The ID of the Instance to search entities for.
+  // Format:
+  // `projects/{project}/locations/{location}/instances/{instance}`
+  string instance = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "chronicle.googleapis.com/Instance"
+    }
+  ];
+
+  // Required. Query to summarize entities for.
+  string query = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Query time range used to summarize entities [inclusive start
+  // time, exclusive end time).
+  google.type.Interval time_range = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. If provided, this is a user's SQL query.
+  string user_sql = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message for search entities.
+message SummarizeEntitiesFromQueryResponse {
+  // EntitySummary represents entity evolution over a period of time.
+  message EntitySummary {
+    // List of entities that contain entity summary over a time range.
+    repeated Entity entity = 1;
+
+    // Top level domain entity.
+    Entity top_level_domain = 2;
+  }
+
+  // A list of entity summaries, each summarizing an entity from given query.
+  repeated EntitySummary entity_summaries = 1;
+}
+
+// Request message for finding relevant entity information using an indicator.
+message FindEntityRequest {
+  // Required. The ID of the Instance to find entity for.
+  // Format:
+  // `projects/{project}/locations/{location}/instances/{instance}`
+  string instance = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "chronicle.googleapis.com/Instance"
+    }
+  ];
+
+  // Required. Entity indicator to search for.
+  string indicator = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The UDM field the entity indicator belongs to.
+  string udm_field = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Namespace of the entity being queried.
+  string entity_namespace = 4 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Reference time to lookup entity.
+  google.protobuf.Timestamp reference_time = 5
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response message for find entity given an indicator.
+message FindEntityResponse {
+  // A list of entity summaries.
+  Entity entity = 1;
+}
+
 // A watchlist is a list of entities that allows for bulk operations over the
 // included entities.
 message Watchlist {
@@ -116,7 +646,7 @@ message Watchlist {
 
   // Identifier. Resource name of the watchlist.
   // Format:
-  // projects/{project}/locations/{location}/instances/{instance}/watchlists/{watchlist}
+  // `projects/{project}/locations/{location}/instances/{instance}/watchlists/{watchlist}`
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
   // Required. Display name of the watchlist.
@@ -163,7 +693,7 @@ message GetWatchlistRequest {
   // Required. The parent, which owns this collection of watchlists.
   // The name of the watchlist to retrieve.
   // Format:
-  // projects/{project}/locations/{location}/instances/{instance}/watchlists/{watchlist}
+  // `projects/{project}/locations/{location}/instances/{instance}/watchlists/{watchlist}`
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -175,7 +705,7 @@ message GetWatchlistRequest {
 // Request message for listing watchlists.
 message ListWatchlistsRequest {
   // Required. The parent, which owns this collection of watchlists.
-  // Format: projects/{project}/locations/{location}/instances/{instance}
+  // Format: `projects/{project}/locations/{location}/instances/{instance}`
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -218,7 +748,7 @@ message ListWatchlistsResponse {
 // Request message for creating watchlist.
 message CreateWatchlistRequest {
   // Required. The parent resource where this watchlist will be created.
-  // Format: projects/{project}/locations/{location}/instances/{instance}
+  // Format: `projects/{project}/locations/{location}/instances/{instance}`
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -243,7 +773,7 @@ message UpdateWatchlistRequest {
   //
   // The watchlist's `name` field is used to identify the watchlist to update.
   // Format:
-  // projects/{project}/locations/{location}/instances/{instance}/watchlists/{watchlist}
+  // `projects/{project}/locations/{location}/instances/{instance}/watchlists/{watchlist}`
   Watchlist watchlist = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. The list of fields to update.
@@ -255,7 +785,7 @@ message UpdateWatchlistRequest {
 message DeleteWatchlistRequest {
   // Required. The name of the watchlist to delete.
   // Format:
-  // projects/{project}/locations/{location}/instances/{instance}/watchlists/{watchlist}
+  // `projects/{project}/locations/{location}/instances/{instance}/watchlists/{watchlist}`
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
