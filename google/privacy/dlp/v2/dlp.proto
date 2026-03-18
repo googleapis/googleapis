@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -1001,6 +1001,30 @@ message ExcludeByHotword {
   CustomInfoType.DetectionRule.Proximity proximity = 2;
 }
 
+// The rule to exclude image findings based on spatial relationships with
+// other image findings. For example, exclude an image finding if it overlaps
+// with another image finding.
+// This rule is silently ignored if the content being inspected is not an image.
+message ExcludeByImageFindings {
+  // A list of image-supported infoTypes—excluding [document
+  //  infoTypes](https://cloud.google.com/sensitive-data-protection/docs/infotypes-reference#documents)—to
+  //  be used as context for the exclusion rule. A finding is excluded if
+  //  its bounding box has the specified spatial relationship (defined by
+  //  `image_containment_type`) with a finding of an infoType in this list.
+  //
+  //  For example, if `InspectionRuleSet.info_types` includes
+  //  `OBJECT_TYPE/PERSON` and this `exclusion_rule` specifies `info_types` as
+  //  `OBJECT_TYPE/PERSON/PASSPORT` with `image_containment_type` set to
+  //  `encloses`, then `OBJECT_TYPE/PERSON` findings will be excluded if they
+  //  are fully contained within the bounding box of an
+  //  `OBJECT_TYPE/PERSON/PASSPORT` finding.
+  repeated InfoType info_types = 1;
+
+  // Specifies the required spatial relationship between the bounding boxes
+  // of the target finding and the context infoType findings.
+  ImageContainmentType image_containment_type = 2;
+}
+
 // The rule that specifies conditions when findings of infoTypes specified in
 // `InspectionRuleSet` are removed from results.
 message ExclusionRule {
@@ -1018,10 +1042,93 @@ message ExclusionRule {
     // Drop if the hotword rule is contained in the proximate context. For
     // tabular data, the context includes the column name.
     ExcludeByHotword exclude_by_hotword = 5;
+
+    // Exclude findings based on image containment rules. For example, exclude
+    // an image finding if it overlaps with another image finding.
+    ExcludeByImageFindings exclude_by_image_findings = 6;
   }
 
   // How the rule is applied, see MatchingType documentation for details.
   MatchingType matching_type = 4;
+}
+
+// AdjustmentRule condition for matching infoTypes.
+message AdjustByMatchingInfoTypes {
+  // Sensitive Data Protection adjusts the likelihood of a finding if that
+  // finding also matches one of these infoTypes.
+  //
+  // For example, you can create a rule to adjust the likelihood of a
+  // `PHONE_NUMBER` finding if the string is found within a document that is
+  // classified as `DOCUMENT_TYPE/HR/RESUME`. To configure this, set
+  // `PHONE_NUMBER` in `InspectionRuleSet.info_types`. Add an `adjustment_rule`
+  // with an `adjust_by_matching_info_types.info_types` that contains
+  // `DOCUMENT_TYPE/HR/RESUME`. In this case, the likelihood of the
+  // `PHONE_NUMBER` finding is adjusted, but the likelihood of the
+  // `DOCUMENT_TYPE/HR/RESUME` finding is not.
+  repeated InfoType info_types = 1;
+
+  // Required. Minimum likelihood of the
+  // `adjust_by_matching_info_types.info_types` finding. If the likelihood is
+  // lower than this value, Sensitive Data Protection doesn't adjust the
+  // likelihood of the `InspectionRuleSet.info_types` finding.
+  Likelihood min_likelihood = 2;
+
+  // How the adjustment rule is applied.
+  //
+  // Only `MATCHING_TYPE_PARTIAL_MATCH` is supported:
+  //
+  // - Partial match: adjusts the findings of infoTypes specified in the
+  // inspection rule when they have a nonempty intersection with a finding of an
+  // infoType specified in this adjustment rule.
+  MatchingType matching_type = 3;
+}
+
+// AdjustmentRule condition for image findings.
+// This rule is silently ignored if the content being inspected is not an image.
+message AdjustByImageFindings {
+  // A list of image-supported infoTypes—excluding [document
+  // infoTypes](https://cloud.google.com/sensitive-data-protection/docs/infotypes-reference#documents)—to
+  // be used as context for the adjustment rule. Sensitive Data Protection
+  // adjusts the likelihood of an image finding if its bounding box has the
+  // specified spatial relationship (defined by `image_containment_type`) with a
+  // finding of an infoType in this list.
+  //
+  // For example, you can create a rule to adjust the likelihood of a
+  // `US_PASSPORT` finding if it is enclosed by a finding of
+  // `OBJECT_TYPE/PERSON/PASSPORT`. To configure this, set `US_PASSPORT` in
+  // `InspectionRuleSet.info_types`. Add an `adjustment_rule` with an
+  // `adjust_by_image_findings.info_types` that contains
+  // `OBJECT_TYPE/PERSON/PASSPORT` and `image_containment_type` set
+  // to `encloses`. In this case, the likelihood of the `US_PASSPORT` finding is
+  // adjusted, but the likelihood of the `OBJECT_TYPE/PERSON/PASSPORT`
+  // finding is not.
+  repeated InfoType info_types = 1;
+
+  // Required. Minimum likelihood of the
+  // `adjust_by_image_findings.info_types` finding. If the likelihood is
+  // lower than this value, Sensitive Data Protection doesn't adjust the
+  // likelihood of the `InspectionRuleSet.info_types` finding.
+  Likelihood min_likelihood = 2;
+
+  // Specifies the required spatial relationship between the bounding boxes
+  // of the target finding and the context infoType findings.
+  ImageContainmentType image_containment_type = 3;
+}
+
+// Rule that specifies conditions when a certain infoType's finding details
+// should be adjusted.
+message AdjustmentRule {
+  // Condition under which the adjustment rule is applied.
+  oneof conditions {
+    // Set of infoTypes for which findings would affect this rule.
+    AdjustByMatchingInfoTypes adjust_by_matching_info_types = 1;
+
+    // AdjustmentRule condition for image findings.
+    AdjustByImageFindings adjust_by_image_findings = 3;
+  }
+
+  // Likelihood adjustment to apply to the infoType.
+  CustomInfoType.DetectionRule.LikelihoodAdjustment likelihood_adjustment = 2;
 }
 
 // A single inspection rule to be applied to infoTypes, specified in
@@ -1034,6 +1141,9 @@ message InspectionRule {
 
     // Exclusion rule.
     ExclusionRule exclusion_rule = 2;
+
+    // Adjustment rule.
+    AdjustmentRule adjustment_rule = 3;
   }
 }
 
@@ -1183,7 +1293,8 @@ message InspectConfig {
 
   // Set of rules to apply to the findings for this InspectConfig.
   // Exclusion rules, contained in the set are executed in the end, other
-  // rules are executed in the order they are specified for each info type.
+  // rules are executed in the order they are specified for each info type. Not
+  // supported for the `metadata_key_value_expression` CustomInfoType.
   repeated InspectionRuleSet rule_set = 10;
 }
 
@@ -1452,12 +1563,26 @@ message MetadataLocation {
   oneof label {
     // Storage metadata.
     StorageMetadataLabel storage_label = 3;
+
+    // Metadata key that contains the finding.
+    KeyValueMetadataLabel key_value_metadata_label = 4;
   }
 }
 
 // Storage metadata label to indicate which metadata entry contains findings.
 message StorageMetadataLabel {
   // Label name.
+  string key = 1;
+}
+
+// The metadata key that contains a finding.
+message KeyValueMetadataLabel {
+  // The metadata key. The format depends on the source of the metadata.
+  //
+  // Example:
+  //
+  // - `MSIP_Label_122709e3-8f6b-4860-985f-7f722a94f61e_Enabled` (a Microsoft
+  //   Purview Information Protection key example)
   string key = 1;
 }
 
@@ -1884,6 +2009,7 @@ message OutputStorageConfig {
   }
 
   // Output storage types.
+  // *
   oneof type {
     // Store findings in an existing table or a new table in an existing
     // dataset. If table_id is not set a new one will be generated
@@ -2081,6 +2207,21 @@ message LocationSupport {
 
 // InfoType description.
 message InfoTypeDescription {
+  // The launch status of an infoType.
+  enum InfoTypeLaunchStatus {
+    // Unspecified.
+    INFO_TYPE_LAUNCH_STATUS_UNSPECIFIED = 0;
+
+    // InfoType is generally available.
+    GENERAL_AVAILABILITY = 1;
+
+    // InfoType is in public preview.
+    PUBLIC_PREVIEW = 2;
+
+    // InfoType is in private preview.
+    PRIVATE_PREVIEW = 3;
+  }
+
   // Internal name of the infoType.
   string name = 1;
 
@@ -2115,6 +2256,9 @@ message InfoTypeDescription {
   // For example, the "GEOGRAPHIC_DATA" general infoType would have set for this
   // field "LOCATION", "LOCATION_COORDINATES", and "STREET_ADDRESS".
   repeated string specific_info_types = 12;
+
+  // The launch status of the infoType.
+  InfoTypeLaunchStatus launch_status = 13;
 }
 
 // Classification of infoTypes to organize them according to geographic
@@ -7270,7 +7414,47 @@ enum MatchingType {
   // - Regex: finding doesn't match the regex
   // - Exclude infoType: no intersection with affecting infoTypes findings
   MATCHING_TYPE_INVERSE_MATCH = 3;
+
+  // Rule-specific match.
+  //
+  // The matching logic is based on the specific rule being used. This is
+  // required for rules where the matching behavior is not a simple string
+  // comparison (e.g., image containment). This matching type can only be
+  // used with the `ExcludeByImageFindings` rule.
+  //
+  // - Exclude by image findings: The matching logic is defined within
+  //   `ExcludeByImageFindings` based on spatial relationships between bounding
+  //   boxes.
+  MATCHING_TYPE_RULE_SPECIFIC = 4;
 }
+
+// Specifies the relationship between bounding boxes for image findings.
+message ImageContainmentType {
+  // The type of relationship to check between the target finding and the
+  // context finding.
+  oneof type {
+    // The context finding's bounding box must fully contain the target
+    // finding's bounding box.
+    Encloses encloses = 1;
+
+    // The context finding's bounding box must be fully inside the target
+    // finding's bounding box.
+    FullyInside fully_inside = 2;
+
+    // The context finding's bounding box and the target finding's bounding box
+    // must have a non-zero intersection.
+    Overlap overlaps = 3;
+  }
+}
+
+// Defines a condition for overlapping bounding boxes.
+message Overlap {}
+
+// Defines a condition where one bounding box encloses another.
+message Encloses {}
+
+// Defines a condition where one bounding box is fully inside another.
+message FullyInside {}
 
 // Deprecated and unused.
 enum ContentOption {
@@ -7291,6 +7475,9 @@ enum MetadataType {
 
   // General file metadata provided by Cloud Storage.
   STORAGE_METADATA = 2;
+
+  // Metadata extracted from the files.
+  CONTENT_METADATA = 3;
 }
 
 // Parts of the APIs which use certain infoTypes.
@@ -8910,7 +9097,7 @@ message Domain {
   }
 
   // The signal used to determine the category.
-  // This list may increase over time.
+  // New values may be added in the future.
   enum Signal {
     // Unused.
     SIGNAL_UNSPECIFIED = 0;
@@ -8918,8 +9105,13 @@ message Domain {
     // One or more machine learning models are present.
     MODEL = 1;
 
-    // A table appears to be a text embedding.
+    // A table appears to contain text embeddings.
     TEXT_EMBEDDING = 2;
+
+    // A table appears to contain embeddings of any type (for example, text,
+    // image, multimodal). The `TEXT_EMBEDDING` signal might also be present if
+    // the table contains text embeddings.
+    EMBEDDING = 7;
 
     // The [Cloud SQL Vertex
     // AI](https://cloud.google.com/sql/docs/postgres/integrate-cloud-sql-with-vertex-ai)
