@@ -41,11 +41,26 @@ service SessionService {
       "https://www.googleapis.com/auth/ces,"
       "https://www.googleapis.com/auth/cloud-platform";
 
-  // Initiates a single turn interaction with the CES agent within a
-  // session.
+  // Initiates a single-turn interaction with the CES agent within a session.
   rpc RunSession(RunSessionRequest) returns (RunSessionResponse) {
     option (google.api.http) = {
       post: "/v1/{config.session=projects/*/locations/*/apps/*/sessions/*}:runSession"
+      body: "*"
+    };
+  }
+
+  // Initiates a single-turn interaction with the CES agent. Uses server-side
+  // streaming to deliver incremental results and partial responses as they are
+  // generated.
+  //
+  // By default, complete responses (e.g., messages from callbacks or full LLM
+  // responses) are sent to the client as soon as they are available. To enable
+  // streaming individual text chunks directly from the model, set
+  // [enable_text_streaming][google.cloud.ces.v1.SessionConfig.enable_text_streaming]
+  // to true.
+  rpc StreamRunSession(RunSessionRequest) returns (stream RunSessionResponse) {
+    option (google.api.http) = {
+      post: "/v1/{config.session=projects/*/locations/*/apps/*/sessions/*}:streamRunSession"
       body: "*"
     };
   }
@@ -205,7 +220,7 @@ message SessionConfig {
   // Optional. The entry agent to handle the session. If not specified, the
   // session will be handled by the [root
   // agent][google.cloud.ces.v1.App.root_agent] of the app. Format:
-  // `projects/{project}/locations/{location}/agents/{agent}`
+  // `projects/{project}/locations/{location}/apps/{app}/agents/{agent}`
   string entry_agent = 12 [
     (google.api.field_behavior) = OPTIONAL,
     (google.api.resource_reference) = { type: "ces.googleapis.com/Agent" }
@@ -224,6 +239,11 @@ message SessionConfig {
   // "America/Los_Angeles".
   string time_zone = 11 [(google.api.field_behavior) = OPTIONAL];
 
+  // Optional. Whether to use tool fakes for the session.
+  // If this field is set, the agent will attempt use tool fakes instead of
+  // calling the real tools.
+  bool use_tool_fakes = 14 [(google.api.field_behavior) = OPTIONAL];
+
   // Optional.
   // [QueryParameters](https://cloud.google.com/dialogflow/cx/docs/reference/rpc/google.cloud.dialogflow.cx.v3#queryparameters)
   // to send to the remote
@@ -231,6 +251,14 @@ message SessionConfig {
   // agent when the session control is transferred to the remote agent.
   RemoteDialogflowQueryParameters remote_dialogflow_query_parameters = 15
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether to enable streaming text outputs from the model.
+  // By default, text outputs from the model are collected before sending to the
+  // client.
+  // NOTE: This is only supported for text (non-voice) sessions via
+  // [StreamRunSession][google.cloud.ces.v1.SessionService.StreamRunSession] or
+  // [BidiRunSession][google.cloud.ces.v1.SessionService.BidiRunSession].
+  bool enable_text_streaming = 18 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request for the client to execute the tools and return the execution results
@@ -306,12 +334,14 @@ message SessionInput {
   }
 
   // Optional. A flag to indicate if the current message is a fragment of a
-  // larger input in the bidi streaming session. When `true`, the agent will
-  // defer processing until a subsequent message with `will_continue` set to
-  // `false` is received.
+  // larger input in the bidi streaming session.
   //
-  // Note: This flag has no effect on audio and DTMF inputs, which are always
-  // processed in real-time.
+  // When set to `true`, the agent defers processing until it receives a
+  // subsequent message where `will_continue` is `false`, or until the system
+  // detects an endpoint in the audio input.
+  //
+  // NOTE: This field does not apply to audio and DTMF inputs, as they are
+  // always processed automatically based on the endpointing signal.
   bool will_continue = 8 [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -442,7 +472,7 @@ message BidiSessionServerMessage {
     RecognitionResult recognition_result = 2
         [(google.api.field_behavior) = OPTIONAL];
 
-    // Optional. Interruption signal detected from the audio input.
+    // Optional. Indicates the agent's audio response has been interrupted.
     InterruptionSignal interruption_signal = 3
         [(google.api.field_behavior) = OPTIONAL];
 
