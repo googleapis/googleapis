@@ -28,6 +28,7 @@ import "google/cloud/ces/v1beta/conversation.proto";
 import "google/cloud/ces/v1beta/deployment.proto";
 import "google/cloud/ces/v1beta/evaluation.proto";
 import "google/cloud/ces/v1beta/example.proto";
+import "google/cloud/ces/v1beta/file_context.proto";
 import "google/cloud/ces/v1beta/guardrail.proto";
 import "google/cloud/ces/v1beta/security_settings.proto";
 import "google/cloud/ces/v1beta/tool.proto";
@@ -36,6 +37,7 @@ import "google/longrunning/operations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
 
 option go_package = "cloud.google.com/go/ces/apiv1beta/cespb;cespb";
 option java_multiple_files = true;
@@ -499,6 +501,20 @@ service AgentService {
     option (google.longrunning.operation_info) = {
       response_type: "RestoreAppVersionResponse"
       metadata_type: "OperationMetadata"
+    };
+  }
+
+  // Generates specific resources (e.g. agent) in the app using LLM assistant.
+  rpc GenerateAppResource(GenerateAppResourceRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1beta/{parent=projects/*/locations/*/apps/*}:generateAppResource"
+      body: "*"
+    };
+    option (google.api.method_signature) = "parent";
+    option (google.longrunning.operation_info) = {
+      response_type: "GenerateAppResourceResponse"
+      metadata_type: "GenerateAppResourceOperationMetadata"
     };
   }
 
@@ -1657,6 +1673,194 @@ message RestoreAppVersionRequest {
 // [AgentService.RestoreAppVersion][google.cloud.ces.v1beta.AgentService.RestoreAppVersion]
 message RestoreAppVersionResponse {}
 
+// Request message for
+// [AgentService.GenerateAppResource][google.cloud.ces.v1beta.AgentService.GenerateAppResource].
+message GenerateAppResourceRequest {
+  // The instructions to be used to refine a part of the resource. The part of
+  // the resource can be specified  with a start index, end index and a field
+  // mask. For example, if you want to refine a part of the agent instructions
+  // you can specify the index of the first character of the instructions, the
+  // index of the last character of the instructions and the field mask as
+  // "instructions".
+  message RefineInstructions {
+    // Required. The first character (inclusive) of the text to refine.
+    int64 start_index = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The last character (inclusive) of the text to refine.
+    int64 end_index = 2 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The field of the resource being refined. Only one field is
+    // allowed per RefineInstructions. If refining agent instructions, the field
+    // mask should be "instructions".
+    google.protobuf.FieldMask field_mask = 3
+        [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The instructions to refine the resource.
+    string instructions = 4 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // The configuration to be used to generate a tool.
+  message ToolGenerationConfig {
+    // The configuration to be used to generate an Open API schema.
+    message OpenApiToolsetGenerationConfig {
+      // The configuration to be used to generate an operation in the Open API
+      // schema.
+      message OperationGenerationConfig {
+        // Required. The uri of the tool. This should include query and path
+        // parameters if any.
+        string method = 1 [(google.api.field_behavior) = REQUIRED];
+
+        // Required. The path of the tool to be appended to the base uri. This
+        // should include query and path parameters if any.
+        string path = 2 [(google.api.field_behavior) = REQUIRED];
+
+        // Required. A sample request to the tool in JSON format. Skip if the
+        // tool does not support request body.
+        string request_json = 3 [(google.api.field_behavior) = REQUIRED];
+
+        // Required. A sample response from the tool in JSON format.
+        string response_json = 4 [(google.api.field_behavior) = REQUIRED];
+      }
+
+      // Required. The base uri of the tool.
+      string uri = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // Required. The list of operations to be added to the Open API schema.
+      repeated OperationGenerationConfig operation_generation_configs = 2
+          [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // Optional. The context which describes the tool to be generated. This can
+    // be empty if the tool request & response are provided.
+    string context = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The files to be used as context.
+    repeated FileContext file_contexts = 3
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The configuration to be used to generate an Open API schema.
+    OpenApiToolsetGenerationConfig open_api_toolset_generation_config = 2
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // The configuration to be used to generate the app.
+  message AppGenerationConfig {
+    // Optional. The context which describes the requirements of the agents &
+    // tools to be generated.
+    string context = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The files to be used as context.
+    repeated FileContext file_contexts = 2
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The insights dataset to be used to fetch conversation data for
+    // generating the agents & tools.
+    // Format:
+    // `projects/{project}/locations/{location}/datasets/{dataset}`.
+    string dataset_id = 3 [
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.resource_reference) = {
+        type: "contactcenterinsights.googleapis.com/Dataset"
+      }
+    ];
+
+    // Optional. Whether to generate the evaluations for the app. If true, the
+    // provided context will be used to generate the evaluations data.
+    bool generate_evaluations = 4 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The Cloud Storage location to store the generated question
+    // answer data to be used by the Datastore tool. This data is generated only
+    // when using conversation data as an input source. The location must be
+    // in the same project as the app.
+    // Format: `gs://...`.
+    string gcs_location = 5 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // The configuration to be used to generate the evaluations.
+  message EvaluationGenerationConfig {
+    // Optional. The insights dataset to be used to fetch conversation data for
+    // generating the evaluations.
+    // Format:
+    // `projects/{project}/locations/{location}/datasets/{dataset}`.
+    string dataset_id = 1 [
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.resource_reference) = {
+        type: "contactcenterinsights.googleapis.com/Dataset"
+      }
+    ];
+  }
+
+  // The configuration to be used to generate the evaluation personas.
+  message EvaluationPersonasGenerationConfig {}
+
+  // The configuration to be used for quality report generation.
+  message QualityReportGenerationConfig {
+    // Required. The evaluation run used to inform quality report analysis.
+    string evaluation_run = 1 [
+      (google.api.field_behavior) = REQUIRED,
+      (google.api.resource_reference) = {
+        type: "ces.googleapis.com/EvaluationRun"
+      }
+    ];
+  }
+
+  // The configuration to be used for hill climbing fixes.
+  message HillClimbingFixConfig {
+    // Required. The quality report used to inform the instruction following
+    // fix.
+    QualityReport quality_report = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // The resource to generate.
+  oneof resource {
+    // The agent resource to be used by the LLM assistant, can be empty for
+    // generating a new agent.
+    Agent agent = 2;
+
+    // The tool resource to be used by the LLM assistant, can be empty for
+    // generating a new tool.
+    Tool tool = 4;
+
+    // The toolset resource to be used by the LLM assistant, can be empty for
+    // generating a new toolset.
+    Toolset toolset = 6;
+  }
+
+  // Required. The resource name of the app to generate the resource for.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ces.googleapis.com/App" }
+  ];
+
+  // Optional. List of refine instructions to be used to refine the resource.
+  repeated RefineInstructions refine_instructions = 3
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The configuration to be used to generate the tool.
+  ToolGenerationConfig tool_generation_config = 5
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The configuration to be used to generate the agents and tools.
+  AppGenerationConfig app_generation_config = 7
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The configuration to be used to generate the evaluations.
+  EvaluationGenerationConfig evaluation_generation_config = 8
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The configuration to be used to generate the evaluation personas.
+  EvaluationPersonasGenerationConfig evaluation_personas_generation_config = 9
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The configuration to be used for quality report generation.
+  QualityReportGenerationConfig quality_report_generation_config = 10
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The configuration to be used for hill climbing fixes.
+  HillClimbingFixConfig hill_climbing_fix_config = 11
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
 // Response message for
 // [AgentService.GenerateAppResource][google.cloud.ces.v1beta.AgentService.GenerateAppResource].
 message GenerateAppResourceResponse {
@@ -1754,6 +1958,66 @@ message QualityReport {
 
   // Optional. General issues not specific to any agent.
   repeated Issue general_issues = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Operation metadata for
+// [AgentService.GenerateAppResource][google.cloud.ces.v1beta.AgentService.GenerateAppResource].
+message GenerateAppResourceOperationMetadata {
+  // The type of the generation operation.
+  enum GenerationType {
+    // Unspecified operation type.
+    GENERATION_TYPE_UNSPECIFIED = 0;
+
+    // Agent instruction restructure type.
+    AGENT_RESTRUCTURE = 1;
+
+    // Agent instruction refinement type.
+    AGENT_REFINE = 2;
+
+    // Agent creation from type.
+    AGENT_CREATE = 3;
+
+    // Tool creation type.
+    TOOL_CREATE = 4;
+
+    // Scenario creation type.
+    SCENARIO_CREATE = 5;
+
+    // Scenario creation from transcripts type.
+    SCENARIO_CREATE_FROM_TRANSCRIPTS = 7;
+
+    // Evaluation persona generation type.
+    EVALUATION_PERSONA_CREATE = 6;
+
+    // Quality report generation type.
+    QUALITY_REPORT_CREATE = 8;
+
+    // Instruction following fix type (used for hill climbing fixes).
+    INSTRUCTION_FOLLOWING_FIX = 9;
+  }
+
+  // Output only. The type of the operation.
+  GenerationType generation_type = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Human-readable status of the operation, if any.
+  string message = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time the operation was created.
+  google.protobuf.Timestamp create_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time the operation finished running.
+  google.protobuf.Timestamp end_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The resource name of the app that the operation is associated
+  // with. Format: `projects/{project}/locations/{location}/apps/{app}`.
+  string target = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Error messages from the resource generation process.
+  repeated google.rpc.Status partial_errors = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Request message for
