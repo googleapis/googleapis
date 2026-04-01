@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,6 +20,10 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/cloud/aiplatform/v1/content.proto";
+import "google/cloud/aiplatform/v1/io.proto";
+import "google/protobuf/struct.proto";
+import "google/rpc/status.proto";
 
 option csharp_namespace = "Google.Cloud.AIPlatform.V1";
 option go_package = "cloud.google.com/go/aiplatform/apiv1/aiplatformpb;aiplatformpb";
@@ -158,6 +162,109 @@ message EvaluateInstancesRequest {
   ];
 }
 
+// The metric used for running evaluations.
+message Metric {
+  // The per-metric statistics on evaluation results supported by
+  // `EvaluationService.EvaluateDataset`.
+  enum AggregationMetric {
+    // Unspecified aggregation metric.
+    AGGREGATION_METRIC_UNSPECIFIED = 0;
+
+    // Average aggregation metric. Not supported for Pairwise metric.
+    AVERAGE = 1;
+
+    // Mode aggregation metric.
+    MODE = 2;
+
+    // Standard deviation aggregation metric. Not supported for pairwise metric.
+    STANDARD_DEVIATION = 3;
+
+    // Variance aggregation metric. Not supported for pairwise metric.
+    VARIANCE = 4;
+
+    // Minimum aggregation metric. Not supported for pairwise metric.
+    MINIMUM = 5;
+
+    // Maximum aggregation metric. Not supported for pairwise metric.
+    MAXIMUM = 6;
+
+    // Median aggregation metric. Not supported for pairwise metric.
+    MEDIAN = 7;
+
+    // 90th percentile aggregation metric. Not supported for pairwise metric.
+    PERCENTILE_P90 = 8;
+
+    // 95th percentile aggregation metric. Not supported for pairwise metric.
+    PERCENTILE_P95 = 9;
+
+    // 99th percentile aggregation metric. Not supported for pairwise metric.
+    PERCENTILE_P99 = 10;
+  }
+
+  // The spec for the metric.
+  // It would be either a pre-defined metric, or a inline metric spec.
+  oneof metric_spec {
+    // The spec for a pre-defined metric.
+    PredefinedMetricSpec predefined_metric_spec = 8;
+
+    // Spec for a computation based metric.
+    ComputationBasedMetricSpec computation_based_metric_spec = 9;
+
+    // Spec for an LLM based metric.
+    LLMBasedMetricSpec llm_based_metric_spec = 10;
+
+    // Spec for pointwise metric.
+    PointwiseMetricSpec pointwise_metric_spec = 2;
+
+    // Spec for pairwise metric.
+    PairwiseMetricSpec pairwise_metric_spec = 3;
+
+    // Spec for exact match metric.
+    ExactMatchSpec exact_match_spec = 4;
+
+    // Spec for bleu metric.
+    BleuSpec bleu_spec = 5;
+
+    // Spec for rouge metric.
+    RougeSpec rouge_spec = 6;
+  }
+
+  // Optional. The aggregation metrics to use.
+  repeated AggregationMetric aggregation_metrics = 1
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The configs for autorater. This is applicable to both EvaluateInstances and
+// EvaluateDataset.
+message AutoraterConfig {
+  // Optional. Number of samples for each instance in the dataset.
+  // If not specified, the default is 4. Minimum value is 1, maximum value
+  // is 32.
+  optional int32 sampling_count = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Default is true. Whether to flip the candidate and baseline
+  // responses. This is only applicable to the pairwise metric. If enabled, also
+  // provide PairwiseMetricSpec.candidate_response_field_name and
+  // PairwiseMetricSpec.baseline_response_field_name. When rendering
+  // PairwiseMetricSpec.metric_prompt_template, the candidate and baseline
+  // fields will be flipped for half of the samples to reduce bias.
+  optional bool flip_enabled = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The fully qualified name of the publisher model or tuned
+  // autorater endpoint to use.
+  //
+  // Publisher model format:
+  // `projects/{project}/locations/{location}/publishers/*/models/*`
+  //
+  // Tuned model endpoint format:
+  // `projects/{project}/locations/{location}/endpoints/{endpoint}`
+  string autorater_model = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Configuration options for model generation and outputs.
+  GenerationConfig generation_config = 4
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
 // Response message for EvaluationService.EvaluateInstances.
 message EvaluateInstancesResponse {
   // Evaluation results will be served in the same order as presented in
@@ -250,6 +357,168 @@ message EvaluateInstancesResponse {
     // Result for Metricx metric.
     MetricxResult metricx_result = 30;
   }
+
+  // Metric results for each instance.
+  // The order of the metric results is guaranteed to be the same as the order
+  // of the instances in the request.
+  repeated MetricResult metric_results = 43;
+}
+
+// Result for a single metric on a single instance.
+message MetricResult {
+  // Output only. The score for the metric.
+  // Please refer to each metric's documentation for the meaning of the score.
+  optional float score = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The explanation for the metric result.
+  optional string explanation = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The error status for the metric result.
+  optional google.rpc.Status error = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Config for evaluation output.
+message OutputConfig {
+  // The destination for evaluation output.
+  oneof destination {
+    // Cloud storage destination for evaluation output.
+    GcsDestination gcs_destination = 1;
+  }
+}
+
+// The dataset used for evaluation.
+message EvaluationDataset {
+  // The source of the dataset.
+  oneof source {
+    // Cloud storage source holds the dataset. Currently only one Cloud Storage
+    // file path is supported.
+    GcsSource gcs_source = 1;
+
+    // BigQuery source holds the dataset.
+    BigQuerySource bigquery_source = 2;
+  }
+}
+
+// The results from an evaluation run performed by the EvaluationService.
+message EvaluateDatasetResponse {
+  // Output only. Aggregation statistics derived from results of
+  // EvaluationService.
+  AggregationOutput aggregation_output = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Output info for EvaluationService.
+  OutputInfo output_info = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Describes the info for output of EvaluationService.
+message OutputInfo {
+  // The output location into which evaluation output is written.
+  oneof output_location {
+    // Output only. The full path of the Cloud Storage directory created, into
+    // which the evaluation results and aggregation results are written.
+    string gcs_output_directory = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+}
+
+// The aggregation result for the entire dataset and all metrics.
+message AggregationOutput {
+  // The dataset used for evaluation & aggregation.
+  EvaluationDataset dataset = 1;
+
+  // One AggregationResult per metric.
+  repeated AggregationResult aggregation_results = 2;
+}
+
+// The aggregation result for a single metric.
+message AggregationResult {
+  // The aggregation result.
+  oneof aggregation_result {
+    // Result for pointwise metric.
+    PointwiseMetricResult pointwise_metric_result = 5;
+
+    // Result for pairwise metric.
+    PairwiseMetricResult pairwise_metric_result = 6;
+
+    // Results for exact match metric.
+    ExactMatchMetricValue exact_match_metric_value = 7;
+
+    // Results for bleu metric.
+    BleuMetricValue bleu_metric_value = 8;
+
+    // Results for rouge metric.
+    RougeMetricValue rouge_metric_value = 9;
+  }
+
+  // Aggregation metric.
+  Metric.AggregationMetric aggregation_metric = 4;
+}
+
+// The spec for a pre-defined metric.
+message PredefinedMetricSpec {
+  // Required. The name of a pre-defined metric, such as
+  // "instruction_following_v1" or "text_quality_v1".
+  string metric_spec_name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The parameters needed to run the pre-defined metric.
+  google.protobuf.Struct metric_spec_parameters = 2
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Specification for a computation based metric.
+message ComputationBasedMetricSpec {
+  // Types of computation based metrics.
+  enum ComputationBasedMetricType {
+    // Unspecified computation based metric type.
+    COMPUTATION_BASED_METRIC_TYPE_UNSPECIFIED = 0;
+
+    // Exact match metric.
+    EXACT_MATCH = 1;
+
+    // BLEU metric.
+    BLEU = 2;
+
+    // ROUGE metric.
+    ROUGE = 3;
+  }
+
+  // Required. The type of the computation based metric.
+  optional ComputationBasedMetricType type = 1
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. A map of parameters for the metric, e.g. {"rouge_type":
+  // "rougeL"}.
+  optional google.protobuf.Struct parameters = 2
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Specification for an LLM based metric.
+message LLMBasedMetricSpec {
+  // Source of the rubrics to be used for evaluation.
+  oneof rubrics_source {
+    // Use a pre-defined group of rubrics associated with the input.
+    // Refers to a key in the rubric_groups map of EvaluationInstance.
+    string rubric_group_key = 4;
+
+    // Dynamically generate rubrics using a predefined spec.
+    PredefinedMetricSpec predefined_rubric_generation_spec = 6;
+  }
+
+  // Required. Template for the prompt sent to the judge model.
+  optional string metric_prompt_template = 1
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. System instructions for the judge model.
+  optional string system_instruction = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional configuration for the judge LLM (Autorater).
+  optional AutoraterConfig judge_autorater_config = 3
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional additional configuration for the metric.
+  optional google.protobuf.Struct additional_config = 7
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Input for exact match metric.
@@ -1002,6 +1271,11 @@ message PointwiseMetricInstance {
     // in the json_instance to render
     // PointwiseMetricSpec.instance_prompt_template.
     string json_instance = 1;
+
+    // Key-value contents for the mutlimodality input, including text, image,
+    // video, audio, and pdf, etc. The key is placeholder in metric prompt
+    // template, and the value is the multimodal content.
+    ContentMap content_map_instance = 2;
   }
 }
 
@@ -1010,6 +1284,29 @@ message PointwiseMetricSpec {
   // Required. Metric prompt template for pointwise metric.
   optional string metric_prompt_template = 1
       [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. System instructions for pointwise metric.
+  optional string system_instruction = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. CustomOutputFormatConfig allows customization of metric output.
+  // By default, metrics return a score and explanation.
+  // When this config is set, the default output is replaced with either:
+  //  - The raw output string.
+  //  - A parsed output based on a user-defined schema.
+  // If a custom format is chosen, the `score` and `explanation` fields in the
+  // corresponding metric result will be empty.
+  CustomOutputFormatConfig custom_output_format_config = 3
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Spec for custom output format configuration.
+message CustomOutputFormatConfig {
+  // Custom output format configuration.
+  oneof custom_output_format_config {
+    // Optional. Whether to return raw output.
+    bool return_raw_output = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
 }
 
 // Spec for pointwise metric result.
@@ -1019,6 +1316,24 @@ message PointwiseMetricResult {
 
   // Output only. Explanation for pointwise metric score.
   string explanation = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Spec for custom output.
+  CustomOutput custom_output = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Spec for custom output.
+message CustomOutput {
+  // Custom output.
+  oneof custom_output {
+    // Output only. List of raw output strings.
+    RawOutput raw_outputs = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+}
+
+// Raw output.
+message RawOutput {
+  // Output only. Raw output string.
+  repeated string raw_output = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Input for pairwise metric.
@@ -1039,6 +1354,11 @@ message PairwiseMetricInstance {
     // in the json_instance to render
     // PairwiseMetricSpec.instance_prompt_template.
     string json_instance = 1;
+
+    // Key-value contents for the mutlimodality input, including text, image,
+    // video, audio, and pdf, etc. The key is placeholder in metric prompt
+    // template, and the value is the multimodal content.
+    ContentMap content_map_instance = 2;
   }
 }
 
@@ -1047,6 +1367,26 @@ message PairwiseMetricSpec {
   // Required. Metric prompt template for pairwise metric.
   optional string metric_prompt_template = 1
       [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The field name of the candidate response.
+  string candidate_response_field_name = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The field name of the baseline response.
+  string baseline_response_field_name = 3
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. System instructions for pairwise metric.
+  optional string system_instruction = 4
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. CustomOutputFormatConfig allows customization of metric output.
+  // When this config is set, the default output is replaced with
+  // the raw output string.
+  // If a custom format is chosen, the `pairwise_choice` and `explanation`
+  // fields in the corresponding metric result will be empty.
+  CustomOutputFormatConfig custom_output_format_config = 5
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Spec for pairwise metric result.
@@ -1057,6 +1397,9 @@ message PairwiseMetricResult {
 
   // Output only. Explanation for pairwise metric score.
   string explanation = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Spec for custom output.
+  CustomOutput custom_output = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Input for tool call valid metric.
@@ -1314,4 +1657,16 @@ message MetricxInstance {
 message MetricxResult {
   // Output only. MetricX score. Range depends on version.
   optional float score = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Map of placeholder in metric prompt template to contents of model input.
+message ContentMap {
+  // Repeated Content type.
+  message Contents {
+    // Optional. Repeated contents.
+    repeated Content contents = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Optional. Map of placeholder to contents.
+  map<string, Contents> values = 1 [(google.api.field_behavior) = OPTIONAL];
 }
