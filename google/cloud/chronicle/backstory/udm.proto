@@ -16,8 +16,8 @@ syntax = "proto3";
 
 package backstory;
 
-import "google/api/field_behavior.proto";
 import "google/cloud/chronicle/backstory/data_access.proto";
+import "google/cloud/chronicle/backstory/entity_risk.proto";
 import "google/cloud/chronicle/backstory/id.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";
@@ -31,6 +31,79 @@ option java_multiple_files = true;
 option java_package = "com.google.googlex.security.malachite.proto.external";
 option php_namespace = "Google\\Cloud\\Chronicle\\Backstory";
 option ruby_package = "Google::Cloud::Chronicle::Backstory";
+
+// A Unified Data Model event.
+message UDM {
+  // Event metadata such as timestamp, source product, etc.
+  Metadata metadata = 1;
+
+  // Any important vendor-specific event data that cannot be adequately
+  // represented within the formal sections of the UDM model.
+  google.protobuf.Struct additional = 2;
+
+  // Represents the acting entity that originates the activity
+  // described in the event. The principal must include at least one machine
+  // detail (hostname, MACs, IPs, port, product-specific identifiers like an
+  // EDR asset ID) or user detail (for example, username), and optionally
+  // include process details. It must NOT include any of the following fields:
+  // email, files, registry keys or values.
+  Noun principal = 3;
+
+  // Represents a source entity being acted upon by the participant along with
+  // the device or process context for the source object (the machine where the
+  // source object resides). For example, if user U copies file A on machine X
+  // to file B on machine Y, both file A and machine X would be specified in the
+  // src portion of the UDM event.
+  Noun src = 4;
+
+  // Represents a target entity being referenced by the event or an object on
+  // the target entity. For example, in a firewall connection from device A to
+  // device B, A is described as the principal and B is described as the target.
+  // For a process injection by process C into target process D, process C is
+  // described as the principal and process D is described as the target.
+  Noun target = 5;
+
+  // Represents details on one or more intermediate entities processing activity
+  // described in the event. This includes device details about a proxy server
+  // or SMTP relay server. If an active event (that has a principal and
+  // possibly target) passes through any intermediaries, they're added here.
+  // Intermediaries can impact the overall action, for example blocking or
+  // modifying an ongoing request.  A rule of thumb here is that 'principal',
+  // 'target', and description of the initial action should be the same
+  // regardless of the intermediary or its action.  A successful network
+  // connection from A->B should look the same in principal/target/intermediary
+  // as one blocked by firewall C: principal: A, target: B (intermediary: C).
+  repeated Noun intermediary = 6;
+
+  // Represents an observer entity (for example, a packet sniffer or
+  // network-based vulnerability scanner), which is not a direct intermediary,
+  // but which observes and reports on the event in question.
+  Noun observer = 7;
+
+  // Represents entities referenced by the event that are not otherwise
+  // described in principal, src, target, intermediary or observer. For example,
+  // it could be used to track email file attachments, domains/URLs/IPs embedded
+  // within an email body, and DLLs that are loaded during a PROCESS_LAUNCH
+  // event.
+  repeated Noun about = 8;
+
+  // A list of security results.
+  repeated SecurityResult security_result = 9;
+
+  // All network details go here, including sub-messages with details on each
+  // protocol (for example, DHCP, DNS, or HTTP).
+  Network network = 10;
+
+  // All other first-class, event-specific metadata goes in this message.
+  // Do not place protocol metadata in Extensions; put it in Network.
+  Extensions extensions = 11;
+
+  // Flattened fields extracted from the log.
+  google.protobuf.Struct extracted = 12;
+
+  // Related UDM fields that are grouped together.
+  optional GroupedFields grouped = 13;
+}
 
 // General information associated with a UDM event.
 message Metadata {
@@ -1031,6 +1104,9 @@ message Network {
 
     // Extensible Messaging and Presence Protocol.
     XMPP = 64;
+
+    // File Transfer Protocol.
+    FTP = 78;
   }
 
   // The state of a network connection.
@@ -1112,6 +1188,9 @@ message Network {
   // The IP protocol.
   IpProtocol ip_protocol = 3;
 
+  // True if IPv6 is used.
+  bool ipv6 = 29;
+
   // The application protocol.
   ApplicationProtocol application_protocol = 4;
 
@@ -1158,9 +1237,8 @@ message Network {
   // Proxy information. Only set if is_proxy is true.
   ProxyInfo proxy_info = 26;
 
-  // Output only. The state of the network connection.
-  ConnectionState connection_state = 28
-      [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The state of the network connection.
+  ConnectionState connection_state = 28;
 }
 
 // Proxy information.
@@ -1199,6 +1277,48 @@ message ProxyInfo {
   bool relay_proxy = 11;
 }
 
+// Extensions to a UDM event.
+message Extensions {
+  // An authentication extension.
+  Authentication auth = 1;
+
+  // A vulnerability extension.
+  Vulnerabilities vulns = 2;
+
+  // An entity risk change extension.
+  EntityRisk entity_risk = 3;
+
+  // A Linux Utmp extension. This captures details specific to Linux Utmp
+  // events, which record login and logout sessions on a Linux system.
+  LinuxUtmp linux_utmp = 4;
+
+  // A Windows Event Log extension. This captures details specific to Windows
+  // Event Log events, providing structured information from various Windows
+  // logs.
+  WindowsEventLog windows_event_log = 5;
+
+  // A resource usage extension. This captures details about what entity
+  // (e.g., process, user) is using a specific resource.
+  ResourceUsage resource_usage = 6;
+
+  // A system event details extension. This captures additional details for
+  // system-level events, such as message type, sender image ID, and subsystem.
+  SystemEventDetails system_event_details = 7;
+
+  // A Microsoft Outlook specific metadata extension. This includes metadata
+  // related to Outlook items, such as comments, templates, and security flags.
+  OutlookMetadata outlook_metadata = 8;
+
+  // A SRUM extension. This captures details specific to Windows System Resource
+  // Usage Monitor (SRUM) events, providing insights into application resource
+  // consumption.
+  Srum srum = 9;
+
+  // A UserAssist extension. This captures details specific to Windows User
+  // Assist events, which track application usage and execution.
+  UserAssist user_assist = 10;
+}
+
 // The Authentication extension captures details specific to authentication
 // events.
 // General guidelines for authentication events:
@@ -1216,6 +1336,94 @@ message ProxyInfo {
 //   about the cloud service they logged into, and the intermediary captures
 //   details about the SSO solution.
 message Authentication {
+  // Type of system the authentication event is associated with.
+  enum AuthType {
+    // The default type.
+    AUTHTYPE_UNSPECIFIED = 0;
+
+    // A machine authentication.
+    MACHINE = 1;
+
+    // An SSO authentication.
+    SSO = 2;
+
+    // A VPN authentication.
+    VPN = 3;
+
+    // A Physical authentication (e.g. "Badge reader").
+    PHYSICAL = 4;
+
+    // A TACACS family protocol for networked systems authentication
+    // (e.g. TACACS, TACACS+).
+    TACACS = 5;
+  }
+
+  // Mechanism(s) used to authenticate.
+  enum Mechanism {
+    // The default mechanism.
+    MECHANISM_UNSPECIFIED = 0;
+
+    // Username + password authentication.
+    USERNAME_PASSWORD = 1;
+
+    // OTP authentication.
+    OTP = 2;
+
+    // Hardware key authentication.
+    HARDWARE_KEY = 3;
+
+    // Local authentication.
+    LOCAL = 4;
+
+    // Remote authentication.
+    REMOTE = 5;
+
+    // RDP, Terminal Services, or VNC.
+    REMOTE_INTERACTIVE = 6;
+
+    // Some other mechanism that is not defined here.
+    MECHANISM_OTHER = 7;
+
+    // Badge reader authentication
+    BADGE_READER = 8;
+
+    // Network authentication.
+    NETWORK = 9;
+
+    // Batch authentication.
+    BATCH = 10;
+
+    // Service authentication
+    SERVICE = 11;
+
+    // Direct human-interactive unlock authentication.
+    UNLOCK = 12;
+
+    // Network clear text authentication.
+    NETWORK_CLEAR_TEXT = 13;
+
+    // Authentication with new credentials.
+    NEW_CREDENTIALS = 14;
+
+    // Interactive authentication.
+    INTERACTIVE = 15;
+
+    // Interactive authentication using cached credentials.
+    CACHED_INTERACTIVE = 16;
+
+    // Cached Remote Interactive authentication using cached credentials.
+    CACHED_REMOTE_INTERACTIVE = 17;
+
+    // Cached Remote Interactive authentication using cached credentials.
+    CACHED_UNLOCK = 18;
+
+    // Biometric device such as a fingerprint reader.
+    BIOMETRIC = 19;
+
+    // Wearable such as an Apple Watch.
+    WEARABLE = 20;
+  }
+
   // Authentication status, can be used to describe the status of authentication
   // for a user or particular credential.
   enum AuthenticationStatus {
@@ -1234,6 +1442,209 @@ message Authentication {
     // The authentication method has been deleted.
     DELETED = 4;
   }
+
+  // The outcome of the authentication event.
+  enum Outcome {
+    // The default outcome.
+    OUTCOME_UNSPECIFIED = 0;
+
+    // The authentication was successful.
+    SUCCESS = 1;
+
+    // The authentication failed.
+    FAILURE = 2;
+  }
+
+  // The type of authentication.
+  AuthType type = 1;
+
+  // The authentication mechanism.
+  repeated Mechanism mechanism = 2;
+
+  // The vendor defined details of the authentication.
+  string auth_details = 3;
+
+  // The outcome of the authentication event.
+  Outcome outcome = 4;
+}
+
+// The LinuxUtmp extension captures details specific to Linux Utmp events.
+message LinuxUtmp {
+  // The type of activity record from the Utmp file.
+  enum RecordType {
+    // The default record type.
+    RECORD_TYPE_UNSPECIFIED = 0;
+
+    // Run-level change.
+    RUN_LVL = 1;
+
+    // System boot time.
+    BOOT_TIME = 2;
+
+    // New time after system clock change.
+    NEW_TIME = 3;
+
+    // Old time before system clock change.
+    OLD_TIME = 4;
+
+    // Process spawned by init.
+    INIT_PROCESS = 5;
+
+    // Login process.
+    LOGIN_PROCESS = 6;
+
+    // Normal user process (logged-in session).
+    USER_PROCESS = 7;
+
+    // Terminated process (session ended).
+    DEAD_PROCESS = 8;
+
+    // Accounting message.
+    ACCOUNTING = 9;
+  }
+
+  // The activity record type.
+  RecordType record_type = 1;
+}
+
+// The WindowsEventLog extension captures details specific to Windows Event Log
+// events.
+message WindowsEventLog {
+  // The channel specifies the source or category of the event.
+  enum Channel {
+    // Default channel.
+    CHANNEL_UNSPECIFIED = 0;
+
+    // The security channel.
+    SECURITY = 1;
+
+    // The system channel.
+    SYSTEM = 2;
+
+    // The application channel.
+    APPLICATION = 3;
+
+    // The setup channel.
+    SETUP = 4;
+
+    // The forwarded events channel.
+    FORWARDED_EVENTS = 5;
+
+    // The other channel.
+    OTHER = 6;
+  }
+
+  // The channel of the event.
+  Channel channel = 1;
+
+  // A unique identifier for a specific type of event.
+  string event_id = 2;
+
+  // A GUID (Globally Unique Identifier) used to link a sequence of related
+  // events together.
+  string activity_id = 3;
+}
+
+// The ResourceUsage extension captures details about what is using a resource.
+message ResourceUsage {
+  // The name of the entity (e.g., process, user) that is using the resource.
+  string used_entity = 1;
+
+  // A numerical identifier for the entity using the resource (e.g., PID, UID).
+  string used_entity_id = 2;
+}
+
+// Captures additional details for system-level events.
+message SystemEventDetails {
+  // The specific type or category of the message.
+  string message_type = 1;
+
+  // An identifier for the image associated with the sender of the message.
+  string sender_image_id = 2;
+
+  // The subsystem or component that generated the event.
+  string subsystem = 3;
+}
+
+// Microsoft Outlook specific metadata.
+message OutlookMetadata {
+  // A user-defined comment or note associated with the Outlook item.
+  string comment = 1;
+
+  // The name of the template file used to create the Outlook item.
+  string template = 2;
+
+  // The title of the Outlook item.
+  string title = 3;
+
+  // Count of Security-related flags for the message, such as encryption or
+  // signing status.
+  int32 security_flags_count = 4;
+}
+
+// The Srum extension captures details specific to Windows System Resource
+// Usage Monitor (SRUM) events.
+message Srum {
+  // A unique identifier for the SRUM record or the application/user being
+  // monitored.
+  string id = 1;
+
+  // The number of bytes read by the application while running in the
+  // background.
+  int64 background_bytes_read = 2;
+
+  // The number of bytes written by the application while running in the
+  // background.
+  int64 background_bytes_written = 3;
+
+  // The number of context switches performed by the application's threads
+  // while in the background.
+  int64 background_context_switches = 4;
+
+  // The amount of CPU cycle time consumed by the application in the
+  // background, measured in clock cycles.
+  int64 background_cycle_count = 5;
+
+  // The number of flush operations performed by the application in the
+  // background.
+  int64 background_flushes_count = 6;
+
+  // The number of read operations performed by the application in the
+  // background.
+  int64 background_read_operations = 7;
+
+  // The number of write operations performed by the application in the
+  // background.
+  int64 background_write_operations = 8;
+
+  // The Locally Unique Identifier (LUID) for the network interface used for
+  // data transfer.
+  string interface_luid = 9;
+}
+
+// The UserAssist extension captures details specific to Windows User Assist
+// events.
+message UserAssist {
+  // The number of times the application associated with the entry gained
+  // focus.
+  int64 application_focus_count = 1;
+
+  // The total duration the application associated with the entry was in focus.
+  google.protobuf.Duration application_focus_duration = 2;
+
+  // The number of times the application associated with the entry has been
+  // executed.
+  int64 executions_count = 3;
+
+  // The index or identifier of the user assist entry, unique per user.
+  int64 entry_index = 4;
+}
+
+// The Vulnerabilities extension captures details on observed/detected
+// vulnerabilities.
+message Vulnerabilities {
+  // A list of vulnerabilities.
+  repeated Vulnerability vulnerabilities = 1;
 }
 
 // A vulnerability.
@@ -1656,6 +2067,9 @@ message SecurityResult {
 
       // Association type Malware.
       MALWARE = 2;
+
+      // Association type Software toolkit.
+      SOFTWARE_TOOLKIT = 3;
     }
 
     // Association Alias used to represent Mandiant Threat Intelligence.
@@ -2169,6 +2583,11 @@ message SecurityResult {
   // Name of the security rule
   // (e.g. "BlockInboundToOracle").
   string rule_name = 5;
+
+  // The display name of the security result.
+  // This is populated from 'name_override' Outcome Variable, if present.
+  // Otherwise, this field is not set.
+  string display_name = 49;
 
   // Version of the security rule.
   // (e.g. "v1.1", "00001", "1604709794", "2020-11-16T23:04:19+00:00").
@@ -3079,6 +3498,8 @@ message UsnJournal {
   // https://learn.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants
   // for more information about the attributes.
   enum Attribute {
+    option allow_alias = true;
+
     // Unspecified attribute.
     ATTRIBUTE_UNSPECIFIED = 0;
 
@@ -3122,7 +3543,10 @@ message UsnJournal {
     OFFLINE = 13;
 
     // The file or directory is not to be indexed.
-    NON_CONTENT_INDEXED = 14;
+    NOT_CONTENT_INDEXED = 14;
+
+    // Deprecated: Use NOT_CONTENT_INDEXED instead.
+    NON_CONTENT_INDEXED = 14 [deprecated = true];
 
     // The directory or user data stream is configured with integrity.
     INTEGRITY_STREAM = 15;
@@ -3236,9 +3660,14 @@ message UsnJournal {
   // Indicates whether the file is allocated in the Master File Table (MFT).
   bool allocated = 3;
 
-  // Human-readable string describing the reason for the USN journal entry
+  // Deprecated: Use reasons instead.
+  // Human-readable string describing the reason for the USN journal entry.
   // (e.g., "USN_REASON_FILE_CREATE").
-  Reason reason = 4;
+  Reason reason = 4 [deprecated = true];
+
+  // Human-readable string describing the reasons for the USN journal entry
+  // (e.g., "USN_REASON_FILE_CREATE").
+  repeated Reason reasons = 6;
 }
 
 // Windows AppCompatCache (Application Compatibility) metadata.
@@ -3877,6 +4306,8 @@ message Http {
   // The response status code, for example
   // 200, 302, 404, or 500.
   int32 response_code = 4;
+
+  reserved 5;
 }
 
 // Information about an entry in the web browser's local history database.
@@ -4659,8 +5090,12 @@ message Location {
   google.type.LatLng region_coordinates = 9;
 }
 
+// Deprecated: use WindowsScheduledTask for Windows scheduled tasks or
+// ScheduledCronTask for cron jobs.
 // Information about a scheduled task.
 message ScheduledTask {
+  option deprecated = true;
+
   // The minute of the hour (0-59).
   int32 minute = 1;
 
@@ -4679,8 +5114,258 @@ message ScheduledTask {
   // A comment or description for the task.
   string comment = 6;
 
+  // The account name that authored or last modified the scheduled task.
+  string author = 7;
+}
+
+// Information about a Windows scheduled task.
+message WindowsScheduledTask {
+  // Enum representing the operation state of the task.
+  enum TaskState {
+    // The state of the task is unknown or not specified.
+    TASK_STATE_UNSPECIFIED = 0;
+
+    // The task is registered but is disabled and no instances of the task are
+    // queued or running. The task cannot be run until it is enabled.
+    DISABLED = 1;
+
+    // Instances of the task are queued.
+    QUEUED = 2;
+
+    // The task is ready to be executed, but no instances are queued or running.
+    ACTIVE = 3;
+
+    // One or more instances of the task are running.
+    RUNNING = 4;
+  }
+
+  // Enum representing the logon type of the task.
+  enum TaskLogonType {
+    // The logon method is not specified. Used for non-NT credentials.
+    TASK_LOGON_TYPE_UNSPECIFIED = 0;
+
+    // Use a password for logging on the user. The password must be supplied at
+    // registration time.
+    PASSWORD = 1;
+
+    // Use an existing interactive token to run a task. The user must log on
+    // using a service for user (S4U) logon. When an S4U logon is used, no
+    // password is stored by the system and there is no access to either the
+    // network or encrypted files.
+    S4U = 2;
+
+    // User must already be logged on. The task will be run only in an existing
+    // interactive session.
+    INTERACTIVE_TOKEN = 3;
+
+    // Logon with group credentials.
+    GROUP = 4;
+
+    // Indicates that a Local System, Local Service, or Network Service account
+    // is being used as a security context to run the task.
+    SERVICE_ACCOUNT = 5;
+
+    // First use the interactive token. If the user is not logged on (no
+    // interactive token is available), the password is used. The password
+    // must be specified when a task is registered. This flag is not recommended
+    // for new tasks because it is less reliable than TASK_LOGON_PASSWORD.
+    INTERACTIVE_TOKEN_OR_PASSWORD = 6;
+  }
+
+  // The task action.
+  message TaskAction {
+    // Enum representing the action type of the task.
+    enum ActionType {
+      // The action type is not specified.
+      ACTION_TYPE_UNSPECIFIED = 0;
+
+      // This action performs a command-line operation. For example, the action
+      // can run a script, launch an executable, or, if the name of a document
+      // is provided, find its associated application and launch the application
+      // with the document.
+      EXEC = 1;
+
+      // This action fires a handler. This action can only be used if the task
+      // Compatibility property is set to TASK_COMPATIBILITY_V2.
+      COM_HANDLER = 2;
+
+      // This action sends an email message. This action can only be used if the
+      // task Compatibility property is set to TASK_COMPATIBILITY_V2.
+      SEND_EMAIL = 3;
+
+      // This action shows a message box. This action can only be used if the
+      // task Compatibility property is set to TASK_COMPATIBILITY_V2.
+      SHOW_MESSAGE = 4;
+    }
+
+    // The action type of the task.
+    ActionType action_type = 1;
+
+    // The arguments of the task. This field is only populated if the task
+    // action type is EXEC.
+    repeated string exec_arguments = 2;
+
+    // The executable working directory of the task. This field is only
+    // populated if the task action type is EXEC.
+    string exec_working_directory = 3;
+
+    // The COM class IF the action is COM handler. This field is only populated
+    // if the task action type is COM_HANDLER.
+    string com_class_id = 4;
+
+    // The data of the task. This field is only populated if the task action
+    // type is COM_HANDLER.
+    string com_data = 5;
+  }
+
+  // The trigger of the scheduled task.
+  message TaskTrigger {
+    // Enum representing the trigger type of the task. For more details, see
+    // https://learn.microsoft.com/en-us/windows/win32/api/taskschd/ne-taskschd-task_trigger_type2.
+    enum TriggerType {
+      // The trigger frequency is not specified.
+      TRIGGER_TYPE_UNSPECIFIED = 0;
+
+      // Triggers the task when a specific event occurs.
+      EVENT = 1;
+
+      // Triggers the task at a specific time of day.
+      TIME = 2;
+
+      // Triggers the task on a daily schedule. For example, the task starts at
+      // a specific time every day, every other day, or every third day.
+      DAILY = 3;
+
+      // Triggers the task on a weekly schedule. For example, the task starts at
+      // 8:00 AM on a specific day every week or other week.
+      WEEKLY = 4;
+
+      // Triggers the task on a monthly schedule. For example, the task starts
+      // on specific days of specific months.
+      MONTHLY = 5;
+
+      // Triggers the task on a monthly day-of-week schedule. For example, the
+      // task starts on a specific days of the week, weeks of the month, and
+      // months of the year.
+      MONTHLYDOW = 6;
+
+      // Triggers the task when the computer goes into an idle state.
+      IDLE = 7;
+
+      // Triggers the task when the task is registered.
+      REGISTRATION = 8;
+
+      // Triggers the task when the computer boots.
+      BOOT = 9;
+
+      // Triggers the task when a specific user logs on.
+      LOGON = 10;
+
+      // Triggers the task when a specific user session state changes.
+      SESSION_STATE_CHANGE = 11;
+
+      // Custom trigger 01.
+      CUSTOM_TRIGGER01 = 12;
+    }
+
+    // Indicates whether the task trigger is enabled.
+    bool enabled = 1;
+
+    // The duration of the task trigger repetition.
+    google.protobuf.Duration duration = 2;
+
+    // The interval between each repetition of the task. The format for this
+    // string is P<days>DT<hours>H<minutes>M<seconds>S (for example,
+    // "PT5M" is 5 minutes, "PT1H" is 1 hour, and "PT20M" is 20 minutes).
+    // The maximum time allowed is 31 days, and the minimum time allowed
+    // is 1 minute.
+    string interval = 3;
+
+    // The trigger frequency of the task.
+    TriggerType trigger_type = 4;
+  }
+
+  // The account name that authored or last modified the scheduled task.
+  string author = 1;
+
+  // The task's path in the Task Scheduler library.
+  string virtual_path = 2;
+
+  // The result which was returned the last time the registered task was run.
+  int32 exit_code = 3;
+
+  // The operation state of the task.
+  TaskState state = 4;
+
+  // The logon type of the task.
+  TaskLogonType logon_type = 5;
+
+  // The actions of the scheduled task.
+  repeated TaskAction task_actions = 6;
+
+  // The triggers of the scheduled task.
+  repeated TaskTrigger task_triggers = 7;
+}
+
+// Information about a scheduled cron task.
+message ScheduledCronTask {
+  // Crontab minute field. Value is an integer between 0 and 59 and can also be
+  // a range or list of values (e.g., "0-59", "0-59/5", "0,15,30,45") and it  //
+  // can also be an asterisk (*) to indicate first-last minutes. More on crontab
+  // format can be found here: https://linux.die.net/man/5/crontab
+  string minute = 1;
+
+  // Crontab hour field. Value is an integer between 0 and 23,
+  // a range or list of values (e.g., "0-6", "*/2", "1,2"), or
+  // an asterisk (*) to indicate first-last hours.
+  string hour = 2;
+
+  // Crontab day of month field. Value is an integer between 1 and 31,
+  // a range or list of values (e.g., "1-7", "1-31/7", "1,15"), or
+  // an asterisk (*) to indicate first-last days of month.
+  string month_day = 3;
+
+  // Crontab month field. Value is an integer between 1 and 12 or a 3-letter
+  // name (e.g., "Jan"), a range or list of values (e.g.,
+  // "1-3", "*/2", "1,6"), or an asterisk (*) to indicate first-last months.
+  string month = 4;
+
+  // Crontab day of week field. Value is an integer between 0 and 7 (0 or 7
+  // is Sunday) or a 3-letter name (e.g., "Fri"), a range
+  // or list of values (e.g., "1-5", "0,6"), or an asterisk
+  // (*) to indicate first-last days of week.
+  string week_day = 5;
+
+  // A comment or description for the task.
+  string comment = 6;
+
   // The author or creator of the task.
   string author = 7;
+
+  // Crontab special string or event (e.g., "@reboot", "@daily").
+  string event = 8;
+
+  // The PATH environment variable defined in the crontab file.
+  string path = 9;
+}
+
+// Information about a scheduled anacron task.
+message ScheduledAnacronTask {
+  // Anacrontab period field. Value is an integer in days,
+  // or a string like "@daily", "@weekly", or "@monthly".
+  string period = 1;
+
+  // The delay in minutes before the job is run.
+  int64 delay_minutes = 2;
+
+  // The unique identifier of the job.
+  string job_id = 3;
+
+  // The PATH environment variable defined in the anacrontab file.
+  string path = 4;
+
+  // The original source line from the anacrontab file.
+  string source_line = 5;
 }
 
 // Information about a storage volume.
@@ -4724,6 +5409,12 @@ message Service {
     // A process that is shared by the service. This is a Windows-specific
     // service type.
     WIN32_SHARE_PROCESS = 4;
+
+    // An adapter. This is a Windows-specific service type.
+    ADAPTER = 5;
+
+    // A recognizer driver. This is a Windows-specific service type.
+    RECOGNIZER_DRIVER = 6;
   }
 
   // How the service is started.
@@ -4774,14 +5465,18 @@ message Service {
   // The user-friendly display name of the service.
   string display_name = 1;
 
+  // Deprecated: use service_types instead.
   // The type of service.
-  ServiceType service_type = 3;
+  ServiceType service_type = 3 [deprecated = true];
+
+  // The list of service types.
+  repeated ServiceType service_types = 6;
 
   // The startup type of the service.
   StartupType startup_type = 4;
 
-  // Output only. The status of the service.
-  State state = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The status of the service.
+  State state = 5;
 }
 
 // Information about a resource such as a task, Cloud Storage
@@ -4931,8 +5626,19 @@ message Resource {
   // Generic entity metadata attributes of the resource.
   Attribute attribute = 7;
 
+  // DEPRECATED: use windows_scheduled_task for Windows scheduled tasks or
+  // scheduled_cron_task for cron jobs.
   // Information about a scheduled task associated with the resource.
-  ScheduledTask scheduled_task = 9;
+  ScheduledTask scheduled_task = 9 [deprecated = true];
+
+  // Information about a scheduled cron task associated with the resource.
+  ScheduledCronTask scheduled_cron_task = 12;
+
+  // Information about a scheduled anacron task associated with the resource.
+  ScheduledAnacronTask scheduled_anacron_task = 13;
+
+  // Information about a Windows scheduled task associated with the resource.
+  WindowsScheduledTask windows_scheduled_task = 14;
 
   // Information about a storage volume associated with the resource.
   Volume volume = 10;
@@ -5870,4 +6576,32 @@ message Uint64Sequence {
 message StringSequence {
   // string sequence.
   repeated string string_vals = 1;
+}
+
+// Grouped fields are aliases for groups of related UDM fields. All
+// fields grouped together are of type string.
+message GroupedFields {
+  // IP addresses.
+  repeated string ip = 1;
+
+  // Domains.
+  repeated string domain = 2;
+
+  // Hostnames.
+  repeated string hostname = 3;
+
+  // Users.
+  repeated string user = 4;
+
+  // Emails.
+  repeated string email = 5;
+
+  // File paths.
+  repeated string file_path = 6;
+
+  // File Hashes.
+  repeated string hash = 7;
+
+  // Process Identifiers.
+  repeated string process_id = 8;
 }
