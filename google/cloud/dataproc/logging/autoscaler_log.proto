@@ -1,0 +1,196 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.dataproc.logging;
+
+import "google/protobuf/duration.proto";
+
+option csharp_namespace = "Google.Cloud.Dataproc.Logging";
+option go_package = "cloud.google.com/go/dataproc/logging/loggingpb;loggingpb";
+option java_multiple_files = true;
+option java_package = "com.google.cloud.dataproc.logging";
+
+// The short version of cluster configuration for Cloud Logging.
+message ClusterSize {
+  // The number of primary workers in the cluster.
+  int32 primary_worker_count = 1;
+
+  // The number of secondary workers in the cluster.
+  int32 secondary_worker_count = 2;
+}
+
+// The Autoscaler state.
+enum AutoscalerState {
+  AUTOSCALER_STATE_UNSPECIFIED = 0;
+
+  // The Autoscaler is sleeping and waiting for the next update.
+  COOLDOWN = 1;
+
+  // The Autoscaler is in the process of calculating its recommendation on
+  // whether to scale the cluster, and if so, how to autoscale.
+  RECOMMENDING = 6;
+
+  // The Autoscaler is scaling the cluster.
+  SCALING = 2;
+
+  // The Autoscaler has stopped.
+  STOPPED = 3;
+
+  // The Autoscaler has failed.
+  FAILED = 4;
+
+  // The Autoscaler is initializing.
+  INITIALIZING = 5;
+}
+
+// The Autoscaling decision type.
+enum ScalingDecisionType {
+  SCALING_DECISION_TYPE_UNSPECIFIED = 0;
+
+  // Increase the number of primary and/or secondary workers.
+  SCALE_UP = 1;
+
+  // Decrease the number of primary and/or secondary workers.
+  SCALE_DOWN = 2;
+
+  // Not changing the number of primary or secondary workers.
+  NO_SCALE = 3;
+
+  // Scale the primary and secondary worker groups in different directions.
+  MIXED = 4;
+
+  // Cancel the ongoing scale down operation.
+  CANCEL = 5;
+
+  // Do not cancel the ongoing scale down operation.
+  DO_NOT_CANCEL = 6;
+}
+
+enum ConstrainingFactor {
+  CONSTRAINING_FACTOR_UNSPECIFIED = 0;
+
+  // The project does not have sufficient regional, global, and or preemptible
+  // quota to allocate a new VM.
+  SCALING_CAPPED_DUE_TO_LACK_OF_QUOTA = 1;
+
+  // All worker groups have reached maximum size. This message will not be
+  // issued if one group reached maximum size, but workers were able to be
+  // allocated to another group.
+  REACHED_MAXIMUM_CLUSTER_SIZE = 2;
+
+  // All worker groups have reached minimum size. This message will not be
+  // issued if workers were able to be removed from another group that had not
+  // reached minimum size.
+  REACHED_MINIMUM_CLUSTER_SIZE = 3;
+
+  // The secondary worker group cannot be scaled down by more than 1k nodes in a
+  // single update request.
+  SECONDARY_SCALEDOWN_SINGLE_REQUEST_LIMIT_REACHED = 4;
+}
+
+// The kind of metric input to the Autoscaling algorithm.
+enum MetricType {
+  // Default.
+  METRIC_TYPE_UNSPECIFIED = 0;
+
+  // The yarn memory metric.
+  YARN_MEMORY = 1;
+
+  // The yarn cores or vCPUs metric.
+  YARN_CORES = 2;
+
+  // The number of executors in Spark serverless.
+  SPARK_EXECUTORS = 3;
+}
+
+// The main proto that will be converted to JSON format and then written to
+// Logging.
+message AutoscalerLog {
+  // The current Autoscaler status.
+  AutoscalerStatus status = 1;
+
+  // Optional. The autoscaling recommendation including its inputs, outputs,
+  // scaling decision, and detailed explanation.
+  AutoscalerRecommendation recommendation = 2;
+}
+
+// The Autoscaler's status, including its state and other details.
+message AutoscalerStatus {
+  // The high-level Autoscaler state.
+  AutoscalerState state = 1;
+
+  // The detailed description of Autoscaler status.
+  string details = 2;
+
+  // The cluster update operation ID.
+  string update_cluster_operation_id = 3;
+
+  // Error message from an Autoscaler exception, if any.
+  string error = 4;
+}
+
+// The inputs, outputs, and detailed explanation of the Autoscaling
+// recommendation.
+message AutoscalerRecommendation {
+  // The input values for the Autoscaling recommendation algorithm.
+  message Inputs {
+    // The metrics collected by the Dataproc agent running on the cluster.
+    // For example, {"avg-yarn-pending-memory": "1040 MB"}
+    map<string, string> cluster_metrics = 1;
+
+    // The cluster configuration before updating the cluster.
+    ClusterSize current_cluster_size = 2;
+
+    // The minimum worker counts for each instance group.
+    ClusterSize min_worker_counts = 3;
+
+    // The maximum worker counts for each instance group.
+    ClusterSize max_worker_counts = 4;
+  }
+
+  // Autoscaler recommendations.
+  message Outputs {
+    // The high-level autoscaling decision, such as SCALE_UP, SCALE_DOWN,
+    // NO_OP.
+    ScalingDecisionType decision = 1;
+
+    // The recommended cluster size.
+    ClusterSize recommended_cluster_size = 2;
+
+    // The graceful decommission timeout for downscaling operations.
+    google.protobuf.Duration graceful_decommission_timeout = 3;
+
+    // Reasons why the Autoscaler didn't add or remove more workers.
+    repeated ConstrainingFactor constraints_reached = 4;
+
+    // Less significant recommendations that are not included in the
+    // `AutoscalerStatus.details` message.
+    repeated string additional_recommendation_details = 5;
+
+    // A unique id for this recommendation that should be included when opening
+    // a support ticket.
+    string recommendation_id = 6;
+
+    // The metric source deciding the autoscaling recommendation.
+    MetricType decision_metric = 7;
+  }
+
+  // The autoscaling algorithm inputs.
+  Inputs inputs = 1;
+
+  // The algorithm outputs for the recommended cluster size.
+  Outputs outputs = 2;
+}

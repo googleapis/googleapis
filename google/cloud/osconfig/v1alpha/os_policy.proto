@@ -1,0 +1,565 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.osconfig.v1alpha;
+
+import "google/api/field_behavior.proto";
+
+option csharp_namespace = "Google.Cloud.OsConfig.V1Alpha";
+option go_package = "cloud.google.com/go/osconfig/apiv1alpha/osconfigpb;osconfigpb";
+option java_multiple_files = true;
+option java_outer_classname = "OsPolicyProto";
+option java_package = "com.google.cloud.osconfig.v1alpha";
+option php_namespace = "Google\\Cloud\\OsConfig\\V1alpha";
+option ruby_package = "Google::Cloud::OsConfig::V1alpha";
+
+// An OS policy defines the desired state configuration for a VM.
+message OSPolicy {
+  // Policy mode
+  enum Mode {
+    // Invalid mode
+    MODE_UNSPECIFIED = 0;
+
+    // This mode checks if the configuration resources in the policy are in
+    // their desired state. No actions are performed if they are not in the
+    // desired state. This mode is used for reporting purposes.
+    VALIDATION = 1;
+
+    // This mode checks if the configuration resources in the policy are in
+    // their desired state, and if not, enforces the desired state.
+    ENFORCEMENT = 2;
+  }
+
+  // Filtering criteria to select VMs based on OS details.
+  message OSFilter {
+    // This should match OS short name emitted by the OS inventory agent.
+    // An empty value matches any OS.
+    string os_short_name = 1;
+
+    // This value should match the version emitted by the OS inventory
+    // agent.
+    // Prefix matches are supported if asterisk(*) is provided as the
+    // last character. For example, to match all versions with a major
+    // version of `7`, specify the following value for this field `7.*`
+    string os_version = 2;
+  }
+
+  // Filtering criteria to select VMs based on inventory details.
+  message InventoryFilter {
+    // Required. The OS short name
+    string os_short_name = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // The OS version
+    //
+    // Prefix matches are supported if asterisk(*) is provided as the
+    // last character. For example, to match all versions with a major
+    // version of `7`, specify the following value for this field `7.*`
+    //
+    // An empty string matches all OS versions.
+    string os_version = 2;
+  }
+
+  // An OS policy resource is used to define the desired state configuration
+  // and provides a specific functionality like installing/removing packages,
+  // executing a script etc.
+  //
+  // The system ensures that resources are always in their desired state by
+  // taking necessary actions if they have drifted from their desired state.
+  message Resource {
+    // A remote or local file.
+    message File {
+      // Specifies a file available via some URI.
+      message Remote {
+        // Required. URI from which to fetch the object. It should contain both the
+        // protocol and path following the format `{protocol}://{location}`.
+        string uri = 1 [(google.api.field_behavior) = REQUIRED];
+
+        // SHA256 checksum of the remote file.
+        string sha256_checksum = 2;
+      }
+
+      // Specifies a file available as a Cloud Storage Object.
+      message Gcs {
+        // Required. Bucket of the Cloud Storage object.
+        string bucket = 1 [(google.api.field_behavior) = REQUIRED];
+
+        // Required. Name of the Cloud Storage object.
+        string object = 2 [(google.api.field_behavior) = REQUIRED];
+
+        // Generation number of the Cloud Storage object.
+        int64 generation = 3;
+      }
+
+      // A specific type of file.
+      oneof type {
+        // A generic remote file.
+        Remote remote = 1;
+
+        // A Cloud Storage object.
+        Gcs gcs = 2;
+
+        // A local path within the VM to use.
+        string local_path = 3;
+      }
+
+      // Defaults to false. When false, files are subject to validations
+      // based on the file type:
+      //
+      // Remote: A checksum must be specified.
+      // Cloud Storage: An object generation number must be specified.
+      bool allow_insecure = 4;
+    }
+
+    // A resource that manages a system package.
+    message PackageResource {
+      // The desired state that the OS Config agent maintains on the VM.
+      enum DesiredState {
+        // Unspecified is invalid.
+        DESIRED_STATE_UNSPECIFIED = 0;
+
+        // Ensure that the package is installed.
+        INSTALLED = 1;
+
+        // The agent ensures that the package is not installed and
+        // uninstalls it if detected.
+        REMOVED = 2;
+      }
+
+      // A deb package file. dpkg packages only support INSTALLED state.
+      message Deb {
+        // Required. A deb package.
+        File source = 1 [(google.api.field_behavior) = REQUIRED];
+
+        // Whether dependencies should also be installed.
+        // - install when false: `dpkg -i package`
+        // - install when true: `apt-get update && apt-get -y install
+        // package.deb`
+        bool pull_deps = 2;
+      }
+
+      // A package managed by APT.
+      // - install: `apt-get update && apt-get -y install [name]`
+      // - remove: `apt-get -y remove [name]`
+      message APT {
+        // Required. Package name.
+        string name = 1 [(google.api.field_behavior) = REQUIRED];
+      }
+
+      // An RPM package file. RPM packages only support INSTALLED state.
+      message RPM {
+        // Required. An rpm package.
+        File source = 1 [(google.api.field_behavior) = REQUIRED];
+
+        // Whether dependencies should also be installed.
+        // - install when false: `rpm --upgrade --replacepkgs package.rpm`
+        // - install when true: `yum -y install package.rpm` or
+        // `zypper -y install package.rpm`
+        bool pull_deps = 2;
+      }
+
+      // A package managed by YUM.
+      // - install: `yum -y install package`
+      // - remove: `yum -y remove package`
+      message YUM {
+        // Required. Package name.
+        string name = 1 [(google.api.field_behavior) = REQUIRED];
+      }
+
+      // A package managed by Zypper.
+      // - install: `zypper -y install package`
+      // - remove: `zypper -y rm package`
+      message Zypper {
+        // Required. Package name.
+        string name = 1 [(google.api.field_behavior) = REQUIRED];
+      }
+
+      // A package managed by GooGet.
+      // - install: `googet -noconfirm install package`
+      // - remove: `googet -noconfirm remove package`
+      message GooGet {
+        // Required. Package name.
+        string name = 1 [(google.api.field_behavior) = REQUIRED];
+      }
+
+      // An MSI package. MSI packages only support INSTALLED state.
+      message MSI {
+        // Required. The MSI package.
+        File source = 1 [(google.api.field_behavior) = REQUIRED];
+
+        // Additional properties to use during installation.
+        // This should be in the format of Property=Setting.
+        // Appended to the defaults of `ACTION=INSTALL
+        // REBOOT=ReallySuppress`.
+        repeated string properties = 2;
+      }
+
+      // Required. The desired state the agent should maintain for this package.
+      DesiredState desired_state = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // A system package.
+      oneof system_package {
+        // A package managed by Apt.
+        APT apt = 2;
+
+        // A deb package file.
+        Deb deb = 3;
+
+        // A package managed by YUM.
+        YUM yum = 4;
+
+        // A package managed by Zypper.
+        Zypper zypper = 5;
+
+        // An rpm package file.
+        RPM rpm = 6;
+
+        // A package managed by GooGet.
+        GooGet googet = 7;
+
+        // An MSI package.
+        MSI msi = 8;
+      }
+    }
+
+    // A resource that manages a package repository.
+    message RepositoryResource {
+      // Represents a single apt package repository. These will be added to
+      // a repo file that will be managed at
+      // `/etc/apt/sources.list.d/google_osconfig.list`.
+      message AptRepository {
+        // Type of archive.
+        enum ArchiveType {
+          // Unspecified is invalid.
+          ARCHIVE_TYPE_UNSPECIFIED = 0;
+
+          // Deb indicates that the archive contains binary files.
+          DEB = 1;
+
+          // Deb-src indicates that the archive contains source files.
+          DEB_SRC = 2;
+        }
+
+        // Required. Type of archive files in this repository.
+        ArchiveType archive_type = 1 [(google.api.field_behavior) = REQUIRED];
+
+        // Required. URI for this repository.
+        string uri = 2 [(google.api.field_behavior) = REQUIRED];
+
+        // Required. Distribution of this repository.
+        string distribution = 3 [(google.api.field_behavior) = REQUIRED];
+
+        // Required. List of components for this repository. Must contain at least one
+        // item.
+        repeated string components = 4 [(google.api.field_behavior) = REQUIRED];
+
+        // URI of the key file for this repository. The agent maintains a
+        // keyring at `/etc/apt/trusted.gpg.d/osconfig_agent_managed.gpg`.
+        string gpg_key = 5;
+      }
+
+      // Represents a single yum package repository. These are added to a
+      // repo file that is managed at
+      // `/etc/yum.repos.d/google_osconfig.repo`.
+      message YumRepository {
+        // Required. A one word, unique name for this repository. This is  the `repo
+        // id` in the yum config file and also the `display_name` if
+        // `display_name` is omitted. This id is also used as the unique
+        // identifier when checking for resource conflicts.
+        string id = 1 [(google.api.field_behavior) = REQUIRED];
+
+        // The display name of the repository.
+        string display_name = 2;
+
+        // Required. The location of the repository directory.
+        string base_url = 3 [(google.api.field_behavior) = REQUIRED];
+
+        // URIs of GPG keys.
+        repeated string gpg_keys = 4;
+      }
+
+      // Represents a single zypper package repository. These are added to a
+      // repo file that is managed at
+      // `/etc/zypp/repos.d/google_osconfig.repo`.
+      message ZypperRepository {
+        // Required. A one word, unique name for this repository. This is the `repo
+        // id` in the zypper config file and also the `display_name` if
+        // `display_name` is omitted. This id is also used as the unique
+        // identifier when checking for GuestPolicy conflicts.
+        string id = 1 [(google.api.field_behavior) = REQUIRED];
+
+        // The display name of the repository.
+        string display_name = 2;
+
+        // Required. The location of the repository directory.
+        string base_url = 3 [(google.api.field_behavior) = REQUIRED];
+
+        // URIs of GPG keys.
+        repeated string gpg_keys = 4;
+      }
+
+      // Represents a Goo package repository. These are added to a repo file
+      // that is managed at
+      // `C:/ProgramData/GooGet/repos/google_osconfig.repo`.
+      message GooRepository {
+        // Required. The name of the repository.
+        string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+        // Required. The url of the repository.
+        string url = 2 [(google.api.field_behavior) = REQUIRED];
+      }
+
+      // A specific type of repository.
+      oneof repository {
+        // An Apt Repository.
+        AptRepository apt = 1;
+
+        // A Yum Repository.
+        YumRepository yum = 2;
+
+        // A Zypper Repository.
+        ZypperRepository zypper = 3;
+
+        // A Goo Repository.
+        GooRepository goo = 4;
+      }
+    }
+
+    // A resource that allows executing scripts on the VM.
+    //
+    // The `ExecResource` has 2 stages: `validate` and `enforce` and both stages
+    // accept a script as an argument to execute.
+    //
+    // When the `ExecResource` is applied by the agent, it first executes the
+    // script in the `validate` stage. The `validate` stage can signal that the
+    // `ExecResource` is already in the desired state by returning an exit code
+    // of `100`. If the `ExecResource` is not in the desired state, it should
+    // return an exit code of `101`. Any other exit code returned by this stage
+    // is considered an error.
+    //
+    // If the `ExecResource` is not in the desired state based on the exit code
+    // from the `validate` stage, the agent proceeds to execute the script from
+    // the `enforce` stage. If the `ExecResource` is already in the desired
+    // state, the `enforce` stage will not be run.
+    // Similar to `validate` stage, the `enforce` stage should return an exit
+    // code of `100` to indicate that the resource in now in its desired state.
+    // Any other exit code is considered an error.
+    //
+    // NOTE: An exit code of `100` was chosen over `0` (and `101` vs `1`) to
+    // have an explicit indicator of `in desired state`, `not in desired state`
+    // and errors. Because, for example, Powershell will always return an exit
+    // code of `0` unless an `exit` statement is provided in the script. So, for
+    // reasons of consistency and being explicit, exit codes `100` and `101`
+    // were chosen.
+    message ExecResource {
+      // A file or script to execute.
+      message Exec {
+        // The interpreter to use.
+        enum Interpreter {
+          // Invalid value, the request will return validation error.
+          INTERPRETER_UNSPECIFIED = 0;
+
+          // If an interpreter is not specified, the
+          // source is executed directly. This execution, without an
+          // interpreter, only succeeds for executables and scripts that have <a
+          // href="https://en.wikipedia.org/wiki/Shebang_(Unix)"
+          // class="external">shebang lines</a>.
+          NONE = 1;
+
+          // Indicates that the script runs with `/bin/sh` on Linux and
+          // `cmd.exe` on Windows.
+          SHELL = 2;
+
+          // Indicates that the script runs with PowerShell.
+          POWERSHELL = 3;
+        }
+
+        // What to execute.
+        oneof source {
+          // A remote or local file.
+          File file = 1;
+
+          // An inline script.
+          // The size of the script is limited to 1024 characters.
+          string script = 2;
+        }
+
+        // Optional arguments to pass to the source during execution.
+        repeated string args = 3;
+
+        // Required. The script interpreter to use.
+        Interpreter interpreter = 4 [(google.api.field_behavior) = REQUIRED];
+
+        // Only recorded for enforce Exec.
+        // Path to an output file (that is created by this Exec) whose
+        // content will be recorded in OSPolicyResourceCompliance after a
+        // successful run. Absence or failure to read this file will result in
+        // this ExecResource being non-compliant. Output file size is limited to
+        // 100K bytes.
+        string output_file_path = 5;
+      }
+
+      // Required. What to run to validate this resource is in the desired state.
+      // An exit code of 100 indicates "in desired state", and exit code of 101
+      // indicates "not in desired state". Any other exit code indicates a
+      // failure running validate.
+      Exec validate = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // What to run to bring this resource into the desired state.
+      // An exit code of 100 indicates "success", any other exit code indicates
+      // a failure running enforce.
+      Exec enforce = 2;
+    }
+
+    // A resource that manages the state of a file.
+    message FileResource {
+      // Desired state of the file.
+      enum DesiredState {
+        // Unspecified is invalid.
+        DESIRED_STATE_UNSPECIFIED = 0;
+
+        // Ensure file at path is present.
+        PRESENT = 1;
+
+        // Ensure file at path is absent.
+        ABSENT = 2;
+
+        // Ensure the contents of the file at path matches. If the file does
+        // not exist it will be created.
+        CONTENTS_MATCH = 3;
+      }
+
+      // The source for the contents of the file.
+      oneof source {
+        // A remote or local source.
+        File file = 1;
+
+        // A a file with this content.
+        // The size of the content is limited to 1024 characters.
+        string content = 2;
+      }
+
+      // Required. The absolute path of the file within the VM.
+      string path = 3 [(google.api.field_behavior) = REQUIRED];
+
+      // Required. Desired state of the file.
+      DesiredState state = 4 [(google.api.field_behavior) = REQUIRED];
+
+      // Consists of three octal digits which represent, in
+      // order, the permissions of the owner, group, and other users for the
+      // file (similarly to the numeric mode used in the linux chmod
+      // utility). Each digit represents a three bit number with the 4 bit
+      // corresponding to the read permissions, the 2 bit corresponds to the
+      // write bit, and the one bit corresponds to the execute permission.
+      // Default behavior is 755.
+      //
+      // Below are some examples of permissions and their associated values:
+      // read, write, and execute: 7
+      // read and execute: 5
+      // read and write: 6
+      // read only: 4
+      string permissions = 5;
+    }
+
+    // Required. The id of the resource with the following restrictions:
+    //
+    // * Must contain only lowercase letters, numbers, and hyphens.
+    // * Must start with a letter.
+    // * Must be between 1-63 characters.
+    // * Must end with a number or a letter.
+    // * Must be unique within the OS policy.
+    string id = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Resource type.
+    oneof resource_type {
+      // Package resource
+      PackageResource pkg = 2;
+
+      // Package repository resource
+      RepositoryResource repository = 3;
+
+      // Exec resource
+      ExecResource exec = 4;
+
+      // File resource
+      FileResource file = 5;
+    }
+  }
+
+  // Resource groups provide a mechanism to group OS policy resources.
+  //
+  // Resource groups enable OS policy authors to create a single OS policy
+  // to be applied to VMs running different operating Systems.
+  //
+  // When the OS policy is applied to a target VM, the appropriate resource
+  // group within the OS policy is selected based on the `OSFilter` specified
+  // within the resource group.
+  message ResourceGroup {
+    // Deprecated. Use the `inventory_filters` field instead.
+    // Used to specify the OS filter for a resource group
+    OSFilter os_filter = 1 [deprecated = true];
+
+    // List of inventory filters for the resource group.
+    //
+    // The resources in this resource group are applied to the target VM if it
+    // satisfies at least one of the following inventory filters.
+    //
+    // For example, to apply this resource group to VMs running either `RHEL` or
+    // `CentOS` operating systems, specify 2 items for the list with following
+    // values:
+    // inventory_filters[0].os_short_name='rhel' and
+    // inventory_filters[1].os_short_name='centos'
+    //
+    // If the list is empty, this resource group will be applied to the target
+    // VM unconditionally.
+    repeated InventoryFilter inventory_filters = 3;
+
+    // Required. List of resources configured for this resource group.
+    // The resources are executed in the exact order specified here.
+    repeated Resource resources = 2 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Required. The id of the OS policy with the following restrictions:
+  //
+  // * Must contain only lowercase letters, numbers, and hyphens.
+  // * Must start with a letter.
+  // * Must be between 1-63 characters.
+  // * Must end with a number or a letter.
+  // * Must be unique within the assignment.
+  string id = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Policy description.
+  // Length of the description is limited to 1024 characters.
+  string description = 2;
+
+  // Required. Policy mode
+  Mode mode = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. List of resource groups for the policy.
+  // For a particular VM, resource groups are evaluated in the order specified
+  // and the first resource group that is applicable is selected and the rest
+  // are ignored.
+  //
+  // If none of the resource groups are applicable for a VM, the VM is
+  // considered to be non-compliant w.r.t this policy. This behavior can be
+  // toggled by the flag `allow_no_resource_group_match`
+  repeated ResourceGroup resource_groups = 4 [(google.api.field_behavior) = REQUIRED];
+
+  // This flag determines the OS policy compliance status when none of the
+  // resource groups within the policy are applicable for a VM. Set this value
+  // to `true` if the policy needs to be reported as compliant even if the
+  // policy has nothing to validate or enforce.
+  bool allow_no_resource_group_match = 5;
+}

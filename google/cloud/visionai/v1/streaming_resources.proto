@@ -1,0 +1,176 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.visionai.v1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Google.Cloud.VisionAI.V1";
+option go_package = "cloud.google.com/go/visionai/apiv1/visionaipb;visionaipb";
+option java_multiple_files = true;
+option java_outer_classname = "StreamingResourcesProto";
+option java_package = "com.google.cloud.visionai.v1";
+option php_namespace = "Google\\Cloud\\VisionAI\\V1";
+option ruby_package = "Google::Cloud::VisionAI::V1";
+
+// The descriptor for a gstreamer buffer payload.
+message GstreamerBufferDescriptor {
+  // The caps string of the payload.
+  string caps_string = 1;
+
+  // Whether the buffer is a key frame.
+  bool is_key_frame = 2;
+
+  // PTS of the frame.
+  google.protobuf.Timestamp pts_time = 3;
+
+  // DTS of the frame.
+  google.protobuf.Timestamp dts_time = 4;
+
+  // Duration of the frame.
+  google.protobuf.Duration duration = 5;
+}
+
+// The descriptor for a raw image.
+message RawImageDescriptor {
+  // Raw image format. Its possible values are: "srgb".
+  string format = 1;
+
+  // The height of the image.
+  int32 height = 2;
+
+  // The width of the image.
+  int32 width = 3;
+}
+
+// The message that represents the data type of a packet.
+message PacketType {
+  // The message that fully specifies the type of the packet.
+  message TypeDescriptor {
+    // Detailed information about the type.
+    //
+    // It is non-empty only for specific type class codecs. Needed only when the
+    // type string alone is not enough to disambiguate the specific type.
+    oneof type_details {
+      // GstreamerBufferDescriptor is the descriptor for gstreamer buffer type.
+      GstreamerBufferDescriptor gstreamer_buffer_descriptor = 2;
+
+      // RawImageDescriptor is the descriptor for the raw image type.
+      RawImageDescriptor raw_image_descriptor = 3;
+    }
+
+    // The type of the packet. Its possible values is codec dependent.
+    //
+    // The fully qualified type name is always the concatenation of the
+    // value in `type_class` together with the value in `type`, separated by a
+    // '/'.
+    //
+    // Note that specific codecs can define their own type hierarchy, and so the
+    // type string here can in fact be separated by multiple '/'s of its own.
+    //
+    // Please see the open source SDK for specific codec documentation.
+    string type = 1;
+  }
+
+  // The type class of the packet. Its possible values are:
+  // "gst", "protobuf", and "string".
+  string type_class = 1;
+
+  // The type descriptor.
+  TypeDescriptor type_descriptor = 2;
+}
+
+// The message that represents server metadata.
+message ServerMetadata {
+  // The offset position for the packet in its stream.
+  int64 offset = 1;
+
+  // The timestamp at which the stream server receives this packet. This is
+  // based on the local clock of on the server side. It is guaranteed to be
+  // monotonically increasing for the packets within each session; however
+  // this timestamp is not comparable across packets sent to the same stream
+  // different sessions. Session here refers to one individual gRPC streaming
+  // request to the stream server.
+  google.protobuf.Timestamp ingest_time = 2;
+}
+
+// The message that represents series metadata.
+message SeriesMetadata {
+  // Series name. It's in the format of
+  // "projects/{project}/locations/{location}/clusters/{cluster}/series/{stream}".
+  string series = 1 [
+    (google.api.resource_reference) = { type: "visionai.googleapis.com/Series" }
+  ];
+}
+
+// The message that represents packet header.
+message PacketHeader {
+  // Input only. The capture time of the packet.
+  google.protobuf.Timestamp capture_time = 1
+      [(google.api.field_behavior) = INPUT_ONLY];
+
+  // Input only. Immutable. The type of the payload.
+  PacketType type = 2 [
+    (google.api.field_behavior) = INPUT_ONLY,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // Input only. This field is for users to attach user managed metadata.
+  google.protobuf.Struct metadata = 3
+      [(google.api.field_behavior) = INPUT_ONLY];
+
+  // Output only. Metadata that the server appends to each packet before sending
+  // it to receivers. You don't need to set a value for this field when sending
+  // packets.
+  ServerMetadata server_metadata = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Input only. Immutable. Metadata that the server needs to know where to
+  // write the packets to. It's only required for the first packet.
+  SeriesMetadata series_metadata = 5 [
+    (google.api.field_behavior) = INPUT_ONLY,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // Immutable. Packet flag set. SDK will set the flag automatically.
+  int32 flags = 6 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Immutable. Header string for tracing across services. It should be set when
+  // the packet is first arrived in the stream server.
+  //
+  // The input format is a lowercase hex string:
+  //   - version_id: 1 byte, currently must be zero - hex encoded (2 characters)
+  //   - trace_id: 16 bytes (opaque blob) - hex encoded (32 characters)
+  //   - span_id: 8 bytes (opaque blob) - hex encoded (16 characters)
+  //   - trace_options: 1 byte (LSB means tracing enabled) - hex encoded (2
+  //   characters)
+  // Example: "00-404142434445464748494a4b4c4d4e4f-6162636465666768-01"
+  //           v  trace_id                         span_id          options
+  string trace_context = 7 [(google.api.field_behavior) = IMMUTABLE];
+}
+
+// The quanta of datum that the series accepts.
+message Packet {
+  // The packet header.
+  PacketHeader header = 1;
+
+  // The payload of the packet.
+  bytes payload = 2;
+}

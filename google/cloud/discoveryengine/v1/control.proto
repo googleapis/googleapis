@@ -1,0 +1,334 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.discoveryengine.v1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/discoveryengine/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Google.Cloud.DiscoveryEngine.V1";
+option go_package = "cloud.google.com/go/discoveryengine/apiv1/discoveryenginepb;discoveryenginepb";
+option java_multiple_files = true;
+option java_outer_classname = "ControlProto";
+option java_package = "com.google.cloud.discoveryengine.v1";
+option objc_class_prefix = "DISCOVERYENGINE";
+option php_namespace = "Google\\Cloud\\DiscoveryEngine\\V1";
+option ruby_package = "Google::Cloud::DiscoveryEngine::V1";
+
+// Defines circumstances to be checked before allowing a behavior
+message Condition {
+  // Matcher for search request query
+  message QueryTerm {
+    // The specific query value to match against
+    //
+    // Must be lowercase, must be UTF-8.
+    // Can have at most 3 space separated terms if full_match is true.
+    // Cannot be an empty string.
+    // Maximum length of 5000 characters.
+    string value = 1;
+
+    // Whether the search query needs to exactly match the query term.
+    bool full_match = 2;
+  }
+
+  // Used for time-dependent conditions.
+  message TimeRange {
+    // Start of time range.
+    //
+    // Range is inclusive.
+    google.protobuf.Timestamp start_time = 1;
+
+    // End of time range.
+    //
+    // Range is inclusive.
+    // Must be in the future.
+    google.protobuf.Timestamp end_time = 2;
+  }
+
+  // Search only
+  // A list of terms to match the query on.
+  // Cannot be set when
+  // [Condition.query_regex][google.cloud.discoveryengine.v1.Condition.query_regex]
+  // is set.
+  //
+  // Maximum of 10 query terms.
+  repeated QueryTerm query_terms = 2;
+
+  // Range of time(s) specifying when condition is active.
+  //
+  // Maximum of 10 time ranges.
+  repeated TimeRange active_time_range = 3;
+
+  // Optional. Query regex to match the whole search query.
+  // Cannot be set when
+  // [Condition.query_terms][google.cloud.discoveryengine.v1.Condition.query_terms]
+  // is set. Only supported for Basic Site Search promotion serving controls.
+  string query_regex = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Defines a conditioned behavior to employ during serving.
+// Must be attached to a
+// [ServingConfig][google.cloud.discoveryengine.v1.ServingConfig] to be
+// considered at serving time. Permitted actions dependent on `SolutionType`.
+message Control {
+  option (google.api.resource) = {
+    type: "discoveryengine.googleapis.com/Control"
+    pattern: "projects/{project}/locations/{location}/dataStores/{data_store}/controls/{control}"
+    pattern: "projects/{project}/locations/{location}/collections/{collection}/dataStores/{data_store}/controls/{control}"
+    pattern: "projects/{project}/locations/{location}/collections/{collection}/engines/{engine}/controls/{control}"
+  };
+
+  // Adjusts order of products in returned list.
+  message BoostAction {
+    // Specification for custom ranking based on customer specified attribute
+    // value. It provides more controls for customized ranking than the simple
+    // (condition, boost) combination above.
+    message InterpolationBoostSpec {
+      // The control points used to define the curve. The curve defined
+      // through these control points can only be monotonically increasing
+      // or decreasing(constant values are acceptable).
+      message ControlPoint {
+        // Optional. Can be one of:
+        // 1. The numerical field value.
+        // 2. The duration spec for freshness:
+        // The value must be formatted as an XSD `dayTimeDuration` value (a
+        // restricted subset of an ISO 8601 duration value). The pattern for
+        // this is: `[nD][T[nH][nM][nS]]`.
+        string attribute_value = 1 [(google.api.field_behavior) = OPTIONAL];
+
+        // Optional. The value between -1 to 1 by which to boost the score if
+        // the attribute_value evaluates to the value specified above.
+        float boost_amount = 2 [(google.api.field_behavior) = OPTIONAL];
+      }
+
+      // The attribute(or function) for which the custom ranking is to be
+      // applied.
+      enum AttributeType {
+        // Unspecified AttributeType.
+        ATTRIBUTE_TYPE_UNSPECIFIED = 0;
+
+        // The value of the numerical field will be used to dynamically update
+        // the boost amount. In this case, the attribute_value (the x value)
+        // of the control point will be the actual value of the numerical
+        // field for which the boost_amount is specified.
+        NUMERICAL = 1;
+
+        // For the freshness use case the attribute value will be the duration
+        // between the current time and the date in the datetime field
+        // specified. The value must be formatted as an XSD `dayTimeDuration`
+        // value (a restricted subset of an ISO 8601 duration value). The
+        // pattern for this is: `[nD][T[nH][nM][nS]]`.
+        // For example, `5D`, `3DT12H30M`, `T24H`.
+        FRESHNESS = 2;
+      }
+
+      // The interpolation type to be applied. Default will be linear
+      // (Piecewise Linear).
+      enum InterpolationType {
+        // Interpolation type is unspecified. In this case, it defaults to
+        // Linear.
+        INTERPOLATION_TYPE_UNSPECIFIED = 0;
+
+        // Piecewise linear interpolation will be applied.
+        LINEAR = 1;
+      }
+
+      // Optional. The name of the field whose value will be used to determine
+      // the boost amount.
+      string field_name = 1 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The attribute type to be used to determine the boost amount.
+      // The attribute value can be derived from the field value of the
+      // specified field_name. In the case of numerical it is straightforward
+      // i.e. attribute_value = numerical_field_value. In the case of freshness
+      // however, attribute_value = (time.now() - datetime_field_value).
+      AttributeType attribute_type = 2 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The interpolation type to be applied to connect the control
+      // points listed below.
+      InterpolationType interpolation_type = 3
+          [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The control points used to define the curve. The monotonic
+      // function (defined through the interpolation_type above) passes through
+      // the control points listed here.
+      repeated ControlPoint control_points = 4
+          [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Constant value boost or custom ranking based boost specifications.
+    oneof boost_spec {
+      // Optional. Strength of the boost, which should be in [-1, 1]. Negative
+      // boost means demotion. Default is 0.0 (No-op).
+      float fixed_boost = 4 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Complex specification for custom ranking based on customer
+      // defined attribute value.
+      InterpolationBoostSpec interpolation_boost_spec = 5
+          [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Strength of the boost, which should be in [-1, 1]. Negative
+    // boost means demotion. Default is 0.0 (No-op).
+    float boost = 1 [deprecated = true];
+
+    // Required. Specifies which products to apply the boost to.
+    //
+    // If no filter is provided all products will be boosted (No-op).
+    // Syntax documentation:
+    // https://cloud.google.com/retail/docs/filter-and-order
+    // Maximum length is 5000 characters.
+    // Otherwise an INVALID ARGUMENT error is thrown.
+    string filter = 2 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. Specifies which data store's documents can be boosted by this
+    // control. Full data store name e.g.
+    // projects/123/locations/global/collections/default_collection/dataStores/default_data_store
+    string data_store = 3 [
+      (google.api.field_behavior) = REQUIRED,
+      (google.api.resource_reference) = {
+        type: "discoveryengine.googleapis.com/DataStore"
+      }
+    ];
+  }
+
+  // Specified which products may be included in results.
+  // Uses same filter as boost.
+  message FilterAction {
+    // Required. A filter to apply on the matching condition results.
+    //
+    // Required
+    // Syntax documentation:
+    // https://cloud.google.com/retail/docs/filter-and-order
+    // Maximum length is 5000 characters. Otherwise an INVALID
+    // ARGUMENT error is thrown.
+    string filter = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. Specifies which data store's documents can be filtered by this
+    // control. Full data store name e.g.
+    // projects/123/locations/global/collections/default_collection/dataStores/default_data_store
+    string data_store = 2 [
+      (google.api.field_behavior) = REQUIRED,
+      (google.api.resource_reference) = {
+        type: "discoveryengine.googleapis.com/DataStore"
+      }
+    ];
+  }
+
+  // Redirects a shopper to the provided URI.
+  message RedirectAction {
+    // Required. The URI to which the shopper will be redirected.
+    //
+    // Required.
+    // URI must have length equal or less than 2000 characters.
+    // Otherwise an INVALID ARGUMENT error is thrown.
+    string redirect_uri = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Creates a set of terms that will act as synonyms of one another.
+  //
+  // Example: "happy" will also be considered as "glad", "glad" will also be
+  // considered as "happy".
+  message SynonymsAction {
+    // Defines a set of synonyms.
+    // Can specify up to 100 synonyms.
+    // Must specify at least 2 synonyms. Otherwise an INVALID ARGUMENT error is
+    // thrown.
+    repeated string synonyms = 1;
+  }
+
+  // Promote certain links based on some trigger queries.
+  //
+  // Example: Promote shoe store link when searching for `shoe` keyword.
+  // The link can be outside of associated data store.
+  message PromoteAction {
+    // Required. Data store with which this promotion is attached to.
+    string data_store = 1 [
+      (google.api.field_behavior) = REQUIRED,
+      (google.api.resource_reference) = {
+        type: "discoveryengine.googleapis.com/DataStore"
+      }
+    ];
+
+    // Required. Promotion attached to this action.
+    SearchLinkPromotion search_link_promotion = 2
+        [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Actions are restricted by Vertical and Solution
+  //
+  // Required.
+  oneof action {
+    // Defines a boost-type control
+    BoostAction boost_action = 6;
+
+    // Defines a filter-type control
+    // Currently not supported by Recommendation
+    FilterAction filter_action = 7;
+
+    // Defines a redirect-type control.
+    RedirectAction redirect_action = 9;
+
+    // Treats a group of terms as synonyms of one another.
+    SynonymsAction synonyms_action = 10;
+
+    // Promote certain links based on predefined trigger queries.
+    PromoteAction promote_action = 15;
+  }
+
+  // Immutable. Fully qualified name
+  // `projects/*/locations/global/dataStore/*/controls/*`
+  string name = 1 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Required. Human readable name. The identifier used in UI views.
+  //
+  // Must be UTF-8 encoded string. Length limit is 128 characters.
+  // Otherwise an INVALID ARGUMENT error is thrown.
+  string display_name = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Output only. List of all
+  // [ServingConfig][google.cloud.discoveryengine.v1.ServingConfig] IDs this
+  // control is attached to. May take up to 10 minutes to update after changes.
+  repeated string associated_serving_config_ids = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Required. Immutable. What solution the control belongs to.
+  //
+  // Must be compatible with vertical of resource.
+  // Otherwise an INVALID ARGUMENT error is thrown.
+  SolutionType solution_type = 4 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // Specifies the use case for the control.
+  // Affects what condition fields can be set.
+  // Only applies to
+  // [SOLUTION_TYPE_SEARCH][google.cloud.discoveryengine.v1.SolutionType.SOLUTION_TYPE_SEARCH].
+  // Currently only allow one use case per control.
+  // Must be set when solution_type is
+  // [SolutionType.SOLUTION_TYPE_SEARCH][google.cloud.discoveryengine.v1.SolutionType.SOLUTION_TYPE_SEARCH].
+  repeated SearchUseCase use_cases = 8;
+
+  // Determines when the associated action will trigger.
+  //
+  // Omit to always apply the action.
+  // Currently only a single condition may be specified.
+  // Otherwise an INVALID ARGUMENT error is thrown.
+  repeated Condition conditions = 5;
+}

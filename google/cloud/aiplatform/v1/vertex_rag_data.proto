@@ -1,0 +1,571 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.aiplatform.v1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/aiplatform/v1/api_auth.proto";
+import "google/cloud/aiplatform/v1/encryption_spec.proto";
+import "google/cloud/aiplatform/v1/io.proto";
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Google.Cloud.AIPlatform.V1";
+option go_package = "cloud.google.com/go/aiplatform/apiv1/aiplatformpb;aiplatformpb";
+option java_multiple_files = true;
+option java_outer_classname = "VertexRagDataProto";
+option java_package = "com.google.cloud.aiplatform.v1";
+option php_namespace = "Google\\Cloud\\AIPlatform\\V1";
+option ruby_package = "Google::Cloud::AIPlatform::V1";
+
+// Config for the embedding model to use for RAG.
+message RagEmbeddingModelConfig {
+  // Config representing a model hosted on Vertex Prediction Endpoint.
+  message VertexPredictionEndpoint {
+    // Required. The endpoint resource name.
+    // Format:
+    // `projects/{project}/locations/{location}/publishers/{publisher}/models/{model}`
+    // or
+    // `projects/{project}/locations/{location}/endpoints/{endpoint}`
+    string endpoint = 1 [
+      (google.api.field_behavior) = REQUIRED,
+      (google.api.resource_reference) = {
+        type: "aiplatform.googleapis.com/Endpoint"
+      }
+    ];
+
+    // Output only. The resource name of the model that is deployed on the
+    // endpoint. Present only when the endpoint is not a publisher model.
+    // Pattern:
+    // `projects/{project}/locations/{location}/models/{model}`
+    string model = 2 [
+      (google.api.field_behavior) = OUTPUT_ONLY,
+      (google.api.resource_reference) = {
+        type: "aiplatform.googleapis.com/Model"
+      }
+    ];
+
+    // Output only. Version ID of the model that is deployed on the endpoint.
+    // Present only when the endpoint is not a publisher model.
+    string model_version_id = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // The model config to use.
+  oneof model_config {
+    // The Vertex AI Prediction Endpoint that either refers to a publisher model
+    // or an endpoint that is hosting a 1P fine-tuned text embedding model.
+    // Endpoints hosting non-1P fine-tuned text embedding models are
+    // currently not supported.
+    // This is used for dense vector search.
+    VertexPredictionEndpoint vertex_prediction_endpoint = 1;
+  }
+}
+
+// Config for the Vector DB to use for RAG.
+message RagVectorDbConfig {
+  // The config for the default RAG-managed Vector DB.
+  message RagManagedDb {
+    // Config for KNN search.
+    message KNN {}
+
+    // Config for ANN search.
+    //
+    // RagManagedDb uses a tree-based structure to partition data and
+    // facilitate faster searches. As a tradeoff, it requires longer indexing
+    // time and manual triggering of index rebuild via the ImportRagFiles and
+    // UpdateRagCorpus API.
+    message ANN {
+      // The depth of the tree-based structure. Only depth values of 2 and 3 are
+      // supported.
+      //
+      // Recommended value is 2 if you have if you have O(10K) files in the
+      // RagCorpus and set this to 3 if more than that.
+      //
+      // Default value is 2.
+      int32 tree_depth = 1;
+
+      // Number of leaf nodes in the tree-based structure. Each leaf node
+      // contains groups of closely related vectors along with their
+      // corresponding centroid.
+      //
+      // Recommended value is 10 * sqrt(num of RagFiles in your RagCorpus).
+      //
+      // Default value is 500.
+      int32 leaf_count = 2;
+    }
+
+    // Choice of retrieval strategy.
+    oneof retrieval_strategy {
+      // Performs a KNN search on RagCorpus.
+      // Default choice if not specified.
+      KNN knn = 1;
+
+      // Performs an ANN search on RagCorpus. Use this if you have a lot of
+      // files (> 10K) in your RagCorpus and want to reduce the search latency.
+      ANN ann = 2;
+    }
+  }
+
+  // The config for the Pinecone.
+  message Pinecone {
+    // Pinecone index name.
+    // This value cannot be changed after it's set.
+    string index_name = 1;
+  }
+
+  // The config for the Vertex Vector Search.
+  message VertexVectorSearch {
+    // The resource name of the Index Endpoint.
+    // Format:
+    // `projects/{project}/locations/{location}/indexEndpoints/{index_endpoint}`
+    string index_endpoint = 1;
+
+    // The resource name of the Index.
+    // Format:
+    // `projects/{project}/locations/{location}/indexes/{index}`
+    string index = 2;
+  }
+
+  // The config for the Vector DB.
+  oneof vector_db {
+    // The config for the RAG-managed Vector DB.
+    RagManagedDb rag_managed_db = 1;
+
+    // The config for the Pinecone.
+    Pinecone pinecone = 3;
+
+    // The config for the Vertex Vector Search.
+    VertexVectorSearch vertex_vector_search = 6;
+  }
+
+  // Authentication config for the chosen Vector DB.
+  ApiAuth api_auth = 5;
+
+  // Optional. Immutable. The embedding model config of the Vector DB.
+  RagEmbeddingModelConfig rag_embedding_model_config = 7 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+}
+
+// RagFile status.
+message FileStatus {
+  // RagFile state.
+  enum State {
+    // RagFile state is unspecified.
+    STATE_UNSPECIFIED = 0;
+
+    // RagFile resource has been created and indexed successfully.
+    ACTIVE = 1;
+
+    // RagFile resource is in a problematic state.
+    // See `error_message` field for details.
+    ERROR = 2;
+  }
+
+  // Output only. RagFile state.
+  State state = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Only when the `state` field is ERROR.
+  string error_status = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Config for the Vertex AI Search.
+message VertexAiSearchConfig {
+  // Vertex AI Search Serving Config resource full name. For example,
+  // `projects/{project}/locations/{location}/collections/{collection}/engines/{engine}/servingConfigs/{serving_config}`
+  // or
+  // `projects/{project}/locations/{location}/collections/{collection}/dataStores/{data_store}/servingConfigs/{serving_config}`.
+  string serving_config = 1;
+}
+
+// RagCorpus status.
+message CorpusStatus {
+  // RagCorpus life state.
+  enum State {
+    // This state is not supposed to happen.
+    UNKNOWN = 0;
+
+    // RagCorpus resource entry is initialized, but hasn't done validation.
+    INITIALIZED = 1;
+
+    // RagCorpus is provisioned successfully and is ready to serve.
+    ACTIVE = 2;
+
+    // RagCorpus is in a problematic situation.
+    // See `error_message` field for details.
+    ERROR = 3;
+  }
+
+  // Output only. RagCorpus life state.
+  State state = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Only when the `state` field is ERROR.
+  string error_status = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A RagCorpus is a RagFile container and a project can have multiple
+// RagCorpora.
+message RagCorpus {
+  option (google.api.resource) = {
+    type: "aiplatform.googleapis.com/RagCorpus"
+    pattern: "projects/{project}/locations/{location}/ragCorpora/{rag_corpus}"
+    plural: "ragCorpora"
+    singular: "ragCorpus"
+  };
+
+  // The backend config of the RagCorpus.
+  // It can be data store and/or retrieval engine.
+  oneof backend_config {
+    // Optional. Immutable. The config for the Vector DBs.
+    RagVectorDbConfig vector_db_config = 9 [
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.field_behavior) = IMMUTABLE
+    ];
+
+    // Optional. Immutable. The config for the Vertex AI Search.
+    VertexAiSearchConfig vertex_ai_search_config = 10 [
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.field_behavior) = IMMUTABLE
+    ];
+  }
+
+  // Output only. The resource name of the RagCorpus.
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Required. The display name of the RagCorpus.
+  // The name can be up to 128 characters long and can consist of any UTF-8
+  // characters.
+  string display_name = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The description of the RagCorpus.
+  string description = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Timestamp when this RagCorpus was created.
+  google.protobuf.Timestamp create_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Timestamp when this RagCorpus was last updated.
+  google.protobuf.Timestamp update_time = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. RagCorpus state.
+  CorpusStatus corpus_status = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Immutable. The CMEK key name used to encrypt at-rest data related
+  // to this Corpus. Only applicable to RagManagedDb option for Vector DB. This
+  // field can only be set at corpus creation time, and cannot be updated or
+  // deleted.
+  EncryptionSpec encryption_spec = 12 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
+// A RagFile contains user data for chunking, embedding and indexing.
+message RagFile {
+  option (google.api.resource) = {
+    type: "aiplatform.googleapis.com/RagFile"
+    pattern: "projects/{project}/locations/{location}/ragCorpora/{rag_corpus}/ragFiles/{rag_file}"
+    plural: "ragFiles"
+    singular: "ragFile"
+  };
+
+  // The origin location of the RagFile if it is imported from Google Cloud
+  // Storage or Google Drive.
+  oneof rag_file_source {
+    // Output only. Google Cloud Storage location of the RagFile.
+    // It does not support wildcards in the Cloud Storage uri for now.
+    GcsSource gcs_source = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Google Drive location. Supports importing individual files
+    // as well as Google Drive folders.
+    GoogleDriveSource google_drive_source = 9
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The RagFile is encapsulated and uploaded in the
+    // UploadRagFile request.
+    DirectUploadSource direct_upload_source = 10
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // The RagFile is imported from a Slack channel.
+    SlackSource slack_source = 11;
+
+    // The RagFile is imported from a Jira query.
+    JiraSource jira_source = 12;
+
+    // The RagFile is imported from a SharePoint source.
+    SharePointSources share_point_sources = 14;
+  }
+
+  // Output only. The resource name of the RagFile.
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Required. The display name of the RagFile.
+  // The name can be up to 128 characters long and can consist of any UTF-8
+  // characters.
+  string display_name = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The description of the RagFile.
+  string description = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Timestamp when this RagFile was created.
+  google.protobuf.Timestamp create_time = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Timestamp when this RagFile was last updated.
+  google.protobuf.Timestamp update_time = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. State of the RagFile.
+  FileStatus file_status = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A RagChunk includes the content of a chunk of a RagFile, and associated
+// metadata.
+message RagChunk {
+  // Represents where the chunk starts and ends in the document.
+  message PageSpan {
+    // Page where chunk starts in the document. Inclusive. 1-indexed.
+    int32 first_page = 1;
+
+    // Page where chunk ends in the document. Inclusive. 1-indexed.
+    int32 last_page = 2;
+  }
+
+  // The content of the chunk.
+  string text = 1;
+
+  // If populated, represents where the chunk starts and ends in the document.
+  optional PageSpan page_span = 2;
+}
+
+// Specifies the size and overlap of chunks for RagFiles.
+message RagFileChunkingConfig {
+  // Specifies the fixed length chunking config.
+  message FixedLengthChunking {
+    // The size of the chunks.
+    int32 chunk_size = 1;
+
+    // The overlap between chunks.
+    int32 chunk_overlap = 2;
+  }
+
+  // Specifies the chunking config for RagFiles.
+  oneof chunking_config {
+    // Specifies the fixed length chunking config.
+    FixedLengthChunking fixed_length_chunking = 3;
+  }
+}
+
+// Specifies the transformation config for RagFiles.
+message RagFileTransformationConfig {
+  // Specifies the chunking config for RagFiles.
+  RagFileChunkingConfig rag_file_chunking_config = 1;
+}
+
+// Specifies the parsing config for RagFiles.
+message RagFileParsingConfig {
+  // Document AI Layout Parser config.
+  message LayoutParser {
+    // The full resource name of a Document AI processor or processor version.
+    // The processor must have type `LAYOUT_PARSER_PROCESSOR`. If specified, the
+    // `additional_config.parse_as_scanned_pdf` field must be false.
+    // Format:
+    // * `projects/{project_id}/locations/{location}/processors/{processor_id}`
+    // * `projects/{project_id}/locations/{location}/processors/{processor_id}/processorVersions/{processor_version_id}`
+    string processor_name = 1;
+
+    // The maximum number of requests the job is allowed to make to the Document
+    // AI processor per minute. Consult
+    // https://cloud.google.com/document-ai/quotas and the Quota page for your
+    // project to set an appropriate value here. If unspecified, a default value
+    // of 120 QPM would be used.
+    int32 max_parsing_requests_per_min = 2;
+  }
+
+  // Specifies the advanced parsing for RagFiles.
+  message LlmParser {
+    // The name of a LLM model used for parsing.
+    // Format:
+    // * `projects/{project_id}/locations/{location}/publishers/{publisher}/models/{model}`
+    string model_name = 1;
+
+    // The maximum number of requests the job is allowed to make to the
+    // LLM model per minute. Consult
+    // https://cloud.google.com/vertex-ai/generative-ai/docs/quotas
+    // and your document size to set an appropriate value here. If unspecified,
+    // a default value of 5000 QPM would be used.
+    int32 max_parsing_requests_per_min = 2;
+
+    // The prompt to use for parsing. If not specified, a default prompt will
+    // be used.
+    string custom_parsing_prompt = 3;
+  }
+
+  // The parser to use for RagFiles.
+  oneof parser {
+    // The Layout Parser to use for RagFiles.
+    LayoutParser layout_parser = 4;
+
+    // The LLM Parser to use for RagFiles.
+    LlmParser llm_parser = 5;
+  }
+}
+
+// Config for uploading RagFile.
+message UploadRagFileConfig {
+  // Specifies the transformation config for RagFiles.
+  RagFileTransformationConfig rag_file_transformation_config = 3;
+}
+
+// Config for importing RagFiles.
+message ImportRagFilesConfig {
+  // The source of the import.
+  oneof import_source {
+    // Google Cloud Storage location. Supports importing individual files as
+    // well as entire Google Cloud Storage directories. Sample formats:
+    // - `gs://bucket_name/my_directory/object_name/my_file.txt`
+    // - `gs://bucket_name/my_directory`
+    GcsSource gcs_source = 2;
+
+    // Google Drive location. Supports importing individual files as
+    // well as Google Drive folders.
+    GoogleDriveSource google_drive_source = 3;
+
+    // Slack channels with their corresponding access tokens.
+    SlackSource slack_source = 6;
+
+    // Jira queries with their corresponding authentication.
+    JiraSource jira_source = 7;
+
+    // SharePoint sources.
+    SharePointSources share_point_sources = 13;
+  }
+
+  // Optional. If provided, all partial failures are written to the sink.
+  // Deprecated. Prefer to use the `import_result_sink`.
+  oneof partial_failure_sink {
+    // The Cloud Storage path to write partial failures to.
+    // Deprecated. Prefer to use `import_result_gcs_sink`.
+    GcsDestination partial_failure_gcs_sink = 11 [deprecated = true];
+
+    // The BigQuery destination to write partial failures to. It should be a
+    // bigquery table resource name (e.g.
+    // "bq://projectId.bqDatasetId.bqTableId"). The dataset must exist. If the
+    // table does not exist, it will be created with the expected schema. If the
+    // table exists, the schema will be validated and data will be added to this
+    // existing table.
+    // Deprecated. Prefer to use `import_result_bq_sink`.
+    BigQueryDestination partial_failure_bigquery_sink = 12 [deprecated = true];
+  }
+
+  // Optional. If provided, all successfully imported files and all partial
+  // failures are written to the sink.
+  oneof import_result_sink {
+    // The Cloud Storage path to write import result to.
+    GcsDestination import_result_gcs_sink = 14;
+
+    // The BigQuery destination to write import result to. It should be a
+    // bigquery table resource name (e.g.
+    // "bq://projectId.bqDatasetId.bqTableId"). The dataset must exist. If the
+    // table does not exist, it will be created with the expected schema. If the
+    // table exists, the schema will be validated and data will be added to this
+    // existing table.
+    BigQueryDestination import_result_bigquery_sink = 15;
+  }
+
+  // Specifies the transformation config for RagFiles.
+  RagFileTransformationConfig rag_file_transformation_config = 16;
+
+  // Optional. Specifies the parsing config for RagFiles.
+  // RAG will use the default parser if this field is not set.
+  RagFileParsingConfig rag_file_parsing_config = 8
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The max number of queries per minute that this job is allowed to
+  // make to the embedding model specified on the corpus. This value is specific
+  // to this job and not shared across other import jobs. Consult the Quotas
+  // page on the project to set an appropriate value here.
+  // If unspecified, a default value of 1,000 QPM would be used.
+  int32 max_embedding_requests_per_min = 5
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Rebuilds the ANN index to optimize for recall on the imported data.
+  // Only applicable for RagCorpora running on RagManagedDb with
+  // `retrieval_strategy` set to `ANN`. The rebuild will be performed using the
+  // existing ANN config set on the RagCorpus. To change the ANN config, please
+  // use the UpdateRagCorpus API.
+  //
+  // Default is false, i.e., index is not rebuilt.
+  bool rebuild_ann_index = 19;
+}
+
+// Configuration message for RagManagedDb used by RagEngine.
+message RagManagedDbConfig {
+  // Scaled tier offers production grade performance along with
+  // autoscaling functionality. It is suitable for customers with large
+  // amounts of data or performance sensitive workloads.
+  message Scaled {}
+
+  // Basic tier is a cost-effective and low compute tier suitable for
+  // the following cases:
+  // * Experimenting with RagManagedDb.
+  // * Small data size.
+  // * Latency insensitive workload.
+  // * Only using RAG Engine with external vector DBs.
+  //
+  // NOTE: This is the default tier if not explicitly chosen.
+  message Basic {}
+
+  // Disables the RAG Engine service and deletes all your data held
+  // within this service. This will halt the billing of the service.
+  //
+  // NOTE: Once deleted the data cannot be recovered. To start using
+  // RAG Engine again, you will need to update the tier by calling the
+  // UpdateRagEngineConfig API.
+  message Unprovisioned {}
+
+  // The tier of the RagManagedDb.
+  oneof tier {
+    // Sets the RagManagedDb to the Scaled tier.
+    Scaled scaled = 4;
+
+    // Sets the RagManagedDb to the Basic tier.
+    Basic basic = 2;
+
+    // Sets the RagManagedDb to the Unprovisioned tier.
+    Unprovisioned unprovisioned = 3;
+  }
+}
+
+// Config for RagEngine.
+message RagEngineConfig {
+  option (google.api.resource) = {
+    type: "aiplatform.googleapis.com/RagEngineConfig"
+    pattern: "projects/{project}/locations/{location}/ragEngineConfig"
+    plural: "ragEngineConfigs"
+    singular: "ragEngineConfig"
+  };
+
+  // Identifier. The name of the RagEngineConfig.
+  // Format:
+  // `projects/{project}/locations/{location}/ragEngineConfig`
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // The config of the RagManagedDb used by RagEngine.
+  RagManagedDbConfig rag_managed_db_config = 2;
+}

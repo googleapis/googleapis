@@ -1,0 +1,191 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.bigquery.storage.v1beta2;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/bigquery/storage/v1beta2/arrow.proto";
+import "google/cloud/bigquery/storage/v1beta2/avro.proto";
+import "google/cloud/bigquery/storage/v1beta2/table.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "cloud.google.com/go/bigquery/storage/apiv1beta2/storagepb;storagepb";
+option java_multiple_files = true;
+option java_outer_classname = "StreamProto";
+option java_package = "com.google.cloud.bigquery.storage.v1beta2";
+option (google.api.resource_definition) = {
+  type: "bigquery.googleapis.com/Table"
+  pattern: "projects/{project}/datasets/{dataset}/tables/{table}"
+};
+
+// Data format for input or output data.
+enum DataFormat {
+  DATA_FORMAT_UNSPECIFIED = 0;
+
+  // Avro is a standard open source row based file format.
+  // See https://avro.apache.org/ for more details.
+  AVRO = 1;
+
+  // Arrow is a standard open source column-based message format.
+  // See https://arrow.apache.org/ for more details.
+  ARROW = 2;
+}
+
+// Information about the ReadSession.
+message ReadSession {
+  option (google.api.resource) = {
+    type: "bigquerystorage.googleapis.com/ReadSession"
+    pattern: "projects/{project}/locations/{location}/sessions/{session}"
+  };
+
+  // Additional attributes when reading a table.
+  message TableModifiers {
+    // The snapshot time of the table. If not set, interpreted as now.
+    google.protobuf.Timestamp snapshot_time = 1;
+  }
+
+  // Options dictating how we read a table.
+  message TableReadOptions {
+    // Names of the fields in the table that should be read. If empty, all
+    // fields will be read. If the specified field is a nested field, all
+    // the sub-fields in the field will be selected. The output field order is
+    // unrelated to the order of fields in selected_fields.
+    repeated string selected_fields = 1;
+
+    // SQL text filtering statement, similar to a WHERE clause in a query.
+    // Aggregates are not supported.
+    //
+    // Examples: "int_field > 5"
+    //           "date_field = CAST('2014-9-27' as DATE)"
+    //           "nullable_field is not NULL"
+    //           "st_equals(geo_field, st_geofromtext("POINT(2, 2)"))"
+    //           "numeric_field BETWEEN 1.0 AND 5.0"
+    //
+    // Restricted to a maximum length for 1 MB.
+    string row_restriction = 2;
+
+    // Optional. Options specific to the Apache Arrow output format.
+    ArrowSerializationOptions arrow_serialization_options = 3 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Output only. Unique identifier for the session, in the form
+  // `projects/{project_id}/locations/{location}/sessions/{session_id}`.
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Time at which the session becomes invalid. After this time, subsequent
+  // requests to read this Session will return errors. The expire_time is
+  // automatically assigned and currently cannot be specified or updated.
+  google.protobuf.Timestamp expire_time = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Immutable. Data format of the output data.
+  DataFormat data_format = 3 [(google.api.field_behavior) = IMMUTABLE];
+
+  // The schema for the read. If read_options.selected_fields is set, the
+  // schema may be different from the table schema as it will only contain
+  // the selected fields.
+  oneof schema {
+    // Output only. Avro schema.
+    AvroSchema avro_schema = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Arrow schema.
+    ArrowSchema arrow_schema = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Immutable. Table that this ReadSession is reading from, in the form
+  // `projects/{project_id}/datasets/{dataset_id}/tables/{table_id}
+  string table = 6 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.resource_reference) = {
+      type: "bigquery.googleapis.com/Table"
+    }
+  ];
+
+  // Optional. Any modifiers which are applied when reading from the specified table.
+  TableModifiers table_modifiers = 7 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Read options for this session (e.g. column selection, filters).
+  TableReadOptions read_options = 8 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. A list of streams created with the session.
+  //
+  // At least one stream is created with the session. In the future, larger
+  // request_stream_count values *may* result in this list being unpopulated,
+  // in that case, the user will need to use a List method to get the streams
+  // instead, which is not yet available.
+  repeated ReadStream streams = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Information about a single stream that gets data out of the storage system.
+// Most of the information about `ReadStream` instances is aggregated, making
+// `ReadStream` lightweight.
+message ReadStream {
+  option (google.api.resource) = {
+    type: "bigquerystorage.googleapis.com/ReadStream"
+    pattern: "projects/{project}/locations/{location}/sessions/{session}/streams/{stream}"
+  };
+
+  // Output only. Name of the stream, in the form
+  // `projects/{project_id}/locations/{location}/sessions/{session_id}/streams/{stream_id}`.
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Information about a single stream that gets data inside the storage system.
+message WriteStream {
+  option (google.api.resource) = {
+    type: "bigquerystorage.googleapis.com/WriteStream"
+    pattern: "projects/{project}/datasets/{dataset}/tables/{table}/streams/{stream}"
+  };
+
+  // Type enum of the stream.
+  enum Type {
+    // Unknown type.
+    TYPE_UNSPECIFIED = 0;
+
+    // Data will commit automatically and appear as soon as the write is
+    // acknowledged.
+    COMMITTED = 1;
+
+    // Data is invisible until the stream is committed.
+    PENDING = 2;
+
+    // Data is only visible up to the offset to which it was flushed.
+    BUFFERED = 3;
+  }
+
+  // Output only. Name of the stream, in the form
+  // `projects/{project}/datasets/{dataset}/tables/{table}/streams/{stream}`.
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Immutable. Type of the stream.
+  Type type = 2 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Output only. Create time of the stream. For the _default stream, this is the
+  // creation_time of the table.
+  google.protobuf.Timestamp create_time = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Commit time of the stream.
+  // If a stream is of `COMMITTED` type, then it will have a commit_time same as
+  // `create_time`. If the stream is of `PENDING` type, commit_time being empty
+  // means it is not committed.
+  google.protobuf.Timestamp commit_time = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The schema of the destination table. It is only returned in
+  // `CreateWriteStream` response. Caller should generate data that's
+  // compatible with this schema to send in initial `AppendRowsRequest`.
+  // The table schema could go out of date during the life time of the stream.
+  TableSchema table_schema = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+}

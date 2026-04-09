@@ -1,0 +1,172 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.dialogflow.cx.v3beta1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/dialogflow/cx/v3beta1/advanced_settings.proto";
+import "google/cloud/dialogflow/cx/v3beta1/response_message.proto";
+import "google/protobuf/struct.proto";
+
+option csharp_namespace = "Google.Cloud.Dialogflow.Cx.V3Beta1";
+option go_package = "cloud.google.com/go/dialogflow/cx/apiv3beta1/cxpb;cxpb";
+option java_multiple_files = true;
+option java_outer_classname = "FulfillmentProto";
+option java_package = "com.google.cloud.dialogflow.cx.v3beta1";
+option objc_class_prefix = "DF";
+option ruby_package = "Google::Cloud::Dialogflow::CX::V3beta1";
+
+// A fulfillment can do one or more of the following actions at the same time:
+//
+//   * Generate rich message responses.
+//   * Set parameter values.
+//   * Call the webhook.
+//
+// Fulfillments can be called at various stages in the
+// [Page][google.cloud.dialogflow.cx.v3beta1.Page] or
+// [Form][google.cloud.dialogflow.cx.v3beta1.Form] lifecycle. For example, when
+// a
+// [DetectIntentRequest][google.cloud.dialogflow.cx.v3beta1.DetectIntentRequest]
+// drives a session to enter a new page, the page's entry fulfillment can add a
+// static response to the
+// [QueryResult][google.cloud.dialogflow.cx.v3beta1.QueryResult] in the
+// returning
+// [DetectIntentResponse][google.cloud.dialogflow.cx.v3beta1.DetectIntentResponse],
+// call the webhook (for example, to load user data from a database), or both.
+message Fulfillment {
+  // Setting a parameter value.
+  message SetParameterAction {
+    // Display name of the parameter.
+    string parameter = 1;
+
+    // The new value of the parameter. A null value clears the parameter.
+    google.protobuf.Value value = 2;
+  }
+
+  // A list of cascading if-else conditions. Cases are mutually exclusive.
+  // The first one with a matching condition is selected, all the rest ignored.
+  message ConditionalCases {
+    // Each case has a Boolean condition. When it is evaluated to be True, the
+    // corresponding messages will be selected and evaluated recursively.
+    message Case {
+      // The list of messages or conditional cases to activate for this case.
+      message CaseContent {
+        // Either a message is returned or additional cases to be evaluated.
+        oneof cases_or_message {
+          // Returned message.
+          ResponseMessage message = 1;
+
+          // Additional cases to be evaluated.
+          ConditionalCases additional_cases = 2;
+        }
+      }
+
+      // The condition to activate and select this case. Empty means the
+      // condition is always true. The condition is evaluated against [form
+      // parameters][Form.parameters] or [session
+      // parameters][SessionInfo.parameters].
+      //
+      // See the [conditions
+      // reference](https://cloud.google.com/dialogflow/cx/docs/reference/condition).
+      string condition = 1;
+
+      // A list of case content.
+      repeated CaseContent case_content = 2;
+    }
+
+    // A list of cascading if-else conditions.
+    repeated Case cases = 1;
+  }
+
+  // Generator settings used by the LLM to generate a text response.
+  message GeneratorSettings {
+    // Required. The generator to call.
+    // Format:
+    // `projects/<ProjectID>/locations/<LocationID>/agents/<AgentID>/generators/<GeneratorID>`.
+    string generator = 1 [
+      (google.api.field_behavior) = REQUIRED,
+      (google.api.resource_reference) = {
+        type: "dialogflow.googleapis.com/Generator"
+      }
+    ];
+
+    // Map from [placeholder parameter][Generator.Parameter.id] in the
+    // [Generator][google.cloud.dialogflow.cx.v3beta1.Generator] to
+    // corresponding session parameters. By default, Dialogflow uses the session
+    // parameter with the same name to fill in the generator template. e.g. If
+    // there is a placeholder parameter `city` in the Generator, Dialogflow
+    // default to fill in the `$city` with
+    // `$session.params.city`. However, you may choose to fill `$city` with
+    // `$session.params.desination-city`.
+    // - Map key: [parameter ID][Genrator.Parameter.id]
+    // - Map value: session parameter name
+    map<string, string> input_parameters = 2;
+
+    // Required. Output parameter which should contain the generator response.
+    string output_parameter = 3 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // The list of rich message responses to present to the user.
+  repeated ResponseMessage messages = 1;
+
+  // The webhook to call.
+  // Format:
+  // `projects/<ProjectID>/locations/<LocationID>/agents/<AgentID>/webhooks/<WebhookID>`.
+  string webhook = 2 [(google.api.resource_reference) = {
+    type: "dialogflow.googleapis.com/Webhook"
+  }];
+
+  // Whether Dialogflow should return currently queued fulfillment response
+  // messages in streaming APIs. If a webhook is specified, it happens before
+  // Dialogflow invokes webhook.
+  // Warning:
+  // 1) This flag only affects streaming API. Responses are still queued
+  // and returned once in non-streaming API.
+  // 2) The flag can be enabled in any fulfillment but only the first 3 partial
+  // responses will be returned. You may only want to apply it to fulfillments
+  // that have slow webhooks.
+  bool return_partial_responses = 8;
+
+  // The value of this field will be populated in the
+  // [WebhookRequest][google.cloud.dialogflow.cx.v3beta1.WebhookRequest]
+  // `fulfillmentInfo.tag` field by Dialogflow when the associated webhook is
+  // called.
+  // The tag is typically used by the webhook service to identify which
+  // fulfillment is being called, but it could be used for other purposes.
+  // This field is required if `webhook` is specified.
+  string tag = 3;
+
+  // Set parameter values before executing the webhook.
+  repeated SetParameterAction set_parameter_actions = 4;
+
+  // Conditional cases for this fulfillment.
+  repeated ConditionalCases conditional_cases = 5;
+
+  // Hierarchical advanced settings for this fulfillment. The settings exposed
+  // at the lower level overrides the settings exposed at the higher level.
+  AdvancedSettings advanced_settings = 7;
+
+  // If the flag is true, the agent will utilize LLM to generate a text
+  // response. If LLM generation fails, the defined
+  // [responses][google.cloud.dialogflow.cx.v3beta1.Fulfillment.messages] in the
+  // fulfillment will be respected. This flag is only useful for fulfillments
+  // associated with no-match event handlers.
+  bool enable_generative_fallback = 12;
+
+  // A list of Generators to be called during this fulfillment.
+  repeated GeneratorSettings generators = 13;
+}

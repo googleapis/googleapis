@@ -1,0 +1,399 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.workflows.executions.v1;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "cloud.google.com/go/workflows/executions/apiv1/executionspb;executionspb";
+option java_multiple_files = true;
+option java_outer_classname = "ExecutionsProto";
+option java_package = "com.google.cloud.workflows.executions.v1";
+option (google.api.resource_definition) = {
+  type: "workflows.googleapis.com/Workflow"
+  pattern: "projects/{project}/locations/{location}/workflows/{workflow}"
+};
+
+// Executions is used to start and manage running instances of
+// [Workflows][google.cloud.workflows.v1.Workflow] called executions.
+service Executions {
+  option (google.api.default_host) = "workflowexecutions.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform";
+
+  // Returns a list of executions which belong to the workflow with
+  // the given name. The method returns executions of all workflow
+  // revisions. Returned executions are ordered by their start time (newest
+  // first).
+  rpc ListExecutions(ListExecutionsRequest) returns (ListExecutionsResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*/locations/*/workflows/*}/executions"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Creates a new execution using the latest revision of the given workflow.
+  rpc CreateExecution(CreateExecutionRequest) returns (Execution) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/locations/*/workflows/*}/executions"
+      body: "execution"
+    };
+    option (google.api.method_signature) = "parent,execution";
+  }
+
+  // Returns an execution of the given name.
+  rpc GetExecution(GetExecutionRequest) returns (Execution) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/locations/*/workflows/*/executions/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Cancels an execution of the given name.
+  rpc CancelExecution(CancelExecutionRequest) returns (Execution) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/workflows/*/executions/*}:cancel"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+  }
+}
+
+// A running instance of a
+// [Workflow](/workflows/docs/reference/rest/v1/projects.locations.workflows).
+message Execution {
+  option (google.api.resource) = {
+    type: "workflowexecutions.googleapis.com/Execution"
+    pattern: "projects/{project}/locations/{location}/workflows/{workflow}/executions/{execution}"
+  };
+
+  // Describes the current state of the execution. More states might be added
+  // in the future.
+  enum State {
+    // Invalid state.
+    STATE_UNSPECIFIED = 0;
+
+    // The execution is in progress.
+    ACTIVE = 1;
+
+    // The execution finished successfully.
+    SUCCEEDED = 2;
+
+    // The execution failed with an error.
+    FAILED = 3;
+
+    // The execution was stopped intentionally.
+    CANCELLED = 4;
+
+    // Execution data is unavailable. See the `state_error` field.
+    UNAVAILABLE = 5;
+
+    // Request has been placed in the backlog for processing at a later time.
+    QUEUED = 6;
+  }
+
+  // A single stack element (frame) where an error occurred.
+  message StackTraceElement {
+    // Position contains source position information about the stack trace
+    // element such as line number, column number and length of the code block
+    // in bytes.
+    message Position {
+      // The source code line number the current instruction was generated from.
+      int64 line = 1;
+
+      // The source code column position (of the line) the current instruction
+      // was generated from.
+      int64 column = 2;
+
+      // The number of bytes of source code making up this stack trace element.
+      int64 length = 3;
+    }
+
+    // The step the error occurred at.
+    string step = 1;
+
+    // The routine where the error occurred.
+    string routine = 2;
+
+    // The source position information of the stack trace element.
+    Position position = 3;
+  }
+
+  // A collection of stack elements (frames) where an error occurred.
+  message StackTrace {
+    // An array of stack elements.
+    repeated StackTraceElement elements = 1;
+  }
+
+  // Error describes why the execution was abnormally terminated.
+  message Error {
+    // Error message and data returned represented as a JSON string.
+    string payload = 1;
+
+    // Human-readable stack trace string.
+    string context = 2;
+
+    // Stack trace with detailed information of where error was generated.
+    StackTrace stack_trace = 3;
+  }
+
+  // Describes the level of platform logging to apply to calls and call
+  // responses during workflow executions.
+  enum CallLogLevel {
+    // No call logging level specified.
+    CALL_LOG_LEVEL_UNSPECIFIED = 0;
+
+    // Log all call steps within workflows, all call returns, and all exceptions
+    // raised.
+    LOG_ALL_CALLS = 1;
+
+    // Log only exceptions that are raised from call steps within workflows.
+    LOG_ERRORS_ONLY = 2;
+
+    // Explicitly log nothing.
+    LOG_NONE = 3;
+  }
+
+  // Represents the current status of this execution.
+  message Status {
+    // Represents a step of the workflow this execution is running.
+    message Step {
+      // Name of a routine within the workflow.
+      string routine = 1;
+
+      // Name of a step within the routine.
+      string step = 2;
+    }
+
+    // A list of currently executing or last executed step names for the
+    // workflow execution currently running. If the workflow has succeeded or
+    // failed, this is the last attempted or executed step. Presently, if the
+    // current step is inside a subworkflow, the list only includes that step.
+    // In the future, the list will contain items for each step in the call
+    // stack, starting with the outermost step in the `main` subworkflow, and
+    // ending with the most deeply nested step.
+    repeated Step current_steps = 1;
+  }
+
+  // Describes an error related to the current state of the Execution resource.
+  message StateError {
+    // Describes the possible types of a state error.
+    enum Type {
+      // No type specified.
+      TYPE_UNSPECIFIED = 0;
+
+      // Caused by an issue with KMS.
+      KMS_ERROR = 1;
+    }
+
+    // Provides specifics about the error.
+    string details = 1;
+
+    // The type of this state error.
+    Type type = 2;
+  }
+
+  // Output only. The resource name of the execution.
+  // Format:
+  // projects/{project}/locations/{location}/workflows/{workflow}/executions/{execution}
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Marks the beginning of execution.
+  google.protobuf.Timestamp start_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Marks the end of execution, successful or not.
+  google.protobuf.Timestamp end_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Measures the duration of the execution.
+  google.protobuf.Duration duration = 12
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Current state of the execution.
+  State state = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Input parameters of the execution represented as a JSON string.
+  // The size limit is 32KB.
+  //
+  // *Note*: If you are using the REST API directly to run your workflow, you
+  // must escape any JSON string value of `argument`. Example:
+  // `'{"argument":"{\"firstName\":\"FIRST\",\"lastName\":\"LAST\"}"}'`
+  string argument = 5;
+
+  // Output only. Output of the execution represented as a JSON string. The
+  // value can only be present if the execution's state is `SUCCEEDED`.
+  string result = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The error which caused the execution to finish prematurely.
+  // The value is only present if the execution's state is `FAILED`
+  // or `CANCELLED`.
+  Error error = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Revision of the workflow this execution is using.
+  string workflow_revision_id = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The call logging level associated to this execution.
+  CallLogLevel call_log_level = 9;
+
+  // Output only. Status tracks the current steps and progress data of this
+  // execution.
+  Status status = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Labels associated with this execution.
+  // Labels can contain at most 64 entries. Keys and values can be no longer
+  // than 63 characters and can only contain lowercase letters, numeric
+  // characters, underscores, and dashes. Label keys must start with a letter.
+  // International characters are allowed.
+  // By default, labels are inherited from the workflow but are overridden by
+  // any labels associated with the execution.
+  map<string, string> labels = 11;
+
+  // Output only. Error regarding the state of the Execution resource. For
+  // example, this field will have error details if the execution data is
+  // unavailable due to revoked KMS key permissions.
+  StateError state_error = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Request for the
+// [ListExecutions][]
+// method.
+message ListExecutionsRequest {
+  // Required. Name of the workflow for which the executions should be listed.
+  // Format: projects/{project}/locations/{location}/workflows/{workflow}
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "workflows.googleapis.com/Workflow"
+    }
+  ];
+
+  // Maximum number of executions to return per call.
+  // Max supported value depends on the selected Execution view: it's 1000 for
+  // BASIC and 100 for FULL. The default value used if the field is not
+  // specified is 100, regardless of the selected view. Values greater than
+  // the max value will be coerced down to it.
+  int32 page_size = 2;
+
+  // A page token, received from a previous `ListExecutions` call.
+  // Provide this to retrieve the subsequent page.
+  //
+  // When paginating, all other parameters provided to `ListExecutions` must
+  // match the call that provided the page token.
+  //
+  // Note that pagination is applied to dynamic data. The list of executions
+  // returned can change between page requests.
+  string page_token = 3;
+
+  // Optional. A view defining which fields should be filled in the returned
+  // executions. The API will default to the BASIC view.
+  ExecutionView view = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Filters applied to the [Executions.ListExecutions] results.
+  // The following fields are supported for filtering:
+  // executionID, state, startTime, endTime, duration, workflowRevisionID,
+  // stepName, and label.
+  string filter = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The ordering applied to the [Executions.ListExecutions] results.
+  // By default the ordering is based on descending start time.
+  // The following fields are supported for order by:
+  // executionID, startTime, endTime, duration, state, and workflowRevisionID.
+  string order_by = 6 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response for the
+// [ListExecutions][google.cloud.workflows.executions.v1.Executions.ListExecutions]
+// method.
+message ListExecutionsResponse {
+  // The executions which match the request.
+  repeated Execution executions = 1;
+
+  // A token, which can be sent as `page_token` to retrieve the next page.
+  // If this field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
+}
+
+// Request for the
+// [CreateExecution][google.cloud.workflows.executions.v1.Executions.CreateExecution]
+// method.
+message CreateExecutionRequest {
+  // Required. Name of the workflow for which an execution should be created.
+  // Format: projects/{project}/locations/{location}/workflows/{workflow}
+  // The latest revision of the workflow will be used.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "workflows.googleapis.com/Workflow"
+    }
+  ];
+
+  // Required. Execution to be created.
+  Execution execution = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request for the
+// [GetExecution][google.cloud.workflows.executions.v1.Executions.GetExecution]
+// method.
+message GetExecutionRequest {
+  // Required. Name of the execution to be retrieved.
+  // Format:
+  // projects/{project}/locations/{location}/workflows/{workflow}/executions/{execution}
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "workflowexecutions.googleapis.com/Execution"
+    }
+  ];
+
+  // Optional. A view defining which fields should be filled in the returned
+  // execution. The API will default to the FULL view.
+  ExecutionView view = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request for the
+// [CancelExecution][google.cloud.workflows.executions.v1.Executions.CancelExecution]
+// method.
+message CancelExecutionRequest {
+  // Required. Name of the execution to be cancelled.
+  // Format:
+  // projects/{project}/locations/{location}/workflows/{workflow}/executions/{execution}
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "workflowexecutions.googleapis.com/Execution"
+    }
+  ];
+}
+
+// Defines possible views for execution resource.
+enum ExecutionView {
+  // The default / unset value.
+  EXECUTION_VIEW_UNSPECIFIED = 0;
+
+  // Includes only basic metadata about the execution.
+  // The following fields are returned: name, start_time, end_time, duration,
+  // state, and workflow_revision_id.
+  BASIC = 1;
+
+  // Includes all data.
+  FULL = 2;
+}

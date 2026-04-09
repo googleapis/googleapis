@@ -1,0 +1,329 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.spanner.v1;
+
+import "google/api/field_behavior.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/spanner/v1/location.proto";
+
+option csharp_namespace = "Google.Cloud.Spanner.V1";
+option go_package = "cloud.google.com/go/spanner/apiv1/spannerpb;spannerpb";
+option java_multiple_files = true;
+option java_outer_classname = "TransactionProto";
+option java_package = "com.google.spanner.v1";
+option php_namespace = "Google\\Cloud\\Spanner\\V1";
+option ruby_package = "Google::Cloud::Spanner::V1";
+
+// Options to use for transactions.
+message TransactionOptions {
+  // Message type to initiate a read-write transaction. Currently this
+  // transaction type has no options.
+  message ReadWrite {
+    // `ReadLockMode` is used to set the read lock mode for read-write
+    // transactions.
+    enum ReadLockMode {
+      // Default value.
+      //
+      // * If isolation level is
+      //   [SERIALIZABLE][google.spanner.v1.TransactionOptions.IsolationLevel.SERIALIZABLE],
+      //   locking semantics default to `PESSIMISTIC`.
+      // * If isolation level is
+      //   [REPEATABLE_READ][google.spanner.v1.TransactionOptions.IsolationLevel.REPEATABLE_READ],
+      //   locking semantics default to `OPTIMISTIC`.
+      // * See
+      //   [Concurrency
+      //   control](https://cloud.google.com/spanner/docs/concurrency-control)
+      //   for more details.
+      READ_LOCK_MODE_UNSPECIFIED = 0;
+
+      // Pessimistic lock mode.
+      //
+      // Lock acquisition behavior depends on the isolation level in use. In
+      // [SERIALIZABLE][google.spanner.v1.TransactionOptions.IsolationLevel.SERIALIZABLE]
+      // isolation, reads and writes acquire necessary locks during transaction
+      // statement execution. In
+      // [REPEATABLE_READ][google.spanner.v1.TransactionOptions.IsolationLevel.REPEATABLE_READ]
+      // isolation, reads that explicitly request to be locked and writes
+      // acquire locks.
+      // See
+      // [Concurrency
+      // control](https://cloud.google.com/spanner/docs/concurrency-control) for
+      // details on the types of locks acquired at each transaction step.
+      PESSIMISTIC = 1;
+
+      // Optimistic lock mode.
+      //
+      // Lock acquisition behavior depends on the isolation level in use. In
+      // both
+      // [SERIALIZABLE][google.spanner.v1.TransactionOptions.IsolationLevel.SERIALIZABLE]
+      // and
+      // [REPEATABLE_READ][google.spanner.v1.TransactionOptions.IsolationLevel.REPEATABLE_READ]
+      // isolation, reads and writes do not acquire locks during transaction
+      // statement execution.
+      // See
+      // [Concurrency
+      // control](https://cloud.google.com/spanner/docs/concurrency-control) for
+      // details on how the guarantees of each isolation level are provided at
+      // commit time.
+      OPTIMISTIC = 2;
+    }
+
+    // Read lock mode for the transaction.
+    ReadLockMode read_lock_mode = 1;
+
+    // Optional. Clients should pass the transaction ID of the previous
+    // transaction attempt that was aborted if this transaction is being
+    // executed on a multiplexed session.
+    bytes multiplexed_session_previous_transaction_id = 2
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Message type to initiate a Partitioned DML transaction.
+  message PartitionedDml {}
+
+  // Message type to initiate a read-only transaction.
+  message ReadOnly {
+    // How to choose the timestamp for the read-only transaction.
+    oneof timestamp_bound {
+      // Read at a timestamp where all previously committed transactions
+      // are visible.
+      bool strong = 1;
+
+      // Executes all reads at a timestamp >= `min_read_timestamp`.
+      //
+      // This is useful for requesting fresher data than some previous
+      // read, or data that is fresh enough to observe the effects of some
+      // previously committed transaction whose timestamp is known.
+      //
+      // Note that this option can only be used in single-use transactions.
+      //
+      // A timestamp in RFC3339 UTC \"Zulu\" format, accurate to nanoseconds.
+      // Example: `"2014-10-02T15:01:23.045123456Z"`.
+      google.protobuf.Timestamp min_read_timestamp = 2;
+
+      // Read data at a timestamp >= `NOW - max_staleness`
+      // seconds. Guarantees that all writes that have committed more
+      // than the specified number of seconds ago are visible. Because
+      // Cloud Spanner chooses the exact timestamp, this mode works even if
+      // the client's local clock is substantially skewed from Cloud Spanner
+      // commit timestamps.
+      //
+      // Useful for reading the freshest data available at a nearby
+      // replica, while bounding the possible staleness if the local
+      // replica has fallen behind.
+      //
+      // Note that this option can only be used in single-use
+      // transactions.
+      google.protobuf.Duration max_staleness = 3;
+
+      // Executes all reads at the given timestamp. Unlike other modes,
+      // reads at a specific timestamp are repeatable; the same read at
+      // the same timestamp always returns the same data. If the
+      // timestamp is in the future, the read is blocked until the
+      // specified timestamp, modulo the read's deadline.
+      //
+      // Useful for large scale consistent reads such as mapreduces, or
+      // for coordinating many reads against a consistent snapshot of the
+      // data.
+      //
+      // A timestamp in RFC3339 UTC \"Zulu\" format, accurate to nanoseconds.
+      // Example: `"2014-10-02T15:01:23.045123456Z"`.
+      google.protobuf.Timestamp read_timestamp = 4;
+
+      // Executes all reads at a timestamp that is `exact_staleness`
+      // old. The timestamp is chosen soon after the read is started.
+      //
+      // Guarantees that all writes that have committed more than the
+      // specified number of seconds ago are visible. Because Cloud Spanner
+      // chooses the exact timestamp, this mode works even if the client's
+      // local clock is substantially skewed from Cloud Spanner commit
+      // timestamps.
+      //
+      // Useful for reading at nearby replicas without the distributed
+      // timestamp negotiation overhead of `max_staleness`.
+      google.protobuf.Duration exact_staleness = 5;
+    }
+
+    // If true, the Cloud Spanner-selected read timestamp is included in
+    // the [Transaction][google.spanner.v1.Transaction] message that describes
+    // the transaction.
+    bool return_read_timestamp = 6;
+  }
+
+  // `IsolationLevel` is used when setting the [isolation
+  // level](https://cloud.google.com/spanner/docs/isolation-levels) for a
+  // transaction.
+  enum IsolationLevel {
+    // Default value.
+    //
+    // If the value is not specified, the `SERIALIZABLE` isolation level is
+    // used.
+    ISOLATION_LEVEL_UNSPECIFIED = 0;
+
+    // All transactions appear as if they executed in a serial order, even if
+    // some of the reads, writes, and other operations of distinct transactions
+    // actually occurred in parallel. Spanner assigns commit timestamps that
+    // reflect the order of committed transactions to implement this property.
+    // Spanner offers a stronger guarantee than serializability called external
+    // consistency. For more information, see
+    // [TrueTime and external
+    // consistency](https://cloud.google.com/spanner/docs/true-time-external-consistency#serializability).
+    SERIALIZABLE = 1;
+
+    // All reads performed during the transaction observe a consistent snapshot
+    // of the database, and the transaction is only successfully committed in
+    // the absence of conflicts between its updates and any concurrent updates
+    // that have occurred since that snapshot. Consequently, in contrast to
+    // `SERIALIZABLE` transactions, only write-write conflicts are detected in
+    // snapshot transactions.
+    //
+    // This isolation level does not support read-only and partitioned DML
+    // transactions.
+    //
+    // When `REPEATABLE_READ` is specified on a read-write transaction, the
+    // locking semantics default to `OPTIMISTIC`.
+    REPEATABLE_READ = 2;
+  }
+
+  // Required. The type of transaction.
+  oneof mode {
+    // Transaction may write.
+    //
+    // Authorization to begin a read-write transaction requires
+    // `spanner.databases.beginOrRollbackReadWriteTransaction` permission
+    // on the `session` resource.
+    ReadWrite read_write = 1;
+
+    // Partitioned DML transaction.
+    //
+    // Authorization to begin a Partitioned DML transaction requires
+    // `spanner.databases.beginPartitionedDmlTransaction` permission
+    // on the `session` resource.
+    PartitionedDml partitioned_dml = 3;
+
+    // Transaction does not write.
+    //
+    // Authorization to begin a read-only transaction requires
+    // `spanner.databases.beginReadOnlyTransaction` permission
+    // on the `session` resource.
+    ReadOnly read_only = 2;
+  }
+
+  // When `exclude_txn_from_change_streams` is set to `true`, it prevents read
+  // or write transactions from being tracked in change streams.
+  //
+  // * If the DDL option `allow_txn_exclusion` is set to `true`, then the
+  // updates
+  //  made within this transaction aren't recorded in the change stream.
+  //
+  // * If you don't set the DDL option `allow_txn_exclusion` or if it's
+  //  set to `false`, then the updates made within this transaction are
+  //  recorded in the change stream.
+  //
+  // When `exclude_txn_from_change_streams` is set to `false` or not set,
+  // modifications from this transaction are recorded in all change streams
+  // that are tracking columns modified by these transactions.
+  //
+  // The `exclude_txn_from_change_streams` option can only be specified
+  // for read-write or partitioned DML transactions, otherwise the API returns
+  // an `INVALID_ARGUMENT` error.
+  bool exclude_txn_from_change_streams = 5;
+
+  // Isolation level for the transaction.
+  IsolationLevel isolation_level = 6;
+}
+
+// A transaction.
+message Transaction {
+  // `id` may be used to identify the transaction in subsequent
+  // [Read][google.spanner.v1.Spanner.Read],
+  // [ExecuteSql][google.spanner.v1.Spanner.ExecuteSql],
+  // [Commit][google.spanner.v1.Spanner.Commit], or
+  // [Rollback][google.spanner.v1.Spanner.Rollback] calls.
+  //
+  // Single-use read-only transactions do not have IDs, because
+  // single-use transactions do not support multiple requests.
+  bytes id = 1;
+
+  // For snapshot read-only transactions, the read timestamp chosen
+  // for the transaction. Not returned by default: see
+  // [TransactionOptions.ReadOnly.return_read_timestamp][google.spanner.v1.TransactionOptions.ReadOnly.return_read_timestamp].
+  //
+  // A timestamp in RFC3339 UTC \"Zulu\" format, accurate to nanoseconds.
+  // Example: `"2014-10-02T15:01:23.045123456Z"`.
+  google.protobuf.Timestamp read_timestamp = 2;
+
+  // A precommit token is included in the response of a BeginTransaction
+  // request if the read-write transaction is on a multiplexed session and
+  // a mutation_key was specified in the
+  // [BeginTransaction][google.spanner.v1.BeginTransactionRequest].
+  // The precommit token with the highest sequence number from this transaction
+  // attempt should be passed to the [Commit][google.spanner.v1.Spanner.Commit]
+  // request for this transaction.
+  MultiplexedSessionPrecommitToken precommit_token = 3;
+
+  // Optional. A cache update expresses a set of changes the client should
+  // incorporate into its location cache. The client should discard the changes
+  // if they are older than the data it already has. This data can be obtained
+  // in response to requests that included a `RoutingHint` field, but may also
+  // be obtained by explicit location-fetching RPCs which may be added in the
+  // future.
+  CacheUpdate cache_update = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// This message is used to select the transaction in which a
+// [Read][google.spanner.v1.Spanner.Read] or
+// [ExecuteSql][google.spanner.v1.Spanner.ExecuteSql] call runs.
+//
+// See [TransactionOptions][google.spanner.v1.TransactionOptions] for more
+// information about transactions.
+message TransactionSelector {
+  // If no fields are set, the default is a single use transaction
+  // with strong concurrency.
+  oneof selector {
+    // Execute the read or SQL query in a temporary transaction.
+    // This is the most efficient way to execute a transaction that
+    // consists of a single SQL query.
+    TransactionOptions single_use = 1;
+
+    // Execute the read or SQL query in a previously-started transaction.
+    bytes id = 2;
+
+    // Begin a new transaction and execute this read or SQL query in
+    // it. The transaction ID of the new transaction is returned in
+    // [ResultSetMetadata.transaction][google.spanner.v1.ResultSetMetadata.transaction],
+    // which is a [Transaction][google.spanner.v1.Transaction].
+    TransactionOptions begin = 3;
+  }
+}
+
+// When a read-write transaction is executed on a multiplexed session,
+// this precommit token is sent back to the client
+// as a part of the [Transaction][google.spanner.v1.Transaction] message in the
+// [BeginTransaction][google.spanner.v1.BeginTransactionRequest] response and
+// also as a part of the [ResultSet][google.spanner.v1.ResultSet] and
+// [PartialResultSet][google.spanner.v1.PartialResultSet] responses.
+message MultiplexedSessionPrecommitToken {
+  // Opaque precommit token.
+  bytes precommit_token = 1;
+
+  // An incrementing seq number is generated on every precommit token
+  // that is returned. Clients should remember the precommit token with the
+  // highest sequence number from the current transaction attempt.
+  int32 seq_num = 2;
+}

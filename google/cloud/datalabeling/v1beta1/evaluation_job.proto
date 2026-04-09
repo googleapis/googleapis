@@ -1,0 +1,274 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
+syntax = "proto3";
+
+package google.cloud.datalabeling.v1beta1;
+
+import "google/api/resource.proto";
+import "google/cloud/datalabeling/v1beta1/dataset.proto";
+import "google/cloud/datalabeling/v1beta1/evaluation.proto";
+import "google/cloud/datalabeling/v1beta1/human_annotation_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+
+option csharp_namespace = "Google.Cloud.DataLabeling.V1Beta1";
+option go_package = "cloud.google.com/go/datalabeling/apiv1beta1/datalabelingpb;datalabelingpb";
+option java_multiple_files = true;
+option java_package = "com.google.cloud.datalabeling.v1beta1";
+option php_namespace = "Google\\Cloud\\DataLabeling\\V1beta1";
+option ruby_package = "Google::Cloud::DataLabeling::V1beta1";
+
+// Defines an evaluation job that runs periodically to generate
+// [Evaluations][google.cloud.datalabeling.v1beta1.Evaluation]. [Creating an evaluation
+// job](/ml-engine/docs/continuous-evaluation/create-job) is the starting point
+// for using continuous evaluation.
+message EvaluationJob {
+  option (google.api.resource) = {
+    type: "datalabeling.googleapis.com/EvaluationJob"
+    pattern: "projects/{project}/evaluationJobs/{evaluation_job}"
+  };
+
+  // State of the job.
+  enum State {
+    STATE_UNSPECIFIED = 0;
+
+    // The job is scheduled to run at the [configured interval][google.cloud.datalabeling.v1beta1.EvaluationJob.schedule]. You
+    // can [pause][google.cloud.datalabeling.v1beta1.DataLabelingService.PauseEvaluationJob] or
+    // [delete][google.cloud.datalabeling.v1beta1.DataLabelingService.DeleteEvaluationJob] the job.
+    //
+    // When the job is in this state, it samples prediction input and output
+    // from your model version into your BigQuery table as predictions occur.
+    SCHEDULED = 1;
+
+    // The job is currently running. When the job runs, Data Labeling Service
+    // does several things:
+    //
+    // 1. If you have configured your job to use Data Labeling Service for
+    //    ground truth labeling, the service creates a
+    //    [Dataset][google.cloud.datalabeling.v1beta1.Dataset] and a labeling task for all data sampled
+    //    since the last time the job ran. Human labelers provide ground truth
+    //    labels for your data. Human labeling may take hours, or even days,
+    //    depending on how much data has been sampled. The job remains in the
+    //    `RUNNING` state during this time, and it can even be running multiple
+    //    times in parallel if it gets triggered again (for example 24 hours
+    //    later) before the earlier run has completed. When human labelers have
+    //    finished labeling the data, the next step occurs.
+    //    <br><br>
+    //    If you have configured your job to provide your own ground truth
+    //    labels, Data Labeling Service still creates a [Dataset][google.cloud.datalabeling.v1beta1.Dataset] for newly
+    //    sampled data, but it expects that you have already added ground truth
+    //    labels to the BigQuery table by this time. The next step occurs
+    //    immediately.
+    //
+    // 2. Data Labeling Service creates an [Evaluation][google.cloud.datalabeling.v1beta1.Evaluation] by comparing your
+    //    model version's predictions with the ground truth labels.
+    //
+    // If the job remains in this state for a long time, it continues to sample
+    // prediction data into your BigQuery table and will run again at the next
+    // interval, even if it causes the job to run multiple times in parallel.
+    RUNNING = 2;
+
+    // The job is not sampling prediction input and output into your BigQuery
+    // table and it will not run according to its schedule. You can
+    // [resume][google.cloud.datalabeling.v1beta1.DataLabelingService.ResumeEvaluationJob] the job.
+    PAUSED = 3;
+
+    // The job has this state right before it is deleted.
+    STOPPED = 4;
+  }
+
+  // Output only. After you create a job, Data Labeling Service assigns a name
+  // to the job with the following format:
+  //
+  // "projects/<var>{project_id}</var>/evaluationJobs/<var>{evaluation_job_id}</var>"
+  string name = 1;
+
+  // Required. Description of the job. The description can be up to 25,000
+  // characters long.
+  string description = 2;
+
+  // Output only. Describes the current state of the job.
+  State state = 3;
+
+  // Required. Describes the interval at which the job runs. This interval must
+  // be at least 1 day, and it is rounded to the nearest day. For example, if
+  // you specify a 50-hour interval, the job runs every 2 days.
+  //
+  // You can provide the schedule in
+  // [crontab format](/scheduler/docs/configuring/cron-job-schedules) or in an
+  // [English-like
+  // format](/appengine/docs/standard/python/config/cronref#schedule_format).
+  //
+  // Regardless of what you specify, the job will run at 10:00 AM UTC. Only the
+  // interval from this schedule is used, not the specific time of day.
+  string schedule = 4;
+
+  // Required. The [AI Platform Prediction model
+  // version](/ml-engine/docs/prediction-overview) to be evaluated. Prediction
+  // input and output is sampled from this model version. When creating an
+  // evaluation job, specify the model version in the following format:
+  //
+  // "projects/<var>{project_id}</var>/models/<var>{model_name}</var>/versions/<var>{version_name}</var>"
+  //
+  // There can only be one evaluation job per model version.
+  string model_version = 5;
+
+  // Required. Configuration details for the evaluation job.
+  EvaluationJobConfig evaluation_job_config = 6;
+
+  // Required. Name of the [AnnotationSpecSet][google.cloud.datalabeling.v1beta1.AnnotationSpecSet] describing all the
+  // labels that your machine learning model outputs. You must create this
+  // resource before you create an evaluation job and provide its name in the
+  // following format:
+  //
+  // "projects/<var>{project_id}</var>/annotationSpecSets/<var>{annotation_spec_set_id}</var>"
+  string annotation_spec_set = 7;
+
+  // Required. Whether you want Data Labeling Service to provide ground truth
+  // labels for prediction input. If you want the service to assign human
+  // labelers to annotate your data, set this to `true`. If you want to provide
+  // your own ground truth labels in the evaluation job's BigQuery table, set
+  // this to `false`.
+  bool label_missing_ground_truth = 8;
+
+  // Output only. Every time the evaluation job runs and an error occurs, the
+  // failed attempt is appended to this array.
+  repeated Attempt attempts = 9;
+
+  // Output only. Timestamp of when this evaluation job was created.
+  google.protobuf.Timestamp create_time = 10;
+}
+
+// Configures specific details of how a continuous evaluation job works. Provide
+// this configuration when you create an EvaluationJob.
+message EvaluationJobConfig {
+  // Required. Details for how you want human reviewers to provide ground truth
+  // labels.
+  oneof human_annotation_request_config {
+    // Specify this field if your model version performs image classification or
+    // general classification.
+    //
+    // `annotationSpecSet` in this configuration must match
+    // [EvaluationJob.annotationSpecSet][google.cloud.datalabeling.v1beta1.EvaluationJob.annotation_spec_set].
+    // `allowMultiLabel` in this configuration must match
+    // `classificationMetadata.isMultiLabel` in [input_config][google.cloud.datalabeling.v1beta1.EvaluationJobConfig.input_config].
+    ImageClassificationConfig image_classification_config = 4;
+
+    // Specify this field if your model version performs image object detection
+    // (bounding box detection).
+    //
+    // `annotationSpecSet` in this configuration must match
+    // [EvaluationJob.annotationSpecSet][google.cloud.datalabeling.v1beta1.EvaluationJob.annotation_spec_set].
+    BoundingPolyConfig bounding_poly_config = 5;
+
+    // Specify this field if your model version performs text classification.
+    //
+    // `annotationSpecSet` in this configuration must match
+    // [EvaluationJob.annotationSpecSet][google.cloud.datalabeling.v1beta1.EvaluationJob.annotation_spec_set].
+    // `allowMultiLabel` in this configuration must match
+    // `classificationMetadata.isMultiLabel` in [input_config][google.cloud.datalabeling.v1beta1.EvaluationJobConfig.input_config].
+    TextClassificationConfig text_classification_config = 8;
+  }
+
+  // Rquired. Details for the sampled prediction input. Within this
+  // configuration, there are requirements for several fields:
+  //
+  // * `dataType` must be one of `IMAGE`, `TEXT`, or `GENERAL_DATA`.
+  // * `annotationType` must be one of `IMAGE_CLASSIFICATION_ANNOTATION`,
+  //   `TEXT_CLASSIFICATION_ANNOTATION`, `GENERAL_CLASSIFICATION_ANNOTATION`,
+  //   or `IMAGE_BOUNDING_BOX_ANNOTATION` (image object detection).
+  // * If your machine learning model performs classification, you must specify
+  //   `classificationMetadata.isMultiLabel`.
+  // * You must specify `bigquerySource` (not `gcsSource`).
+  InputConfig input_config = 1;
+
+  // Required. Details for calculating evaluation metrics and creating
+  // [Evaulations][google.cloud.datalabeling.v1beta1.Evaluation]. If your model version performs image object
+  // detection, you must specify the `boundingBoxEvaluationOptions` field within
+  // this configuration. Otherwise, provide an empty object for this
+  // configuration.
+  EvaluationConfig evaluation_config = 2;
+
+  // Optional. Details for human annotation of your data. If you set
+  // [labelMissingGroundTruth][google.cloud.datalabeling.v1beta1.EvaluationJob.label_missing_ground_truth] to
+  // `true` for this evaluation job, then you must specify this field. If you
+  // plan to provide your own ground truth labels, then omit this field.
+  //
+  // Note that you must create an [Instruction][google.cloud.datalabeling.v1beta1.Instruction] resource before you can
+  // specify this field. Provide the name of the instruction resource in the
+  // `instruction` field within this configuration.
+  HumanAnnotationConfig human_annotation_config = 3;
+
+  // Required. Prediction keys that tell Data Labeling Service where to find the
+  // data for evaluation in your BigQuery table. When the service samples
+  // prediction input and output from your model version and saves it to
+  // BigQuery, the data gets stored as JSON strings in the BigQuery table. These
+  // keys tell Data Labeling Service how to parse the JSON.
+  //
+  // You can provide the following entries in this field:
+  //
+  // * `data_json_key`: the data key for prediction input. You must provide
+  //   either this key or `reference_json_key`.
+  // * `reference_json_key`: the data reference key for prediction input. You
+  //   must provide either this key or `data_json_key`.
+  // * `label_json_key`: the label key for prediction output. Required.
+  // * `label_score_json_key`: the score key for prediction output. Required.
+  // * `bounding_box_json_key`: the bounding box key for prediction output.
+  //   Required if your model version perform image object detection.
+  //
+  // Learn [how to configure prediction
+  // keys](/ml-engine/docs/continuous-evaluation/create-job#prediction-keys).
+  map<string, string> bigquery_import_keys = 9;
+
+  // Required. The maximum number of predictions to sample and save to BigQuery
+  // during each [evaluation interval][google.cloud.datalabeling.v1beta1.EvaluationJob.schedule]. This limit
+  // overrides `example_sample_percentage`: even if the service has not sampled
+  // enough predictions to fulfill `example_sample_perecentage` during an
+  // interval, it stops sampling predictions when it meets this limit.
+  int32 example_count = 10;
+
+  // Required. Fraction of predictions to sample and save to BigQuery during
+  // each [evaluation interval][google.cloud.datalabeling.v1beta1.EvaluationJob.schedule]. For example, 0.1 means
+  // 10% of predictions served by your model version get saved to BigQuery.
+  double example_sample_percentage = 11;
+
+  // Optional. Configuration details for evaluation job alerts. Specify this
+  // field if you want to receive email alerts if the evaluation job finds that
+  // your predictions have low mean average precision during a run.
+  EvaluationJobAlertConfig evaluation_job_alert_config = 13;
+}
+
+// Provides details for how an evaluation job sends email alerts based on the
+// results of a run.
+message EvaluationJobAlertConfig {
+  // Required. An email address to send alerts to.
+  string email = 1;
+
+  // Required. A number between 0 and 1 that describes a minimum mean average
+  // precision threshold. When the evaluation job runs, if it calculates that
+  // your model version's predictions from the recent interval have
+  // [meanAveragePrecision][google.cloud.datalabeling.v1beta1.PrCurve.mean_average_precision] below this
+  // threshold, then it sends an alert to your specified email.
+  double min_acceptable_mean_average_precision = 2;
+}
+
+// Records a failed evaluation job run.
+message Attempt {
+  google.protobuf.Timestamp attempt_time = 1;
+
+  // Details of errors that occurred.
+  repeated google.rpc.Status partial_failures = 2;
+}

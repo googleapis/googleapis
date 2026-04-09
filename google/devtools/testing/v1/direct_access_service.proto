@@ -1,0 +1,301 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.devtools.testing.v1;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/devtools/testing/v1/adb_service.proto";
+import "google/devtools/testing/v1/test_execution.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "google.golang.org/genproto/googleapis/devtools/testing/v1;testing";
+option java_multiple_files = true;
+option java_outer_classname = "DirectAccessServiceProto";
+option java_package = "com.google.devtools.testing.v1";
+
+// A service for allocating devices and interacting with the live-allocated
+// devices.
+//
+// This service is part of Firebase Test Lab. To learn about how to use the
+// product, and how to integrate it with your system,
+// visit https://firebase.google.com/docs/test-lab.
+//
+// Each Session will wait for available capacity, at a higher
+// priority over Test Execution. When allocated, the session will be exposed
+// through a stream for integration.
+//
+// DirectAccessService is currently available as a preview to select developers.
+// You can register today on behalf of you and your team at
+// https://developer.android.com/studio/preview/android-device-streaming
+service DirectAccessService {
+  option (google.api.default_host) = "testing.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform";
+
+  // POST /v1/projects/{project_id}/deviceSessions
+  rpc CreateDeviceSession(CreateDeviceSessionRequest) returns (DeviceSession) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*}/deviceSessions"
+      body: "device_session"
+    };
+    option (google.api.method_signature) = "parent,device_session";
+  }
+
+  // GET /v1/projects/{project_id}/deviceSessions
+  // Lists device Sessions owned by the project user.
+  rpc ListDeviceSessions(ListDeviceSessionsRequest)
+      returns (ListDeviceSessionsResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*}/deviceSessions"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // GET /v1/projects/{project_id}/deviceSessions/{device_session_id}
+  // Return a DeviceSession, which documents the allocation status and
+  // whether the device is allocated. Clients making requests from this API
+  // must poll GetDeviceSession.
+  rpc GetDeviceSession(GetDeviceSessionRequest) returns (DeviceSession) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/deviceSessions/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // POST
+  // /v1/projects/{project_id}/deviceSessions/{device_session_id}:cancel
+  // Changes the DeviceSession to state FINISHED and terminates all connections.
+  // Canceled sessions are not deleted and can be retrieved or
+  // listed by the user until they expire based on the 28 day deletion policy.
+  rpc CancelDeviceSession(CancelDeviceSessionRequest)
+      returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/deviceSessions/*}:cancel"
+      body: "*"
+    };
+  }
+
+  // PATCH
+  // /v1/projects/{projectId}/deviceSessions/deviceSessionId}:updateDeviceSession
+  // Updates the current device session to the fields described by the
+  // update_mask.
+  rpc UpdateDeviceSession(UpdateDeviceSessionRequest) returns (DeviceSession) {
+    option (google.api.http) = {
+      patch: "/v1/{device_session.name=projects/*/deviceSessions/*}"
+      body: "device_session"
+    };
+    option (google.api.method_signature) = "device_session,update_mask";
+  }
+
+  // Exposes ADB connection for use with the Adb Device Forwarder project
+  // if the reserved device supports ADB.
+  // gRPC headers are used to authenticate the Connect RPC, as well as
+  // associate to a particular device session.
+  // In particular, the user must specify the "X-FTL-Session-Name" header.
+  rpc AdbConnect(stream AdbMessage) returns (stream DeviceMessage) {}
+}
+
+// A Request for the device session from the session service.
+message CreateDeviceSessionRequest {
+  // Required. The Compute Engine project under which this device will be
+  // allocated. "projects/{project_id}"
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudresourcemanager.googleapis.com/Project"
+    }
+  ];
+
+  // Required. A device session to create.
+  DeviceSession device_session = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request a list of device sessions in the provided parent matching the given
+// filter.
+message ListDeviceSessionsRequest {
+  // Required. The name of the parent to request, e.g. "projects/{project_id}"
+  string parent = 4 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudresourcemanager.googleapis.com/Project"
+    }
+  ];
+
+  // Optional. The maximum number of DeviceSessions to return.
+  int32 page_size = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A continuation token for paging.
+  string page_token = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If specified, responses will be filtered by the given filter.
+  // Allowed fields are: session_state.
+  string filter = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A list of device sessions.
+message ListDeviceSessionsResponse {
+  // The sessions matching the specified filter in the given cloud project.
+  repeated DeviceSession device_sessions = 1;
+
+  // A token, which can be sent as `page_token` to retrieve the next page.
+  // If this field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
+}
+
+// The request object for a Device Session.
+message GetDeviceSessionRequest {
+  // Required. Name of the DeviceSession, e.g.
+  // "projects/{project_id}/deviceSessions/{session_id}"
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "testing.googleapis.com/DeviceSession"
+    }
+  ];
+}
+
+// The request object for cancelling a Device Session.
+message CancelDeviceSessionRequest {
+  // Required. Name of the DeviceSession, e.g.
+  // "projects/{project_id}/deviceSessions/{session_id}"
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "testing.googleapis.com/DeviceSession"
+    }
+  ];
+}
+
+// The request object for the UpdateDeviceSession RPC.
+message UpdateDeviceSessionRequest {
+  // Required. DeviceSession to update.
+  // The device session's `name` field is used to identify the session to update
+  // "projects/{project_id}/deviceSessions/{session_id}"
+  DeviceSession device_session = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The list of fields to update.
+  google.protobuf.FieldMask update_mask = 2
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// Protobuf message describing the device message, used from several RPCs.
+message DeviceSession {
+  option (google.api.resource) = {
+    type: "testing.googleapis.com/DeviceSession"
+    pattern: "projects/{project}/deviceSessions/{session}"
+  };
+
+  // The state that the device session resides.
+  enum SessionState {
+    // Default value. This value is unused.
+    SESSION_STATE_UNSPECIFIED = 0;
+
+    // Initial state of a session request. The session is being validated for
+    // correctness and a device is not yet requested.
+    REQUESTED = 1;
+
+    // The session has been validated and is in the queue for a device.
+    PENDING = 2;
+
+    // The session has been granted and the device is accepting
+    // connections.
+    ACTIVE = 3;
+
+    // The session duration exceeded the device’s reservation time period and
+    // timed out automatically.
+    EXPIRED = 4;
+
+    // The user is finished with the session and it was canceled by the user
+    // while the request was still getting allocated or after allocation and
+    // during device usage period.
+    FINISHED = 5;
+
+    // Unable to complete the session because the device was unavailable and
+    // it failed to allocate through the scheduler. For example, a device not
+    // in the catalog was requested or the request expired in the allocation
+    // queue.
+    UNAVAILABLE = 6;
+
+    // Unable to complete the session for an internal reason, such as an
+    // infrastructure failure.
+    ERROR = 7;
+  }
+
+  // A message encapsulating a series of Session states and the time that the
+  // DeviceSession first entered those states.
+  message SessionStateEvent {
+    // Output only. The session_state tracked by this event
+    SessionState session_state = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The time that the session_state first encountered that
+    // state.
+    google.protobuf.Timestamp event_time = 2
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. A human-readable message to explain the state.
+    string state_message = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Optional. Name of the DeviceSession, e.g.
+  // "projects/{project_id}/deviceSessions/{session_id}"
+  string name = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The title of the DeviceSession to be presented in the UI.
+  string display_name = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Current state of the DeviceSession.
+  SessionState state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The historical state transitions of the session_state message
+  // including the current session state.
+  repeated SessionStateEvent state_histories = 14
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  oneof expiration {
+    // Optional. The amount of time that a device will be initially allocated
+    // for. This can eventually be extended with the UpdateDeviceSession RPC.
+    // Default: 15 minutes.
+    google.protobuf.Duration ttl = 13 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. If the device is still in use at this time, any connections
+    // will be ended and the SessionState will transition from ACTIVE to
+    // FINISHED.
+    google.protobuf.Timestamp expire_time = 5
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Output only. The interval of time that this device must be interacted with
+  // before it transitions from ACTIVE to TIMEOUT_INACTIVITY.
+  google.protobuf.Duration inactivity_timeout = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time that the Session was created.
+  google.protobuf.Timestamp create_time = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The timestamp that the session first became ACTIVE.
+  google.protobuf.Timestamp active_start_time = 9
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Required. The requested device
+  AndroidDevice android_device = 15 [(google.api.field_behavior) = REQUIRED];
+}

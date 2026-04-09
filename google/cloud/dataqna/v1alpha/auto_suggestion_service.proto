@@ -1,0 +1,215 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.dataqna.v1alpha;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/dataqna/v1alpha/annotated_string.proto";
+import "google/api/client.proto";
+
+option csharp_namespace = "Google.Cloud.DataQnA.V1Alpha";
+option go_package = "cloud.google.com/go/dataqna/apiv1alpha/dataqnapb;dataqnapb";
+option java_multiple_files = true;
+option java_outer_classname = "AutoSuggestionServiceProto";
+option java_package = "com.google.cloud.dataqna.v1alpha";
+option php_namespace = "Google\\Cloud\\DataQnA\\V1alpha";
+option ruby_package = "Google::Cloud::DataQnA::V1alpha";
+
+// This stateless API provides automatic suggestions for natural language
+// queries for the data sources in the provided project and location.
+//
+// The service provides a resourceless operation `suggestQueries` that can be
+// called to get a list of suggestions for a given incomplete query and scope
+// (or list of scopes) under which the query is to be interpreted.
+//
+// There are two types of suggestions, ENTITY for single entity suggestions
+// and TEMPLATE for full sentences. By default, both types are returned.
+//
+// Example Request:
+// ```
+// GetSuggestions({
+//   parent: "locations/us/projects/my-project"
+//   scopes:
+//   "//bigquery.googleapis.com/projects/my-project/datasets/my-dataset/tables/my-table"
+//   query: "top it"
+// })
+// ```
+//
+// The service will retrieve information based on the given scope(s) and give
+// suggestions based on that (e.g. "top item" for "top it" if "item" is a known
+// dimension for the provided scope).
+// ```
+// suggestions {
+//   suggestion_info {
+//     annotated_suggestion {
+//       text_formatted: "top item by sum of usd_revenue_net"
+//       markups {
+//         type: DIMENSION
+//         start_char_index: 4
+//         length: 4
+//       }
+//       markups {
+//         type: METRIC
+//         start_char_index: 19
+//         length: 15
+//       }
+//     }
+//     query_matches {
+//       start_char_index: 0
+//       length: 6
+//     }
+//   }
+//   suggestion_type: TEMPLATE
+//   ranking_score: 0.9
+// }
+// suggestions {
+//   suggestion_info {
+//     annotated_suggestion {
+//       text_formatted: "item"
+//       markups {
+//         type: DIMENSION
+//         start_char_index: 4
+//         length: 2
+//       }
+//     }
+//     query_matches {
+//       start_char_index: 0
+//       length: 6
+//     }
+//   }
+//   suggestion_type: ENTITY
+//   ranking_score: 0.8
+// }
+// ```
+service AutoSuggestionService {
+  option (google.api.default_host) = "dataqna.googleapis.com";
+  option (google.api.oauth_scopes) = "https://www.googleapis.com/auth/cloud-platform";
+
+  // Gets a list of suggestions based on a prefix string.
+  // AutoSuggestion tolerance should be less than 1 second.
+  rpc SuggestQueries(SuggestQueriesRequest) returns (SuggestQueriesResponse) {
+    option (google.api.http) = {
+      post: "/v1alpha/{parent=projects/*/locations/*}:suggestQueries"
+      body: "*"
+    };
+  }
+}
+
+// Request for query suggestions.
+message SuggestQueriesRequest {
+  // Required. The parent of the suggestion query is the resource denoting the project and
+  // location.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
+
+  // The scopes to which this search is restricted. The only supported scope
+  // pattern is
+  // `//bigquery.googleapis.com/projects/{GCP-PROJECT-ID}/datasets/{DATASET-ID}/tables/{TABLE-ID}`.
+  repeated string scopes = 2;
+
+  // User query for which to generate suggestions. If the query is empty, zero
+  // state suggestions are returned. This allows UIs to display suggestions
+  // right away, helping the user to get a sense of what a query might look
+  // like.
+  string query = 3;
+
+  // The requested suggestion type. Multiple suggestion types can be
+  // requested, but there is no guarantee that the service will return
+  // suggestions for each type. Suggestions for a requested type might rank
+  // lower than suggestions for other types and the service may decide to cut
+  // these suggestions off.
+  repeated SuggestionType suggestion_types = 4;
+}
+
+// A suggestion for a query with a ranking score.
+message Suggestion {
+  // Detailed information about the suggestion.
+  SuggestionInfo suggestion_info = 1;
+
+  // The score of the suggestion. This can be used to define ordering in UI.
+  // The score represents confidence in the suggestion where higher is better.
+  // All score values must be in the range [0, 1).
+  double ranking_score = 2;
+
+  // The type of the suggestion.
+  SuggestionType suggestion_type = 3;
+}
+
+// Detailed information about the suggestion.
+message SuggestionInfo {
+  // MatchInfo describes which part of suggestion matched with data in user
+  // typed query. This can be used to highlight matching parts in the UI. This
+  // is different from the annotations provided in annotated_suggestion. The
+  // annotated_suggestion provides information about the semantic meaning, while
+  // this provides information about how it relates to the input.
+  //
+  // Example:
+  // user query: `top products`
+  //
+  // ```
+  // annotated_suggestion {
+  //  text_formatted = "top product_group"
+  //  html_formatted = "top <b>product_group</b>"
+  //  markups {
+  //   {type: TEXT, start_char_index: 0, length: 3}
+  //   {type: DIMENSION, start_char_index: 4, length: 13}
+  //  }
+  // }
+  //
+  // query_matches {
+  //  { start_char_index: 0, length: 3 }
+  //  { start_char_index: 4, length: 7}
+  // }
+  // ```
+  message MatchInfo {
+    // Unicode character index of the string annotation.
+    int32 start_char_index = 1;
+
+    // Count of unicode characters of this substring.
+    int32 length = 2;
+  }
+
+  // Annotations for the suggestion. This provides information about which part
+  // of the suggestion corresponds to what semantic meaning (e.g. a metric).
+  AnnotatedString annotated_suggestion = 1;
+
+  // Matches between user query and the annotated string.
+  repeated MatchInfo query_matches = 2;
+}
+
+// Response to SuggestQueries.
+message SuggestQueriesResponse {
+  // A list of suggestions.
+  repeated Suggestion suggestions = 1;
+}
+
+// The type of suggestion.
+enum SuggestionType {
+  // No suggestiont type is specified.
+  SUGGESTION_TYPE_UNSPECIFIED = 0;
+
+  // Entity suggestion type. Suggestions are for single entities.
+  ENTITY = 1;
+
+  // Template suggestion type. Suggestions are for full sentences.
+  TEMPLATE = 2;
+}

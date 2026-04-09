@@ -1,0 +1,363 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.billing.v1;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/timestamp.proto";
+import "google/type/money.proto";
+
+option csharp_namespace = "Google.Cloud.Billing.V1";
+option go_package = "cloud.google.com/go/billing/apiv1/billingpb;billingpb";
+option java_multiple_files = true;
+option java_outer_classname = "CloudCatalogProto";
+option java_package = "com.google.cloud.billing.v1";
+option objc_class_prefix = "CLDCTLG";
+
+// A catalog of Google Cloud Platform services and SKUs.
+// Provides pricing information and metadata on Google Cloud Platform services
+// and SKUs.
+service CloudCatalog {
+  option (google.api.default_host) = "cloudbilling.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-billing,"
+      "https://www.googleapis.com/auth/cloud-billing.readonly,"
+      "https://www.googleapis.com/auth/cloud-platform";
+
+  // Lists all public cloud services.
+  rpc ListServices(ListServicesRequest) returns (ListServicesResponse) {
+    option (google.api.http) = {
+      get: "/v1/services"
+    };
+    option (google.api.method_signature) = "";
+  }
+
+  // Lists all publicly available SKUs for a given cloud service.
+  rpc ListSkus(ListSkusRequest) returns (ListSkusResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=services/*}/skus"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+}
+
+// Encapsulates a single service in Google Cloud Platform.
+message Service {
+  option (google.api.resource) = {
+    type: "cloudbilling.googleapis.com/Service"
+    pattern: "services/{service}"
+  };
+
+  // The resource name for the service.
+  // Example: "services/6F81-5844-456A"
+  string name = 1;
+
+  // The identifier for the service.
+  // Example: "6F81-5844-456A"
+  string service_id = 2;
+
+  // A human readable display name for this service.
+  string display_name = 3;
+
+  // The business under which the service is offered.
+  // Ex. "businessEntities/GCP", "businessEntities/Maps"
+  string business_entity_name = 4;
+}
+
+// Encapsulates a single SKU in Google Cloud
+message Sku {
+  option (google.api.resource) = {
+    type: "cloudbilling.googleapis.com/Sku"
+    pattern: "services/{service}/skus/{sku}"
+  };
+
+  // The resource name for the SKU.
+  // Example: "services/6F81-5844-456A/skus/D041-B8A1-6E0B"
+  string name = 1;
+
+  // The identifier for the SKU.
+  // Example: "D041-B8A1-6E0B"
+  string sku_id = 2;
+
+  // A human readable description of the SKU, has a maximum length of 256
+  // characters.
+  string description = 3;
+
+  // The category hierarchy of this SKU, purely for organizational purpose.
+  Category category = 4;
+
+  // List of service regions this SKU is offered at.
+  // Example: "asia-east1"
+  // Service regions can be found at https://cloud.google.com/about/locations/
+  repeated string service_regions = 5;
+
+  // A timeline of pricing info for this SKU in chronological order.
+  repeated PricingInfo pricing_info = 6;
+
+  // Identifies the service provider.
+  // This is 'Google' for first party services in Google Cloud Platform.
+  string service_provider_name = 7;
+
+  // The geographic taxonomy for this sku.
+  GeoTaxonomy geo_taxonomy = 8;
+}
+
+// Represents the category hierarchy of a SKU.
+message Category {
+  // The display name of the service this SKU belongs to.
+  string service_display_name = 1;
+
+  // The type of product the SKU refers to.
+  // Example: "Compute", "Storage", "Network", "ApplicationServices" etc.
+  string resource_family = 2;
+
+  // A group classification for related SKUs.
+  // Example: "RAM", "GPU", "Prediction", "Ops", "GoogleEgress" etc.
+  string resource_group = 3;
+
+  // Represents how the SKU is consumed.
+  // Example: "OnDemand", "Preemptible", "Commit1Mo", "Commit1Yr" etc.
+  string usage_type = 4;
+}
+
+// Represents the pricing information for a SKU at a single point of time.
+message PricingInfo {
+  // The timestamp from which this pricing was effective within the requested
+  // time range. This is guaranteed to be greater than or equal to the
+  // start_time field in the request and less than the end_time field in the
+  // request. If a time range was not specified in the request this field will
+  // be equivalent to a time within the last 12 hours, indicating the latest
+  // pricing info.
+  google.protobuf.Timestamp effective_time = 1;
+
+  // An optional human readable summary of the pricing information, has a
+  // maximum length of 256 characters.
+  string summary = 2;
+
+  // Expresses the pricing formula. See `PricingExpression` for an example.
+  PricingExpression pricing_expression = 3;
+
+  // Aggregation Info. This can be left unspecified if the pricing expression
+  // doesn't require aggregation.
+  AggregationInfo aggregation_info = 4;
+
+  // Conversion rate used for currency conversion, from USD to the currency
+  // specified in the request. This includes any surcharge collected for billing
+  // in non USD currency. If a currency is not specified in the request this
+  // defaults to 1.0.
+  // Example: USD * currency_conversion_rate = JPY
+  double currency_conversion_rate = 5;
+}
+
+// Expresses a mathematical pricing formula. For Example:-
+//
+// `usage_unit: GBy`
+// `tiered_rates:`
+//    `[start_usage_amount: 20, unit_price: $10]`
+//    `[start_usage_amount: 100, unit_price: $5]`
+//
+// The above expresses a pricing formula where the first 20GB is free, the
+// next 80GB is priced at $10 per GB followed by $5 per GB for additional
+// usage.
+message PricingExpression {
+  // The price rate indicating starting usage and its corresponding price.
+  message TierRate {
+    // Usage is priced at this rate only after this amount.
+    // Example: start_usage_amount of 10 indicates that the usage will be priced
+    // at the unit_price after the first 10 usage_units.
+    double start_usage_amount = 1;
+
+    // The price per unit of usage.
+    // Example: unit_price of amount $10 indicates that each unit will cost $10.
+    google.type.Money unit_price = 2;
+  }
+
+  // The short hand for unit of usage this pricing is specified in.
+  // Example: usage_unit of "GiBy" means that usage is specified in "Gibi Byte".
+  string usage_unit = 1;
+
+  // The recommended quantity of units for displaying pricing info. When
+  // displaying pricing info it is recommended to display:
+  // (unit_price * display_quantity) per display_quantity usage_unit.
+  // This field does not affect the pricing formula and is for display purposes
+  // only.
+  // Example: If the unit_price is "0.0001 USD", the usage_unit is "GB" and
+  // the display_quantity is "1000" then the recommended way of displaying the
+  // pricing info is "0.10 USD per 1000 GB"
+  double display_quantity = 2;
+
+  // The list of tiered rates for this pricing. The total cost is computed by
+  // applying each of the tiered rates on usage. This repeated list is sorted
+  // by ascending order of start_usage_amount.
+  repeated TierRate tiered_rates = 3;
+
+  // The unit of usage in human readable form.
+  // Example: "gibi byte".
+  string usage_unit_description = 4;
+
+  // The base unit for the SKU which is the unit used in usage exports.
+  // Example: "By"
+  string base_unit = 5;
+
+  // The base unit in human readable form.
+  // Example: "byte".
+  string base_unit_description = 6;
+
+  // Conversion factor for converting from price per usage_unit to price per
+  // base_unit, and start_usage_amount to start_usage_amount in base_unit.
+  // unit_price / base_unit_conversion_factor = price per base_unit.
+  // start_usage_amount * base_unit_conversion_factor = start_usage_amount in
+  // base_unit.
+  double base_unit_conversion_factor = 7;
+}
+
+// Represents the aggregation level and interval for pricing of a single SKU.
+message AggregationInfo {
+  // The level at which usage is aggregated to compute cost.
+  // Example: "ACCOUNT" aggregation level indicates that usage for tiered
+  // pricing is aggregated across all projects in a single account.
+  enum AggregationLevel {
+    AGGREGATION_LEVEL_UNSPECIFIED = 0;
+
+    ACCOUNT = 1;
+
+    PROJECT = 2;
+  }
+
+  // The interval at which usage is aggregated to compute cost.
+  // Example: "MONTHLY" aggregation interval indicates that usage for tiered
+  // pricing is aggregated every month.
+  enum AggregationInterval {
+    AGGREGATION_INTERVAL_UNSPECIFIED = 0;
+
+    DAILY = 1;
+
+    MONTHLY = 2;
+  }
+
+  AggregationLevel aggregation_level = 1;
+
+  AggregationInterval aggregation_interval = 2;
+
+  // The number of intervals to aggregate over.
+  // Example: If aggregation_level is "DAILY" and aggregation_count is 14,
+  // aggregation will be over 14 days.
+  int32 aggregation_count = 3;
+}
+
+// Encapsulates the geographic taxonomy data for a sku.
+message GeoTaxonomy {
+  // The type of Geo Taxonomy: GLOBAL, REGIONAL, or MULTI_REGIONAL.
+  enum Type {
+    // The type is not specified.
+    TYPE_UNSPECIFIED = 0;
+
+    // The sku is global in nature, e.g. a license sku. Global skus are
+    // available in all regions, and so have an empty region list.
+    GLOBAL = 1;
+
+    // The sku is available in a specific region, e.g. "us-west2".
+    REGIONAL = 2;
+
+    // The sku is associated with multiple regions, e.g. "us-west2" and
+    // "us-east1".
+    MULTI_REGIONAL = 3;
+  }
+
+  // The type of Geo Taxonomy: GLOBAL, REGIONAL, or MULTI_REGIONAL.
+  Type type = 1;
+
+  // The list of regions associated with a sku. Empty for Global skus, which are
+  // associated with all Google Cloud regions.
+  repeated string regions = 2;
+}
+
+// Request message for `ListServices`.
+message ListServicesRequest {
+  // Requested page size. Defaults to 5000.
+  int32 page_size = 1;
+
+  // A token identifying a page of results to return. This should be a
+  // `next_page_token` value returned from a previous `ListServices`
+  // call. If unspecified, the first page of results is returned.
+  string page_token = 2;
+}
+
+// Response message for `ListServices`.
+message ListServicesResponse {
+  // A list of services.
+  repeated Service services = 1;
+
+  // A token to retrieve the next page of results. To retrieve the next page,
+  // call `ListServices` again with the `page_token` field set to this
+  // value. This field is empty if there are no more results to retrieve.
+  string next_page_token = 2;
+}
+
+// Request message for `ListSkus`.
+message ListSkusRequest {
+  // Required. The name of the service.
+  // Example: "services/6F81-5844-456A"
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudbilling.googleapis.com/Service"
+    }
+  ];
+
+  // Optional inclusive start time of the time range for which the pricing
+  // versions will be returned. Timestamps in the future are not allowed.
+  // The time range has to be within a single calendar month in
+  // America/Los_Angeles timezone. Time range as a whole is optional. If not
+  // specified, the latest pricing will be returned (up to 12 hours old at
+  // most).
+  google.protobuf.Timestamp start_time = 2;
+
+  // Optional exclusive end time of the time range for which the pricing
+  // versions will be returned. Timestamps in the future are not allowed.
+  // The time range has to be within a single calendar month in
+  // America/Los_Angeles timezone. Time range as a whole is optional. If not
+  // specified, the latest pricing will be returned (up to 12 hours old at
+  // most).
+  google.protobuf.Timestamp end_time = 3;
+
+  // The ISO 4217 currency code for the pricing info in the response proto.
+  // Will use the conversion rate as of start_time.
+  // Optional. If not specified USD will be used.
+  string currency_code = 4;
+
+  // Requested page size. Defaults to 5000.
+  int32 page_size = 5;
+
+  // A token identifying a page of results to return. This should be a
+  // `next_page_token` value returned from a previous `ListSkus`
+  // call. If unspecified, the first page of results is returned.
+  string page_token = 6;
+}
+
+// Response message for `ListSkus`.
+message ListSkusResponse {
+  // The list of public SKUs of the given service.
+  repeated Sku skus = 1;
+
+  // A token to retrieve the next page of results. To retrieve the next page,
+  // call `ListSkus` again with the `page_token` field set to this
+  // value. This field is empty if there are no more results to retrieve.
+  string next_page_token = 2;
+}

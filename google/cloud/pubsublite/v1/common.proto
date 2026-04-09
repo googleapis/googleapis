@@ -1,0 +1,313 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.pubsublite.v1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option cc_enable_arenas = true;
+option csharp_namespace = "Google.Cloud.PubSubLite.V1";
+option go_package = "cloud.google.com/go/pubsublite/apiv1/pubsublitepb;pubsublitepb";
+option java_multiple_files = true;
+option java_outer_classname = "CommonProto";
+option java_package = "com.google.cloud.pubsublite.proto";
+option php_namespace = "Google\\Cloud\\PubSubLite\\V1";
+option ruby_package = "Google::Cloud::PubSubLite::V1";
+
+// The values associated with a key of an attribute.
+message AttributeValues {
+  // The list of values associated with a key.
+  repeated bytes values = 1;
+}
+
+// A message that is published by publishers and delivered to subscribers.
+message PubSubMessage {
+  // The key used for routing messages to partitions or for compaction (e.g.,
+  // keep the last N messages per key). If the key is empty, the message is
+  // routed to an arbitrary partition.
+  bytes key = 1;
+
+  // The payload of the message.
+  bytes data = 2;
+
+  // Optional attributes that can be used for message metadata/headers.
+  map<string, AttributeValues> attributes = 3;
+
+  // An optional, user-specified event time.
+  google.protobuf.Timestamp event_time = 4;
+}
+
+// A cursor that describes the position of a message within a topic partition.
+message Cursor {
+  // The offset of a message within a topic partition. Must be greater than or
+  // equal 0.
+  int64 offset = 1;
+}
+
+// A message that has been stored and sequenced by the Pub/Sub Lite system.
+message SequencedMessage {
+  // The position of a message within the partition where it is stored.
+  Cursor cursor = 1;
+
+  // The time when the message was received by the server when it was first
+  // published.
+  google.protobuf.Timestamp publish_time = 2;
+
+  // The user message.
+  PubSubMessage message = 3;
+
+  // The size in bytes of this message for flow control and quota purposes.
+  int64 size_bytes = 4;
+}
+
+// Metadata about a reservation resource.
+message Reservation {
+  option (google.api.resource) = {
+    type: "pubsublite.googleapis.com/Reservation"
+    pattern: "projects/{project}/locations/{location}/reservations/{reservation}"
+  };
+
+  // The name of the reservation.
+  // Structured like:
+  // projects/{project_number}/locations/{location}/reservations/{reservation_id}
+  string name = 1;
+
+  // The reserved throughput capacity. Every unit of throughput capacity is
+  // equivalent to 1 MiB/s of published messages or 2 MiB/s of subscribed
+  // messages.
+  //
+  // Any topics which are declared as using capacity from a Reservation will
+  // consume resources from this reservation instead of being charged
+  // individually.
+  int64 throughput_capacity = 2;
+}
+
+// Metadata about a topic resource.
+message Topic {
+  option (google.api.resource) = {
+    type: "pubsublite.googleapis.com/Topic"
+    pattern: "projects/{project}/locations/{location}/topics/{topic}"
+  };
+
+  // The settings for a topic's partitions.
+  message PartitionConfig {
+    // The throughput capacity configuration for each partition.
+    message Capacity {
+      // Publish throughput capacity per partition in MiB/s.
+      // Must be >= 4 and <= 16.
+      int32 publish_mib_per_sec = 1;
+
+      // Subscribe throughput capacity per partition in MiB/s.
+      // Must be >= 4 and <= 32.
+      int32 subscribe_mib_per_sec = 2;
+    }
+
+    // The number of partitions in the topic. Must be at least 1.
+    //
+    // Once a topic has been created the number of partitions can be increased
+    // but not decreased. Message ordering is not guaranteed across a topic
+    // resize. For more information see
+    // https://cloud.google.com/pubsub/lite/docs/topics#scaling_capacity
+    int64 count = 1;
+
+    // The throughput dimension of this topic.
+    oneof dimension {
+      // DEPRECATED: Use capacity instead which can express a superset of
+      // configurations.
+      //
+      // Every partition in the topic is allocated throughput equivalent to
+      // `scale` times the standard partition throughput (4 MiB/s). This is also
+      // reflected in the cost of this topic; a topic with `scale` of 2 and
+      // count of 10 is charged for 20 partitions. This value must be in the
+      // range [1,4].
+      int32 scale = 2 [deprecated = true];
+
+      // The capacity configuration.
+      Capacity capacity = 3;
+    }
+  }
+
+  // The settings for a topic's message retention.
+  message RetentionConfig {
+    // The provisioned storage, in bytes, per partition. If the number of bytes
+    // stored in any of the topic's partitions grows beyond this value, older
+    // messages will be dropped to make room for newer ones, regardless of the
+    // value of `period`.
+    int64 per_partition_bytes = 1;
+
+    // How long a published message is retained. If unset, messages will be
+    // retained as long as the bytes retained for each partition is below
+    // `per_partition_bytes`.
+    google.protobuf.Duration period = 2;
+  }
+
+  // The settings for this topic's Reservation usage.
+  message ReservationConfig {
+    // The Reservation to use for this topic's throughput capacity.
+    // Structured like:
+    // projects/{project_number}/locations/{location}/reservations/{reservation_id}
+    string throughput_reservation = 1 [(google.api.resource_reference) = {
+      type: "pubsublite.googleapis.com/Reservation"
+    }];
+  }
+
+  // The name of the topic.
+  // Structured like:
+  // projects/{project_number}/locations/{location}/topics/{topic_id}
+  string name = 1;
+
+  // The settings for this topic's partitions.
+  PartitionConfig partition_config = 2;
+
+  // The settings for this topic's message retention.
+  RetentionConfig retention_config = 3;
+
+  // The settings for this topic's Reservation usage.
+  ReservationConfig reservation_config = 4;
+}
+
+// Metadata about a subscription resource.
+message Subscription {
+  option (google.api.resource) = {
+    type: "pubsublite.googleapis.com/Subscription"
+    pattern: "projects/{project}/locations/{location}/subscriptions/{subscription}"
+  };
+
+  // The settings for a subscription's message delivery.
+  message DeliveryConfig {
+    // When this subscription should send messages to subscribers relative to
+    // messages persistence in storage. For details, see [Creating Lite
+    // subscriptions](https://cloud.google.com/pubsub/lite/docs/subscriptions#creating_lite_subscriptions).
+    enum DeliveryRequirement {
+      // Default value. This value is unused.
+      DELIVERY_REQUIREMENT_UNSPECIFIED = 0;
+
+      // The server does not wait for a published message to be successfully
+      // written to storage before delivering it to subscribers.
+      DELIVER_IMMEDIATELY = 1;
+
+      // The server will not deliver a published message to subscribers until
+      // the message has been successfully written to storage. This will result
+      // in higher end-to-end latency, but consistent delivery.
+      DELIVER_AFTER_STORED = 2;
+    }
+
+    // The DeliveryRequirement for this subscription.
+    DeliveryRequirement delivery_requirement = 3;
+  }
+
+  // The name of the subscription.
+  // Structured like:
+  // projects/{project_number}/locations/{location}/subscriptions/{subscription_id}
+  string name = 1;
+
+  // The name of the topic this subscription is attached to.
+  // Structured like:
+  // projects/{project_number}/locations/{location}/topics/{topic_id}
+  string topic = 2 [(google.api.resource_reference) = {
+    type: "pubsublite.googleapis.com/Topic"
+  }];
+
+  // The settings for this subscription's message delivery.
+  DeliveryConfig delivery_config = 3;
+
+  // If present, messages are automatically written from the Pub/Sub Lite topic
+  // associated with this subscription to a destination.
+  ExportConfig export_config = 4;
+}
+
+// Configuration for a Pub/Sub Lite subscription that writes messages to a
+// destination. User subscriber clients must not connect to this subscription.
+message ExportConfig {
+  // The desired export state.
+  enum State {
+    // Default value. This value is unused.
+    STATE_UNSPECIFIED = 0;
+
+    // Messages are being exported.
+    ACTIVE = 1;
+
+    // Exporting messages is suspended.
+    PAUSED = 2;
+
+    // Messages cannot be exported due to permission denied errors. Output only.
+    PERMISSION_DENIED = 3;
+
+    // Messages cannot be exported due to missing resources. Output only.
+    NOT_FOUND = 4;
+  }
+
+  // Configuration for exporting to a Pub/Sub topic.
+  message PubSubConfig {
+    // The name of the Pub/Sub topic.
+    // Structured like: projects/{project_number}/topics/{topic_id}.
+    // The topic may be changed.
+    string topic = 1;
+  }
+
+  // The desired state of this export. Setting this to values other than
+  // `ACTIVE` and `PAUSED` will result in an error.
+  State desired_state = 1;
+
+  // Output only. The current state of the export, which may be different to the
+  // desired state due to errors. This field is output only.
+  State current_state = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The name of an optional Pub/Sub Lite topic to publish messages
+  // that can not be exported to the destination. For example, the message can
+  // not be published to the Pub/Sub service because it does not satisfy the
+  // constraints documented at https://cloud.google.com/pubsub/docs/publisher.
+  //
+  // Structured like:
+  // projects/{project_number}/locations/{location}/topics/{topic_id}.
+  // Must be within the same project and location as the subscription. The topic
+  // may be changed or removed.
+  string dead_letter_topic = 5 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "pubsublite.googleapis.com/Topic"
+    }
+  ];
+
+  // The destination to export to. Required.
+  oneof destination {
+    // Messages are automatically written from the Pub/Sub Lite topic associated
+    // with this subscription to a Pub/Sub topic.
+    PubSubConfig pubsub_config = 3;
+  }
+}
+
+// A target publish or event time. Can be used for seeking to or retrieving the
+// corresponding cursor.
+message TimeTarget {
+  // The type of message time to query.
+  oneof time {
+    // Request the cursor of the first message with publish time greater than or
+    // equal to `publish_time`. All messages thereafter are guaranteed to have
+    // publish times >= `publish_time`.
+    google.protobuf.Timestamp publish_time = 1;
+
+    // Request the cursor of the first message with event time greater than or
+    // equal to `event_time`. If messages are missing an event time, the publish
+    // time is used as a fallback. As event times are user supplied, subsequent
+    // messages may have event times less than `event_time` and should be
+    // filtered by the client, if necessary.
+    google.protobuf.Timestamp event_time = 2;
+  }
+}

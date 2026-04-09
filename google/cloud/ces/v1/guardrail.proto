@@ -1,0 +1,311 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.ces.v1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/ces/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "cloud.google.com/go/ces/apiv1/cespb;cespb";
+option java_multiple_files = true;
+option java_outer_classname = "GuardrailProto";
+option java_package = "com.google.cloud.ces.v1";
+
+// Guardrail contains a list of checks and balances to keep the agents safe and
+// secure.
+message Guardrail {
+  option (google.api.resource) = {
+    type: "ces.googleapis.com/Guardrail"
+    pattern: "projects/{project}/locations/{location}/apps/{app}/guardrails/{guardrail}"
+    plural: "guardrails"
+    singular: "guardrail"
+  };
+
+  // Guardrail that bans certain content from being used in the conversation.
+  message ContentFilter {
+    // Match type for the content filter.
+    enum MatchType {
+      // Match type is not specified.
+      MATCH_TYPE_UNSPECIFIED = 0;
+
+      // Content is matched for substrings character by character.
+      SIMPLE_STRING_MATCH = 1;
+
+      // Content only matches if the pattern found in the text is
+      // surrounded by word delimiters. Banned phrases can also contain word
+      // delimiters.
+      WORD_BOUNDARY_STRING_MATCH = 2;
+
+      // Content is matched using regular expression syntax.
+      REGEXP_MATCH = 3;
+    }
+
+    // Optional. List of banned phrases. Applies to both user inputs and agent
+    // responses.
+    repeated string banned_contents = 1
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. List of banned phrases. Applies only to user inputs.
+    repeated string banned_contents_in_user_input = 2
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. List of banned phrases. Applies only to agent responses.
+    repeated string banned_contents_in_agent_response = 3
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Required. Match type for the content filter.
+    MatchType match_type = 4 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. If true, diacritics are ignored during matching.
+    bool disregard_diacritics = 5 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Guardrail that blocks the conversation if the input is considered unsafe
+  // based on the LLM classification.
+  message LlmPromptSecurity {
+    // Configuration for default system security settings.
+    message DefaultSecuritySettings {
+      // Output only. The default prompt template used by the system.
+      // This field is for display purposes to show the user what prompt
+      // the system uses by default. It is OUTPUT_ONLY.
+      string default_prompt_template = 1
+          [(google.api.field_behavior) = OUTPUT_ONLY];
+    }
+
+    // Defines the security configuration mode.
+    // The user must choose one of the following configurations.
+    oneof security_config {
+      // Optional. Use the system's predefined default security settings.
+      // To select this mode, include an empty 'default_settings' message
+      // in the request. The 'default_prompt_template' field within
+      // will be populated by the server in the response.
+      DefaultSecuritySettings default_settings = 1
+          [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Use a user-defined LlmPolicy to configure the security
+      // guardrail.
+      LlmPolicy custom_policy = 2 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Optional. Determines the behavior when the guardrail encounters an LLM
+    // error.
+    // - If true: the guardrail is bypassed.
+    // - If false (default): the guardrail triggers/blocks.
+    //
+    // Note: If a custom policy is provided, this field is ignored in favor
+    // of the policy's 'fail_open' configuration.
+    bool fail_open = 3 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Guardrail that blocks the conversation if the LLM response is considered
+  // violating the policy based on the LLM classification.
+  message LlmPolicy {
+    // Defines when to apply the policy check during the conversation.
+    enum PolicyScope {
+      // Policy scope is not specified.
+      POLICY_SCOPE_UNSPECIFIED = 0;
+
+      // Policy check is triggered on user input.
+      USER_QUERY = 1;
+
+      // Policy check is triggered on agent response. Applying this policy
+      // scope will introduce additional latency before the agent can respond.
+      AGENT_RESPONSE = 2;
+
+      // Policy check is triggered on both user input and agent response.
+      // Applying this policy scope will introduce additional latency before
+      // the agent can respond.
+      USER_QUERY_AND_AGENT_RESPONSE = 3;
+    }
+
+    // Optional. When checking this policy, consider the last 'n' messages in
+    // the conversation. When not set a default value of 10 will be used.
+    int32 max_conversation_messages = 1
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Model settings.
+    ModelSettings model_settings = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Required. Policy prompt.
+    string prompt = 3 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. Defines when to apply the policy check during the conversation.
+    // If set to `POLICY_SCOPE_UNSPECIFIED`, the policy will be applied to the
+    // user input. When applying the policy to the agent response, additional
+    // latency will be introduced before the agent can respond.
+    PolicyScope policy_scope = 4 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. If an error occurs during the policy check, fail open and do
+    // not trigger the guardrail.
+    bool fail_open = 5 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. By default, the LLM policy check is bypassed for short
+    // utterances. Enabling this setting applies the policy check to all
+    // utterances, including those that would normally be skipped.
+    bool allow_short_utterance = 6 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Model safety settings overrides. When this is set, it will override the
+  // default settings and trigger the guardrail if the response is considered
+  // unsafe.
+  message ModelSafety {
+    // Safety setting.
+    message SafetySetting {
+      // Required. The harm category.
+      HarmCategory category = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // Required. The harm block threshold.
+      HarmBlockThreshold threshold = 2 [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // Harm category.
+    enum HarmCategory {
+      // The harm category is unspecified.
+      HARM_CATEGORY_UNSPECIFIED = 0;
+
+      // The harm category is hate speech.
+      HARM_CATEGORY_HATE_SPEECH = 1;
+
+      // The harm category is dangerous content.
+      HARM_CATEGORY_DANGEROUS_CONTENT = 2;
+
+      // The harm category is harassment.
+      HARM_CATEGORY_HARASSMENT = 3;
+
+      // The harm category is sexually explicit content.
+      HARM_CATEGORY_SEXUALLY_EXPLICIT = 4;
+    }
+
+    // Probability based thresholds levels for blocking.
+    enum HarmBlockThreshold {
+      // Unspecified harm block threshold.
+      HARM_BLOCK_THRESHOLD_UNSPECIFIED = 0;
+
+      // Block low threshold and above (i.e. block more).
+      BLOCK_LOW_AND_ABOVE = 1;
+
+      // Block medium threshold and above.
+      BLOCK_MEDIUM_AND_ABOVE = 2;
+
+      // Block only high threshold (i.e. block less).
+      BLOCK_ONLY_HIGH = 3;
+
+      // Block none.
+      BLOCK_NONE = 4;
+
+      // Turn off the safety filter.
+      OFF = 5;
+    }
+
+    // Required. List of safety settings.
+    repeated SafetySetting safety_settings = 1
+        [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Guardrail that blocks the conversation based on the code callbacks
+  // provided.
+  message CodeCallback {
+    // Optional. The callback to execute before the agent is called.
+    // Each callback function is expected to return a structure (e.g., a dict or
+    // object) containing at least:
+    //   - 'decision': Either 'OK' or 'TRIGGER'.
+    //   - 'reason': A string explaining the decision.
+    // A 'TRIGGER' decision may halt further processing.
+    Callback before_agent_callback = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The callback to execute after the agent is called.
+    // Each callback function is expected to return a structure (e.g., a dict or
+    // object) containing at least:
+    //   - 'decision': Either 'OK' or 'TRIGGER'.
+    //   - 'reason': A string explaining the decision.
+    // A 'TRIGGER' decision may halt further processing.
+    Callback after_agent_callback = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The callback to execute before the model is called. If there
+    // are multiple calls to the model, the callback will be executed multiple
+    // times. Each callback function is expected to return a structure (e.g., a
+    // dict or object) containing at least:
+    //   - 'decision': Either 'OK' or 'TRIGGER'.
+    //   - 'reason': A string explaining the decision.
+    // A 'TRIGGER' decision may halt further processing.
+    Callback before_model_callback = 3 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The callback to execute after the model is called. If there are
+    // multiple calls to the model, the callback will be executed multiple
+    // times. Each callback function is expected to return a structure (e.g., a
+    // dict or object) containing at least:
+    //   - 'decision': Either 'OK' or 'TRIGGER'.
+    //   - 'reason': A string explaining the decision.
+    // A 'TRIGGER' decision may halt further processing.
+    Callback after_model_callback = 4 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Guardrail type.
+  oneof guardrail_type {
+    // Optional. Guardrail that bans certain content from being used in the
+    // conversation.
+    ContentFilter content_filter = 8 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Guardrail that blocks the conversation if the prompt is
+    // considered unsafe based on the LLM classification.
+    LlmPromptSecurity llm_prompt_security = 9
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Guardrail that blocks the conversation if the LLM response is
+    // considered violating the policy based on the LLM classification.
+    LlmPolicy llm_policy = 10 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Guardrail that blocks the conversation if the LLM response is
+    // considered unsafe based on the model safety settings.
+    ModelSafety model_safety = 13 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Guardrail that potentially blocks the conversation based on the
+    // result of the callback execution.
+    CodeCallback code_callback = 14 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Identifier. The unique identifier of the guardrail.
+  // Format:
+  // `projects/{project}/locations/{location}/apps/{app}/guardrails/{guardrail}`
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Required. Display name of the guardrail.
+  string display_name = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Description of the guardrail.
+  string description = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether the guardrail is enabled.
+  bool enabled = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Action to take when the guardrail is triggered.
+  TriggerAction action = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Timestamp when the guardrail was created.
+  google.protobuf.Timestamp create_time = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Timestamp when the guardrail was last updated.
+  google.protobuf.Timestamp update_time = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Etag used to ensure the object hasn't changed during a read-modify-write
+  // operation. If the etag is empty, the update will overwrite any concurrent
+  // changes.
+  string etag = 11;
+}

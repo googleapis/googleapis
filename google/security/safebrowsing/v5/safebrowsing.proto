@@ -1,0 +1,588 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.security.safebrowsing.v5;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
+
+option go_package = "google.golang.org/genproto/googleapis/security/safebrowsing/v5;safebrowsing";
+option java_multiple_files = true;
+option java_outer_classname = "SafeBrowsingProto";
+option java_package = "com.google.security.safebrowsing.v5";
+
+// The Safe Browsing APIs enable clients to check web resources (most commonly
+// URLs) against Google's constantly updated lists of unsafe web resources.
+service SafeBrowsing {
+  option (google.api.default_host) = "safebrowsing.googleapis.com";
+
+  // Search for full hashes matching the specified prefixes.
+  //
+  // This is a custom method as defined by https://google.aip.dev/136 (the
+  // custom method refers to this method having a custom name within Google's
+  // general API development nomenclature; it does not refer to using a custom
+  // HTTP method).
+  rpc SearchHashes(SearchHashesRequest) returns (SearchHashesResponse) {
+    option (google.api.http) = {
+      get: "/v5/hashes:search"
+    };
+  }
+
+  // Get the latest contents of a hash list. A hash list may either by a threat
+  // list or a non-threat list such as the Global Cache.
+  //
+  // This is a standard Get method as defined by https://google.aip.dev/131 and
+  // the HTTP method is also GET.
+  rpc GetHashList(GetHashListRequest) returns (HashList) {
+    option (google.api.http) = {
+      get: "/v5/hashList/{name}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // List hash lists.
+  //
+  // In the V5 API, Google will never remove a hash list that has ever been
+  // returned by this method. This enables clients to skip using this method and
+  // simply hard-code all hash lists they need.
+  //
+  // This is a standard List method as defined by https://google.aip.dev/132 and
+  // the HTTP method is GET.
+  rpc ListHashLists(ListHashListsRequest) returns (ListHashListsResponse) {
+    option (google.api.http) = {
+      get: "/v5/hashLists"
+    };
+    option (google.api.method_signature) = "";
+  }
+
+  // Get multiple hash lists at once.
+  //
+  // It is very common for a client to need to get multiple hash lists. Using
+  // this method is preferred over using the regular Get method multiple times.
+  //
+  // This is a standard batch Get method as defined by
+  // https://google.aip.dev/231 and the HTTP method is also GET.
+  rpc BatchGetHashLists(BatchGetHashListsRequest)
+      returns (BatchGetHashListsResponse) {
+    option (google.api.http) = {
+      get: "/v5/hashLists:batchGet"
+    };
+  }
+}
+
+// Types of threats.
+enum ThreatType {
+  // Unknown threat type. If this is returned by the server, the client shall
+  // disregard the enclosing `FullHashDetail` altogether.
+  THREAT_TYPE_UNSPECIFIED = 0;
+
+  // Malware threat type. Malware is any software or mobile application
+  // specifically designed to harm a computer, a mobile device, the software
+  // it's running, or its users. Malware exhibits malicious behavior that can
+  // include installing software without user consent and installing harmful
+  // software such as viruses.
+  //
+  // More information can be found
+  // [here](https://developers.google.com/search/docs/monitor-debug/security/malware).
+  MALWARE = 1;
+
+  // Social engineering threat type. Social engineering pages falsely purport to
+  // act on behalf of a third party with the intention of confusing viewers into
+  // performing an action with which the viewer would only trust a true agent of
+  // that third party. Phishing is a type of social engineering that tricks the
+  // viewer into performing the specific action of providing information, such
+  // as login credentials.
+  //
+  // More information can be found
+  // [here](https://developers.google.com/search/docs/monitor-debug/security/social-engineering).
+  SOCIAL_ENGINEERING = 2;
+
+  // Unwanted software threat type. Unwanted software is any software that does
+  // not adhere to [Google's Software
+  // Principles](https://www.google.com/about/software-principles.html) but
+  // isn't malware.
+  UNWANTED_SOFTWARE = 3;
+
+  // Potentially harmful application threat type [as used by Google Play Protect
+  // for the Play
+  // Store](https://developers.google.com/android/play-protect/potentially-harmful-applications).
+  POTENTIALLY_HARMFUL_APPLICATION = 4;
+}
+
+// Types of likely-safe sites.
+//
+// Note that the `SearchHashesResponse` intentionally does not contain
+// `LikelySafeType`.
+enum LikelySafeType {
+  // Unknown.
+  LIKELY_SAFE_TYPE_UNSPECIFIED = 0;
+
+  // This site is likely safe enough for general browsing. This is also known as
+  // the global cache.
+  GENERAL_BROWSING = 1;
+
+  // This site is likely safe enough that there is no need to run Client-Side
+  // Detection models or password protection checks.
+  CSD = 2;
+
+  // This site is likely safe enough that downloads from the site need not be
+  // checked.
+  DOWNLOAD = 3;
+}
+
+// Attributes of threats. These attributes may confer additional meaning to a
+// particular threat but will not affect the threat type. For example, an
+// attribute may specify a lower confidence while a different attribute may
+// specify higher confidence. More attributes may be added in the future.
+enum ThreatAttribute {
+  // Unknown attribute. If this is returned by the server, the client shall
+  // disregard the enclosing `FullHashDetail` altogether.
+  THREAT_ATTRIBUTE_UNSPECIFIED = 0;
+
+  // Indicates that the threat_type should not be used for enforcement.
+  CANARY = 1;
+
+  // Indicates that the threat_type should only be used for enforcement on
+  // frames.
+  FRAME_ONLY = 2;
+}
+
+// A request that the client issues to search for specific hash prefixes.
+//
+// This is designed to only searches threat lists, and does not search
+// non-threat lists such as the Global Cache.
+//
+// **What's new in V5**: Clients don't need to specify a `ClientInfo` or the
+// states of the hash lists in their local database. This is for improved
+// privacy. Furthermore, clients don't need to send which threat types they are
+// interested in.
+message SearchHashesRequest {
+  // Required. The hash prefixes to be looked up. Clients MUST NOT send more
+  // than 1000 hash prefixes. However, following the URL processing procedure,
+  // clients SHOULD NOT need to send more than 30 hash prefixes.
+  //
+  // Currently each hash prefix is required to be exactly 4 bytes long. This MAY
+  // be relaxed in the future.
+  repeated bytes hash_prefixes = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The response returned after searching threat hashes.
+//
+// If nothing is found, the server will return an OK status (HTTP status code
+// 200) with the `full_hashes` field empty, rather than returning a NOT_FOUND
+// status (HTTP status code 404).
+//
+// **What's new in V5**: There is a separation between `FullHash` and
+// `FullHashDetail`. In the case when a hash represents a site having multiple
+// threats (e.g. both MALWARE and SOCIAL_ENGINEERING), the full hash does not
+// need to be sent twice as in V4. Furthermore, the cache duration has been
+// simplified into a single `cache_duration` field.
+message SearchHashesResponse {
+  // Unordered list. The unordered list of full hashes found.
+  repeated FullHash full_hashes = 1
+      [(google.api.field_behavior) = UNORDERED_LIST];
+
+  // The client-side cache duration. The client MUST add this duration to the
+  // current time to determine the expiration time. The expiration time then
+  // applies to every hash prefix queried by the client in the request,
+  // regardless of how many full hashes are returned in the response. Even if
+  // the server returns no full hashes for a particular hash prefix, this fact
+  // MUST also be cached by the client.
+  //
+  // If and only if the field `full_hashes` is empty, the client MAY increase
+  // the `cache_duration` to determine a new expiration that is later than that
+  // specified by the server. In any case, the increased cache duration must not
+  // be longer than 24 hours.
+  //
+  // Important: the client MUST NOT assume that the server will return the same
+  // cache duration for all responses. The server MAY choose different cache
+  // durations for different responses depending on the situation.
+  google.protobuf.Duration cache_duration = 2;
+}
+
+// The full hash identified with one or more matches.
+message FullHash {
+  // Details about a matching full hash.
+  //
+  // An important note about forward compatibility: new threat types and threat
+  // attributes may be added by the server at any time; those additions are
+  // considered minor version changes. It is Google's policy not to expose minor
+  // version numbers in APIs (see
+  // https://cloud.google.com/apis/design/versioning for the versioning policy),
+  // so clients MUST be prepared to receive `FullHashDetail` messages containing
+  // `ThreatType` enum values or `ThreatAttribute` enum values that are
+  // considered invalid by the client. Therefore, it is the client's
+  // responsibility to check for the validity of all `ThreatType` and
+  // `ThreatAttribute` enum values; if any value is considered invalid, the
+  // client MUST disregard the entire `FullHashDetail` message.
+  message FullHashDetail {
+    // The type of threat. This field will never be empty.
+    ThreatType threat_type = 1;
+
+    // Unordered list. Additional attributes about those full hashes. This may
+    // be empty.
+    repeated ThreatAttribute attributes = 2
+        [(google.api.field_behavior) = UNORDERED_LIST];
+  }
+
+  // The matching full hash. This is the SHA256 hash. The length will be exactly
+  // 32 bytes.
+  bytes full_hash = 1;
+
+  // Unordered list. A repeated field identifying the details relevant to this
+  // full hash.
+  repeated FullHashDetail full_hash_details = 2
+      [(google.api.field_behavior) = UNORDERED_LIST];
+}
+
+// A request to obtain a hash list, which may be a threat list or a non-threat
+// list such as the Global Cache.
+//
+// **What's new in V5**: What was previously called `states` in V4 is renamed to
+// `version` for clarity. Lists are now named, platform types and threat entry
+// types are removed. It is now possible for multiple lists to have the same
+// threat type, or a single list concerned with multiple threat types. In
+// contrast to V4's variable-length hash prefixes which has caused trouble in
+// many client implementations: all hashes in a list now have a single length,
+// permitting much more efficient client implementations. Constraints have been
+// simplified, and compression type is removed (compression is always applied).
+message GetHashListRequest {
+  // Required. The name of this particular hash list. It may be a threat list,
+  // or it may be the Global Cache.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "safebrowsing.googleapis.com/HashList"
+    }
+  ];
+
+  // The version of the hash list that the client already has. If this is the
+  // first time the client is fetching the hash list, this field MUST be
+  // left empty. Otherwise, the client SHOULD supply the version previously
+  // received from the server. The client MUST NOT manipulate those bytes.
+  //
+  // **What's new in V5**: in V4 of the API, this was called `states`; it is now
+  // renamed to `version` for clarity.
+  bytes version = 2;
+
+  // The size constraints on the list. If omitted, there are no
+  // constraints. Constraints are recommended on all devices with limited
+  // processing power, bandwidth, or storage.
+  SizeConstraints size_constraints = 4;
+}
+
+// The constraints on the sizes of the hash lists.
+message SizeConstraints {
+  // The maximum size in number of entries. The update will not contain more
+  // entries than this value, but it is possible that the update will contain
+  // fewer entries than this value. This MUST be at least 1024. If omitted or
+  // zero, no update size limit is set.
+  int32 max_update_entries = 1;
+
+  // Sets the maximum number of entries that the client is willing to have
+  // in the local database for the list. (The server MAY cause the client to
+  // store less than this number of entries.) If omitted or zero, no database
+  // size limit is set.
+  int32 max_database_entries = 2;
+}
+
+// The Rice-Golomb encoded data. Used for either hashes or
+// removal indices. It is guaranteed that every hash or index here has the same
+// length, and this length is exactly 32 bits.
+//
+// Generally speaking, if we sort all the entries lexicographically, we will
+// find that the higher order bits tend not to change as frequently as lower
+// order bits. This means that if we also take the adjacent difference between
+// entries, the higher order bits have a high probability of being zero. This
+// exploits this high probability of zero by essentially choosing a certain
+// number of bits; all bits more significant than this are likely to be zero so
+// we use unary encoding. See the `rice_parameter` field.
+//
+// Historical note: the Rice-delta encoding was first used in V4 of this API. In
+// V5, two significant improvements were made: firstly, the Rice-delta encoding
+// is now available with hash prefixes longer than 4 bytes; secondly, the
+// encoded data are now treated as big-endian so as to avoid a costly sorting
+// step.
+message RiceDeltaEncoded32Bit {
+  // The first entry in the encoded data (hashes or indices), or, if only a
+  // single hash prefix or index was encoded, that entry's value. If the field
+  // is empty, the entry is zero.
+  uint32 first_value = 1;
+
+  // The Golomb-Rice parameter. This parameter is guaranteed to be between 3 and
+  // 30, inclusive.
+  int32 rice_parameter = 2;
+
+  // The number of entries that are delta encoded in the encoded data. If only a
+  // single integer was encoded, this will be zero and the single value will be
+  // stored in `first_value`.
+  int32 entries_count = 3;
+
+  // The encoded deltas that are encoded using the Golomb-Rice coder.
+  bytes encoded_data = 4;
+}
+
+// Same as `RiceDeltaEncoded32Bit` except this encodes 64-bit numbers.
+message RiceDeltaEncoded64Bit {
+  // The first entry in the encoded data (hashes), or, if only a single
+  // hash prefix was encoded, that entry's value. If the field is empty, the
+  // entry is zero.
+  uint64 first_value = 1;
+
+  // The Golomb-Rice parameter. This parameter is guaranteed to be between 35
+  // and 62, inclusive.
+  int32 rice_parameter = 2;
+
+  // The number of entries that are delta encoded in the encoded data. If only a
+  // single integer was encoded, this will be zero and the single value will be
+  // stored in `first_value`.
+  int32 entries_count = 3;
+
+  // The encoded deltas that are encoded using the Golomb-Rice coder.
+  bytes encoded_data = 4;
+}
+
+// Same as `RiceDeltaEncoded32Bit` except this encodes 128-bit numbers.
+message RiceDeltaEncoded128Bit {
+  // The upper 64 bits of the first entry in the encoded data (hashes). If the
+  // field is empty, the upper 64 bits are all zero.
+  uint64 first_value_hi = 1;
+
+  // The lower 64 bits of the first entry in the encoded data (hashes). If the
+  // field is empty, the lower 64 bits are all zero.
+  fixed64 first_value_lo = 2;
+
+  // The Golomb-Rice parameter. This parameter is guaranteed to be between 99
+  // and 126, inclusive.
+  int32 rice_parameter = 3;
+
+  // The number of entries that are delta encoded in the encoded data. If only a
+  // single integer was encoded, this will be zero and the single value will be
+  // stored in `first_value`.
+  int32 entries_count = 4;
+
+  // The encoded deltas that are encoded using the Golomb-Rice coder.
+  bytes encoded_data = 5;
+}
+
+// Same as `RiceDeltaEncoded32Bit` except this encodes 256-bit numbers.
+message RiceDeltaEncoded256Bit {
+  // The first 64 bits of the first entry in the encoded data (hashes). If the
+  // field is empty, the first 64 bits are all zero.
+  uint64 first_value_first_part = 1;
+
+  // The 65 through 128th bits of the first entry in the encoded data (hashes).
+  // If the field is empty, the 65 through 128th bits are all zero.
+  fixed64 first_value_second_part = 2;
+
+  // The 129 through 192th bits of the first entry in the encoded data (hashes).
+  // If the field is empty, the 129 through 192th bits are all zero.
+  fixed64 first_value_third_part = 3;
+
+  // The last 64 bits of the first entry in the encoded data (hashes). If the
+  // field is empty, the last 64 bits are all zero.
+  fixed64 first_value_fourth_part = 4;
+
+  // The Golomb-Rice parameter. This parameter is guaranteed to be between 227
+  // and 254, inclusive.
+  int32 rice_parameter = 5;
+
+  // The number of entries that are delta encoded in the encoded data. If only a
+  // single integer was encoded, this will be zero and the single value will be
+  // stored in `first_value`.
+  int32 entries_count = 6;
+
+  // The encoded deltas that are encoded using the Golomb-Rice coder.
+  bytes encoded_data = 7;
+}
+
+// Metadata about a particular hash list.
+message HashListMetadata {
+  // The length of hashes in a hash list.
+  enum HashLength {
+    // Unspecified length.
+    HASH_LENGTH_UNSPECIFIED = 0;
+
+    // Each hash is a four-byte prefix.
+    FOUR_BYTES = 2;
+
+    // Each hash is an eight-byte prefix.
+    EIGHT_BYTES = 3;
+
+    // Each hash is a sixteen-byte prefix.
+    SIXTEEN_BYTES = 4;
+
+    // Each hash is a thirty-two-byte full hash.
+    THIRTY_TWO_BYTES = 5;
+  }
+
+  // Unordered list. If not empty, this specifies that the hash list is a kind
+  // of threat list, and this enumerates the kind of threats associated with
+  // hashes or hash prefixes in this hash list. May be empty if the entry does
+  // not represent a threat, i.e. in the case that it represents a likely safe
+  // type.
+  repeated ThreatType threat_types = 1
+      [(google.api.field_behavior) = UNORDERED_LIST];
+
+  // Unordered list. If not empty, this specifies that the hash list represents
+  // a list of likely safe hashes, and this enumerates the ways they are
+  // considered likely safe. This field is mutually exclusive with the
+  // threat_types field.
+  repeated LikelySafeType likely_safe_types = 2
+      [(google.api.field_behavior) = UNORDERED_LIST];
+
+  // A human-readable description about this list. Written in English.
+  string description = 4;
+
+  // The supported hash length for this hash list. Each hash list will support
+  // exactly one length. If a different hash length is introduced for the same
+  // set of threat types or safe types, it will be introduced as a separate list
+  // with a distinct name and respective hash length set.
+  HashLength hash_length = 6;
+}
+
+// A list of hashes identified by its name.
+message HashList {
+  option (google.api.resource) = {
+    type: "safebrowsing.googleapis.com/HashList"
+    pattern: "hashLists/{hash_list}"
+  };
+
+  // The Rice-delta encoded version of additions. The hash prefix lengths of
+  // additions are uniform across all additions in the list.
+  oneof compressed_additions {
+    // The 4-byte additions.
+    RiceDeltaEncoded32Bit additions_four_bytes = 4;
+
+    // The 8-byte additions.
+    RiceDeltaEncoded64Bit additions_eight_bytes = 9;
+
+    // The 16-byte additions.
+    RiceDeltaEncoded128Bit additions_sixteen_bytes = 10;
+
+    // The 32-byte additions.
+    RiceDeltaEncoded256Bit additions_thirty_two_bytes = 11;
+  }
+
+  // The name of the hash list. Note that the Global Cache is also just a hash
+  // list and can be referred to here.
+  string name = 1;
+
+  // The version of the hash list. The client MUST NOT manipulate those bytes.
+  bytes version = 2;
+
+  // When true, this is a partial diff containing additions and removals
+  // based on what the client already has. When false, this is the complete
+  // hash list.
+  //
+  // When false, the client MUST delete any locally stored version for this
+  // hash list. This means that either the version possessed by the client is
+  // seriously out-of-date or the client data is believed to be corrupt. The
+  // `compressed_removals` field will be empty.
+  //
+  // When true, the client MUST apply an incremental update by applying
+  // removals and then additions.
+  bool partial_update = 3;
+
+  // The Rice-delta encoded version of removal indices. Since each hash list
+  // definitely has less than 2^32 entries, the indices are treated as 32-bit
+  // integers and encoded.
+  RiceDeltaEncoded32Bit compressed_removals = 5;
+
+  // Clients should wait at least this long to get the hash list again. If
+  // omitted or zero, clients SHOULD fetch immediately because it indicates that
+  // the server has an additional update to be sent to the client, but could not
+  // due to the client-specified constraints.
+  google.protobuf.Duration minimum_wait_duration = 6;
+
+  // The sorted list of all hashes, hashed again with SHA256.
+  // This is the checksum for the sorted list of all hashes present in the
+  // database after applying the provided update. In the case that no updates
+  // were provided, the server will omit this field to indicate
+  // that the client should use the existing checksum.
+  bytes sha256_checksum = 7;
+
+  // Metadata about the hash list. This is not populated by the `GetHashList`
+  // method, but this is populated by the
+  // `ListHashLists` method.
+  HashListMetadata metadata = 8;
+}
+
+// The request to get multiple hash lists at the same time.
+message BatchGetHashListsRequest {
+  // Required. The names of the particular hash lists. The list MAY be a threat
+  // list, or it may be the Global Cache. The names MUST NOT contain duplicates;
+  // if they did, the client will get an error.
+  repeated string names = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "safebrowsing.googleapis.com/HashList"
+    }
+  ];
+
+  // The versions of the hash list that the client already has. If this is the
+  // first time the client is fetching the hash lists, the field should be
+  // left empty. Otherwise, the client should supply the versions previously
+  // received from the server. The client MUST NOT manipulate those bytes.
+  //
+  // The client need not send the versions in the same order as the
+  // corresponding list names. The client may send fewer or more versions in a
+  // request than there are names. However the client MUST NOT send multiple
+  // versions that correspond to the same name; if it did, the client will get
+  // an error.
+  //
+  // Historical note: in V4 of the API, this was called
+  // `states`; it is now renamed to `version` for clarity.
+  repeated bytes version = 2;
+
+  // The size constraints on each list. If omitted, there are no
+  // constraints. Note that the sizes here are per-list, not aggregated across
+  // all lists.
+  SizeConstraints size_constraints = 4;
+}
+
+// The response containing multiple hash lists.
+message BatchGetHashListsResponse {
+  // The hash lists in the same order given in the request.
+  repeated HashList hash_lists = 1;
+}
+
+// The request to list the available hash lists.
+message ListHashListsRequest {
+  // The maximum number of hash lists to return. The service may return fewer
+  // than this value. If unspecified, the server will choose a page size, which
+  // may be larger than the number of hash lists so that pagination is not
+  // necessary.
+  int32 page_size = 1;
+
+  // A page token, received from a previous `ListHashLists` call.
+  // Provide this to retrieve the subsequent page.
+  string page_token = 2;
+}
+
+// The response containing metadata about hash lists.
+message ListHashListsResponse {
+  // The hash lists in an arbitrary order. Only metadata about the
+  // hash lists will be included, not the contents.
+  repeated HashList hash_lists = 1;
+
+  // A token, which can be sent as `page_token` to retrieve the next page.
+  // If this field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
+}

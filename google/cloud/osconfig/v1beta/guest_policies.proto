@@ -1,0 +1,772 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.osconfig.v1beta;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "cloud.google.com/go/osconfig/apiv1beta/osconfigpb;osconfigpb";
+option java_outer_classname = "GuestPolicies";
+option java_package = "com.google.cloud.osconfig.v1beta";
+
+// An OS Config resource representing a guest configuration policy. These
+// policies represent the desired state for VM instance guest environments
+// including packages to install or remove, package repository configurations,
+// and software to install.
+message GuestPolicy {
+  option (google.api.resource) = {
+    type: "osconfig.googleapis.com/GuestPolicy"
+    pattern: "projects/{project}/guestPolicies/{guest_policy}"
+  };
+
+  // Required. Unique name of the resource in this project using one of the following
+  // forms:
+  // `projects/{project_number}/guestPolicies/{guest_policy_id}`.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Description of the guest policy. Length of the description is limited
+  // to 1024 characters.
+  string description = 2;
+
+  // Output only. Time this guest policy was created.
+  google.protobuf.Timestamp create_time = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Last time this guest policy was updated.
+  google.protobuf.Timestamp update_time = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Required. Specifies the VM instances that are assigned to this policy. This allows
+  // you to target sets or groups of VM instances by different parameters such
+  // as labels, names, OS, or zones.
+  //
+  // If left empty, all VM instances underneath this policy are targeted.
+  //
+  // At the same level in the resource hierarchy (that is within a project), the
+  // service prevents the creation of multiple policies that conflict with
+  // each other. For more information, see how the service [handles assignment
+  // conflicts](/compute/docs/os-config-management/create-guest-policy#handle-conflicts).
+  Assignment assignment = 6 [(google.api.field_behavior) = REQUIRED];
+
+  // The software packages to be managed by this policy.
+  repeated Package packages = 7;
+
+  // A list of package repositories to configure on the VM instance. This is
+  // done before any other configs are applied so they can use these repos.
+  // Package repositories are only configured if the corresponding package
+  // manager(s) are available.
+  repeated PackageRepository package_repositories = 8;
+
+  // A list of Recipes to install on the VM instance.
+  repeated SoftwareRecipe recipes = 9;
+
+  // The etag for this guest policy.
+  // If this is provided on update, it must match the server's etag.
+  string etag = 10;
+}
+
+// An assignment represents the group or groups of VM instances that the policy
+// applies to.
+//
+// If an assignment is empty, it applies to all VM instances. Otherwise, the
+// targeted VM instances must meet all the criteria specified. So if both
+// labels and zones are specified, the policy applies to VM instances with those
+// labels and in those zones.
+message Assignment {
+  // Represents a group of VM intances that can be identified as having all
+  // these labels, for example "env=prod and app=web".
+  message GroupLabel {
+    // Google Compute Engine instance labels that must be present for an
+    // instance to be included in this assignment group.
+    map<string, string> labels = 1;
+  }
+
+  // Defines the criteria for selecting VM Instances by OS type.
+  message OsType {
+    // Targets VM instances with OS Inventory enabled and having the following
+    // OS short name, for example "debian" or "windows".
+    string os_short_name = 1;
+
+    // Targets VM instances with OS Inventory enabled and having the following
+    // following OS version.
+    string os_version = 2;
+
+    // Targets VM instances with OS Inventory enabled and having the following
+    // OS architecture.
+    string os_architecture = 3;
+  }
+
+  // Targets instances matching at least one of these label sets. This allows
+  // an assignment to target disparate groups, for example "env=prod or
+  // env=staging".
+  repeated GroupLabel group_labels = 1;
+
+  // Targets instances in any of these zones. Leave empty to target instances
+  // in any zone.
+  //
+  // Zonal targeting is uncommon and is supported to facilitate the management
+  // of changes by zone.
+  repeated string zones = 2;
+
+  // Targets any of the instances specified. Instances are specified by their
+  // URI in the form `zones/[ZONE]/instances/[INSTANCE_NAME]`.
+  //
+  // Instance targeting is uncommon and is supported to facilitate the
+  // management of changes by the instance or to target specific VM instances
+  // for development and testing.
+  //
+  // Only supported for project-level policies and must reference instances
+  // within this project.
+  repeated string instances = 3;
+
+  // Targets VM instances whose name starts with one of these prefixes.
+  //
+  // Like labels, this is another way to group VM instances when targeting
+  // configs, for example prefix="prod-".
+  //
+  // Only supported for project-level policies.
+  repeated string instance_name_prefixes = 4;
+
+  // Targets VM instances matching at least one of the following OS types.
+  //
+  // VM instances must match all supplied criteria for a given OsType to be
+  // included.
+  repeated OsType os_types = 5;
+}
+
+// The desired state that the OS Config agent maintains on the VM instance.
+enum DesiredState {
+  // The default is to ensure the package is installed.
+  DESIRED_STATE_UNSPECIFIED = 0;
+
+  // The agent ensures that the package is installed.
+  INSTALLED = 1;
+
+  // The agent ensures that the package is installed and
+  // periodically checks for and install any updates.
+  UPDATED = 2;
+
+  // The agent ensures that the package is not installed and uninstall it
+  // if detected.
+  REMOVED = 3;
+}
+
+// Package is a reference to the software package to be installed or removed.
+// The agent on the VM instance uses the system package manager to apply the
+// config.
+//
+//
+// These are the commands that the agent uses to install or remove
+// packages.
+//
+// Apt
+// install: `apt-get update && apt-get -y install package1 package2 package3`
+// remove: `apt-get -y remove package1 package2 package3`
+//
+// Yum
+// install: `yum -y install package1 package2 package3`
+// remove: `yum -y remove package1 package2 package3`
+//
+// Zypper
+// install: `zypper install package1 package2 package3`
+// remove: `zypper rm package1 package2`
+//
+// Googet
+// install: `googet -noconfirm install package1 package2 package3`
+// remove: `googet -noconfirm remove package1 package2 package3`
+message Package {
+  // Types of package managers that may be used to manage this package.
+  enum Manager {
+    // The default behavior is ANY.
+    MANAGER_UNSPECIFIED = 0;
+
+    // Apply this package config using the default system package manager.
+    ANY = 1;
+
+    // Apply this package config only if Apt is available on the system.
+    APT = 2;
+
+    // Apply this package config only if Yum is available on the system.
+    YUM = 3;
+
+    // Apply this package config only if Zypper is available on the system.
+    ZYPPER = 4;
+
+    // Apply this package config only if GooGet is available on the system.
+    GOO = 5;
+  }
+
+  // Required. The name of the package. A package is uniquely identified for conflict
+  // validation by checking the package name and the manager(s) that the
+  // package targets.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The desired_state the agent should maintain for this package. The
+  // default is to ensure the package is installed.
+  DesiredState desired_state = 2;
+
+  // Type of package manager that can be used to install this package.
+  // If a system does not have the package manager, the package is not
+  // installed or removed no error message is returned. By default,
+  // or if you specify `ANY`,
+  // the agent attempts to install and remove this package using the default
+  // package manager. This is useful when creating a policy that applies to
+  // different types of systems.
+  //
+  // The default behavior is ANY.
+  Manager manager = 3;
+}
+
+// Represents a single Apt package repository. This repository is added to
+// a repo file that is stored at
+// `/etc/apt/sources.list.d/google_osconfig.list`.
+message AptRepository {
+  // Type of archive.
+  enum ArchiveType {
+    // Unspecified.
+    ARCHIVE_TYPE_UNSPECIFIED = 0;
+
+    // DEB indicates that the archive contains binary files.
+    DEB = 1;
+
+    // DEB_SRC indicates that the archive contains source files.
+    DEB_SRC = 2;
+  }
+
+  // Type of archive files in this repository. The default behavior is DEB.
+  ArchiveType archive_type = 1;
+
+  // Required. URI for this repository.
+  string uri = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Distribution of this repository.
+  string distribution = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. List of components for this repository. Must contain at least one item.
+  repeated string components = 4 [(google.api.field_behavior) = REQUIRED];
+
+  // URI of the key file for this repository. The agent maintains
+  // a keyring at `/etc/apt/trusted.gpg.d/osconfig_agent_managed.gpg` containing
+  // all the keys in any applied guest policy.
+  string gpg_key = 5;
+}
+
+// Represents a single Yum package repository. This repository is added to a
+// repo file that is stored at `/etc/yum.repos.d/google_osconfig.repo`.
+message YumRepository {
+  // Required. A one word, unique name for this repository. This is
+  // the `repo id` in the Yum config file and also the `display_name` if
+  // `display_name` is omitted. This id is also used as the unique identifier
+  // when checking for guest policy conflicts.
+  string id = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The display name of the repository.
+  string display_name = 2;
+
+  // Required. The location of the repository directory.
+  string base_url = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // URIs of GPG keys.
+  repeated string gpg_keys = 4;
+}
+
+// Represents a single Zypper package repository. This repository is added to a
+// repo file that is stored at `/etc/zypp/repos.d/google_osconfig.repo`.
+message ZypperRepository {
+  // Required. A one word, unique name for this repository. This is
+  // the `repo id` in the zypper config file and also the `display_name` if
+  // `display_name` is omitted. This id is also used as the unique identifier
+  // when checking for guest policy conflicts.
+  string id = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The display name of the repository.
+  string display_name = 2;
+
+  // Required. The location of the repository directory.
+  string base_url = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // URIs of GPG keys.
+  repeated string gpg_keys = 4;
+}
+
+// Represents a Goo package repository. These is added to a repo file
+// that is stored at C:/ProgramData/GooGet/repos/google_osconfig.repo.
+message GooRepository {
+  // Required. The name of the repository.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The url of the repository.
+  string url = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A package repository.
+message PackageRepository {
+  // A specific type of repository.
+  oneof repository {
+    // An Apt Repository.
+    AptRepository apt = 1;
+
+    // A Yum Repository.
+    YumRepository yum = 2;
+
+    // A Zypper Repository.
+    ZypperRepository zypper = 3;
+
+    // A Goo Repository.
+    GooRepository goo = 4;
+  }
+}
+
+// A software recipe is a set of instructions for installing and configuring a
+// piece of software. It consists of a set of artifacts that are
+// downloaded, and a set of steps that install, configure, and/or update the
+// software.
+//
+// Recipes support installing and updating software from artifacts in the
+// following formats:
+// Zip archive, Tar archive, Windows MSI, Debian package, and RPM package.
+//
+// Additionally, recipes support executing a script (either defined in a file or
+// directly in this api) in bash, sh, cmd, and powershell.
+//
+// Updating a software recipe
+//
+// If a recipe is assigned to an instance and there is a recipe with the same
+// name but a lower version already installed and the assigned state
+// of the recipe is `UPDATED`, then the recipe is updated to
+// the new version.
+//
+// Script Working Directories
+//
+// Each script or execution step is run in its own temporary directory which
+// is deleted after completing the step.
+message SoftwareRecipe {
+  // Specifies a resource to be used in the recipe.
+  message Artifact {
+    // Specifies an artifact available via some URI.
+    message Remote {
+      // URI from which to fetch the object. It should contain both the protocol
+      // and path following the format {protocol}://{location}.
+      string uri = 1;
+
+      // Must be provided if `allow_insecure` is `false`.
+      // SHA256 checksum in hex format, to compare to the checksum of the
+      // artifact. If the checksum is not empty and it doesn't match the
+      // artifact then the recipe installation fails before running any of the
+      // steps.
+      string checksum = 2;
+    }
+
+    // Specifies an artifact available as a Google Cloud Storage object.
+    message Gcs {
+      // Bucket of the Google Cloud Storage object.
+      // Given an example URL:
+      // `https://storage.googleapis.com/my-bucket/foo/bar#1234567`
+      // this value would be `my-bucket`.
+      string bucket = 1;
+
+      // Name of the Google Cloud Storage object.
+      // As specified [here]
+      // (https://cloud.google.com/storage/docs/naming#objectnames)
+      // Given an example URL:
+      // `https://storage.googleapis.com/my-bucket/foo/bar#1234567`
+      // this value would be `foo/bar`.
+      string object = 2;
+
+      // Must be provided if allow_insecure is false.
+      // Generation number of the Google Cloud Storage object.
+      // `https://storage.googleapis.com/my-bucket/foo/bar#1234567`
+      // this value would be `1234567`.
+      int64 generation = 3;
+    }
+
+    // Required. Id of the artifact, which the installation and update steps of this
+    // recipe can reference. Artifacts in a recipe cannot have the same id.
+    string id = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // A specific type of artifact.
+    oneof artifact {
+      // A generic remote artifact.
+      Remote remote = 2;
+
+      // A Google Cloud Storage artifact.
+      Gcs gcs = 3;
+    }
+
+    // Defaults to false. When false, recipes are subject to validations
+    // based on the artifact type:
+    //
+    // Remote: A checksum must be specified, and only protocols with
+    // transport-layer security are permitted.
+    // GCS:    An object generation number must be specified.
+    bool allow_insecure = 4;
+  }
+
+  // An action that can be taken as part of installing or updating a recipe.
+  message Step {
+    // Copies the artifact to the specified path on the instance.
+    message CopyFile {
+      // Required. The id of the relevant artifact in the recipe.
+      string artifact_id = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // Required. The absolute path on the instance to put the file.
+      string destination = 2 [(google.api.field_behavior) = REQUIRED];
+
+      // Whether to allow this step to overwrite existing files. If this is
+      // false and the file already exists the file is not overwritten
+      // and the step is considered a success. Defaults to false.
+      bool overwrite = 3;
+
+      // Consists of three octal digits which represent, in
+      // order, the permissions of the owner, group, and other users for the
+      // file (similarly to the numeric mode used in the linux chmod utility).
+      // Each digit represents a three bit number with the 4 bit
+      // corresponding to the read permissions, the 2 bit corresponds to the
+      // write bit, and the one bit corresponds to the execute permission.
+      // Default behavior is 755.
+      //
+      // Below are some examples of permissions and their associated values:
+      // read, write, and execute: 7
+      // read and execute: 5
+      // read and write: 6
+      // read only: 4
+      string permissions = 4;
+    }
+
+    // Extracts an archive of the type specified in the specified directory.
+    message ExtractArchive {
+      // Specifying the type of archive.
+      enum ArchiveType {
+        // Indicates that the archive type isn't specified.
+        ARCHIVE_TYPE_UNSPECIFIED = 0;
+
+        // Indicates that the archive is a tar archive with no encryption.
+        TAR = 1;
+
+        // Indicates that the archive is a tar archive with gzip encryption.
+        TAR_GZIP = 2;
+
+        // Indicates that the archive is a tar archive with bzip encryption.
+        TAR_BZIP = 3;
+
+        // Indicates that the archive is a tar archive with lzma encryption.
+        TAR_LZMA = 4;
+
+        // Indicates that the archive is a tar archive with xz encryption.
+        TAR_XZ = 5;
+
+        // Indicates that the archive is a zip archive.
+        ZIP = 11;
+      }
+
+      // Required. The id of the relevant artifact in the recipe.
+      string artifact_id = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // Directory to extract archive to.
+      // Defaults to `/` on Linux or `C:\` on Windows.
+      string destination = 2;
+
+      // Required. The type of the archive to extract.
+      ArchiveType type = 3 [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // Installs an MSI file.
+    message InstallMsi {
+      // Required. The id of the relevant artifact in the recipe.
+      string artifact_id = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // The flags to use when installing the MSI
+      // defaults to ["/i"] (i.e. the install flag).
+      repeated string flags = 2;
+
+      // Return codes that indicate that the software installed or updated
+      // successfully. Behaviour defaults to [0]
+      repeated int32 allowed_exit_codes = 3;
+    }
+
+    // Installs a deb via dpkg.
+    message InstallDpkg {
+      // Required. The id of the relevant artifact in the recipe.
+      string artifact_id = 1 [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // Installs an rpm file via the rpm utility.
+    message InstallRpm {
+      // Required. The id of the relevant artifact in the recipe.
+      string artifact_id = 1 [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // Executes an artifact or local file.
+    message ExecFile {
+      // Location of the file to execute.
+      oneof location_type {
+        // The id of the relevant artifact in the recipe.
+        string artifact_id = 1;
+
+        // The absolute path of the file on the local filesystem.
+        string local_path = 2;
+      }
+
+      // Arguments to be passed to the provided executable.
+      repeated string args = 3;
+
+      // Defaults to [0]. A list of possible return values that the program
+      // can return to indicate a success.
+      repeated int32 allowed_exit_codes = 4;
+    }
+
+    // Runs a script through an interpreter.
+    message RunScript {
+      // The interpreter used to execute a script.
+      enum Interpreter {
+        // Default value for ScriptType.
+        INTERPRETER_UNSPECIFIED = 0;
+
+        // Indicates that the script is run with `/bin/sh` on Linux and `cmd`
+        // on windows.
+        SHELL = 1;
+
+        // Indicates that the script is run with powershell.
+        POWERSHELL = 3;
+      }
+
+      // Required. The shell script to be executed.
+      string script = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // Return codes that indicate that the software installed or updated
+      // successfully. Behaviour defaults to [0]
+      repeated int32 allowed_exit_codes = 2;
+
+      // The script interpreter to use to run the script. If no interpreter is
+      // specified the script is executed directly, which likely
+      // only succeed for scripts with
+      // [shebang lines](https://en.wikipedia.org/wiki/Shebang_\(Unix\)).
+      Interpreter interpreter = 3;
+    }
+
+    // A specific type of step.
+    oneof step {
+      // Copies a file onto the instance.
+      CopyFile file_copy = 1;
+
+      // Extracts an archive into the specified directory.
+      ExtractArchive archive_extraction = 2;
+
+      // Installs an MSI file.
+      InstallMsi msi_installation = 3;
+
+      // Installs a deb file via dpkg.
+      InstallDpkg dpkg_installation = 4;
+
+      // Installs an rpm file via the rpm utility.
+      InstallRpm rpm_installation = 5;
+
+      // Executes an artifact or local file.
+      ExecFile file_exec = 6;
+
+      // Runs commands in a shell.
+      RunScript script_run = 7;
+    }
+  }
+
+  // Required. Unique identifier for the recipe. Only one recipe with a given name is
+  // installed on an instance.
+  //
+  // Names are also used to identify resources which helps to determine whether
+  // guest policies have conflicts. This means that requests to create multiple
+  // recipes with the same name and version are rejected since they
+  // could potentially have conflicting assignments.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The version of this software recipe. Version can be up to 4 period
+  // separated numbers (e.g. 12.34.56.78).
+  string version = 2;
+
+  // Resources available to be used in the steps in the recipe.
+  repeated Artifact artifacts = 3;
+
+  // Actions to be taken for installing this recipe. On failure it stops
+  // executing steps and does not attempt another installation. Any steps taken
+  // (including partially completed steps) are not rolled back.
+  repeated Step install_steps = 4;
+
+  // Actions to be taken for updating this recipe. On failure it stops
+  // executing steps and  does not attempt another update for this recipe. Any
+  // steps taken (including partially completed steps) are not rolled back.
+  repeated Step update_steps = 5;
+
+  // Default is INSTALLED. The desired state the agent should maintain for this
+  // recipe.
+  //
+  // INSTALLED: The software recipe is installed on the instance but
+  //            won't be updated to new versions.
+  // UPDATED: The software recipe is installed on the instance. The recipe is
+  //          updated to a higher version, if a higher version of the recipe is
+  //          assigned to this instance.
+  // REMOVE: Remove is unsupported for software recipes and attempts to
+  //         create or update a recipe to the REMOVE state is rejected.
+  DesiredState desired_state = 6;
+}
+
+// A request message for creating a guest policy.
+message CreateGuestPolicyRequest {
+  // Required. The resource name of the parent using one of the following forms:
+  // `projects/{project_number}`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "osconfig.googleapis.com/GuestPolicy"
+    }
+  ];
+
+  // Required. The logical name of the guest policy in the project
+  // with the following restrictions:
+  //
+  // * Must contain only lowercase letters, numbers, and hyphens.
+  // * Must start with a letter.
+  // * Must be between 1-63 characters.
+  // * Must end with a number or a letter.
+  // * Must be unique within the project.
+  string guest_policy_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The GuestPolicy to create.
+  GuestPolicy guest_policy = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A request message for retrieving a guest policy.
+message GetGuestPolicyRequest {
+  // Required. The resource name of the guest policy using one of the following forms:
+  // `projects/{project_number}/guestPolicies/{guest_policy_id}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "osconfig.googleapis.com/GuestPolicy"
+    }
+  ];
+}
+
+// A request message for listing guest policies.
+message ListGuestPoliciesRequest {
+  // Required. The resource name of the parent using one of the following forms:
+  // `projects/{project_number}`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "osconfig.googleapis.com/GuestPolicy"
+    }
+  ];
+
+  // The maximum number of guest policies to return.
+  int32 page_size = 2;
+
+  // A pagination token returned from a previous call to `ListGuestPolicies`
+  // that indicates where this listing should continue from.
+  string page_token = 3;
+}
+
+// A response message for listing guest policies.
+message ListGuestPoliciesResponse {
+  // The list of GuestPolicies.
+  repeated GuestPolicy guest_policies = 1;
+
+  // A pagination token that can be used to get the next page
+  // of guest policies.
+  string next_page_token = 2;
+}
+
+// A request message for updating a guest policy.
+message UpdateGuestPolicyRequest {
+  // Required. The updated GuestPolicy.
+  GuestPolicy guest_policy = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Field mask that controls which fields of the guest policy should be
+  // updated.
+  google.protobuf.FieldMask update_mask = 2;
+}
+
+// A request message for deleting a guest policy.
+message DeleteGuestPolicyRequest {
+  // Required. The resource name of the guest policy  using one of the following forms:
+  // `projects/{project_number}/guestPolicies/{guest_policy_id}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "osconfig.googleapis.com/GuestPolicy"
+    }
+  ];
+}
+
+// A request message for getting the effective guest policy assigned to the
+// instance.
+message LookupEffectiveGuestPolicyRequest {
+  // Required. The VM instance whose policies are being looked up.
+  string instance = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Short name of the OS running on the instance. The OS Config agent only
+  // provides this field for targeting if OS Inventory is enabled for that
+  // instance.
+  string os_short_name = 2;
+
+  // Version of the OS running on the instance. The OS Config agent only
+  // provides this field for targeting if OS Inventory is enabled for that
+  // VM instance.
+  string os_version = 3;
+
+  // Architecture of OS running on the instance. The OS Config agent only
+  // provides this field for targeting if OS Inventory is enabled for that
+  // instance.
+  string os_architecture = 4;
+}
+
+// The effective guest policy that applies to a VM instance.
+message EffectiveGuestPolicy {
+  // A guest policy package including its source.
+  message SourcedPackage {
+    // Name of the guest policy providing this config.
+    string source = 1;
+
+    // A software package to configure on the VM instance.
+    Package package = 2;
+  }
+
+  // A guest policy package repository including its source.
+  message SourcedPackageRepository {
+    // Name of the guest policy providing this config.
+    string source = 1;
+
+    // A software package repository to configure on the VM instance.
+    PackageRepository package_repository = 2;
+  }
+
+  // A guest policy recipe including its source.
+  message SourcedSoftwareRecipe {
+    // Name of the guest policy providing this config.
+    string source = 1;
+
+    // A software recipe to configure on the VM instance.
+    SoftwareRecipe software_recipe = 2;
+  }
+
+  // List of package configurations assigned to the VM instance.
+  repeated SourcedPackage packages = 1;
+
+  // List of package repository configurations assigned to the VM instance.
+  repeated SourcedPackageRepository package_repositories = 2;
+
+  // List of recipes assigned to the VM instance.
+  repeated SourcedSoftwareRecipe software_recipes = 3;
+}

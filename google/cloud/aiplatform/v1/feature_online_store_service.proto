@@ -1,0 +1,446 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.aiplatform.v1;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/aiplatform/v1/featurestore_online_service.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+
+option csharp_namespace = "Google.Cloud.AIPlatform.V1";
+option go_package = "cloud.google.com/go/aiplatform/apiv1/aiplatformpb;aiplatformpb";
+option java_multiple_files = true;
+option java_outer_classname = "FeatureOnlineStoreServiceProto";
+option java_package = "com.google.cloud.aiplatform.v1";
+option php_namespace = "Google\\Cloud\\AIPlatform\\V1";
+option ruby_package = "Google::Cloud::AIPlatform::V1";
+
+// A service for fetching feature values from the online store.
+service FeatureOnlineStoreService {
+  option (google.api.default_host) = "aiplatform.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform";
+
+  // Fetch feature values under a FeatureView.
+  rpc FetchFeatureValues(FetchFeatureValuesRequest)
+      returns (FetchFeatureValuesResponse) {
+    option (google.api.http) = {
+      post: "/v1/{feature_view=projects/*/locations/*/featureOnlineStores/*/featureViews/*}:fetchFeatureValues"
+      body: "*"
+    };
+    option (google.api.method_signature) = "feature_view, data_key";
+  }
+
+  // Search the nearest entities under a FeatureView.
+  // Search only works for indexable feature view; if a feature view isn't
+  // indexable, returns Invalid argument response.
+  rpc SearchNearestEntities(SearchNearestEntitiesRequest)
+      returns (SearchNearestEntitiesResponse) {
+    option (google.api.http) = {
+      post: "/v1/{feature_view=projects/*/locations/*/featureOnlineStores/*/featureViews/*}:searchNearestEntities"
+      body: "*"
+    };
+  }
+
+  // Bidirectional streaming RPC to directly write to feature values in a
+  // feature view. Requests may not have a one-to-one mapping to responses and
+  // responses may be returned out-of-order to reduce latency.
+  rpc FeatureViewDirectWrite(stream FeatureViewDirectWriteRequest)
+      returns (stream FeatureViewDirectWriteResponse) {
+    option (google.api.http) = {
+      post: "/v1/{feature_view=projects/*/locations/*/featureOnlineStores/*/featureViews/*}:directWrite"
+      body: "*"
+    };
+  }
+
+  // RPC to generate an access token for the given feature view. FeatureViews
+  // under the same FeatureOnlineStore share the same access token.
+  rpc GenerateFetchAccessToken(GenerateFetchAccessTokenRequest)
+      returns (GenerateFetchAccessTokenResponse) {
+    option (google.api.http) = {
+      post: "/v1/{feature_view=projects/*/locations/*/featureOnlineStores/*/featureViews/*}:generateFetchAccessToken"
+      body: "*"
+    };
+  }
+}
+
+// Format of the data in the Feature View.
+enum FeatureViewDataFormat {
+  // Not set. Will be treated as the KeyValue format.
+  FEATURE_VIEW_DATA_FORMAT_UNSPECIFIED = 0;
+
+  // Return response data in key-value format.
+  KEY_VALUE = 1;
+
+  // Return response data in proto Struct format.
+  PROTO_STRUCT = 2;
+}
+
+// Lookup key for a feature view.
+message FeatureViewDataKey {
+  // ID that is comprised from several parts (columns).
+  message CompositeKey {
+    // Parts to construct Entity ID. Should match with the same ID columns as
+    // defined in FeatureView in the same order.
+    repeated string parts = 1;
+  }
+
+  oneof key_oneof {
+    // String key to use for lookup.
+    string key = 1;
+
+    // The actual Entity ID will be composed from this struct. This should match
+    // with the way ID is defined in the FeatureView spec.
+    CompositeKey composite_key = 2;
+  }
+}
+
+// Request message for
+// [FeatureOnlineStoreService.FetchFeatureValues][google.cloud.aiplatform.v1.FeatureOnlineStoreService.FetchFeatureValues].
+// All the features under the requested feature view will be returned.
+message FetchFeatureValuesRequest {
+  // Required. FeatureView resource format
+  // `projects/{project}/locations/{location}/featureOnlineStores/{featureOnlineStore}/featureViews/{featureView}`
+  string feature_view = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/FeatureView"
+    }
+  ];
+
+  // Optional. The request key to fetch feature values for.
+  FeatureViewDataKey data_key = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Response data format. If not set,
+  // [FeatureViewDataFormat.KEY_VALUE][google.cloud.aiplatform.v1.FeatureViewDataFormat.KEY_VALUE]
+  // will be used.
+  FeatureViewDataFormat data_format = 7
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message for
+// [FeatureOnlineStoreService.FetchFeatureValues][google.cloud.aiplatform.v1.FeatureOnlineStoreService.FetchFeatureValues]
+message FetchFeatureValuesResponse {
+  // Response structure in the format of key (feature name) and (feature) value
+  // pair.
+  message FeatureNameValuePairList {
+    // Feature name & value pair.
+    message FeatureNameValuePair {
+      oneof data {
+        // Feature value.
+        FeatureValue value = 2;
+      }
+
+      // Feature short name.
+      string name = 1;
+    }
+
+    // List of feature names and values.
+    repeated FeatureNameValuePair features = 1;
+  }
+
+  oneof format {
+    // Feature values in KeyValue format.
+    FeatureNameValuePairList key_values = 3;
+
+    // Feature values in proto Struct format.
+    google.protobuf.Struct proto_struct = 2;
+  }
+
+  // The data key associated with this response.
+  // Will only be populated for
+  // [FeatureOnlineStoreService.StreamingFetchFeatureValues][] RPCs.
+  FeatureViewDataKey data_key = 4;
+}
+
+// A query to find a number of similar entities.
+message NearestNeighborQuery {
+  // The embedding vector.
+  message Embedding {
+    // Optional. Individual value in the embedding.
+    repeated float value = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // String filter is used to search a subset of the entities by using boolean
+  // rules on string columns.
+  // For example: if a query specifies string filter
+  // with 'name = color, allow_tokens = {red, blue}, deny_tokens = {purple}','
+  // then that query will match entities that are red or blue, but if those
+  // points are also purple, then they will be excluded even if they are
+  // red/blue. Only string filter is supported for now, numeric filter will be
+  // supported in the near future.
+  message StringFilter {
+    // Required. Column names in BigQuery that used as filters.
+    string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. The allowed tokens.
+    repeated string allow_tokens = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The denied tokens.
+    repeated string deny_tokens = 3 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Numeric filter is used to search a subset of the entities by using boolean
+  // rules on numeric columns.
+  // For example:
+  // Database Point 0: {name: "a" value_int: 42} {name: "b" value_float: 1.0}
+  // Database Point 1:  {name: "a" value_int: 10} {name: "b" value_float: 2.0}
+  // Database Point 2: {name: "a" value_int: -1} {name: "b" value_float: 3.0}
+  // Query: {name: "a" value_int: 12 operator: LESS}    // Matches Point 1, 2
+  // {name: "b" value_float: 2.0 operator: EQUAL} // Matches Point 1
+  message NumericFilter {
+    // Datapoints for which Operator is true relative to the query's Value
+    // field will be allowlisted.
+    enum Operator {
+      // Unspecified operator.
+      OPERATOR_UNSPECIFIED = 0;
+
+      // Entities are eligible if their value is < the query's.
+      LESS = 1;
+
+      // Entities are eligible if their value is <= the query's.
+      LESS_EQUAL = 2;
+
+      // Entities are eligible if their value is == the query's.
+      EQUAL = 3;
+
+      // Entities are eligible if their value is >= the query's.
+      GREATER_EQUAL = 4;
+
+      // Entities are eligible if their value is > the query's.
+      GREATER = 5;
+
+      // Entities are eligible if their value is != the query's.
+      NOT_EQUAL = 6;
+    }
+
+    // The type of Value must be consistent for all datapoints with a given
+    // name.  This is verified at runtime.
+    oneof Value {
+      // int value type.
+      int64 value_int = 2;
+
+      // float value type.
+      float value_float = 3;
+
+      // double value type.
+      double value_double = 4;
+    }
+
+    // Required. Column name in BigQuery that used as filters.
+    string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. This MUST be specified for queries and must NOT be specified
+    // for database points.
+    optional Operator op = 5 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Parameters that can be overrided in each query to tune query latency and
+  // recall.
+  message Parameters {
+    // Optional. The number of neighbors to find via approximate search before
+    // exact reordering is performed; if set, this value must be >
+    // neighbor_count.
+    int32 approximate_neighbor_candidates = 1
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The fraction of the number of leaves to search, set at query
+    // time allows user to tune search performance. This value increase result
+    // in both search accuracy and latency increase. The value should be between
+    // 0.0 and 1.0.
+    double leaf_nodes_search_fraction = 2
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  oneof instance {
+    // Optional. The entity id whose similar entities should be searched for.
+    // If embedding is set, search will use embedding instead of
+    // entity_id.
+    string entity_id = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The embedding vector that be used for similar search.
+    Embedding embedding = 2 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Optional. The number of similar entities to be retrieved from feature view
+  // for each query.
+  int32 neighbor_count = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The list of string filters.
+  repeated StringFilter string_filters = 4
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The list of numeric filters.
+  repeated NumericFilter numeric_filters = 8
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Crowding is a constraint on a neighbor list produced by nearest
+  // neighbor search requiring that no more than
+  // sper_crowding_attribute_neighbor_count of the k neighbors returned have the
+  // same value of crowding_attribute. It's used for improving result diversity.
+  int32 per_crowding_attribute_neighbor_count = 5
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Parameters that can be set to tune query on the fly.
+  Parameters parameters = 7 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The request message for
+// [FeatureOnlineStoreService.SearchNearestEntities][google.cloud.aiplatform.v1.FeatureOnlineStoreService.SearchNearestEntities].
+message SearchNearestEntitiesRequest {
+  // Required. FeatureView resource format
+  // `projects/{project}/locations/{location}/featureOnlineStores/{featureOnlineStore}/featureViews/{featureView}`
+  string feature_view = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "aiplatform.googleapis.com/FeatureView"
+    }
+  ];
+
+  // Required. The query.
+  NearestNeighborQuery query = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. If set to true, the full entities (including all vector values
+  // and metadata) of the nearest neighbors are returned; otherwise only entity
+  // id of the nearest neighbors will be returned. Note that returning full
+  // entities will significantly increase the latency and cost of the query.
+  bool return_full_entity = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Nearest neighbors for one query.
+message NearestNeighbors {
+  // A neighbor of the query vector.
+  message Neighbor {
+    // The id of the similar entity.
+    string entity_id = 1;
+
+    // The distance between the neighbor and the query vector.
+    double distance = 2;
+
+    // The attributes of the neighbor, e.g. filters, crowding and metadata
+    // Note that full entities are returned only when "return_full_entity"
+    // is set to true. Otherwise, only the "entity_id" and "distance" fields
+    // are populated.
+    FetchFeatureValuesResponse entity_key_values = 3;
+  }
+
+  // All its neighbors.
+  repeated Neighbor neighbors = 1;
+}
+
+// Response message for
+// [FeatureOnlineStoreService.SearchNearestEntities][google.cloud.aiplatform.v1.FeatureOnlineStoreService.SearchNearestEntities]
+message SearchNearestEntitiesResponse {
+  // The nearest neighbors of the query entity.
+  NearestNeighbors nearest_neighbors = 1;
+}
+
+// Request message for
+// [FeatureOnlineStoreService.FeatureViewDirectWrite][google.cloud.aiplatform.v1.FeatureOnlineStoreService.FeatureViewDirectWrite].
+message FeatureViewDirectWriteRequest {
+  // A data key and associated feature values to write to the feature view.
+  message DataKeyAndFeatureValues {
+    // Feature name & value pair.
+    message Feature {
+      // Feature value data to write.
+      oneof data_oneof {
+        // Feature value. A user provided timestamp may be set in the
+        // `FeatureValue.metadata.generate_time` field.
+        FeatureValue value = 3;
+      }
+
+      // Feature short name.
+      string name = 1;
+    }
+
+    // The data key.
+    FeatureViewDataKey data_key = 1;
+
+    // List of features to write.
+    repeated Feature features = 2;
+  }
+
+  // FeatureView resource format
+  // `projects/{project}/locations/{location}/featureOnlineStores/{featureOnlineStore}/featureViews/{featureView}`
+  string feature_view = 1 [(google.api.resource_reference) = {
+    type: "aiplatform.googleapis.com/FeatureView"
+  }];
+
+  // Required. The data keys and associated feature values.
+  repeated DataKeyAndFeatureValues data_key_and_feature_values = 2
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response message for
+// [FeatureOnlineStoreService.FeatureViewDirectWrite][google.cloud.aiplatform.v1.FeatureOnlineStoreService.FeatureViewDirectWrite].
+message FeatureViewDirectWriteResponse {
+  // Details about the write for each key.
+  message WriteResponse {
+    // What key is this write response associated with.
+    FeatureViewDataKey data_key = 1;
+
+    // When the feature values were written to the online store.
+    // If
+    // [FeatureViewDirectWriteResponse.status][google.cloud.aiplatform.v1.FeatureViewDirectWriteResponse.status]
+    // is not OK, this field is not populated.
+    google.protobuf.Timestamp online_store_write_time = 2;
+  }
+
+  // Response status for the keys listed in
+  // [FeatureViewDirectWriteResponse.write_responses][google.cloud.aiplatform.v1.FeatureViewDirectWriteResponse.write_responses].
+  //
+  // The error only applies to the
+  // listed data keys - the stream will remain open for further
+  // [FeatureOnlineStoreService.FeatureViewDirectWriteRequest][] requests.
+  //
+  // Partial failures (e.g. if the first 10 keys of a request fail, but the
+  // rest succeed) from a single request may result in multiple responses -
+  // there will be one response for the successful request keys and one response
+  // for the failing request keys.
+  google.rpc.Status status = 1;
+
+  // Details about write for each key. If status is not OK,
+  // [WriteResponse.data_key][google.cloud.aiplatform.v1.FeatureViewDirectWriteResponse.WriteResponse.data_key]
+  // will have the key with error, but
+  // [WriteResponse.online_store_write_time][google.cloud.aiplatform.v1.FeatureViewDirectWriteResponse.WriteResponse.online_store_write_time]
+  // will not be present.
+  repeated WriteResponse write_responses = 2;
+}
+
+// Request message for
+// [FeatureOnlineStoreService.GenerateFetchAccessToken][google.cloud.aiplatform.v1.FeatureOnlineStoreService.GenerateFetchAccessToken].
+message GenerateFetchAccessTokenRequest {
+  // FeatureView resource format
+  // `projects/{project}/locations/{location}/featureOnlineStores/{featureOnlineStore}/featureViews/{featureView}`
+  string feature_view = 1 [(google.api.resource_reference) = {
+    type: "aiplatform.googleapis.com/FeatureView"
+  }];
+}
+
+// Response message for
+// [FeatureOnlineStoreService.GenerateFetchAccessToken][google.cloud.aiplatform.v1.FeatureOnlineStoreService.GenerateFetchAccessToken].
+message GenerateFetchAccessTokenResponse {
+  // The OAuth 2.0 access token.
+  string access_token = 1;
+
+  // Token expiration time. This is always set
+  google.protobuf.Timestamp expire_time = 2;
+}

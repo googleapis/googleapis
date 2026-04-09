@@ -1,0 +1,1057 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.aiplatform.v1beta1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/aiplatform/v1beta1/api_auth.proto";
+import "google/cloud/aiplatform/v1beta1/encryption_spec.proto";
+import "google/cloud/aiplatform/v1beta1/io.proto";
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Google.Cloud.AIPlatform.V1Beta1";
+option go_package = "cloud.google.com/go/aiplatform/apiv1beta1/aiplatformpb;aiplatformpb";
+option java_multiple_files = true;
+option java_outer_classname = "VertexRagDataProto";
+option java_package = "com.google.cloud.aiplatform.v1beta1";
+option php_namespace = "Google\\Cloud\\AIPlatform\\V1beta1";
+option ruby_package = "Google::Cloud::AIPlatform::V1beta1";
+
+// Config for the embedding model to use for RAG.
+message RagEmbeddingModelConfig {
+  // Config representing a model hosted on Vertex Prediction Endpoint.
+  message VertexPredictionEndpoint {
+    // Required. The endpoint resource name.
+    // Format:
+    // `projects/{project}/locations/{location}/publishers/{publisher}/models/{model}`
+    // or
+    // `projects/{project}/locations/{location}/endpoints/{endpoint}`
+    string endpoint = 1 [
+      (google.api.field_behavior) = REQUIRED,
+      (google.api.resource_reference) = {
+        type: "aiplatform.googleapis.com/Endpoint"
+      }
+    ];
+
+    // Output only. The resource name of the model that is deployed on the
+    // endpoint. Present only when the endpoint is not a publisher model.
+    // Pattern:
+    // `projects/{project}/locations/{location}/models/{model}`
+    string model = 2 [
+      (google.api.field_behavior) = OUTPUT_ONLY,
+      (google.api.resource_reference) = {
+        type: "aiplatform.googleapis.com/Model"
+      }
+    ];
+
+    // Output only. Version ID of the model that is deployed on the endpoint.
+    // Present only when the endpoint is not a publisher model.
+    string model_version_id = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Configuration for sparse emebdding generation.
+  message SparseEmbeddingConfig {
+    // Message for BM25 parameters.
+    message Bm25 {
+      // Optional. Use multilingual tokenizer if set to true.
+      bool multilingual = 1 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The parameter to control term frequency saturation. It
+      // determines the scaling between the matching term frequency and final
+      // score. k1 is in the range of [1.2, 3]. The default value is 1.2.
+      optional float k1 = 2 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The parameter to control document length normalization. It
+      // determines how much the document length affects the final score. b is
+      // in the range of [0, 1]. The default value is 0.75.
+      optional float b = 3 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // The model to use for sparse embedding generation.
+    oneof model {
+      // Use BM25 scoring algorithm.
+      Bm25 bm25 = 1;
+    }
+  }
+
+  // Config for hybrid search.
+  message HybridSearchConfig {
+    // Optional. The configuration for sparse embedding generation. This field
+    // is optional the default behavior depends on the vector database choice on
+    // the RagCorpus.
+    SparseEmbeddingConfig sparse_embedding_config = 1
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Required. The Vertex AI Prediction Endpoint that hosts the embedding
+    // model for dense embedding generations.
+    VertexPredictionEndpoint dense_embedding_model_prediction_endpoint = 2
+        [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // The model config to use.
+  oneof model_config {
+    // The Vertex AI Prediction Endpoint that either refers to a publisher model
+    // or an endpoint that is hosting a 1P fine-tuned text embedding model.
+    // Endpoints hosting non-1P fine-tuned text embedding models are
+    // currently not supported.
+    // This is used for dense vector search.
+    VertexPredictionEndpoint vertex_prediction_endpoint = 1;
+
+    // Configuration for hybrid search.
+    HybridSearchConfig hybrid_search_config = 2;
+  }
+}
+
+// Config for the Vector DB to use for RAG.
+message RagVectorDbConfig {
+  // The config for the default RAG-managed Vector DB.
+  message RagManagedDb {
+    // Config for KNN search.
+    message KNN {}
+
+    // Config for ANN search.
+    //
+    // RagManagedDb uses a tree-based structure to partition data and
+    // facilitate faster searches. As a tradeoff, it requires longer indexing
+    // time and manual triggering of index rebuild via the ImportRagFiles and
+    // UpdateRagCorpus API.
+    message ANN {
+      // The depth of the tree-based structure. Only depth values of 2 and 3 are
+      // supported.
+      //
+      // Recommended value is 2 if you have if you have O(10K) files in the
+      // RagCorpus and set this to 3 if more than that.
+      //
+      // Default value is 2.
+      int32 tree_depth = 1;
+
+      // Number of leaf nodes in the tree-based structure. Each leaf node
+      // contains groups of closely related vectors along with their
+      // corresponding centroid.
+      //
+      // Recommended value is 10 * sqrt(num of RagFiles in your RagCorpus).
+      //
+      // Default value is 500.
+      int32 leaf_count = 2;
+    }
+
+    // Choice of retrieval strategy.
+    oneof retrieval_strategy {
+      // Performs a KNN search on RagCorpus.
+      // Default choice if not specified.
+      KNN knn = 1;
+
+      // Performs an ANN search on RagCorpus. Use this if you have a lot of
+      // files (> 10K) in your RagCorpus and want to reduce the search latency.
+      ANN ann = 2;
+    }
+  }
+
+  // The config for the Weaviate.
+  message Weaviate {
+    // Weaviate DB instance HTTP endpoint. e.g. 34.56.78.90:8080
+    // Vertex RAG only supports HTTP connection to Weaviate.
+    // This value cannot be changed after it's set.
+    string http_endpoint = 1;
+
+    // The corresponding collection this corpus maps to.
+    // This value cannot be changed after it's set.
+    string collection_name = 2;
+  }
+
+  // The config for the Pinecone.
+  message Pinecone {
+    // Pinecone index name.
+    // This value cannot be changed after it's set.
+    string index_name = 1;
+  }
+
+  // The config for the Vertex Feature Store.
+  message VertexFeatureStore {
+    // The resource name of the FeatureView.
+    // Format:
+    // `projects/{project}/locations/{location}/featureOnlineStores/{feature_online_store}/featureViews/{feature_view}`
+    string feature_view_resource_name = 1;
+  }
+
+  // The config for the Vertex Vector Search.
+  message VertexVectorSearch {
+    // The resource name of the Index Endpoint.
+    // Format:
+    // `projects/{project}/locations/{location}/indexEndpoints/{index_endpoint}`
+    string index_endpoint = 1;
+
+    // The resource name of the Index.
+    // Format:
+    // `projects/{project}/locations/{location}/indexes/{index}`
+    string index = 2;
+  }
+
+  // The config for the RAG-managed Vertex Vector Search 2.0.
+  message RagManagedVertexVectorSearch {
+    // Output only. The resource name of the Vector Search 2.0 Collection that
+    // RAG Created for the corpus. Only populated after the corpus is
+    // successfully created. Format:
+    // `projects/{project}/locations/{location}/collections/{collection_id}`
+    string collection_name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // The config for the Vector DB.
+  oneof vector_db {
+    // The config for the RAG-managed Vector DB.
+    RagManagedDb rag_managed_db = 1;
+
+    // The config for the Weaviate.
+    Weaviate weaviate = 2;
+
+    // The config for the Pinecone.
+    Pinecone pinecone = 3;
+
+    // The config for the Vertex Feature Store.
+    VertexFeatureStore vertex_feature_store = 4;
+
+    // The config for the Vertex Vector Search.
+    VertexVectorSearch vertex_vector_search = 6;
+
+    // The config for the RAG-managed Vertex Vector Search 2.0.
+    RagManagedVertexVectorSearch rag_managed_vertex_vector_search = 8;
+  }
+
+  // Authentication config for the chosen Vector DB.
+  ApiAuth api_auth = 5;
+
+  // Optional. Immutable. The embedding model config of the Vector DB.
+  RagEmbeddingModelConfig rag_embedding_model_config = 7 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+}
+
+// RagFile status.
+message FileStatus {
+  // RagFile state.
+  enum State {
+    // RagFile state is unspecified.
+    STATE_UNSPECIFIED = 0;
+
+    // RagFile resource has been created and indexed successfully.
+    ACTIVE = 1;
+
+    // RagFile resource is in a problematic state.
+    // See `error_message` field for details.
+    ERROR = 2;
+  }
+
+  // Output only. RagFile state.
+  State state = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Only when the `state` field is ERROR.
+  string error_status = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Config for the Vertex AI Search.
+message VertexAiSearchConfig {
+  // Vertex AI Search Serving Config resource full name. For example,
+  // `projects/{project}/locations/{location}/collections/{collection}/engines/{engine}/servingConfigs/{serving_config}`
+  // or
+  // `projects/{project}/locations/{location}/collections/{collection}/dataStores/{data_store}/servingConfigs/{serving_config}`.
+  string serving_config = 1;
+}
+
+// RagCorpus status.
+message CorpusStatus {
+  // RagCorpus life state.
+  enum State {
+    // This state is not supposed to happen.
+    UNKNOWN = 0;
+
+    // RagCorpus resource entry is initialized, but hasn't done validation.
+    INITIALIZED = 1;
+
+    // RagCorpus is provisioned successfully and is ready to serve.
+    ACTIVE = 2;
+
+    // RagCorpus is in a problematic situation.
+    // See `error_message` field for details.
+    ERROR = 3;
+  }
+
+  // Output only. RagCorpus life state.
+  State state = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Only when the `state` field is ERROR.
+  string error_status = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A RagCorpus is a RagFile container and a project can have multiple
+// RagCorpora.
+message RagCorpus {
+  option (google.api.resource) = {
+    type: "aiplatform.googleapis.com/RagCorpus"
+    pattern: "projects/{project}/locations/{location}/ragCorpora/{rag_corpus}"
+    plural: "ragCorpora"
+    singular: "ragCorpus"
+  };
+
+  // The config for the corpus type of the RagCorpus.
+  message CorpusTypeConfig {
+    // Config for the document corpus.
+    message DocumentCorpus {}
+
+    // Config for the memory corpus.
+    message MemoryCorpus {
+      // The LLM parser to use for the memory corpus.
+      RagFileParsingConfig.LlmParser llm_parser = 1;
+    }
+
+    // Optional.
+    // Whether the RagCorpus is used as document store or memory store.
+    oneof corpus_type_config {
+      // Optional. Config for the document corpus.
+      DocumentCorpus document_corpus = 1
+          [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Config for the memory corpus.
+      MemoryCorpus memory_corpus = 2 [(google.api.field_behavior) = OPTIONAL];
+    }
+  }
+
+  // The backend config of the RagCorpus.
+  // It can be data store and/or retrieval engine.
+  oneof backend_config {
+    // Optional. Immutable. The config for the Vector DBs.
+    RagVectorDbConfig vector_db_config = 9 [
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.field_behavior) = IMMUTABLE
+    ];
+
+    // Optional. Immutable. The config for the Vertex AI Search.
+    VertexAiSearchConfig vertex_ai_search_config = 10 [
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.field_behavior) = IMMUTABLE
+    ];
+  }
+
+  // Output only. The resource name of the RagCorpus.
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Required. The display name of the RagCorpus.
+  // The name can be up to 128 characters long and can consist of any UTF-8
+  // characters.
+  string display_name = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The description of the RagCorpus.
+  string description = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Immutable. The embedding model config of the RagCorpus.
+  RagEmbeddingModelConfig rag_embedding_model_config = 6 [
+    deprecated = true,
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // Optional. Immutable. The Vector DB config of the RagCorpus.
+  RagVectorDbConfig rag_vector_db_config = 7 [
+    deprecated = true,
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // Output only. Timestamp when this RagCorpus was created.
+  google.protobuf.Timestamp create_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Timestamp when this RagCorpus was last updated.
+  google.protobuf.Timestamp update_time = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. RagCorpus state.
+  CorpusStatus corpus_status = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Number of RagFiles in the RagCorpus.
+  //
+  // NOTE: This field is not populated in the response of
+  // [VertexRagDataService.ListRagCorpora][google.cloud.aiplatform.v1beta1.VertexRagDataService.ListRagCorpora].
+  int32 rag_files_count = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Immutable. The CMEK key name used to encrypt at-rest data related
+  // to this Corpus. Only applicable to RagManagedDb option for Vector DB. This
+  // field can only be set at corpus creation time, and cannot be updated or
+  // deleted.
+  EncryptionSpec encryption_spec = 12 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+
+  // Optional. The corpus type config of the RagCorpus.
+  CorpusTypeConfig corpus_type_config = 13
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Reserved for future use.
+  bool satisfies_pzs = 19 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Reserved for future use.
+  bool satisfies_pzi = 20 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A RagFile contains user data for chunking, embedding and indexing.
+message RagFile {
+  option (google.api.resource) = {
+    type: "aiplatform.googleapis.com/RagFile"
+    pattern: "projects/{project}/locations/{location}/ragCorpora/{rag_corpus}/ragFiles/{rag_file}"
+    plural: "ragFiles"
+    singular: "ragFile"
+  };
+
+  // The type of the RagFile.
+  enum RagFileType {
+    // RagFile type is unspecified.
+    RAG_FILE_TYPE_UNSPECIFIED = 0;
+
+    // RagFile type is TXT.
+    RAG_FILE_TYPE_TXT = 1;
+
+    // RagFile type is PDF.
+    RAG_FILE_TYPE_PDF = 2;
+  }
+
+  // The origin location of the RagFile if it is imported from Google Cloud
+  // Storage or Google Drive.
+  oneof rag_file_source {
+    // Output only. Google Cloud Storage location of the RagFile.
+    // It does not support wildcards in the Cloud Storage uri for now.
+    GcsSource gcs_source = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Google Drive location. Supports importing individual files
+    // as well as Google Drive folders.
+    GoogleDriveSource google_drive_source = 9
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The RagFile is encapsulated and uploaded in the
+    // UploadRagFile request.
+    DirectUploadSource direct_upload_source = 10
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // The RagFile is imported from a Slack channel.
+    SlackSource slack_source = 11;
+
+    // The RagFile is imported from a Jira query.
+    JiraSource jira_source = 12;
+
+    // The RagFile is imported from a SharePoint source.
+    SharePointSources share_point_sources = 14;
+  }
+
+  // Output only. The resource name of the RagFile.
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Required. The display name of the RagFile.
+  // The name can be up to 128 characters long and can consist of any UTF-8
+  // characters.
+  string display_name = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The description of the RagFile.
+  string description = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The size of the RagFile in bytes.
+  int64 size_bytes = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The type of the RagFile.
+  RagFileType rag_file_type = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Timestamp when this RagFile was created.
+  google.protobuf.Timestamp create_time = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Timestamp when this RagFile was last updated.
+  google.protobuf.Timestamp update_time = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. State of the RagFile.
+  FileStatus file_status = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The metadata for metadata search. The user_metadata Needs to
+  // be in JSON format.
+  string user_metadata = 15 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A RagChunk includes the content of a chunk of a RagFile, and associated
+// metadata.
+message RagChunk {
+  // Represents where the chunk starts and ends in the document.
+  message PageSpan {
+    // Page where chunk starts in the document. Inclusive. 1-indexed.
+    int32 first_page = 1;
+
+    // Page where chunk ends in the document. Inclusive. 1-indexed.
+    int32 last_page = 2;
+  }
+
+  // The content of the chunk.
+  string text = 1;
+
+  // If populated, represents where the chunk starts and ends in the document.
+  optional PageSpan page_span = 2;
+
+  // The ID of the file that the chunk belongs to.
+  string file_id = 3;
+
+  // The ID of the chunk.
+  string chunk_id = 4;
+}
+
+// Specifies the size and overlap of chunks for RagFiles.
+message RagFileChunkingConfig {
+  // Specifies the fixed length chunking config.
+  message FixedLengthChunking {
+    // The size of the chunks.
+    int32 chunk_size = 1;
+
+    // The overlap between chunks.
+    int32 chunk_overlap = 2;
+  }
+
+  // Specifies the chunking config for RagFiles.
+  oneof chunking_config {
+    // Specifies the fixed length chunking config.
+    FixedLengthChunking fixed_length_chunking = 3;
+  }
+
+  // The size of the chunks.
+  int32 chunk_size = 1 [deprecated = true];
+
+  // The overlap between chunks.
+  int32 chunk_overlap = 2 [deprecated = true];
+}
+
+// Specifies the transformation config for RagFiles.
+message RagFileTransformationConfig {
+  // Specifies the chunking config for RagFiles.
+  RagFileChunkingConfig rag_file_chunking_config = 1;
+}
+
+// Specifies the parsing config for RagFiles.
+message RagFileParsingConfig {
+  // Specifies the advanced parsing for RagFiles.
+  message AdvancedParser {
+    // Whether to use advanced PDF parsing.
+    bool use_advanced_pdf_parsing = 1;
+  }
+
+  // Document AI Layout Parser config.
+  message LayoutParser {
+    // The full resource name of a Document AI processor or processor version.
+    // The processor must have type `LAYOUT_PARSER_PROCESSOR`. If specified, the
+    // `additional_config.parse_as_scanned_pdf` field must be false.
+    // Format:
+    // * `projects/{project_id}/locations/{location}/processors/{processor_id}`
+    // * `projects/{project_id}/locations/{location}/processors/{processor_id}/processorVersions/{processor_version_id}`
+    string processor_name = 1;
+
+    // The maximum number of requests the job is allowed to make to the Document
+    // AI processor per minute. Consult
+    // https://cloud.google.com/document-ai/quotas and the Quota page for your
+    // project to set an appropriate value here. If unspecified, a default value
+    // of 120 QPM would be used.
+    int32 max_parsing_requests_per_min = 2;
+
+    // The maximum number of requests the job is allowed to make to the Document
+    // AI processor per minute in this project. Consult
+    // https://cloud.google.com/document-ai/quotas and the Quota page for your
+    // project to set an appropriate value here.
+    // If this value is not specified,
+    // max_parsing_requests_per_min will be used by indexing
+    // pipeline as the global limit.
+    int32 global_max_parsing_requests_per_min = 3;
+  }
+
+  // Specifies the LLM parsing for RagFiles.
+  message LlmParser {
+    // The name of a LLM model used for parsing.
+    // Format:
+    // * `projects/{project_id}/locations/{location}/publishers/{publisher}/models/{model}`
+    string model_name = 1;
+
+    // The maximum number of requests the job is allowed to make to the
+    // LLM model per minute. Consult
+    // https://cloud.google.com/vertex-ai/generative-ai/docs/quotas
+    // and your document size to set an appropriate value here. If unspecified,
+    // a default value of 5000 QPM would be used.
+    int32 max_parsing_requests_per_min = 2;
+
+    // The maximum number of requests the job is allowed to make to the
+    // LLM model per minute in this project. Consult
+    // https://cloud.google.com/vertex-ai/generative-ai/docs/quotas
+    // and your document size to set an appropriate value here.
+    // If this value is not specified,
+    // max_parsing_requests_per_min will be used by indexing pipeline job as the
+    // global limit.
+    int32 global_max_parsing_requests_per_min = 4;
+
+    // The prompt to use for parsing. If not specified, a default prompt will
+    // be used.
+    string custom_parsing_prompt = 3;
+  }
+
+  // The parser to use for RagFiles.
+  oneof parser {
+    // The Advanced Parser to use for RagFiles.
+    AdvancedParser advanced_parser = 3;
+
+    // The Layout Parser to use for RagFiles.
+    LayoutParser layout_parser = 4;
+
+    // The LLM Parser to use for RagFiles.
+    LlmParser llm_parser = 5;
+  }
+
+  // Whether to use advanced PDF parsing.
+  bool use_advanced_pdf_parsing = 2 [deprecated = true];
+}
+
+// Metadata config for RagFile.
+message RagFileMetadataConfig {
+  // Specifies the metadata schema source.
+  oneof metadata_schema_source {
+    // Google Cloud Storage location. Supports importing individual files as
+    // well as entire Google Cloud Storage directories. Sample formats:
+    // - `gs://bucket_name/my_directory/object_name/metadata_schema.json`
+    // - `gs://bucket_name/my_directory`
+    // If the user provides a directory, the metadata schema will be read from
+    // the files that ends with "metadata_schema.json" in the directory.
+    GcsSource gcs_metadata_schema_source = 1;
+
+    // Google Drive location. Supports importing individual files as
+    // well as Google Drive folders.
+    // If the user provides a folder, the metadata schema will be read from
+    // the files that ends with "metadata_schema.json" in the directory.
+    GoogleDriveSource google_drive_metadata_schema_source = 2;
+
+    // Inline metadata schema source. Must be a JSON string.
+    string inline_metadata_schema_source = 3;
+  }
+
+  // Specifies the metadata source.
+  oneof metadata_source {
+    // Google Cloud Storage location. Supports importing individual files as
+    // well as entire Google Cloud Storage directories. Sample formats:
+    // - `gs://bucket_name/my_directory/object_name/metadata.json`
+    // - `gs://bucket_name/my_directory`
+    // If the user provides a directory, the metadata will be read from
+    // the files that ends with "metadata.json" in the directory.
+    GcsSource gcs_metadata_source = 4;
+
+    // Google Drive location. Supports importing individual files as
+    // well as Google Drive folders.
+    // If the user provides a directory, the metadata will be read from
+    // the files that ends with "metadata.json" in the directory.
+    GoogleDriveSource google_drive_metadata_source = 5;
+
+    // Inline metadata source. Must be a JSON string.
+    string inline_metadata_source = 6;
+  }
+}
+
+// Config for uploading RagFile.
+message UploadRagFileConfig {
+  // Specifies the size and overlap of chunks after uploading RagFile.
+  RagFileChunkingConfig rag_file_chunking_config = 1 [deprecated = true];
+
+  // Specifies the transformation config for RagFiles.
+  RagFileTransformationConfig rag_file_transformation_config = 3;
+
+  // Optional. Specifies the metadata config for RagFiles.
+  // Including paths for metadata schema and metadata.
+  // Alteratively, inline metadata schema and metadata can be provided.
+  // Deprecated: Not in use.
+  RagFileMetadataConfig rag_file_metadata_config = 4
+      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Specifies the parsing config for RagFiles.
+  // RAG will use the default parser if this field is not set.
+  RagFileParsingConfig rag_file_parsing_config = 5
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Config for importing RagFiles.
+message ImportRagFilesConfig {
+  // The source of the import.
+  oneof import_source {
+    // Google Cloud Storage location. Supports importing individual files as
+    // well as entire Google Cloud Storage directories. Sample formats:
+    // - `gs://bucket_name/my_directory/object_name/my_file.txt`
+    // - `gs://bucket_name/my_directory`
+    GcsSource gcs_source = 2;
+
+    // Google Drive location. Supports importing individual files as
+    // well as Google Drive folders.
+    GoogleDriveSource google_drive_source = 3;
+
+    // Slack channels with their corresponding access tokens.
+    SlackSource slack_source = 6;
+
+    // Jira queries with their corresponding authentication.
+    JiraSource jira_source = 7;
+
+    // SharePoint sources.
+    SharePointSources share_point_sources = 13;
+  }
+
+  // Optional. If provided, all partial failures are written to the sink.
+  // Deprecated. Prefer to use the `import_result_sink`.
+  oneof partial_failure_sink {
+    // The Cloud Storage path to write partial failures to.
+    // Deprecated. Prefer to use `import_result_gcs_sink`.
+    GcsDestination partial_failure_gcs_sink = 11 [deprecated = true];
+
+    // The BigQuery destination to write partial failures to. It should be a
+    // bigquery table resource name (e.g.
+    // "bq://projectId.bqDatasetId.bqTableId"). The dataset must exist. If the
+    // table does not exist, it will be created with the expected schema. If the
+    // table exists, the schema will be validated and data will be added to this
+    // existing table.
+    // Deprecated. Prefer to use `import_result_bq_sink`.
+    BigQueryDestination partial_failure_bigquery_sink = 12 [deprecated = true];
+  }
+
+  // Optional. If provided, all successfully imported files and all partial
+  // failures are written to the sink.
+  oneof import_result_sink {
+    // The Cloud Storage path to write import result to.
+    GcsDestination import_result_gcs_sink = 14;
+
+    // The BigQuery destination to write import result to. It should be a
+    // bigquery table resource name (e.g.
+    // "bq://projectId.bqDatasetId.bqTableId"). The dataset must exist. If the
+    // table does not exist, it will be created with the expected schema. If the
+    // table exists, the schema will be validated and data will be added to this
+    // existing table.
+    BigQueryDestination import_result_bigquery_sink = 15;
+  }
+
+  // Specifies the size and overlap of chunks after importing RagFiles.
+  RagFileChunkingConfig rag_file_chunking_config = 4 [deprecated = true];
+
+  // Specifies the transformation config for RagFiles.
+  RagFileTransformationConfig rag_file_transformation_config = 16;
+
+  // Optional. Specifies the parsing config for RagFiles.
+  // RAG will use the default parser if this field is not set.
+  RagFileParsingConfig rag_file_parsing_config = 8
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Specifies the metadata config for RagFiles.
+  // Including paths for metadata schema and metadata.
+  // Deprecated: Not in use.
+  RagFileMetadataConfig rag_file_metadata_config = 17 [deprecated = true];
+
+  // Optional. The max number of queries per minute that this job is allowed to
+  // make to the embedding model specified on the corpus. This value is specific
+  // to this job and not shared across other import jobs. Consult the Quotas
+  // page on the project to set an appropriate value here.
+  // If unspecified, a default value of 1,000 QPM would be used.
+  int32 max_embedding_requests_per_min = 5
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The max number of queries per minute that the indexing pipeline
+  // job is allowed to make to the embedding model specified in the project.
+  // Please follow the quota usage guideline of the embedding model you use to
+  // set the value properly.If this value is not specified,
+  // max_embedding_requests_per_min will be used by indexing pipeline job as the
+  // global limit.
+  int32 global_max_embedding_requests_per_min = 18
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Rebuilds the ANN index to optimize for recall on the imported data.
+  // Only applicable for RagCorpora running on RagManagedDb with
+  // `retrieval_strategy` set to `ANN`. The rebuild will be performed using the
+  // existing ANN config set on the RagCorpus. To change the ANN config, please
+  // use the UpdateRagCorpus API.
+  //
+  // Default is false, i.e., index is not rebuilt.
+  bool rebuild_ann_index = 19;
+}
+
+// Configuration message for RagManagedDb used by RagEngine.
+message RagManagedDbConfig {
+  // Enterprise tier offers production grade performance along with
+  // autoscaling functionality. It is suitable for customers with large
+  // amounts of data or performance sensitive workloads.
+  message Enterprise {
+    option deprecated = true;
+  }
+
+  // Scaled tier offers production grade performance along with
+  // autoscaling functionality. It is suitable for customers with large
+  // amounts of data or performance sensitive workloads.
+  message Scaled {}
+
+  // Basic tier is a cost-effective and low compute tier suitable for
+  // the following cases:
+  // * Experimenting with RagManagedDb.
+  // * Small data size.
+  // * Latency insensitive workload.
+  // * Only using RAG Engine with external vector DBs.
+  //
+  // NOTE: This is the default tier under Spanner mode if not explicitly chosen.
+  message Basic {}
+
+  // Disables the RAG Engine service and deletes all your data held
+  // within this service. This will halt the billing of the service.
+  //
+  // NOTE: Once deleted the data cannot be recovered. To start using
+  // RAG Engine again, you will need to update the tier by calling the
+  // UpdateRagEngineConfig API.
+  message Unprovisioned {}
+
+  // Message to configure the Spanner database used by RagManagedDb.
+  message Spanner {
+    // The tier of the RagManagedDb, built on top of Spanner.
+    oneof tier {
+      // Sets the RagManagedDb to the Scaled tier.
+      Scaled scaled = 1;
+
+      // Sets the RagManagedDb to the Basic tier. This is the default tier for
+      // Spanner mode if not explicitly chosen.
+      Basic basic = 2;
+
+      // Sets the RagManagedDb to the Unprovisioned tier.
+      Unprovisioned unprovisioned = 3;
+    }
+  }
+
+  // Message to configure the serverless mode offered by RAG Engine.
+  message Serverless {}
+
+  // The tier of the RagManagedDb.
+  oneof tier {
+    // Sets the RagManagedDb to the Enterprise tier.
+    Enterprise enterprise = 1 [deprecated = true];
+
+    // Deprecated: Use `mode` instead to set the tier under Spanner.
+    // Sets the RagManagedDb to the Scaled tier.
+    Scaled scaled = 4 [deprecated = true];
+
+    // Deprecated: Use `mode` instead to set the tier under Spanner.
+    // Sets the RagManagedDb to the Basic tier.
+    Basic basic = 2 [deprecated = true];
+
+    // Deprecated: Use `mode` instead to set the tier under Spanner.
+    // Sets the RagManagedDb to the Unprovisioned tier.
+    Unprovisioned unprovisioned = 3 [deprecated = true];
+  }
+
+  // The choice of backend for your RagEngine.
+  oneof mode {
+    // Sets the backend to be the serverless mode offered by RAG Engine.
+    Serverless serverless = 5;
+
+    // Sets the RAG Engine backend to be RagManagedDb, built on top of Spanner.
+    //
+    // NOTE: This is the default mode (w/ Basic Tier) if not explicitly chosen.
+    Spanner spanner = 6;
+  }
+}
+
+// Config for RagEngine.
+message RagEngineConfig {
+  option (google.api.resource) = {
+    type: "aiplatform.googleapis.com/RagEngineConfig"
+    pattern: "projects/{project}/locations/{location}/ragEngineConfig"
+    plural: "ragEngineConfigs"
+    singular: "ragEngineConfig"
+  };
+
+  // Identifier. The name of the RagEngineConfig.
+  // Format:
+  // `projects/{project}/locations/{location}/ragEngineConfig`
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // The config of the RagManagedDb used by RagEngine.
+  RagManagedDbConfig rag_managed_db_config = 2;
+}
+
+// The schema of the user specified metadata.
+message RagDataSchema {
+  option (google.api.resource) = {
+    type: "aiplatform.googleapis.com/RagDataSchema"
+    pattern: "projects/{project}/locations/{location}/ragCorpora/{rag_corpus}/ragDataSchemas/{rag_data_schema}"
+    plural: "ragDataSchemas"
+    singular: "ragDataSchema"
+  };
+
+  // Identifier. Resource name of the data schema in the form of:
+  // `projects/{project_number}/locations/{location}/ragCorpora/{rag_corpus}/ragDataSchemas/{rag_data_schema}`
+  // where the {rag_data_schema} part should be the same as the `key` field
+  // below.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Required. The key of this data schema. This key should be matching the key
+  // of user specified metadata and unique inside corpus. This value can be up
+  // to 63 characters, and valid characters are /[a-z][0-9]-/. The first
+  // character must be a letter, the last could be a letter or a number.
+  string key = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // The schema details mapping to the key.
+  RagMetadataSchemaDetails schema_details = 3;
+}
+
+// Data schema details indicates the data type and the data struct corresponding
+// to the key of user specified metadata.
+message RagMetadataSchemaDetails {
+  // Config for List data type.
+  message ListConfig {
+    // The value's data type in the list.
+    RagMetadataSchemaDetails value_schema = 1;
+  }
+
+  // The search strategy for the metadata value of the `key`.
+  message SearchStrategy {
+    // The types of search strategies to be applied on the metadata key.
+    enum SearchStrategyType {
+      // Unspecified search strategy type.
+      SEARCH_STRATEGY_TYPE_UNSPECIFIED = 0;
+
+      // metadata values of the `key` above will not be searchable.
+      NO_SEARCH = 1;
+
+      // When searching with `key`, the value must be exactly as the metadata
+      // value that has been ingested.
+      EXACT_SEARCH = 2;
+    }
+
+    // The search strategy type to be applied on the metadata key.
+    optional SearchStrategyType search_strategy_type = 1;
+  }
+
+  // Data type of the metadata.
+  enum DataType {
+    // Unspecified type.
+    DATA_TYPE_UNSPECIFIED = 0;
+
+    // Integer type.
+    INTEGER = 1;
+
+    // Float type.
+    FLOAT = 2;
+
+    // String type.
+    STRING = 3;
+
+    // Supported formats:
+    // %Y-%m-%dT%H:%M:%E*S%E*z (absl::RFC3339_full)
+    // %Y-%m-%dT%H:%M:%E*S
+    // %Y-%m-%dT%H:%M%E*z
+    // %Y-%m-%dT%H:%M
+    // %Y-%m-%dT%H%E*z
+    // %Y-%m-%dT%H
+    // %Y-%m-%d%E*z
+    // %Y-%m-%d
+    // %Y-%m
+    // %Y
+    DATETIME = 4;
+
+    // Boolean type.
+    BOOLEAN = 5;
+
+    // List type.
+    //  - Each element in the list must be of the exact same data schema;
+    //    otherwise, they are invalid arguments.
+    //  - Elements cannot be another list (no list of list).
+    LIST = 6;
+  }
+
+  // The granularity of metadata under this DataSchema.
+  enum Granularity {
+    // Unspecified granularity.
+    GRANULARITY_UNSPECIFIED = 0;
+
+    // RagFile-level granularity.
+    GRANULARITY_FILE_LEVEL = 1;
+  }
+
+  // Type of the metadata.
+  optional DataType type = 1;
+
+  // Config for List data type.
+  ListConfig list_config = 2;
+
+  // The granularity associated with this RagMetadataSchema.
+  optional Granularity granularity = 3;
+
+  // The search strategy for the metadata value of the `key`.
+  optional SearchStrategy search_strategy = 4;
+}
+
+// Metadata for RagFile provided by users.
+message RagMetadata {
+  option (google.api.resource) = {
+    type: "aiplatform.googleapis.com/RagMetadata"
+    pattern: "projects/{project}/locations/{location}/ragCorpora/{rag_corpus}/ragFiles/{rag_file}/ragMetadata/{rag_metadata}"
+    plural: "ragMetadata"
+    singular: "ragMetadata"
+  };
+
+  // Identifier. Resource name of the RagMetadata.
+  // Format:
+  // `projects/{project}/locations/{location}/ragCorpora/{rag_corpus}/ragFiles/{rag_file}/ragMetadata/{rag_metadata}`
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // User provided metadata.
+  UserSpecifiedMetadata user_specified_metadata = 2;
+}
+
+// Metadata provided by users.
+message UserSpecifiedMetadata {
+  // Required. Key of the metadata. The key must be set with type by
+  // CreateRagDataSchema.
+  string key = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Value of the metadata. The value must be able to convert
+  // to the type according to the data schema.
+  MetadataValue value = 2;
+}
+
+// Value of Metadata, including all types available in data schema.
+message MetadataValue {
+  // The value of the metadata.
+  oneof value {
+    // Value of int type metadata.
+    int64 int_value = 1;
+
+    // Value of float type metadata.
+    float float_value = 2;
+
+    // Value of string type metadata.
+    string str_value = 3;
+
+    // Value of date time type metadata.
+    string datetime_value = 4;
+
+    // Value of boolean type metadata.
+    bool bool_value = 5;
+
+    // Value of list type metadata.
+    MetadataList list_value = 6;
+  }
+}
+
+// List representation in metadata.
+message MetadataList {
+  // The values of `LIST` data type metadata.
+  repeated MetadataValue values = 1;
+}

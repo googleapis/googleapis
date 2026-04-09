@@ -1,0 +1,544 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.streetview.publish.v1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/type/latlng.proto";
+
+option go_package = "cloud.google.com/go/streetview/publish/apiv1/publishpb;publishpb";
+option java_outer_classname = "StreetViewPublishResources";
+option java_package = "com.google.geo.ugc.streetview.publish.v1";
+
+// Upload reference for media files.
+message UploadRef {
+  // Required.
+  oneof file_source {
+    // An upload reference should be unique for each user. It follows
+    // the form:
+    // "https://streetviewpublish.googleapis.com/media/user/{account_id}/photo/{upload_reference}"
+    string upload_url = 1;
+  }
+}
+
+// Identifier for a [Photo][google.streetview.publish.v1.Photo].
+message PhotoId {
+  // A unique identifier for a photo.
+  string id = 1;
+}
+
+// Level information containing level number and its corresponding name.
+message Level {
+  // Optional. Floor number, used for ordering. 0 indicates the ground level, 1
+  // indicates the first level above ground level, -1 indicates the first level
+  // under ground level. Non-integer values are OK.
+  double number = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. A name assigned to this Level, restricted to 3 characters.
+  // Consider how the elevator buttons would be labeled for this level if there
+  // was an elevator.
+  string name = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Raw pose measurement for an entity.
+message Pose {
+  // Latitude and longitude pair of the pose, as explained here:
+  // https://cloud.google.com/datastore/docs/reference/rest/Shared.Types/LatLng
+  // When creating a [Photo][google.streetview.publish.v1.Photo], if the
+  // latitude and longitude pair are not provided, the geolocation from the
+  // exif header is used. A latitude and longitude pair not provided in the
+  // photo or exif header causes the photo process to fail.
+  google.type.LatLng lat_lng_pair = 1;
+
+  // Altitude of the pose in meters above WGS84 ellipsoid.
+  // NaN indicates an unmeasured quantity.
+  double altitude = 2;
+
+  // The following pose parameters pertain to the center of the photo. They
+  // match https://developers.google.com/streetview/spherical-metadata.
+  // Compass heading, measured at the center of the photo in degrees clockwise
+  // from North. Value must be >=0 and <360. NaN indicates an unmeasured
+  // quantity.
+  double heading = 3;
+
+  // Pitch, measured at the center of the photo in degrees. Value must be >=-90
+  // and <= 90. A value of -90 means looking directly down, and a value of 90
+  // means looking directly up.
+  // NaN indicates an unmeasured quantity.
+  double pitch = 4;
+
+  // Roll, measured in degrees. Value must be >= 0 and <360. A value of 0
+  // means level with the horizon.
+  // NaN indicates an unmeasured quantity.
+  double roll = 5;
+
+  // Time of the GPS record since UTC epoch.
+  google.protobuf.Timestamp gps_record_timestamp_unix_epoch = 6;
+
+  // Level (the floor in a building) used to configure vertical navigation.
+  Level level = 7;
+
+  // The estimated horizontal accuracy of this pose in meters with 68%
+  // confidence (one standard deviation). For example, on Android, this value is
+  // available from this method:
+  // https://developer.android.com/reference/android/location/Location#getAccuracy().
+  // Other platforms have different methods of obtaining similar accuracy
+  // estimations.
+  float accuracy_meters = 9;
+}
+
+// IMU data from the device sensors.
+message Imu {
+  // A Generic 3d measurement sample.
+  message Measurement3d {
+    // The timestamp of the IMU measurement.
+    google.protobuf.Timestamp capture_time = 1;
+
+    // The sensor measurement in the x axis.
+    float x = 2;
+
+    // The sensor measurement in the y axis.
+    float y = 3;
+
+    // The sensor measurement in the z axis.
+    float z = 4;
+  }
+
+  // The accelerometer measurements in meters/sec^2 with increasing timestamps
+  // from devices.
+  repeated Measurement3d accel_mpsps = 1;
+
+  // The gyroscope measurements in radians/sec with increasing timestamps from
+  // devices.
+  repeated Measurement3d gyro_rps = 2;
+
+  // The magnetometer measurements of the magnetic field in microtesla (uT) with
+  // increasing timestamps from devices.
+  repeated Measurement3d mag_ut = 3;
+}
+
+// Place metadata for an entity.
+message Place {
+  // Place identifier, as described in
+  // https://developers.google.com/places/place-id.
+  string place_id = 1;
+
+  // Output only. The name of the place, localized to the language_code.
+  string name = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The language_code that the name is localized with. This should
+  // be the language_code specified in the request, but may be a fallback.
+  string language_code = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A connection is the link from a source photo to a destination photo.
+message Connection {
+  // Required. The destination of the connection from the containing photo to
+  // another photo.
+  PhotoId target = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Photo is used to store 360 photos along with photo metadata.
+message Photo {
+  // Status of rights transfer.
+  enum TransferStatus {
+    // The status of this transfer is unspecified.
+    TRANSFER_STATUS_UNKNOWN = 0;
+
+    // This photo has never been in a transfer.
+    NEVER_TRANSFERRED = 1;
+
+    // This photo transfer has been initiated, but the receiver has not yet
+    // responded.
+    PENDING = 2;
+
+    // The photo transfer has been completed, and this photo has been
+    // transferred to the recipient.
+    COMPLETED = 3;
+
+    // The recipient rejected this photo transfer.
+    REJECTED = 4;
+
+    // The photo transfer expired before the recipient took any action.
+    EXPIRED = 5;
+
+    // The sender cancelled this photo transfer.
+    CANCELLED = 6;
+
+    // The recipient owns this photo due to a rights transfer.
+    RECEIVED_VIA_TRANSFER = 7;
+  }
+
+  // Publication status of the photo in Google Maps.
+  enum MapsPublishStatus {
+    // The status of the photo is unknown.
+    UNSPECIFIED_MAPS_PUBLISH_STATUS = 0;
+
+    // The photo is published to the public through Google Maps.
+    PUBLISHED = 1;
+
+    // The photo has been rejected for an unknown reason.
+    REJECTED_UNKNOWN = 2;
+  }
+
+  // Required. Output only. Required when updating a photo. Output only when
+  // creating a photo. Identifier for the photo, which is unique among all
+  // photos in Google.
+  PhotoId photo_id = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
+
+  // Input only. Required when creating a photo. Input only. The resource URL
+  // where the photo bytes are uploaded to.
+  UploadRef upload_reference = 2 [(google.api.field_behavior) = INPUT_ONLY];
+
+  // Output only. The download URL for the photo bytes. This field is set only
+  // when
+  // [GetPhotoRequest.view][google.streetview.publish.v1.GetPhotoRequest.view]
+  // is set to
+  // [PhotoView.INCLUDE_DOWNLOAD_URL][google.streetview.publish.v1.PhotoView.INCLUDE_DOWNLOAD_URL].
+  string download_url = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The thumbnail URL for showing a preview of the given photo.
+  string thumbnail_url = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The share link for the photo.
+  string share_link = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Pose of the photo.
+  Pose pose = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Connections to other photos. A connection represents the link
+  // from this photo to another photo.
+  repeated Connection connections = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Absolute time when the photo was captured.
+  // When the photo has no exif timestamp, this is used to set a timestamp in
+  // the photo metadata.
+  google.protobuf.Timestamp capture_time = 6
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Time when the image was uploaded.
+  google.protobuf.Timestamp upload_time = 14
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Places where this photo belongs.
+  repeated Place places = 7 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. View count of the photo.
+  int64 view_count = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Status of rights transfer on this photo.
+  TransferStatus transfer_status = 12
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Status in Google Maps, whether this photo was published or
+  // rejected.
+  MapsPublishStatus maps_publish_status = 13
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A sequence of 360 photos along with metadata.
+message PhotoSequence {
+  // Primary source of GPS measurements.
+  enum GpsSource {
+    // GPS in raw_gps_timeline takes precedence if it exists.
+    PHOTO_SEQUENCE = 0;
+
+    // GPS in Camera Motion Metadata Track (CAMM) takes precedence if it exists.
+    CAMERA_MOTION_METADATA_TRACK = 1;
+  }
+
+  // Output only. Unique identifier for the photo sequence.
+  // This also acts as a long running operation ID if uploading is performed
+  // asynchronously.
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Photos with increasing timestamps.
+  repeated Photo photos = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Input only. Required when creating photo sequence. The resource name
+  // where the bytes of the photo sequence (in the form of video) are uploaded.
+  UploadRef upload_reference = 3 [(google.api.field_behavior) = INPUT_ONLY];
+
+  // Optional. Absolute time when the photo sequence starts to be captured.
+  // If the photo sequence is a video, this is the start time of the video.
+  // If this field is populated in input, it overrides the capture time in the
+  // video or XDM file.
+  google.protobuf.Timestamp capture_time_override = 4
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The time this photo sequence was created in uSV Store service.
+  google.protobuf.Timestamp upload_time = 18
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Input only. Raw GPS measurements with increasing timestamps from the device
+  // that aren't time synced with each photo. These raw measurements will be
+  // used to infer the pose of each frame. Required in input when InputType is
+  // VIDEO and raw GPS measurements are not in Camera Motion Metadata Track
+  // (CAMM). User can indicate which takes precedence using gps_source if raw
+  // GPS measurements are provided in both raw_gps_timeline and Camera Motion
+  // Metadata Track (CAMM).
+  repeated Pose raw_gps_timeline = 7 [(google.api.field_behavior) = INPUT_ONLY];
+
+  // Input only. If both raw_gps_timeline and
+  // the Camera Motion Metadata Track (CAMM) contain GPS measurements,
+  // indicate which takes precedence.
+  GpsSource gps_source = 8 [(google.api.field_behavior) = INPUT_ONLY];
+
+  // Input only. Three axis IMU data for the collection.
+  // If this data is too large to put in the request, then it should be put in
+  // the CAMM track for the video. This data always takes precedence over the
+  // equivalent CAMM data, if it exists.
+  Imu imu = 11 [(google.api.field_behavior) = INPUT_ONLY];
+
+  // Output only. The processing state of this sequence.
+  ProcessingState processing_state = 12
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. If this sequence has processing_state = FAILED, this will
+  // contain the reason why it failed. If the processing_state is any other
+  // value, this field will be unset.
+  ProcessingFailureReason failure_reason = 13
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. If this sequence has `failure_reason` set, this may contain
+  // additional details about the failure.
+  ProcessingFailureDetails failure_details = 23
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The computed distance of the photo sequence in meters.
+  double distance_meters = 16 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. A rectangular box that encapsulates every image in this photo
+  // sequence.
+  LatLngBounds sequence_bounds = 20 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The total number of views that all the published images in
+  // this PhotoSequence have received.
+  int64 view_count = 21 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The filename of the upload. Does not include the directory
+  // path. Only available if the sequence was uploaded on a platform that
+  // provides the filename.
+  string filename = 22 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A rectangle in geographical coordinates.
+message LatLngBounds {
+  // The southwest corner of these bounds.
+  google.type.LatLng southwest = 1;
+
+  // The northeast corner of these bounds.
+  google.type.LatLng northeast = 2;
+}
+
+// The processing state of the sequence. The states move as follows:
+//
+// ```
+//      +-------------------------+
+//      |                         |
+//  +---v---+  +----------+  +----+----+
+//  |PENDING+-->PROCESSING+-->PROCESSED|
+//  +---+---+  +----+-----+  +----+----+
+//      |           |             |
+//      |        +--v---+         |
+//      +-------->FAILED<---------+
+//               +------+
+// ```
+//
+// The sequence may move to FAILED from any state. Additionally, a processed
+// sequence may be re-processed at any time.
+enum ProcessingState {
+  // The state is unspecified, this is the default value.
+  PROCESSING_STATE_UNSPECIFIED = 0;
+
+  // The sequence has not yet started processing.
+  PENDING = 1;
+
+  // The sequence is currently in processing.
+  PROCESSING = 2;
+
+  // The sequence has finished processing including refining position.
+  PROCESSED = 3;
+
+  // The sequence failed processing. See FailureReason for more details.
+  FAILED = 4;
+}
+
+// The possible reasons this [PhotoSequence]
+// [google.streetview.publish.v1.PhotoSequence] failed to process.
+enum ProcessingFailureReason {
+  // The failure reason is unspecified, this is the default value.
+  PROCESSING_FAILURE_REASON_UNSPECIFIED = 0;
+
+  // Video frame's resolution is too small.
+  LOW_RESOLUTION = 1;
+
+  // This video has been uploaded before.
+  DUPLICATE = 2;
+
+  // Too few GPS points.
+  INSUFFICIENT_GPS = 3;
+
+  // No overlap between the time frame of GPS track and the time frame of
+  // video.
+  NO_OVERLAP_GPS = 4;
+
+  // GPS is invalid (e.x. all GPS points are at (0,0))
+  INVALID_GPS = 5;
+
+  // The sequence of photos could not be accurately located in the world.
+  FAILED_TO_REFINE_POSITIONS = 6;
+
+  // The sequence was taken down for policy reasons.
+  TAKEDOWN = 7;
+
+  // The video file was corrupt or could not be decoded.
+  CORRUPT_VIDEO = 8;
+
+  // A permanent failure in the underlying system occurred.
+  INTERNAL = 9;
+
+  // The video format is invalid or unsupported.
+  INVALID_VIDEO_FORMAT = 10;
+
+  // Invalid image aspect ratio found.
+  INVALID_VIDEO_DIMENSIONS = 11;
+
+  // Invalid capture time. Timestamps were from the future.
+  INVALID_CAPTURE_TIME = 12;
+
+  // GPS data contains a gap greater than 5 seconds in duration.
+  GPS_DATA_GAP = 13;
+
+  // GPS data is too erratic to be processed.
+  JUMPY_GPS = 14;
+
+  // IMU (Accelerometer, Gyroscope, etc.) data are not valid. They may be
+  // missing required fields (x, y, z or time), may not be formatted correctly,
+  // or any other issue that prevents our systems from parsing it.
+  INVALID_IMU = 15;
+
+  // Too few IMU points.
+  INSUFFICIENT_IMU = 21;
+
+  // Insufficient overlap in the time frame between GPS, IMU, and other time
+  // series data.
+  INSUFFICIENT_OVERLAP_TIME_SERIES = 22;
+
+  // IMU (Accelerometer, Gyroscope, etc.) data contain gaps greater than 0.1
+  // seconds in duration.
+  IMU_DATA_GAP = 16;
+
+  // The camera is not supported.
+  UNSUPPORTED_CAMERA = 17;
+
+  // Some frames were indoors, which is unsupported.
+  NOT_OUTDOORS = 18;
+
+  // Not enough video frames.
+  INSUFFICIENT_VIDEO_FRAMES = 19;
+
+  // Not enough moving data.
+  INSUFFICIENT_MOVEMENT = 20;
+
+  // Mast is down.
+  MAST_DOWN = 27;
+
+  // Camera is covered.
+  CAMERA_COVERED = 28;
+}
+
+// Additional details to accompany the ProcessingFailureReason enum.
+// This message is always expected to be used in conjunction with
+// ProcessingFailureReason, and the oneof value set in this message should match
+// the FailureReason.
+message ProcessingFailureDetails {
+  // Only one set of details will be set, and must match the corresponding enum
+  // in ProcessingFailureReason.
+  oneof details {
+    // See InsufficientGpsFailureDetails.
+    InsufficientGpsFailureDetails insufficient_gps_details = 1;
+
+    // See GpsDataGapFailureDetails.
+    GpsDataGapFailureDetails gps_data_gap_details = 2;
+
+    // See ImuDataGapFailureDetails.
+    ImuDataGapFailureDetails imu_data_gap_details = 3;
+
+    // See NotOutdoorsFailureDetails.
+    NotOutdoorsFailureDetails not_outdoors_details = 4;
+
+    // See NoOverlapGpsFailureDetails.
+    NoOverlapGpsFailureDetails no_overlap_gps_details = 5;
+  }
+}
+
+// Details related to ProcessingFailureReason#INSUFFICIENT_GPS.
+message InsufficientGpsFailureDetails {
+  // The number of GPS points that were found in the video.
+  optional int32 gps_points_found = 1;
+}
+
+// Details related to ProcessingFailureReason#GPS_DATA_GAP.
+// If there are multiple GPS data gaps, only the one with the largest duration
+// is reported here.
+message GpsDataGapFailureDetails {
+  // The duration of the gap in GPS data that was found.
+  optional google.protobuf.Duration gap_duration = 1;
+
+  // Relative time (from the start of the video stream) when the gap started.
+  optional google.protobuf.Duration gap_start_time = 2;
+}
+
+// Details related to ProcessingFailureReason#IMU_DATA_GAP.
+// If there are multiple IMU data gaps, only the one with the largest duration
+// is reported here.
+message ImuDataGapFailureDetails {
+  // The duration of the gap in IMU data that was found.
+  optional google.protobuf.Duration gap_duration = 1;
+
+  // Relative time (from the start of the video stream) when the gap started.
+  optional google.protobuf.Duration gap_start_time = 2;
+}
+
+// Details related to ProcessingFailureReason#NOT_OUTDOORS.
+// If there are multiple indoor frames found, the first frame is recorded here.
+message NotOutdoorsFailureDetails {
+  // Relative time (from the start of the video stream) when an indoor frame was
+  // found.
+  optional google.protobuf.Duration start_time = 1;
+}
+
+// Details related to PhotoSequenceProcessingFailureReason#NO_OVERLAP_GPS.
+message NoOverlapGpsFailureDetails {
+  // Time of first recorded GPS point.
+  optional google.protobuf.Timestamp gps_start_time = 1;
+
+  // Time of last recorded GPS point.
+  optional google.protobuf.Timestamp gps_end_time = 2;
+
+  // Start time of video.
+  optional google.protobuf.Timestamp video_start_time = 3;
+
+  // End time of video.
+  optional google.protobuf.Timestamp video_end_time = 4;
+}

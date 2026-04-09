@@ -1,0 +1,296 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.visionai.v1;
+
+option csharp_namespace = "Google.Cloud.VisionAI.V1";
+option go_package = "cloud.google.com/go/visionai/apiv1/visionaipb;visionaipb";
+option java_multiple_files = true;
+option java_outer_classname = "LvaProto";
+option java_package = "com.google.cloud.visionai.v1";
+option php_namespace = "Google\\Cloud\\VisionAI\\V1";
+option ruby_package = "Google::Cloud::VisionAI::V1";
+
+// RunMode represents the mode to launch the Process on.
+enum RunMode {
+  // Mode is unspecified.
+  RUN_MODE_UNSPECIFIED = 0;
+
+  // Live mode. Meaning the Process is launched to handle live video
+  // source, and possible packet drops are expected.
+  LIVE = 1;
+
+  // Submission mode. Meaning the Process is launched to handle bounded video
+  // files, with no packet drop. Completion status is tracked.
+  SUBMISSION = 2;
+}
+
+// Defines the interface of an Operator.
+//
+// Arguments to an operator are input/output streams that are getting
+// processesed/returned while attributes are fixed configuration parameters.
+message OperatorDefinition {
+  // Defines an argument to an operator.
+  //
+  // Used for both inputs and outputs.
+  message ArgumentDefinition {
+    // The name of the argument.
+    //
+    // Tentatively [a-z]([_a-z0-9]*[a-z0-9])?, e.g., video, audio,
+    // high_fps_frame.
+    string argument = 1;
+
+    // The data type of the argument.
+    //
+    // This should match the textual representation of a stream/Packet type.
+    string type = 2;
+  }
+
+  // Defines an attribute of an operator.
+  message AttributeDefinition {
+    // The name of the attribute.
+    //
+    // Tentatively [a-z]([_a-z0-9]*[a-z0-9])?, e.g., max_frames_per_video,
+    // resize_height.
+    string attribute = 1;
+
+    // The type of this attribute.
+    //
+    // See attribute_value.proto for possibilities.
+    string type = 2;
+
+    // The default value for the attribute.
+    AttributeValue default_value = 3;
+  }
+
+  // The name of this operator.
+  //
+  // Tentatively [A-Z][a-zA-Z0-9]*, e.g., BboxCounter, PetDetector,
+  // PetDetector1.
+  string operator = 1;
+
+  // Declares input arguments.
+  repeated ArgumentDefinition input_args = 2;
+
+  // Declares output arguments.
+  repeated ArgumentDefinition output_args = 3;
+
+  // Declares the attributes.
+  repeated AttributeDefinition attributes = 4;
+
+  // The resources for running the operator.
+  ResourceSpecification resources = 5;
+
+  // Short description of the operator.
+  string short_description = 6;
+
+  // Full description of the operator.
+  string description = 7;
+}
+
+// ResourceSpec collects a set of resources that can
+// be used to specify requests and requirements.
+//
+// Note: Highly experimental as this can be runtime dependent.
+// Can use the "extras" field to experiment first before trying
+// to abstract it.
+message ResourceSpecification {
+  // CPU specification.
+  //
+  // Examples:
+  // "100m", "0.5", "1", "2", ... correspond to
+  // 0.1, half, 1, or 2 cpus.
+  //
+  // Leave empty to let the system decide.
+  //
+  // Note that this does *not* determine the cpu vender/make,
+  // or its underlying clock speed and specific SIMD features.
+  // It is only the amount time it requires in timeslicing.
+  string cpu = 1;
+
+  // CPU limit.
+  //
+  // Examples:
+  // "100m", "0.5", "1", "2", ... correspond to
+  // 0.1, half, 1, or 2 cpus.
+  //
+  // Leave empty to indicate no limit.
+  string cpu_limits = 5;
+
+  // Memory specification (in bytes).
+  //
+  // Examples:
+  // "128974848", "129e6", "129M", "123Mi", ... correspond to
+  // 128974848 bytes, 129000000 bytes, 129 mebibytes, 123 megabytes.
+  //
+  // Leave empty to let the system decide.
+  string memory = 2;
+
+  // Memory usage limits.
+  //
+  // Examples:
+  // "128974848", "129e6", "129M", "123Mi", ... correspond to
+  // 128974848 bytes, 129000000 bytes, 129 mebibytes, 123 megabytes.
+  //
+  // Leave empty to indicate no limit.
+  string memory_limits = 6;
+
+  // Number of gpus.
+  int32 gpus = 3;
+
+  // The maximum latency that this operator may use to process an element.
+  //
+  // If non positive, then a system default will be used.
+  // Operator developers should arrange for the system compute resources to be
+  // aligned with this latency budget; e.g. if you want a ML model to produce
+  // results within 500ms, then you should make sure you request enough
+  // cpu/gpu/memory to achieve that.
+  int32 latency_budget_ms = 4;
+}
+
+// Represents an actual value of an operator attribute.
+message AttributeValue {
+  // Attribute value.
+  oneof value {
+    // int.
+    int64 i = 1;
+
+    // float.
+    float f = 2;
+
+    // bool.
+    bool b = 3;
+
+    // string.
+    bytes s = 4;
+  }
+}
+
+// Defines an Analyzer.
+//
+// An analyzer processes data from its input streams using the logic defined in
+// the Operator that it represents. Of course, it produces data for the output
+// streams declared in the Operator.
+message AnalyzerDefinition {
+  // The inputs to this analyzer.
+  //
+  // We accept input name references of the following form:
+  // <analyzer-name>:<output-argument-name>
+  //
+  // Example:
+  //
+  // Suppose you had an operator named "SomeOp" that has 2 output
+  // arguments, the first of which is named "foo" and the second of which is
+  // named "bar", and an operator named "MyOp" that accepts 2 inputs.
+  //
+  // Also suppose that there is an analyzer named "some-analyzer" that is
+  // running "SomeOp" and another analyzer named "my-analyzer" running "MyOp".
+  //
+  // To indicate that "my-analyzer" is to consume "some-analyzer"'s "foo"
+  // output as its first input and "some-analyzer"'s "bar" output as its
+  // second input, you can set this field to the following:
+  // input = ["some-analyzer:foo", "some-analyzer:bar"]
+  message StreamInput {
+    // The name of the stream input (as discussed above).
+    string input = 1;
+  }
+
+  // Options available for debugging purposes only.
+  message DebugOptions {
+    // Environment variables.
+    map<string, string> environment_variables = 1;
+  }
+
+  // Option related to the operator.
+  message OperatorOption {
+    // Tag of the operator.
+    string tag = 1;
+
+    // Registry of the operator. e.g. public, dev.
+    string registry = 2;
+  }
+
+  // The name of this analyzer.
+  //
+  // Tentatively [a-z][a-z0-9]*(_[a-z0-9]+)*.
+  string analyzer = 1;
+
+  // The name of the operator that this analyzer runs.
+  //
+  // Must match the name of a supported operator.
+  string operator = 2;
+
+  // Input streams.
+  repeated StreamInput inputs = 3;
+
+  // The attribute values that this analyzer applies to the operator.
+  //
+  // Supply a mapping between the attribute names and the actual value you wish
+  // to apply. If an attribute name is omitted, then it will take a
+  // preconfigured default value.
+  map<string, AttributeValue> attrs = 4;
+
+  // Debug options.
+  DebugOptions debug_options = 5;
+
+  // Operator option.
+  OperatorOption operator_option = 6;
+}
+
+// Defines a full analysis.
+//
+// This is a description of the overall live analytics pipeline.
+// You may think of this as an edge list representation of a multigraph.
+//
+// This may be directly authored by a human in protobuf textformat, or it may be
+// generated by a programming API (perhaps Python or JavaScript depending on
+// context).
+message AnalysisDefinition {
+  // Analyzer definitions.
+  repeated AnalyzerDefinition analyzers = 1;
+}
+
+// Message describing the status of the Process.
+message RunStatus {
+  // State represents the running status of the Process.
+  enum State {
+    // State is unspecified.
+    STATE_UNSPECIFIED = 0;
+
+    // INITIALIZING means the Process is scheduled but yet ready to handle
+    // real traffic.
+    INITIALIZING = 1;
+
+    // RUNNING means the Process is up running and handling traffic.
+    RUNNING = 2;
+
+    // COMPLETED means the Process has completed the processing, especially
+    // for non-streaming use case.
+    COMPLETED = 3;
+
+    // FAILED means the Process failed to complete the processing.
+    FAILED = 4;
+
+    // PENDING means the Process is created but yet to be scheduled.
+    PENDING = 5;
+  }
+
+  // The state of the Process.
+  State state = 1;
+
+  // The reason of becoming the state.
+  string reason = 2;
+}

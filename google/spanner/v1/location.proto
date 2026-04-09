@@ -1,0 +1,388 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.spanner.v1;
+
+import "google/protobuf/struct.proto";
+import "google/spanner/v1/type.proto";
+
+option csharp_namespace = "Google.Cloud.Spanner.V1";
+option go_package = "cloud.google.com/go/spanner/apiv1/spannerpb;spannerpb";
+option java_multiple_files = true;
+option java_outer_classname = "LocationProto";
+option java_package = "com.google.spanner.v1";
+option php_namespace = "Google\\Cloud\\Spanner\\V1";
+option ruby_package = "Google::Cloud::Spanner::V1";
+
+// A `Range` represents a range of keys in a database. The keys themselves
+// are encoded in "sortable string format", also known as ssformat. Consult
+// Spanner's open source client libraries for details on the encoding.
+//
+// Each range represents a contiguous range of rows, possibly from multiple
+// tables/indexes. Each range is associated with a single paxos group (known as
+// a "group" throughout this API), a split (which names the exact range within
+// the group), and a generation that can be used to determine whether a given
+// `Range` represents a newer or older location for the key range.
+message Range {
+  // The start key of the range, inclusive. Encoded in "sortable string format"
+  // (ssformat).
+  bytes start_key = 1;
+
+  // The limit key of the range, exclusive. Encoded in "sortable string format"
+  // (ssformat).
+  bytes limit_key = 2;
+
+  // The UID of the paxos group where this range is stored. UIDs are unique
+  // within the database. References `Group.group_uid`.
+  uint64 group_uid = 3;
+
+  // A group can store multiple ranges of keys. Each key range is named by an
+  // ID (the split ID). Within a group, split IDs are unique. The `split_id`
+  // names the exact split in `group_uid` where this range is stored.
+  uint64 split_id = 4;
+
+  // `generation` indicates the freshness of the range information contained
+  // in this proto. Generations can be compared lexicographically; if generation
+  // A is greater than generation B, then the `Range` corresponding to A is
+  // newer than the `Range` corresponding to B, and should be used
+  // preferentially.
+  bytes generation = 5;
+}
+
+// A `Tablet` represents a single replica of a `Group`. A tablet is served by a
+// single server at a time, and can move between servers due to server death or
+// simply load balancing.
+message Tablet {
+  // Indicates the role of the tablet.
+  enum Role {
+    // Not specified.
+    ROLE_UNSPECIFIED = 0;
+
+    // The tablet can perform reads and (if elected leader) writes.
+    READ_WRITE = 1;
+
+    // The tablet can only perform reads.
+    READ_ONLY = 2;
+  }
+
+  // The UID of the tablet, unique within the database. Matches the
+  // `tablet_uids` and `leader_tablet_uid` fields in `Group`.
+  uint64 tablet_uid = 1;
+
+  // The address of the server that is serving this tablet -- either an IP
+  // address or DNS hostname and a port number.
+  string server_address = 2;
+
+  // Where this tablet is located. This is the name of a Google Cloud region,
+  // such as "us-central1".
+  string location = 3;
+
+  // The role of the tablet.
+  Role role = 4;
+
+  // `incarnation` indicates the freshness of the tablet information contained
+  // in this proto. Incarnations can be compared lexicographically; if
+  // incarnation A is greater than incarnation B, then the `Tablet`
+  // corresponding to A is newer than the `Tablet` corresponding to B, and
+  // should be used preferentially.
+  bytes incarnation = 5;
+
+  // Distances help the client pick the closest tablet out of the list of
+  // tablets for a given request. Tablets with lower distances should generally
+  // be preferred. Tablets with the same distance are approximately equally
+  // close; the client can choose arbitrarily.
+  //
+  // Distances do not correspond precisely to expected latency, geographical
+  // distance, or anything else. Distances should be compared only between
+  // tablets of the same group; they are not meaningful between different
+  // groups.
+  //
+  // A value of zero indicates that the tablet may be in the same zone as
+  // the client, and have minimum network latency. A value less than or equal to
+  // five indicates that the tablet is thought to be in the same region as the
+  // client, and may have a few milliseconds of network latency. Values greater
+  // than five are most likely in a different region, with non-trivial network
+  // latency.
+  //
+  // Clients should use the following algorithm:
+  //   * If the request is using a directed read, eliminate any tablets that
+  //     do not match the directed read's target zone and/or replica type.
+  //   * (Read-write transactions only) Choose leader tablet if it has an
+  //     distance <=5.
+  //   * Group and sort tablets by distance. Choose a random
+  //     tablet with the lowest distance. If the request
+  //     is not a directed read, only consider replicas with distances <=5.
+  //   * Send the request to the fallback endpoint.
+  //
+  // The tablet picked by this algorithm may be skipped, either because it is
+  // marked as `skip` by the server or because the corresponding server is
+  // unreachable, flow controlled, etc. Skipped tablets should be added to the
+  // `skipped_tablet_uid` field in `RoutingHint`; the algorithm above should
+  // then be re-run without including the skipped tablet(s) to pick the next
+  // best tablet.
+  uint32 distance = 6;
+
+  // If true, the tablet should not be chosen by the client. Typically, this
+  // signals that the tablet is unhealthy in some way. Tablets with `skip`
+  // set to true should be reported back to the server in
+  // `RoutingHint.skipped_tablet_uid`; this cues the server to send updated
+  // information for this tablet should it become usable again.
+  bool skip = 7;
+}
+
+// A `Group` represents a paxos group in a database. A group is a set of
+// tablets that are replicated across multiple servers. Groups may have a leader
+// tablet. Groups store one (or sometimes more) ranges of keys.
+message Group {
+  // The UID of the paxos group, unique within the database. Matches the
+  // `group_uid` field in `Range`.
+  uint64 group_uid = 1;
+
+  // A list of tablets that are part of the group. Note that this list may not
+  // be exhaustive; it will only include tablets the server considers useful
+  // to the client. The returned list is ordered ascending by distance.
+  //
+  // Tablet UIDs reference `Tablet.tablet_uid`.
+  repeated Tablet tablets = 2;
+
+  // The last known leader tablet of the group as an index into `tablets`. May
+  // be negative if the group has no known leader.
+  int32 leader_index = 3;
+
+  // `generation` indicates the freshness of the group information (including
+  // leader information) contained in this proto. Generations can be compared
+  // lexicographically; if generation A is greater than generation B, then the
+  // `Group` corresponding to A is newer than the `Group` corresponding to B,
+  // and should be used preferentially.
+  bytes generation = 4;
+}
+
+// A `KeyRecipe` provides the metadata required to translate reads, mutations,
+// and queries into a byte array in "sortable string format" (ssformat)that can
+// be used with `Range`s to route requests. Note that the client *must* tolerate
+// `KeyRecipe`s that appear to be invalid, since the `KeyRecipe` format may
+// change over time. Requests with invalid `KeyRecipe`s should be routed to a
+// default server.
+message KeyRecipe {
+  // An ssformat key is composed of a sequence of tag numbers and key column
+  // values. `Part` represents a single tag or key column value.
+  message Part {
+    // The remaining fields encode column values.
+    enum Order {
+      // Default value, equivalent to `ASCENDING`.
+      ORDER_UNSPECIFIED = 0;
+
+      // The key is ascending - corresponds to `ASC` in the schema definition.
+      ASCENDING = 1;
+
+      // The key is descending - corresponds to `DESC` in the schema definition.
+      DESCENDING = 2;
+    }
+
+    // The null order of the key column. This dictates where NULL values sort
+    // in the sorted order. Note that columns which are `NOT NULL` can have a
+    // special encoding.
+    enum NullOrder {
+      // Default value. This value is unused.
+      NULL_ORDER_UNSPECIFIED = 0;
+
+      // NULL values sort before any non-NULL values.
+      NULLS_FIRST = 1;
+
+      // NULL values sort after any non-NULL values.
+      NULLS_LAST = 2;
+
+      // The column does not support NULL values.
+      NOT_NULL = 3;
+    }
+
+    // If non-zero, `tag` is the only field present in this `Part`. The part
+    // is encoded by appending `tag` to the ssformat key.
+    uint32 tag = 1;
+
+    // Whether the key column is sorted ascending or descending. Only present
+    // if `tag` is zero.
+    Order order = 2;
+
+    // How NULLs are represented in the encoded key part. Only present if `tag`
+    // is zero.
+    NullOrder null_order = 3;
+
+    // The type of the key part. Only present if `tag` is zero.
+    Type type = 4;
+
+    // Only present if `tag` is zero.
+    oneof value_type {
+      // `identifier` is the name of the column or query parameter.
+      string identifier = 5;
+
+      // The constant value of the key part.
+      // It is present when query uses a constant as a part of the key.
+      google.protobuf.Value value = 6;
+
+      // If true, the client is responsible to fill in the value randomly.
+      // It's relevant only for the INT64 type.
+      bool random = 8;
+    }
+
+    // It is a repeated field to support fetching key columns from nested
+    // structs, such as `STRUCT` query parameters.
+    repeated int32 struct_identifiers = 7;
+  }
+
+  // A recipe can be associated with a table, index, or query. Tables recipes
+  // are used to encode read and write keys; index recipes are used for index
+  // reads, and query recipes are used only for SQL queries.
+  oneof target {
+    // A table name, matching the name from the database schema.
+    string table_name = 1;
+
+    // An index name, matching the name from the database schema.
+    string index_name = 2;
+
+    // The UID of a query, matching the UID from `RoutingHint`.
+    uint64 operation_uid = 3;
+  }
+
+  // Parts are in the order they should appear in the encoded key.
+  repeated Part part = 4;
+}
+
+// A `RecipeList` contains a list of `KeyRecipe`s, which share the same
+// schema generation.
+message RecipeList {
+  // The schema generation of the recipes. To be sent to the server in
+  // `RoutingHint.schema_generation` whenever one of the recipes is used.
+  // `schema_generation` values are comparable with each other; if generation A
+  // compares greater than generation B, then A is a more recent schema than B.
+  // Clients should in general aim to cache only the latest schema generation,
+  // and discard more stale recipes.
+  bytes schema_generation = 1;
+
+  // A list of recipes to be cached.
+  repeated KeyRecipe recipe = 3;
+}
+
+// A `CacheUpdate` expresses a set of changes the client should incorporate into
+// its location cache. These changes may or may not be newer than what the
+// client has in its cache, and should be discarded if necessary. `CacheUpdate`s
+// can be obtained in response to requests that included a `RoutingHint`
+// field, but may also be obtained by explicit location-fetching RPCs which may
+// be added in the future.
+message CacheUpdate {
+  // An internal ID for the database. Database names can be reused if a database
+  // is deleted and re-created. Each time the database is re-created, it will
+  // get a new database ID, which will never be re-used for any other database.
+  uint64 database_id = 1;
+
+  // A list of ranges to be cached.
+  repeated Range range = 2;
+
+  // A list of groups to be cached.
+  repeated Group group = 3;
+
+  // A list of recipes to be cached.
+  RecipeList key_recipes = 5;
+}
+
+// `RoutingHint` can be optionally added to location-aware Spanner
+// requests. It gives the server hints that can be used to route the request to
+// an appropriate server, potentially significantly decreasing latency and
+// improving throughput. To achieve improved performance, most fields must be
+// filled in with accurate values.
+//
+// The presence of a valid `RoutingHint` tells the server that the client
+// is location-aware.
+//
+// `RoutingHint` does not change the semantics of the request; it is
+// purely a performance hint; the request will perform the same actions on the
+// database's data as if `RoutingHint` were not present. However, if
+// the `RoutingHint` is incomplete or incorrect, the response may include
+// a `CacheUpdate` the client can use to correct its location cache.
+message RoutingHint {
+  // A tablet that was skipped by the client. See `Tablet.tablet_uid` and
+  // `Tablet.incarnation`.
+  message SkippedTablet {
+    // The tablet UID of the tablet that was skipped. See `Tablet.tablet_uid`.
+    uint64 tablet_uid = 1;
+
+    // The incarnation of the tablet that was skipped. See `Tablet.incarnation`.
+    bytes incarnation = 2;
+  }
+
+  // A session-scoped unique ID for the operation, computed client-side.
+  // Requests with the same `operation_uid` should have a shared 'shape',
+  // meaning that some fields are expected to be the same, such as the SQL
+  // query, the target table/columns (for reads) etc. Requests with the same
+  // `operation_uid` are meant to differ only in fields like keys/key
+  // ranges/query parameters, transaction IDs, etc.
+  //
+  // `operation_uid` must be non-zero for `RoutingHint` to be valid.
+  uint64 operation_uid = 1;
+
+  // The database ID of the database being accessed, see
+  // `CacheUpdate.database_id`. Should match the cache entries that were used
+  // to generate the rest of the fields in this `RoutingHint`.
+  uint64 database_id = 2;
+
+  // The schema generation of the recipe that was used to generate `key` and
+  // `limit_key`. See also `RecipeList.schema_generation`.
+  bytes schema_generation = 3;
+
+  // The key / key range that this request accesses. For operations that
+  // access a single key, `key` should be set and `limit_key` should be empty.
+  // For operations that access a key range, `key` and `limit_key` should both
+  // be set, to the inclusive start and exclusive end of the range respectively.
+  //
+  // The keys are encoded in "sortable string format" (ssformat), using a
+  // `KeyRecipe` that is appropriate for the request. See `KeyRecipe` for more
+  // details.
+  bytes key = 4;
+
+  // If this request targets a key range, this is the exclusive end of the
+  // range. See `key` for more details.
+  bytes limit_key = 5;
+
+  // The group UID of the group that the client believes serves the range
+  // defined by `key` and `limit_key`. See `Range.group_uid` for more details.
+  uint64 group_uid = 6;
+
+  // The split ID of the split that the client believes contains the range
+  // defined by `key` and `limit_key`. See `Range.split_id` for more details.
+  uint64 split_id = 7;
+
+  // The tablet UID of the tablet from group `group_uid` that the client
+  // believes is best to serve this request. See `Group.local_tablet_uids` and
+  // `Group.leader_tablet_uid`.
+  uint64 tablet_uid = 8;
+
+  // If the client had multiple options for tablet selection, and some of its
+  // first choices were unhealthy (e.g., the server is unreachable, or
+  // `Tablet.skip` is true), this field will contain the tablet UIDs of those
+  // tablets, with their incarnations. The server may include a `CacheUpdate`
+  // with new locations for those tablets.
+  repeated SkippedTablet skipped_tablet_uid = 9;
+
+  // If present, the client's current location. This should be the name of a
+  // Google Cloud zone or region, such as "us-central1".
+  //
+  // If absent, the client's location will be assumed to be the same as the
+  // location of the server the client ends up connected to.
+  //
+  // Locations are primarily valuable for clients that connect from regions
+  // other than the ones that contain the Spanner database.
+  string client_location = 10;
+}

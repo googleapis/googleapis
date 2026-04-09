@@ -1,0 +1,765 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.devtools.artifactregistry.v1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Google.Cloud.ArtifactRegistry.V1";
+option go_package = "cloud.google.com/go/artifactregistry/apiv1/artifactregistrypb;artifactregistrypb";
+option java_multiple_files = true;
+option java_outer_classname = "RepositoryProto";
+option java_package = "com.google.devtools.artifactregistry.v1";
+option php_namespace = "Google\\Cloud\\ArtifactRegistry\\V1";
+option ruby_package = "Google::Cloud::ArtifactRegistry::V1";
+option (google.api.resource_definition) = {
+  type: "secretmanager.googleapis.com/SecretVersion"
+  pattern: "projects/{project}/secrets/{secret}/versions/{secret_version}"
+};
+option (google.api.resource_definition) = {
+  type: "servicedirectory.googleapis.com/Service"
+  pattern: "projects/{project}/locations/{location}/namespaces/{namespace}/services/{service}"
+};
+
+// Artifact policy configuration for the repository contents.
+message UpstreamPolicy {
+  // The user-provided ID of the upstream policy.
+  string id = 1;
+
+  // A reference to the repository resource, for example:
+  // `projects/p1/locations/us-central1/repositories/repo1`.
+  string repository = 2 [(google.api.resource_reference) = {
+    type: "artifactregistry.googleapis.com/Repository"
+  }];
+
+  // Entries with a greater priority value take precedence in the pull order.
+  int32 priority = 3;
+}
+
+// CleanupPolicyCondition is a set of conditions attached to a CleanupPolicy.
+// If multiple entries are set, all must be satisfied for the condition to be
+// satisfied.
+message CleanupPolicyCondition {
+  // Statuses applying to versions.
+  enum TagState {
+    // Tag status not specified.
+    TAG_STATE_UNSPECIFIED = 0;
+
+    // Applies to tagged versions only.
+    TAGGED = 1;
+
+    // Applies to untagged versions only.
+    UNTAGGED = 2;
+
+    // Applies to all versions.
+    ANY = 3;
+  }
+
+  // Match versions by tag status.
+  optional TagState tag_state = 2;
+
+  // Match versions by tag prefix. Applied on any prefix match.
+  repeated string tag_prefixes = 3;
+
+  // Match versions by version name prefix. Applied on any prefix match.
+  repeated string version_name_prefixes = 4;
+
+  // Match versions by package prefix. Applied on any prefix match.
+  repeated string package_name_prefixes = 5;
+
+  // Match versions older than a duration.
+  optional google.protobuf.Duration older_than = 6;
+
+  // Match versions newer than a duration.
+  optional google.protobuf.Duration newer_than = 7;
+}
+
+// CleanupPolicyMostRecentVersions is an alternate condition of a CleanupPolicy
+// for retaining a minimum number of versions.
+message CleanupPolicyMostRecentVersions {
+  // List of package name prefixes that will apply this rule.
+  repeated string package_name_prefixes = 1;
+
+  // Minimum number of versions to keep.
+  optional int32 keep_count = 2;
+}
+
+// Artifact policy configuration for repository cleanup policies.
+message CleanupPolicy {
+  // Action type for a cleanup policy.
+  enum Action {
+    // Action not specified.
+    ACTION_UNSPECIFIED = 0;
+
+    // Delete action.
+    DELETE = 1;
+
+    // Keep action.
+    KEEP = 2;
+  }
+
+  oneof condition_type {
+    // Policy condition for matching versions.
+    CleanupPolicyCondition condition = 2;
+
+    // Policy condition for retaining a minimum number of versions. May only be
+    // specified with a Keep action.
+    CleanupPolicyMostRecentVersions most_recent_versions = 4;
+  }
+
+  // The user-provided ID of the cleanup policy.
+  string id = 1;
+
+  // Policy action.
+  Action action = 3;
+}
+
+// Virtual repository configuration.
+message VirtualRepositoryConfig {
+  // Policies that configure the upstream artifacts distributed by the Virtual
+  // Repository. Upstream policies cannot be set on a standard repository.
+  repeated UpstreamPolicy upstream_policies = 1;
+}
+
+// Remote repository configuration.
+message RemoteRepositoryConfig {
+  // The credentials to access the remote repository.
+  message UpstreamCredentials {
+    // Username and password credentials.
+    message UsernamePasswordCredentials {
+      // The username to access the remote repository.
+      string username = 1;
+
+      // The Secret Manager key version that holds the password to access the
+      // remote repository. Must be in the format of
+      // `projects/{project}/secrets/{secret}/versions/{version}`.
+      string password_secret_version = 2 [(google.api.resource_reference) = {
+        type: "secretmanager.googleapis.com/SecretVersion"
+      }];
+    }
+
+    oneof credentials {
+      // Use username and password to access the remote repository.
+      UsernamePasswordCredentials username_password_credentials = 1;
+    }
+  }
+
+  // Configuration for a Docker remote repository.
+  message DockerRepository {
+    // Customer-specified publicly available remote repository.
+    message CustomRepository {
+      // An http/https uri reference to the custom remote repository, for ex:
+      // "https://registry-1.docker.io".
+      string uri = 1;
+    }
+
+    // Predefined list of publicly available Docker repositories like Docker
+    // Hub.
+    enum PublicRepository {
+      // Unspecified repository.
+      PUBLIC_REPOSITORY_UNSPECIFIED = 0;
+
+      // Docker Hub.
+      DOCKER_HUB = 1;
+    }
+
+    // Address of the remote repository.
+    oneof upstream {
+      // One of the publicly available Docker repositories supported by Artifact
+      // Registry.
+      PublicRepository public_repository = 1;
+
+      // Customer-specified remote repository.
+      CustomRepository custom_repository = 3;
+    }
+  }
+
+  // Configuration for a Maven remote repository.
+  message MavenRepository {
+    // Customer-specified publicly available remote repository.
+    message CustomRepository {
+      // An http/https uri reference to the upstream remote repository, for ex:
+      // "https://my.maven.registry/".
+      string uri = 1;
+    }
+
+    // Predefined list of publicly available Maven repositories like Maven
+    // Central.
+    enum PublicRepository {
+      // Unspecified repository.
+      PUBLIC_REPOSITORY_UNSPECIFIED = 0;
+
+      // Maven Central.
+      MAVEN_CENTRAL = 1;
+    }
+
+    // Address of the remote repository.
+    oneof upstream {
+      // One of the publicly available Maven repositories supported by Artifact
+      // Registry.
+      PublicRepository public_repository = 1;
+
+      // Customer-specified remote repository.
+      CustomRepository custom_repository = 3;
+    }
+  }
+
+  // Configuration for a Npm remote repository.
+  message NpmRepository {
+    // Customer-specified publicly available remote repository.
+    message CustomRepository {
+      // An http/https uri reference to the upstream remote repository, for ex:
+      // "https://my.npm.registry/".
+      string uri = 1;
+    }
+
+    // Predefined list of publicly available NPM repositories like npmjs.
+    enum PublicRepository {
+      // Unspecified repository.
+      PUBLIC_REPOSITORY_UNSPECIFIED = 0;
+
+      // npmjs.
+      NPMJS = 1;
+    }
+
+    // Address of the remote repository
+    oneof upstream {
+      // One of the publicly available Npm repositories supported by Artifact
+      // Registry.
+      PublicRepository public_repository = 1;
+
+      // Customer-specified remote repository.
+      CustomRepository custom_repository = 3;
+    }
+  }
+
+  // Configuration for a Python remote repository.
+  message PythonRepository {
+    // Customer-specified publicly available remote repository.
+    message CustomRepository {
+      // An http/https uri reference to the upstream remote repository, for ex:
+      // "https://my.python.registry/".
+      string uri = 1;
+    }
+
+    // Predefined list of publicly available Python repositories like PyPI.org.
+    enum PublicRepository {
+      // Unspecified repository.
+      PUBLIC_REPOSITORY_UNSPECIFIED = 0;
+
+      // PyPI.
+      PYPI = 1;
+    }
+
+    // Address of the remote repository.
+    oneof upstream {
+      // One of the publicly available Python repositories supported by Artifact
+      // Registry.
+      PublicRepository public_repository = 1;
+
+      // Customer-specified remote repository.
+      CustomRepository custom_repository = 3;
+    }
+  }
+
+  // Configuration for an Apt remote repository.
+  message AptRepository {
+    // Publicly available Apt repositories constructed from a common repository
+    // base and a custom repository path.
+    message PublicRepository {
+      // Predefined list of publicly available repository bases for Apt.
+      enum RepositoryBase {
+        // Unspecified repository base.
+        REPOSITORY_BASE_UNSPECIFIED = 0;
+
+        // Debian.
+        DEBIAN = 1;
+
+        // Ubuntu LTS/Pro.
+        UBUNTU = 2;
+
+        // Archived Debian.
+        DEBIAN_SNAPSHOT = 3;
+      }
+
+      // A common public repository base for Apt.
+      RepositoryBase repository_base = 1;
+
+      // A custom field to define a path to a specific repository from the base.
+      string repository_path = 2;
+    }
+
+    // Customer-specified publicly available remote repository.
+    message CustomRepository {
+      // An http/https uri reference to the upstream remote repository, for ex:
+      // "https://my.apt.registry/".
+      string uri = 1;
+    }
+
+    // Address of the remote repository.
+    oneof upstream {
+      // One of the publicly available Apt repositories supported by Artifact
+      // Registry.
+      PublicRepository public_repository = 1;
+
+      // Customer-specified remote repository.
+      CustomRepository custom_repository = 3;
+    }
+  }
+
+  // Configuration for a Yum remote repository.
+  message YumRepository {
+    // Publicly available Yum repositories constructed from a common repository
+    // base and a custom repository path.
+    message PublicRepository {
+      // Predefined list of publicly available repository bases for Yum.
+      enum RepositoryBase {
+        // Unspecified repository base.
+        REPOSITORY_BASE_UNSPECIFIED = 0;
+
+        // CentOS.
+        CENTOS = 1;
+
+        // CentOS Debug.
+        CENTOS_DEBUG = 2;
+
+        // CentOS Vault.
+        CENTOS_VAULT = 3;
+
+        // CentOS Stream.
+        CENTOS_STREAM = 4;
+
+        // Rocky.
+        ROCKY = 5;
+
+        // Fedora Extra Packages for Enterprise Linux (EPEL).
+        EPEL = 6;
+      }
+
+      // A common public repository base for Yum.
+      RepositoryBase repository_base = 1;
+
+      // A custom field to define a path to a specific repository from the base.
+      string repository_path = 2;
+    }
+
+    // Customer-specified publicly available remote repository.
+    message CustomRepository {
+      // An http/https uri reference to the upstream remote repository, for ex:
+      // "https://my.yum.registry/".
+      string uri = 1;
+    }
+
+    // Address of the remote repository.
+    oneof upstream {
+      // One of the publicly available Yum repositories supported by Artifact
+      // Registry.
+      PublicRepository public_repository = 1;
+
+      // Customer-specified remote repository.
+      CustomRepository custom_repository = 3;
+    }
+  }
+
+  // Common remote repository settings type.
+  message CommonRemoteRepository {
+    // Required. A common public repository base for remote repository.
+    string uri = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Settings specific to the remote repository.
+  oneof remote_source {
+    // Specific settings for a Docker remote repository.
+    DockerRepository docker_repository = 2;
+
+    // Specific settings for a Maven remote repository.
+    MavenRepository maven_repository = 3;
+
+    // Specific settings for an Npm remote repository.
+    NpmRepository npm_repository = 4;
+
+    // Specific settings for a Python remote repository.
+    PythonRepository python_repository = 5;
+
+    // Specific settings for an Apt remote repository.
+    AptRepository apt_repository = 6;
+
+    // Specific settings for a Yum remote repository.
+    YumRepository yum_repository = 7;
+
+    // Common remote repository settings.
+    // Used as the remote repository upstream URL.
+    CommonRemoteRepository common_repository = 14;
+  }
+
+  // The description of the remote source.
+  string description = 1;
+
+  // Optional. The credentials used to access the remote repository.
+  UpstreamCredentials upstream_credentials = 9
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Input only. A create/update remote repo option to avoid making a HEAD/GET
+  // request to validate a remote repo and any supplied upstream credentials.
+  bool disable_upstream_validation = 12
+      [(google.api.field_behavior) = INPUT_ONLY];
+}
+
+// A Repository for storing artifacts with a specific format.
+message Repository {
+  option (google.api.resource) = {
+    type: "artifactregistry.googleapis.com/Repository"
+    pattern: "projects/{project}/locations/{location}/repositories/{repository}"
+  };
+
+  // MavenRepositoryConfig is maven related repository details.
+  // Provides additional configuration details for repositories of the maven
+  // format type.
+  message MavenRepositoryConfig {
+    // VersionPolicy is the version policy for the repository.
+    enum VersionPolicy {
+      // VERSION_POLICY_UNSPECIFIED - the version policy is not defined.
+      // When the version policy is not defined, no validation is performed
+      // for the versions.
+      VERSION_POLICY_UNSPECIFIED = 0;
+
+      // RELEASE - repository will accept only Release versions.
+      RELEASE = 1;
+
+      // SNAPSHOT - repository will accept only Snapshot versions.
+      SNAPSHOT = 2;
+    }
+
+    // The repository with this flag will allow publishing
+    // the same snapshot versions.
+    bool allow_snapshot_overwrites = 1;
+
+    // Version policy defines the versions that the registry will accept.
+    VersionPolicy version_policy = 2;
+  }
+
+  // DockerRepositoryConfig is docker related repository details.
+  // Provides additional configuration details for repositories of the docker
+  // format type.
+  message DockerRepositoryConfig {
+    // The repository which enabled this flag prevents all tags from being
+    // modified, moved or deleted. This does not prevent tags from being
+    // created.
+    bool immutable_tags = 1;
+  }
+
+  // Config on whether to perform vulnerability scanning for resources in this
+  // repository, as well as output fields describing current state.
+  message VulnerabilityScanningConfig {
+    // Config for vulnerability scanning of resources in this repository.
+    enum EnablementConfig {
+      // Not set. This will be treated as INHERITED for Docker repositories and
+      // DISABLED for non-Docker repositories.
+      ENABLEMENT_CONFIG_UNSPECIFIED = 0;
+
+      // Scanning is Enabled, but dependent on API enablement.
+      INHERITED = 1;
+
+      // No automatic vulnerability scanning will be performed for this
+      // repository.
+      DISABLED = 2;
+    }
+
+    // Describes the state of vulnerability scanning in this repository,
+    // including both repository enablement and API enablement.
+    enum EnablementState {
+      // Enablement state is unclear.
+      ENABLEMENT_STATE_UNSPECIFIED = 0;
+
+      // Repository does not support vulnerability scanning.
+      SCANNING_UNSUPPORTED = 1;
+
+      // Vulnerability scanning is disabled for this repository.
+      SCANNING_DISABLED = 2;
+
+      // Vulnerability scanning is active for this repository.
+      SCANNING_ACTIVE = 3;
+    }
+
+    // Optional. Config for whether this repository has vulnerability scanning
+    // disabled.
+    EnablementConfig enablement_config = 1
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Output only. The last time this repository config was enabled.
+    google.protobuf.Timestamp last_enable_time = 2
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. State of feature enablement, combining repository enablement
+    // config and API enablement state.
+    EnablementState enablement_state = 3
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Reason for the repository state.
+    string enablement_state_reason = 4
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // A package format.
+  enum Format {
+    // Unspecified package format.
+    FORMAT_UNSPECIFIED = 0;
+
+    // Docker package format.
+    DOCKER = 1;
+
+    // Maven package format.
+    MAVEN = 2;
+
+    // NPM package format.
+    NPM = 3;
+
+    // APT package format.
+    APT = 5;
+
+    // YUM package format.
+    YUM = 6;
+
+    // Python package format.
+    PYTHON = 8;
+
+    // Kubeflow Pipelines package format.
+    KFP = 9;
+
+    // Go package format.
+    GO = 10;
+
+    // Generic package format.
+    GENERIC = 11;
+
+    // Ruby package format.
+    RUBY = 12;
+  }
+
+  // The mode configures the repository to serve artifacts from different
+  // sources.
+  enum Mode {
+    // Unspecified mode.
+    MODE_UNSPECIFIED = 0;
+
+    // A standard repository storing artifacts.
+    STANDARD_REPOSITORY = 1;
+
+    // A virtual repository to serve artifacts from one or more sources.
+    VIRTUAL_REPOSITORY = 2;
+
+    // A remote repository to serve artifacts from a remote source.
+    REMOTE_REPOSITORY = 3;
+  }
+
+  // Repository-specific configurations.
+  oneof format_config {
+    // Maven repository config contains repository level configuration
+    // for the repositories of maven type.
+    MavenRepositoryConfig maven_config = 9;
+
+    // Docker repository config contains repository level configuration
+    // for the repositories of docker type.
+    DockerRepositoryConfig docker_config = 17;
+  }
+
+  // Repository configuration specific to the Mode value being selected (Remote
+  // or Virtual)
+  oneof mode_config {
+    // Configuration specific for a Virtual Repository.
+    VirtualRepositoryConfig virtual_repository_config = 14;
+
+    // Configuration specific for a Remote Repository.
+    RemoteRepositoryConfig remote_repository_config = 15;
+  }
+
+  // The name of the repository, for example:
+  // `projects/p1/locations/us-central1/repositories/repo1`. For each location
+  // in a project, repository names must be unique.
+  string name = 1;
+
+  // Optional. The format of packages that are stored in the repository.
+  Format format = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // The user-provided description of the repository.
+  string description = 3;
+
+  // Labels with user-defined metadata.
+  // This field may contain up to 64 entries. Label keys and values may be no
+  // longer than 63 characters. Label keys must begin with a lowercase letter
+  // and may only contain lowercase letters, numeric characters, underscores,
+  // and dashes.
+  map<string, string> labels = 4;
+
+  // Output only. The time when the repository was created.
+  google.protobuf.Timestamp create_time = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time when the repository was last updated.
+  google.protobuf.Timestamp update_time = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The Cloud KMS resource name of the customer managed encryption key that's
+  // used to encrypt the contents of the Repository. Has the form:
+  // `projects/my-project/locations/my-region/keyRings/my-kr/cryptoKeys/my-key`.
+  // This value may not be changed after the Repository has been created.
+  string kms_key_name = 8;
+
+  // Optional. The mode of the repository.
+  Mode mode = 10 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Cleanup policies for this repository. Cleanup policies indicate
+  // when certain package versions can be automatically deleted. Map keys are
+  // policy IDs supplied by users during policy creation. They must unique
+  // within a repository and be under 128 characters in length.
+  map<string, CleanupPolicy> cleanup_policies = 12
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The size, in bytes, of all artifact storage in this
+  // repository. Repositories that are generally available or in public preview
+  //  use this to calculate storage costs.
+  int64 size_bytes = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Whether or not this repository satisfies PZS.
+  bool satisfies_pzs = 16 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. If true, the cleanup pipeline is prevented from deleting versions
+  // in this repository.
+  bool cleanup_policy_dry_run = 18 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Config and state for vulnerability scanning of resources within
+  // this Repository.
+  VulnerabilityScanningConfig vulnerability_scanning_config = 19
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If this is true, an unspecified repo type will be treated as
+  // error rather than defaulting to standard.
+  bool disallow_unspecified_mode = 21 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Whether or not this repository satisfies PZI.
+  bool satisfies_pzi = 22 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The repository endpoint, for example:
+  // `us-docker.pkg.dev/my-proj/my-repo`.
+  string registry_uri = 26 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The request to list repositories.
+message ListRepositoriesRequest {
+  // Required. The name of the parent resource whose repositories will be
+  // listed.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "artifactregistry.googleapis.com/Repository"
+    }
+  ];
+
+  // The maximum number of repositories to return. Maximum page size is 1,000.
+  int32 page_size = 2;
+
+  // The next_page_token value returned from a previous list request, if any.
+  string page_token = 3;
+
+  // Optional. An expression for filtering the results of the request. Filter
+  // rules are case insensitive. The fields eligible for filtering are:
+  //
+  //   * `name`
+  //
+  //  Examples of using a filter:
+  //
+  // To filter the results of your request to repositories with the name
+  // `my-repo` in project `my-project` in the `us-central` region, append the
+  // following filter expression to your request:
+  //
+  //   * `name="projects/my-project/locations/us-central1/repositories/my-repo"`
+  //
+  //  You can also use wildcards to match any number of characters before or
+  //  after the value:
+  //
+  //   * `name="projects/my-project/locations/us-central1/repositories/my-*"`
+  //   * `name="projects/my-project/locations/us-central1/repositories/*repo"`
+  //   * `name="projects/my-project/locations/us-central1/repositories/*repo*"`
+  string filter = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The field to order the results by.
+  string order_by = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The response from listing repositories.
+message ListRepositoriesResponse {
+  // The repositories returned.
+  repeated Repository repositories = 1;
+
+  // The token to retrieve the next page of repositories, or empty if there are
+  // no more repositories to return.
+  string next_page_token = 2;
+}
+
+// The request to retrieve a repository.
+message GetRepositoryRequest {
+  // Required. The name of the repository to retrieve.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "artifactregistry.googleapis.com/Repository"
+    }
+  ];
+}
+
+// The request to create a new repository.
+message CreateRepositoryRequest {
+  // Required. The name of the parent resource where the repository will be
+  // created.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "artifactregistry.googleapis.com/Repository"
+    }
+  ];
+
+  // Required. The repository id to use for this repository.
+  string repository_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The repository to be created.
+  Repository repository = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The request to update a repository.
+message UpdateRepositoryRequest {
+  // The repository that replaces the resource on the server.
+  Repository repository = 1;
+
+  // The update mask applies to the resource. For the `FieldMask` definition,
+  // see
+  // https://developers.google.com/protocol-buffers/docs/reference/google.protobuf#fieldmask
+  google.protobuf.FieldMask update_mask = 2;
+}
+
+// The request to delete a repository.
+message DeleteRepositoryRequest {
+  // Required. The name of the repository to delete.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "artifactregistry.googleapis.com/Repository"
+    }
+  ];
+}

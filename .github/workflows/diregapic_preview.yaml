@@ -1,0 +1,66 @@
+---
+name: DIREGAPIC Preview Updater
+on:  # yamllint disable-line rule:truthy
+  workflow_dispatch:
+  # Disable cron schedule until code-suggester is fixed.
+  # schedule:
+  # - cron: '19 */8 * * *'
+
+jobs:
+  regenerate-compute:
+    if: github.repository == 'googleapis/googleapis'
+    runs-on: ubuntu-latest
+    container: gcr.io/gapic-images/googleapis:prod
+    steps:
+    - name: Check out the preview branch
+      uses: actions/checkout@v3
+      with:
+        ref: 'preview'
+    - name: Install jq
+      run: |
+        apt-get update
+        apt-get install -y jq
+    - name: Download discovery docs
+      # TODO(b/486941729): Switch to downloading compute.preview.json when it exists.
+      run: |
+        curl https://raw.githubusercontent.com/googleapis/discovery-artifact-manager/refs/heads/master/discoveries/compute.v1.json --output /tmp/compute.v1.json
+        sed -i 's|^  "version": "preview"|  "version": "v1"|' /tmp/compute.v1.json
+        sed -i 's|^  "id": "compute:preview"|  "id": "compute:v1"|' /tmp/compute.v1.json
+        echo compute_revision=$(grep -oP '"revision":\s*"\d+"' /tmp/compute.v1.json | grep -oP '\d+') >> $GITHUB_ENV
+    - name: Regenerate API definitions
+      run: |
+        echo "*** Regenerating version v1 preview at revision ${{ env.compute_revision }}"
+        cp /tmp/compute.v1.json google/cloud/compute/v1/compute.v1.json
+        git config --global --add safe.directory /__w/googleapis/googleapis
+        bazelisk build --experimental_convenience_symlinks=normal //google/cloud/compute/v1:compute_gen
+        cp bazel-bin/google/cloud/compute/v1/compute_gen.proto google/cloud/compute/v1/compute.proto
+        cp bazel-bin/google/cloud/compute/v1/compute_gen.config.out.json google/cloud/compute/v1/compute.config.json
+        bazelisk build --experimental_convenience_symlinks=normal //google/cloud/compute/v1:compute_grpc_service_config_gen
+        cp bazel-bin/google/cloud/compute/v1/compute_grpc_service_config_gen.json google/cloud/compute/v1/compute_grpc_service_config.json
+        bazelisk build --experimental_convenience_symlinks=normal //google/cloud/compute/v1:compute_gapic_gen
+        cp bazel-bin/google/cloud/compute/v1/compute_gapic_gen.yaml google/cloud/compute/v1/compute_gapic.yaml
+        # Skip any config-only changes when determining whether the API changed:
+        # - The execution timestamp recorded in the config will always differ from the previous one
+        # - Some schema hashes appear to change for no reason (internal issue 406083082)
+        echo api_changes=$( { git diff --stat | grep -v file | grep -v compute.config.json ; } && git diff-index --shortstat HEAD) >> $GITHUB_ENV
+    - name: Build GAPIC clients
+      if: contains(env.api_changes, 'file')
+      run: |
+        bazelisk build --experimental_convenience_symlinks=normal //google/cloud/compute/v1/...
+    - name: Create PR
+      uses: googleapis/code-suggester@v5
+      if: contains(env.api_changes, 'file')
+      env:
+        ACCESS_TOKEN: ${{ secrets.YOSHI_CODE_BOT_TOKEN }}
+      with:
+        command: pr
+        upstream_owner: googleapis
+        upstream_repo: googleapis
+        title: 'feat(preview): [DIREGAPIC] Update v1 preview API definitions to revision ${{ env.compute_revision }}'
+        description: 'feat: Update Compute Engine v1 preview API to revision ${{ env.compute_revision }}'
+        message: 'feat: Update Compute Engine v1 preview API to revision ${{ env.compute_revision }}'
+        primary: 'preview'
+        branch: "diregapic-v1-preview-${{ env.compute_revision }}"
+        git_dir: '.'
+        force: true
+        fork: true
