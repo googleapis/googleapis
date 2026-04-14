@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,12 +21,12 @@ import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/field_info.proto";
 import "google/api/resource.proto";
-import "google/cloud/hypercomputecluster/v1alpha/operation_metadata.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/duration.proto";
-import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
+import "google/type/dayofweek.proto";
+import "google/type/timeofday.proto";
 
 option csharp_namespace = "Google.Cloud.HypercomputeCluster.V1Alpha";
 option go_package = "cloud.google.com/go/hypercomputecluster/apiv1alpha/hypercomputeclusterpb;hypercomputeclusterpb";
@@ -56,6 +56,14 @@ option (google.api.resource_definition) = {
   pattern: "projects/{project}/zones/{zone}/reservations/{reservation}"
 };
 option (google.api.resource_definition) = {
+  type: "compute.googleapis.com/ReservationBlock"
+  pattern: "projects/{project}/zones/{zone}/reservations/{reservation}/reservationBlocks/{reservation_block}"
+};
+option (google.api.resource_definition) = {
+  type: "compute.googleapis.com/ReservationSubBlock"
+  pattern: "projects/{project}/zones/{zone}/reservations/{reservation}/reservationBlocks/{reservation_block}/reservationSubBlocks/{reservation_sub_block}"
+};
+option (google.api.resource_definition) = {
   type: "compute.googleapis.com/Subnetwork"
   pattern: "projects/{project}/regions/{region}/subnetworks/{subnetwork}"
 };
@@ -64,12 +72,12 @@ option (google.api.resource_definition) = {
   pattern: "projects/{project}/locations/{location}/instances/{instance}"
 };
 option (google.api.resource_definition) = {
-  type: "lustre.googleapis.com/LustreInstance"
-  pattern: "projects/{project}/locations/{location}/instances/{instance}"
-};
-option (google.api.resource_definition) = {
   type: "storage.googleapis.com/Bucket"
   pattern: "projects/{project}/buckets/{bucket}"
+};
+option (google.api.resource_definition) = {
+  type: "container.googleapis.com/Pod"
+  pattern: "projects/{project}/locations/{location}/clusters/{cluster}/k8s/namespaces/{namespace}/pods/{pod}"
 };
 
 // Service describing handlers for resources
@@ -134,6 +142,22 @@ service HypercomputeCluster {
       metadata_type: "OperationMetadata"
     };
   }
+
+  // Gets details of a single Node.
+  rpc GetNode(GetNodeRequest) returns (Node) {
+    option (google.api.http) = {
+      get: "/v1alpha/{name=projects/*/locations/*/clusters/*/nodes/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Lists Nodes in a given cluster.
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse) {
+    option (google.api.http) = {
+      get: "/v1alpha/{parent=projects/*/locations/*/clusters/*}/nodes"
+    };
+    option (google.api.method_signature) = "parent";
+  }
 }
 
 // A collection of virtual machines and connected resources forming a
@@ -155,7 +179,8 @@ message Cluster {
   // `projects/{project}/locations/{location}/clusters/{cluster}`.
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
-  // Optional. User-provided description of the cluster.
+  // Optional. User-provided description of the cluster. Maximum of 2048
+  // characters.
   string description = 9 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional.
@@ -177,7 +202,7 @@ message Cluster {
   // cluster's intended state.
   bool reconciling = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Optional. Network resources available to the cluster. Must contain at most
+  // Optional. Network resources available to the cluster. Must contain exactly
   // one value. Keys specify the ID of the network resource by which it can be
   // referenced elsewhere, and must conform to
   // [RFC-1034](https://datatracker.ietf.org/doc/html/rfc1034) (lower-case,
@@ -203,13 +228,10 @@ message Cluster {
   // on the cluster.
   Orchestrator orchestrator = 8 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Deprecated. Use network_resources instead.
-  repeated Network networks = 5
-      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
-
-  // Optional. Deprecated. Use storage_resources instead.
-  repeated Storage storages = 6
-      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
+  // Optional. Policy controlling how system-initiated maintenance should be
+  // conducted on the cluster.
+  MaintenancePolicy maintenance_policy = 14
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Deprecated. Use compute_resources instead.
   Compute compute = 7
@@ -352,17 +374,74 @@ message DeleteClusterRequest {
   ];
 }
 
+// Request message for
+// [GetNode][google.cloud.hypercomputecluster.v1alpha.HypercomputeCluster.GetNode].
+message GetNodeRequest {
+  // Required. Name of the node to retrieve, in the format
+  // `projects/{project}/locations/{location}/clusters/{cluster}/nodes/{node}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "hypercomputecluster.googleapis.com/Node"
+    }
+  ];
+}
+
+// Request message for
+// [ListNodes][google.cloud.hypercomputecluster.v1alpha.HypercomputeCluster.ListNodes].
+message ListNodesRequest {
+  // Required. Parent cluster of the nodes to list, in the format
+  // `projects/{project}/locations/{location}/clusters/{cluster}`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "hypercomputecluster.googleapis.com/Node"
+    }
+  ];
+
+  // Optional. Maximum number of nodes to return. The service may return fewer
+  // than this value.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A page token received from a previous `ListNodes` call. Provide
+  // this to retrieve the subsequent page. When paginating, all other parameters
+  // provided to `ListNodes` must match the call that provided the page
+  // token.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. [Filter](https://google.aip.dev/160) to apply to the returned
+  // results.
+  string filter = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. How to order the resulting nodes. Must be one of the following
+  // strings:
+  //
+  // * `name`
+  // * `name desc`
+  //
+  // If not specified, nodes will be returned in an arbitrary order.
+  string order_by = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message for
+// [ListNodes][google.cloud.hypercomputecluster.v1alpha.HypercomputeCluster.ListNodes].
+message ListNodesResponse {
+  // Nodes in the specified cluster.
+  repeated Node nodes = 1;
+
+  // A token that can be sent as `page_token` to retrieve the next page. If this
+  // field is absent, there are no subsequent pages.
+  string next_page_token = 2;
+}
+
 // A resource representing a network that connects the various components of a
 // cluster together.
 message NetworkResource {
   // Reference to the network resource in Google Cloud. Exactly one of these
   // fields will be populated based on the configured type of network resource.
   oneof reference {
-    // Reference to a network in Google Compute Engine.
-    NetworkReference network = 3;
-
-    // Deprecated: Use network instead.
-    ComputeNetworkReference compute_network = 1 [deprecated = true];
+    // Output only. Reference to a network in Google Compute Engine.
+    NetworkReference network = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
   // Immutable. Configuration for this network resource, which describes how it
@@ -413,14 +492,6 @@ message NetworkResourceConfig {
       (google.api.field_behavior) = OPTIONAL,
       (google.api.field_behavior) = IMMUTABLE
     ];
-
-    // Immutable. Deprecated: Use new_network instead.
-    NewComputeNetworkConfig new_compute_network = 1
-        [deprecated = true, (google.api.field_behavior) = IMMUTABLE];
-
-    // Immutable. Deprecated: Use existing_network instead.
-    ExistingComputeNetworkConfig existing_compute_network = 2
-        [deprecated = true, (google.api.field_behavior) = IMMUTABLE];
   }
 }
 
@@ -473,17 +544,18 @@ message StorageResource {
   // Reference to the storage resource in Google Cloud. Exactly one of these
   // fields will be populated based on the configured type of storage resource.
   oneof reference {
-    // Reference to a Filestore instance. Populated if and only if the storage
-    // resource was configured to use Filestore.
-    FilestoreReference filestore = 1;
+    // Output only. Reference to a Filestore instance. Populated if and only if
+    // the storage resource was configured to use Filestore.
+    FilestoreReference filestore = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
 
-    // Reference to a Google Cloud Storage bucket. Populated if and only if the
-    // storage resource was configured to use Google Cloud Storage.
-    BucketReference bucket = 2;
+    // Output only. Reference to a Google Cloud Storage bucket. Populated if and
+    // only if the storage resource was configured to use Google Cloud Storage.
+    BucketReference bucket = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-    // Reference to a Managed Lustre instance. Populated if and only if the
-    // storage resource was configured to use Managed Lustre.
-    LustreReference lustre = 3;
+    // Output only. Reference to a Managed Lustre instance. Populated if and
+    // only if the storage resource was configured to use Managed Lustre.
+    LustreReference lustre = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
   // Required. Immutable. Configuration for this storage resource, which
@@ -526,9 +598,7 @@ message LustreReference {
   // `projects/{project}/locations/{location}/instances/{instance}`
   string lustre = 1 [
     (google.api.field_behavior) = OUTPUT_ONLY,
-    (google.api.resource_reference) = {
-      type: "lustre.googleapis.com/LustreInstance"
-    }
+    (google.api.resource_reference) = { type: "lustre.googleapis.com/Instance" }
   ];
 }
 
@@ -601,18 +671,6 @@ message NewFilestoreConfig {
     // Offers features and availability needed for mission-critical,
     // high-performance computing workloads.
     REGIONAL = 6;
-
-    // Deprecated: Use a different tier instead.
-    BASIC_HDD = 1 [deprecated = true];
-
-    // Deprecated: Use a different tier instead.
-    BASIC_SSD = 2 [deprecated = true];
-
-    // Deprecated: Use a different tier instead.
-    HIGH_SCALE_SSD = 3 [deprecated = true];
-
-    // Deprecated: Use a different tier instead.
-    ENTERPRISE = 5 [deprecated = true];
   }
 
   // File access protocol for Filestore instances.
@@ -668,7 +726,9 @@ message NewFilestoreConfig {
 
 // Message describing filestore configuration
 message FileShareConfig {
-  // Required. Size of the filestore in GB
+  // Required. Size of the filestore in GB. Must be between 1024 and 102400, and
+  // must meet scalability requirements described at
+  // https://cloud.google.com/filestore/docs/service-tiers.
   int64 capacity_gb = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. Filestore share location
@@ -824,6 +884,15 @@ message NewLustreConfig {
     (google.api.field_behavior) = REQUIRED,
     (google.api.field_behavior) = IMMUTABLE
   ];
+
+  // Optional. Immutable. Throughput of the instance in MB/s/TiB. Valid values
+  // are 125, 250, 500, 1000. See [Performance tiers and maximum storage
+  // capacities](https://cloud.google.com/managed-lustre/docs/create-instance#performance-tiers)
+  // for more information.
+  int64 per_unit_storage_throughput = 5 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
 }
 
 // When set in a
@@ -837,30 +906,13 @@ message ExistingLustreConfig {
   string lustre = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.field_behavior) = IMMUTABLE,
-    (google.api.resource_reference) = {
-      type: "lustre.googleapis.com/LustreInstance"
-    }
+    (google.api.resource_reference) = { type: "lustre.googleapis.com/Instance" }
   ];
 }
 
 // A resource defining how virtual machines and accelerators should be
 // provisioned for the cluster.
 message ComputeResource {
-  // Deprecated: Use config.
-  oneof config_oneof {
-    // Deprecated: Use config.
-    NewOnDemandInstancesConfig new_on_demand_instances = 2 [deprecated = true];
-
-    // Deprecated: Use config.
-    NewSpotInstancesConfig new_spot_instances = 3 [deprecated = true];
-
-    // Deprecated: Use config.
-    NewReservedInstancesConfig new_reserved_instances = 4 [deprecated = true];
-
-    // Deprecated: Use config.
-    NewDWSFlexInstancesConfig new_dws_flex_instances = 5 [deprecated = true];
-  }
-
   // Required. Immutable. Configuration for this compute resource, which
   // describes how it should be created at runtime.
   ComputeResourceConfig config = 6 [
@@ -890,13 +942,6 @@ message ComputeResourceConfig {
     // Optional. Immutable. If set, indicates that this resource should use
     // reserved VMs.
     NewReservedInstancesConfig new_reserved_instances = 3 [
-      (google.api.field_behavior) = OPTIONAL,
-      (google.api.field_behavior) = IMMUTABLE
-    ];
-
-    // Optional. Immutable. If set, indicates that this resource should use
-    // flex-start VMs.
-    NewDWSFlexInstancesConfig new_dws_flex_instances = 4 [
       (google.api.field_behavior) = OPTIONAL,
       (google.api.field_behavior) = IMMUTABLE
     ];
@@ -937,10 +982,6 @@ message NewOnDemandInstancesConfig {
     (google.api.field_behavior) = OPTIONAL,
     (google.api.field_behavior) = IMMUTABLE
   ];
-
-  // Immutable. Deprecated: set disks in node config instead.
-  Disk boot_disk = 6
-      [deprecated = true, (google.api.field_behavior) = IMMUTABLE];
 }
 
 // When set in a
@@ -951,13 +992,13 @@ message NewOnDemandInstancesConfig {
 message NewSpotInstancesConfig {
   // Specifies the termination action of the instance
   enum TerminationAction {
-    // Unspecified termination action
+    // Not set.
     TERMINATION_ACTION_UNSPECIFIED = 0;
 
-    // Stop the instance
+    // Compute Engine stops the Spot VM on preemption.
     STOP = 1;
 
-    // Delete the instance
+    // Compute Engine deletes the Spot VM on preemption.
     DELETE = 2;
   }
 
@@ -984,11 +1025,8 @@ message NewSpotInstancesConfig {
     (google.api.field_behavior) = IMMUTABLE
   ];
 
-  // Immutable. Deprecated: set disks in node config instead.
-  Disk boot_disk = 4
-      [deprecated = true, (google.api.field_behavior) = IMMUTABLE];
-
-  // Optional. Specifies the termination action of the instance
+  // Optional. Termination action for the instance. If not specified, Compute
+  // Engine sets the termination action to DELETE.
   TerminationAction termination_action = 5
       [(google.api.field_behavior) = OPTIONAL];
 }
@@ -998,33 +1036,41 @@ message NewSpotInstancesConfig {
 // indicates that VM instances should be created from a
 // [reservation](https://cloud.google.com/compute/docs/instances/reservations-overview).
 message NewReservedInstancesConfig {
-  // Deprecated: Do not use.
-  enum ReservationType {
-    option deprecated = true;
+  // Source of the reservation
+  oneof source {
+    // Optional. Immutable. Name of the reservation from which VM instances
+    // should be created, in the format
+    // `projects/{project}/zones/{zone}/reservations/{reservation}`.
+    string reservation = 1 [
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.field_behavior) = IMMUTABLE,
+      (google.api.resource_reference) = {
+        type: "compute.googleapis.com/Reservation"
+      }
+    ];
 
-    // Deprecated: Do not use.
-    RESERVATION_TYPE_UNSPECIFIED = 0 [deprecated = true];
+    // Optional. Immutable. Name of the reservation block from which VM
+    // instances should be created, in the format
+    // `projects/{project}/zones/{zone}/reservations/{reservation}/reservationBlocks/{reservation_block}`.
+    string reservation_block = 7 [
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.field_behavior) = IMMUTABLE,
+      (google.api.resource_reference) = {
+        type: "compute.googleapis.com/ReservationBlock"
+      }
+    ];
 
-    // Deprecated: Do not use.
-    NO_RESERVATION = 1 [deprecated = true];
-
-    // Deprecated: Do not use.
-    ANY_RESERVATION = 2 [deprecated = true];
-
-    // Deprecated: Do not use.
-    SPECIFIC_RESERVATION = 3 [deprecated = true];
+    // Optional. Immutable. Name of the reservation sub block from which VM
+    // instances should be created, in the format
+    // `projects/{project}/zones/{zone}/reservations/{reservation}/reservationBlocks/{reservation_block}/reservationSubBlocks/{reservation_sub_block}`.
+    string reservation_sub_block = 8 [
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.field_behavior) = IMMUTABLE,
+      (google.api.resource_reference) = {
+        type: "compute.googleapis.com/ReservationSubBlock"
+      }
+    ];
   }
-
-  // Required. Immutable. Name of the reservation from which VM instances should
-  // be created, in the format
-  // `projects/{project}/zones/{zone}/reservations/{reservation}`.
-  string reservation = 1 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.field_behavior) = IMMUTABLE,
-    (google.api.resource_reference) = {
-      type: "compute.googleapis.com/Reservation"
-    }
-  ];
 
   // Optional. Immutable. Unstable: Contact hypercompute-service-eng@ before
   // using.
@@ -1046,20 +1092,6 @@ message NewReservedInstancesConfig {
     (google.api.field_behavior) = OPTIONAL,
     (google.api.field_behavior) = IMMUTABLE
   ];
-
-  // Optional. Immutable. Deprecated: Do not use.
-  ReservationType type = 5 [
-    deprecated = true,
-    (google.api.field_behavior) = OPTIONAL,
-    (google.api.field_behavior) = IMMUTABLE
-  ];
-
-  // Optional. Immutable. Deprecated: set disks in node config instead.
-  Disk boot_disk = 6 [
-    deprecated = true,
-    (google.api.field_behavior) = OPTIONAL,
-    (google.api.field_behavior) = IMMUTABLE
-  ];
 }
 
 // When set in a
@@ -1067,20 +1099,6 @@ message NewReservedInstancesConfig {
 // indicates that VM instances should be created using [Flex
 // Start](https://cloud.google.com/compute/docs/instances/provisioning-models).
 message NewFlexStartInstancesConfig {
-  // Deprecated: Do not use.
-  enum TerminationAction {
-    option deprecated = true;
-
-    // Deprecated: Do not use.
-    TERMINATION_ACTION_UNSPECIFIED = 0 [deprecated = true];
-
-    // Deprecated: Do not use.
-    STOP = 1 [deprecated = true];
-
-    // Deprecated: Do not use.
-    DELETE = 2 [deprecated = true];
-  }
-
   // Required. Immutable. Name of the zone in which VM instances should run,
   // e.g., `us-central1-a`. Must be in the same region as the cluster, and must
   // match the zone of any other resources specified in the cluster.
@@ -1110,52 +1128,6 @@ message NewFlexStartInstancesConfig {
     (google.api.field_behavior) = OPTIONAL,
     (google.api.field_behavior) = IMMUTABLE
   ];
-
-  // Optional. Immutable. Deprecated: Do not use.
-  TerminationAction termination_action = 5 [
-    deprecated = true,
-    (google.api.field_behavior) = OPTIONAL,
-    (google.api.field_behavior) = IMMUTABLE
-  ];
-
-  // Optional. Immutable. Deprecated: set disks in node config instead.
-  Disk boot_disk = 6 [
-    deprecated = true,
-    (google.api.field_behavior) = OPTIONAL,
-    (google.api.field_behavior) = IMMUTABLE
-  ];
-}
-
-// Unstable: Contact hypercompute-service-eng@ before using.
-message Disk {
-  // Required. Immutable. Unstable: Contact hypercompute-service-eng@ before
-  // using.
-  string type = 1 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.field_behavior) = IMMUTABLE
-  ];
-
-  // Required. Immutable. Unstable: Contact hypercompute-service-eng@ before
-  // using.
-  int64 size_gb = 2 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.field_behavior) = IMMUTABLE
-  ];
-
-  // Optional. Immutable. Unstable: Contact hypercompute-service-eng@ before
-  // using.
-  bool boot = 3 [
-    (google.api.field_behavior) = OPTIONAL,
-    (google.api.field_behavior) = IMMUTABLE
-  ];
-
-  // Optional. Immutable. Unstable: Contact hypercompute-service-eng@ before
-  // using.
-  string source_image = 4 [
-    (google.api.field_behavior) = OPTIONAL,
-    (google.api.field_behavior) = IMMUTABLE,
-    (google.api.resource_reference) = { type: "compute.googleapis.com/Image" }
-  ];
 }
 
 // A [Persistent disk](https://cloud.google.com/compute/docs/disks) used as the
@@ -1178,16 +1150,22 @@ message BootDisk {
     (google.api.field_behavior) = IMMUTABLE
   ];
 
-  // Optional. Immutable. Source image used to create this disk. Must be a
-  // [supported disk family][...] for the VM instance's machine type. If this is
-  // empty, the system will select a supported image based on the machine type.
+  // Optional. Source image family used to create this disk. Must be a
+  // [supported image
+  // family](https://docs.cloud.google.com/cluster-director/docs/compute#os-images)
+  // for the VM instance's machine type. If no family is specified, the system
+  // will select a supported image family based on the machine type. If this
+  // field is cleared, the system will continue to use the current image family.
   string image = 3 [
     (google.api.field_behavior) = OPTIONAL,
-    (google.api.field_behavior) = IMMUTABLE,
     (google.api.resource_reference) = { type: "compute.googleapis.com/Image" }
   ];
 
-  // Output only. The specific image that will be used for new VM instances.
+  // Output only. The specific image family that will be used for new VM
+  // instances using this disk. If
+  // [image][google.cloud.hypercomputecluster.v1alpha.BootDisk.image] is
+  // non-empty, this field will be set to the same value as `image`. Otherwise,
+  // this field will be set to a system-selected image.
   string effective_image = 4 [
     (google.api.field_behavior) = OUTPUT_ONLY,
     (google.api.resource_reference) = { type: "compute.googleapis.com/Image" }
@@ -1443,21 +1421,37 @@ message SlurmOrchestrator {
     // Optional. Specifies minimum run time of jobs before they are considered
     // for preemption.
     string preempt_exempt_time = 16 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The interval in seconds between executions of
+    // HealthCheckProgram. If provided, must be > 0. To disable health checks,
+    // use disable_health_check_program instead.
+    int64 health_check_interval = 17 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The node state to check for. Allowed values are "ALLOC", "ANY",
+    // "CYCLE", "IDLE", "NONDRAINED_IDLE", "MIXED", and "START_ONLY". Multiple
+    // state values may be specified with a comma separator.
+    string health_check_node_state = 18
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The fully-qualified path to the health check program to be
+    // executed.
+    string health_check_program = 19 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Required. Configuration for login nodes, which allow users to access the
   // cluster over SSH.
   SlurmLoginNodes login_nodes = 6 [(google.api.field_behavior) = REQUIRED];
 
-  // Required. Configuration of Slurm nodesets, which define groups of compute
-  // resources that can be used by Slurm. At least one compute node is required.
-  repeated SlurmNodeSet node_sets = 1 [(google.api.field_behavior) = REQUIRED];
+  // Optional. Compute resource configuration for the Slurm nodesets in your
+  // cluster. If not specified, the cluster won't create any nodes.
+  repeated SlurmNodeSet node_sets = 1 [(google.api.field_behavior) = OPTIONAL];
 
-  // Required. Configuration of Slurm partitions, which group one or more
-  // nodesets. Acts as a queue against which jobs can be submitted. At least one
-  // partition is required.
+  // Optional. Configuration for the Slurm partitions in your cluster. Each
+  // partition can contain one or more nodesets, and you can submit separate
+  // jobs on each partition. If you don't specify at least one partition in your
+  // cluster, you can't submit jobs to the cluster.
   repeated SlurmPartition partitions = 2
-      [(google.api.field_behavior) = REQUIRED];
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Default partition to use for submitted jobs that do not
   // explicitly specify a partition. Required if and only if there is more than
@@ -1488,6 +1482,12 @@ message SlurmOrchestrator {
   // Optional. Unstable: Contact hypercompute-service-eng@ before using.
   repeated string task_epilog_bash_scripts = 9
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Unstable: Contact hypercompute-service-eng@ before using.
+  // If true, health checking is disabled, and health_check_interval,
+  // health_check_node_state, and health_check_program should not be passed in.
+  bool disable_health_check_program = 10
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Configuration for Slurm nodesets in the cluster. Nodesets are groups of
@@ -1516,10 +1516,10 @@ message SlurmNodeSet {
   // alphanumeric, and at most 63 characters).
   string id = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. ID of the compute resource on which this nodeset will run. Must
+  // Required. ID of the compute resource on which this nodeset will run. Must
   // match a key in the cluster's
-  // [compute_resources](Cluster.compute_resources).
-  string compute_id = 16 [(google.api.field_behavior) = OPTIONAL];
+  // [compute_resources][google.cloud.hypercomputecluster.v1alpha.Cluster.compute_resources].
+  string compute_id = 16 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. How [storage
   // resources][google.cloud.hypercomputecluster.v1alpha.StorageResource] should
@@ -1542,30 +1542,25 @@ message SlurmNodeSet {
   // Optional. Unstable: Contact hypercompute-service-eng@ before using.
   ServiceAccount service_account = 13 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Unstable: Contact hypercompute-service-eng@ before using.
-  Disk boot_disk = 15 [(google.api.field_behavior) = OPTIONAL];
+  // Optional. Whether compute node instances should be assigned [external IP
+  // addresses](https://cloud.google.com/compute/docs/ip-addresses#externaladdresses).
+  bool enable_public_ips = 11 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Deprecated: Use
   // [ComputeInstanceSlurmNodeSet.startup_script][google.cloud.hypercomputecluster.v1alpha.ComputeInstanceSlurmNodeSet.startup_script]
   // instead.
-  string startup_script = 7 [(google.api.field_behavior) = OPTIONAL];
-
-  // Optional. Deprecated: Use compute_id instead.
-  string resource_request_id = 2 [(google.api.field_behavior) = OPTIONAL];
+  string startup_script = 7
+      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
 
   // Optional. Deprecated: Do not use.
-  bool enable_os_login = 9 [(google.api.field_behavior) = OPTIONAL];
-
-  // Optional. Deprecated: Do not use.
-  bool can_ip_forward = 10 [(google.api.field_behavior) = OPTIONAL];
-
-  // Optional. Deprecated: Do not use.
-  bool enable_public_ips = 11 [(google.api.field_behavior) = OPTIONAL];
+  bool enable_os_login = 9
+      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
 
   // Optional. Deprecated: Use
   // [ComputeInstanceSlurmNodeSet.labels][google.cloud.hypercomputecluster.v1alpha.ComputeInstanceSlurmNodeSet.labels]
   // instead.
-  map<string, string> labels = 12 [(google.api.field_behavior) = OPTIONAL];
+  map<string, string> labels = 12
+      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
 }
 
 // When set in a
@@ -1584,12 +1579,28 @@ message ComputeInstanceSlurmNodeSet {
 
   // Optional. Boot disk for the compute instance
   BootDisk boot_disk = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The maximum time to wait for the startup script to complete. If
+  // the script exceeds this duration, the instance setup will be considered
+  // failed. This value must be positive. If this value is unset, a default
+  // timeout of 5 minutes (300 seconds) will be used by the system.
+  google.protobuf.Duration startup_script_timeout = 4
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // When set in a
 // [SlurmNodeSet][google.cloud.hypercomputecluster.v1alpha.SlurmNodeSet],
 // indicates that the nodeset should be backed by a Kubernetes Engine node pool.
-message ContainerNodePoolSlurmNodeSet {}
+message ContainerNodePoolSlurmNodeSet {
+  // Optional. Resource labels that are applied to the underlying Google Compute
+  // Engine resources.
+  map<string, string> resource_labels = 1
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Script to run in each pod in the nodeset when it first starts.
+  // Max 256KB.
+  string startup_script = 2 [(google.api.field_behavior) = OPTIONAL];
+}
 
 // Configuration for Slurm partitions in the cluster. Partitions are groups of
 // nodesets, and are how clients specify where their workloads should be run.
@@ -1629,6 +1640,9 @@ message SlurmLoginNodes {
   // Optional. [Startup
   // script](https://cloud.google.com/compute/docs/instances/startup-scripts/linux)
   // to be run on each login node instance. Max 256KB.
+  // The script must complete within the system-defined default timeout of 5
+  // minutes. For tasks that require more time, consider running them in the
+  // background using methods such as `&` or `nohup`.
   string startup_script = 5 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Whether [OS Login](https://cloud.google.com/compute/docs/oslogin)
@@ -1655,14 +1669,11 @@ message SlurmLoginNodes {
   repeated ComputeInstance instances = 10
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Optional. Unstable: Contact hypercompute-service-eng@ before using.
-  repeated Disk disks = 4 [(google.api.field_behavior) = OPTIONAL];
+  // Optional. Boot disk for the login node.
+  BootDisk boot_disk = 13 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Unstable: Contact hypercompute-service-eng@ before using.
   ServiceAccount service_account = 9 [(google.api.field_behavior) = OPTIONAL];
-
-  // Optional. Boot disk for the login node
-  BootDisk boot_disk = 13 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Service account email and scopes
@@ -1679,7 +1690,8 @@ message ServiceAccount {
 // mounted on a VM instance.
 message StorageConfig {
   // Required. ID of the storage resource to mount, which must match a key in
-  // the cluster's [storage_resources](Cluster.storage_resources).
+  // the cluster's
+  // [storage_resources][google.cloud.hypercomputecluster.v1alpha.Cluster.storage_resources].
   string id = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. A directory inside the VM instance's file system where the
@@ -1700,469 +1712,174 @@ message ComputeInstance {
   ];
 }
 
-// Message describing Network object
-message Network {
-  option deprecated = true;
-
-  // Source of the network
-  oneof source {
-    // Immutable. Parameters to initialize the network
-    NetworkInitializeParams initialize_params = 2
-        [(google.api.field_behavior) = IMMUTABLE];
-
-    // Immutable. Reference of existing network resource name
-    NetworkSource network_source = 3 [(google.api.field_behavior) = IMMUTABLE];
-  }
-
-  // Output only. Name of the network
-  string network = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
-
-  // Output only. Name of the subnetwork
-  string subnetwork = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
-}
-
-// Message describing initialize params for network object
-message NetworkInitializeParams {
-  option deprecated = true;
-
-  // Required. Name of the network
-  string network = 1 [(google.api.field_behavior) = REQUIRED];
-
-  // Optional. Description of the network
-  string description = 2 [(google.api.field_behavior) = OPTIONAL];
-}
-
-// Message describing network source for network object
-message NetworkSource {
-  option deprecated = true;
-
-  // Required. Immutable. Name of the network
-  string network = 1 [
-    (google.api.field_behavior) = IMMUTABLE,
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = { type: "compute.googleapis.com/Network" }
-  ];
-
-  // Required. Subnetwork of the network
-  string subnetwork = 2 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = {
-      type: "compute.googleapis.com/Subnetwork"
-    }
-  ];
-}
-
-// Deprecated: Use NetworkReference instead.
-message ComputeNetworkReference {
-  option deprecated = true;
-
-  // Output only. The name of the network.
-  string network = 1 [
-    (google.api.field_behavior) = OUTPUT_ONLY,
-    (google.api.resource_reference) = { type: "compute.googleapis.com/Network" }
-  ];
-
-  // Output only. Subnetwork of the network.
-  string subnetwork = 2 [
-    (google.api.field_behavior) = OUTPUT_ONLY,
-    (google.api.resource_reference) = {
-      type: "compute.googleapis.com/Subnetwork"
-    }
-  ];
-}
-
-// Deprecated: Use NewNetworkConfig instead.
-message NewComputeNetworkConfig {
-  option deprecated = true;
-
-  // Immutable. The name of the network.
-  string network = 1 [(google.api.field_behavior) = IMMUTABLE];
-
-  // Immutable. Description of the network.
-  string description = 2 [(google.api.field_behavior) = IMMUTABLE];
-}
-
-// Deprecated: Use ExistingNetworkConfig instead.
-message ExistingComputeNetworkConfig {
-  option deprecated = true;
-
-  // Immutable. The name of the network.
-  string network = 1 [
-    (google.api.field_behavior) = IMMUTABLE,
-    (google.api.resource_reference) = { type: "compute.googleapis.com/Network" }
-  ];
-
-  // Immutable. Subnetwork of the network.
-  string subnetwork = 2 [
-    (google.api.field_behavior) = IMMUTABLE,
-    (google.api.resource_reference) = {
-      type: "compute.googleapis.com/Subnetwork"
-    }
-  ];
-}
-
-// Message describing Storage object
-message Storage {
-  option deprecated = true;
-
-  // Source of the storage
-  oneof source {
-    // Immutable. Parameters to initialize the storage
-    StorageInitializeParams initialize_params = 2
-        [(google.api.field_behavior) = IMMUTABLE];
-
-    // Immutable. Reference of existing storage
-    StorageSource storage_source = 3 [(google.api.field_behavior) = IMMUTABLE];
-  }
-
-  // Required. Storage id
-  string id = 4 [(google.api.field_behavior) = REQUIRED];
-
-  // Output only. Storage name
-  string storage = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
-}
-
-// Message describing initialize params for storage object
-message StorageInitializeParams {
-  option deprecated = true;
-
-  // Storage options
-  oneof option {
-    // FileStore initialize params
-    FilestoreInitializeParams filestore = 1;
-
-    // Google Cloud Storage initialize params
-    GcsInitializeParams gcs = 2;
-
-    // Lustre initialize params
-    LustreInitializeParams lustre = 3;
-  }
-}
-
-// Message describing initialize params for filestore
-message FilestoreInitializeParams {
-  option deprecated = true;
-
-  // The service tier types of the filestore
-  enum Tier {
-    // Unspecified filestore tier
-    TIER_UNSPECIFIED = 0;
-
-    // Basic HDD filestore tier
-    TIER_BASIC_HDD = 1;
-
-    // Basic SSD filestore tier
-    TIER_BASIC_SSD = 2;
-
-    // High scale SSD filestore tier
-    TIER_HIGH_SCALE_SSD = 3;
-
-    // Zonal filestore tier
-    TIER_ZONAL = 4;
-
-    // Enterprise filestore tier
-    TIER_ENTERPRISE = 5;
-
-    // Regional filestore tier
-    TIER_REGIONAL = 6;
-  }
-
-  // The protocol types of the filestore
-  enum Protocol {
-    // Unspecified filestore protocol
-    PROTOCOL_UNSPECIFIED = 0;
-
-    // NFSv3
-    PROTOCOL_NFSV3 = 1;
-
-    // NFSv4.1
-    PROTOCOL_NFSV41 = 2;
-  }
-
-  // Required. File share configuration
-  repeated FileShareConfig file_shares = 1
-      [(google.api.field_behavior) = REQUIRED];
-
-  // Required. The service tier of the filestore
-  Tier tier = 2 [(google.api.field_behavior) = REQUIRED];
-
-  // Required. Name of the filestore
-  string filestore = 3 [(google.api.field_behavior) = REQUIRED];
-
-  // Optional. Description of the filestore
-  string description = 4 [(google.api.field_behavior) = OPTIONAL];
-
-  // Optional. The protocol of the filestore
-  Protocol protocol = 5 [(google.api.field_behavior) = OPTIONAL];
-}
-
-// Message describing initialize params for Google Cloud Storage
-message GcsInitializeParams {
-  option deprecated = true;
-
-  // The storage class types of the bucket
-  enum StorageClass {
-    // Unspecified storage class
-    STORAGE_CLASS_UNSPECIFIED = 0;
-
-    // Standard storage class
-    STORAGE_CLASS_STANDARD = 1;
-
-    // Nearline storage class
-    STORAGE_CLASS_NEARLINE = 2;
-
-    // Coldline storage class
-    STORAGE_CLASS_COLDLINE = 3;
-
-    // Archive storage class
-    STORAGE_CLASS_ARCHIVE = 4;
-  }
-
-  // Bucket storage class options
-  oneof option {
-    // Autoclass configuration for objects in the bucket.
-    GcsAutoclassConfig autoclass = 2;
-
-    // Default storage class for objects in the bucket.
-    StorageClass storage_class = 3;
-  }
-
-  // Required. Name of the bucket
-  string bucket = 1 [(google.api.field_behavior) = REQUIRED];
-
-  // Optional. The hierarchical namespace configuration of the bucket
-  GcsHierarchicalNamespaceConfig hierarchical_namespace = 4
+// Policy controlling how system-initiated maintenance should be conducted on
+// the cluster.
+message MaintenancePolicy {
+  // Optional. Periods during which the system may perform maintenance
+  // operations on the cluster that might carry a risk of disruption. The system
+  // will make a best-effort attempt to only perform maintenance within these
+  // windows. If no windows are specified, the system may perform maintenance at
+  // any time. All windows must have same start_time and duration.
+  repeated MaintenanceWindow windows = 1
       [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Message describing initialize params for lustre
-message LustreInitializeParams {
-  option deprecated = true;
+// A window of time in which maintenance is allowed.
+message MaintenanceWindow {
+  // Required. Day of the week on which maintenance may be performed.
+  google.type.DayOfWeek day = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // Required. Name of the lustre instance
-  string lustre = 1 [(google.api.field_behavior) = REQUIRED];
+  // Required. Time in UTC during the given day when the system is allowed to
+  // start performing maintenance.
+  google.type.TimeOfDay start_time = 2 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. Description of the lustre instance
-  string description = 2 [(google.api.field_behavior) = OPTIONAL];
-
-  // Required. Immutable. Filesystem of the lustre instance
-  string filesystem = 3 [
-    (google.api.field_behavior) = IMMUTABLE,
-    (google.api.field_behavior) = REQUIRED
-  ];
-
-  // Required. Size of the lustre instance in GB
-  int64 capacity_gb = 4 [(google.api.field_behavior) = REQUIRED];
-}
-
-// Message describing source of storage
-message StorageSource {
-  option deprecated = true;
-
-  // Existing storage options
-  oneof option {
-    // Name of the existing filestore
-    string filestore = 1 [(google.api.resource_reference) = {
-      type: "file.googleapis.com/FileInstance"
-    }];
-
-    // Name of the existing Google Cloud Storage bucket
-    string bucket = 2 [(google.api.resource_reference) = {
-      type: "storage.googleapis.com/Bucket"
-    }];
-
-    // Name of the existing Lustre instance
-    string lustre = 3 [(google.api.resource_reference) = {
-      type: "lustre.googleapis.com/LustreInstance"
-    }];
-  }
+  // Required. Duration of the maintenance window. The system will attempt to
+  // complete maintenance within this duration from start_time. Must be between
+  // 4 and 24 hours.
+  google.protobuf.Duration duration = 3
+      [(google.api.field_behavior) = REQUIRED];
 }
 
 // Message describing Compute object
 message Compute {
   option deprecated = true;
 
-  // Required. Source of compute resource
-  repeated ResourceRequest resource_requests = 1
-      [(google.api.field_behavior) = REQUIRED];
-
   // Optional. ATM Tags to attach to compute VM instances
   repeated AtmTag atm_tags = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Message describing resource request object
-message ResourceRequest {
-  option deprecated = true;
+// A resource representing a compute node managed by Cluster Director.
+message Node {
+  option (google.api.resource) = {
+    type: "hypercomputecluster.googleapis.com/Node"
+    pattern: "projects/{project}/locations/{location}/clusters/{cluster}/nodes/{node}"
+    plural: "nodes"
+    singular: "node"
+  };
 
-  // Specifies the provisioning model of the instance
-  enum ProvisioningModel {
-    // Unspecified provisioning model
-    PROVISIONING_MODEL_UNSPECIFIED = 0;
+  // High-level lifecycle state of the node.
+  enum State {
+    // Not set.
+    STATE_UNSPECIFIED = 0;
 
-    // Standard provisioning model
-    PROVISIONING_MODEL_STANDARD = 1;
+    // The node is being provisioned at the infrastructure layer or
+    // initialized by the orchestrator.
+    CREATING = 1;
 
-    // Spot provisioning model
-    PROVISIONING_MODEL_SPOT = 2;
+    // The node is healthy and operational.
+    ACTIVE = 2;
 
-    // Flex Start provisioning model
-    PROVISIONING_MODEL_FLEX_START = 3;
+    // The node is transitioning to a stopped or suspended state.
+    SUSPENDING = 3;
 
-    // Reservation Bound provisioning model
-    PROVISIONING_MODEL_RESERVATION_BOUND = 4;
+    // The node is suspended or stopped and not consuming compute resources.
+    SUSPENDED = 4;
+
+    // The node is undergoing maintenance or automatic recovery.
+    REPAIRING = 5;
+
+    // The node is in an unhealthy or terminal error state.
+    FAILED = 6;
+
+    // The node is being deleted.
+    DELETING = 7;
   }
 
-  // Specifies the termination action of the instance
-  enum TerminationAction {
-    // Unspecified termination action
-    TERMINATION_ACTION_UNSPECIFIED = 0;
+  // Identifier. [Relative resource name](https://google.aip.dev/122) of the
+  // node, in the format
+  // `projects/{project}/locations/{location}/clusters/{cluster}/nodes/{node}`.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
-    // Stop the instance
-    TERMINATION_ACTION_STOP = 1;
+  // Output only. Name of the zone in which the node is running, e.g.
+  // `us-central1-a`.
+  string zone = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-    // Delete the instance
-    TERMINATION_ACTION_DELETE = 2;
-  }
+  // Output only. High-level lifecycle state of the node.
+  State state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Required. Id of resource request
-  string id = 1 [(google.api.field_behavior) = REQUIRED];
+  // Output only. Human-readable message providing extra information about the
+  // current state.
+  string state_message = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Required. Zone of the selected locations
-  string zone = 2 [(google.api.field_behavior) = REQUIRED];
+  // Output only. Indicates whether the node is currently executing workloads.
+  bool running_jobs = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Required. Type of the machine e.g. c2-standard-60
-  string machine_type = 3 [(google.api.field_behavior) = REQUIRED];
+  // Output only. Indicates whether the node is available for new job
+  // allocations.
+  bool accepting_jobs = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Optional. Type and count of accelerator cards attached to the instance
-  repeated GuestAccelerator guest_accelerators = 4
-      [(google.api.field_behavior) = OPTIONAL];
+  // Output only. Slurm-specific details for the node.
+  SlurmNodeDetails slurm_details = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Optional. Array of disks associated with this instance
-  repeated Disk disks = 5 [(google.api.field_behavior) = OPTIONAL];
+  // Output only. Compute Engine-specific details for the node.
+  ComputeEngineNodeDetails compute_engine_details = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Optional. Max amount of time instance is allowed to run
-  int64 max_run_duration = 6 [(google.api.field_behavior) = OPTIONAL];
+  // Output only. Container Engine-specific details for the node.
+  ContainerEngineNodeDetails container_engine_details = 9
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Optional. Specifies the provisioning model of the instance
-  ProvisioningModel provisioning_model = 7
-      [(google.api.field_behavior) = OPTIONAL];
+  // Output only. Time that the node was originally created.
+  google.protobuf.Timestamp create_time = 10
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Optional. Reservations this instance can consume from
-  ReservationAffinity reservation_affinity = 8
-      [(google.api.field_behavior) = OPTIONAL];
-
-  // Optional. Specifies the termination action of the instance
-  TerminationAction termination_action = 9
-      [(google.api.field_behavior) = OPTIONAL];
+  // Output only. Time that the node was most recently updated.
+  google.protobuf.Timestamp update_time = 11
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
-// Message describing GuestAccelerator object
-message GuestAccelerator {
-  option deprecated = true;
+// Slurm-specific details for a Node.
+message SlurmNodeDetails {
+  // Output only. Raw state flags directly from Slurm.
+  repeated string states = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Optional. Accelerator type resource to attach to this instance
-  string accelerator_type = 1 [(google.api.field_behavior) = OPTIONAL];
+  // Output only. User-readable reason for the current state.
+  string reason = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Optional. Number of the guest accelerator cards exposed to this instance
-  int64 count = 2 [(google.api.field_behavior) = OPTIONAL];
+  // Output only. Slurm partitions this node belongs to.
+  repeated string partitions = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The ID of the nodeset this node belongs to.
+  string nodeset = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. System comments from Slurm.
+  string comment = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
-// When set in a
-// [ComputeResourceConfig][google.cloud.hypercomputecluster.v1alpha.ComputeResourceConfig],
-// indicates that VM instances should be created using [Flex
-// Start](https://cloud.google.com/compute/docs/instances/provisioning-models)
-// with Dynamic Workload Scheduler.
-message NewDWSFlexInstancesConfig {
-  option deprecated = true;
-
-  // Deprecated: Do not use.
-  enum TerminationAction {
-    option deprecated = true;
-
-    // Deprecated: Do not use.
-    TERMINATION_ACTION_UNSPECIFIED = 0 [deprecated = true];
-
-    // Deprecated: Do not use.
-    STOP = 1 [deprecated = true];
-
-    // Deprecated: Do not use.
-    DELETE = 2 [deprecated = true];
-  }
-
-  // Required. Immutable. Name of the zone in which VM instances should run,
-  // e.g., `us-central1-a`. Must be in the same region as the cluster, and must
-  // match the zone of any other resources specified in the cluster.
-  string zone = 1 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.field_behavior) = IMMUTABLE
+// Compute Engine-specific details for a Node.
+message ComputeEngineNodeDetails {
+  // Output only. [Relative resource name](https://google.aip.dev/122) of the VM
+  // instance, in the format
+  // `projects/{project}/zones/{zone}/instances/{instance}`.
+  string instance = 1 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "compute.googleapis.com/ComputeInstance"
+    }
   ];
 
-  // Required. Immutable. Name of the Compute Engine [machine
+  // Output only. Name of the Compute Engine [machine
   // type](https://cloud.google.com/compute/docs/machine-resource) to use, e.g.
   // `n2-standard-2`.
-  string machine_type = 2 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.field_behavior) = IMMUTABLE
-  ];
+  string machine_type = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Required. Immutable. Specifies the time limit for created instances.
-  // Instances will be terminated at the end of this duration.
-  google.protobuf.Duration max_duration = 3 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.field_behavior) = IMMUTABLE
-  ];
-
-  // Optional. Immutable. Unstable: Contact hypercompute-service-eng@ before
-  // using.
-  map<string, string> atm_tags = 4 [
-    (google.api.field_behavior) = OPTIONAL,
-    (google.api.field_behavior) = IMMUTABLE
-  ];
-
-  // Optional. Immutable. Deprecated: Do not use.
-  TerminationAction termination_action = 5 [
-    deprecated = true,
-    (google.api.field_behavior) = OPTIONAL,
-    (google.api.field_behavior) = IMMUTABLE
-  ];
-
-  // Optional. Immutable. Deprecated: set disks in node config instead.
-  Disk boot_disk = 6 [
-    deprecated = true,
-    (google.api.field_behavior) = OPTIONAL,
-    (google.api.field_behavior) = IMMUTABLE
-  ];
+  // Output only. The Compute Engine VM [instance lifecycle
+  // state](https://cloud.google.com/compute/docs/instances/instance-lifecycle).
+  string state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
-// Deprecated: Do not use.
-message ReservationAffinity {
-  option deprecated = true;
+// Container Engine-specific details for a Node.
+message ContainerEngineNodeDetails {
+  // Output only. [Relative resource name](https://google.aip.dev/122) of the
+  // pod, in the format
+  // `projects/{project}/locations/{location}/clusters/{cluster}/k8s/namespaces/{namespace}/pods/{pod}`.
+  string pod = 1 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = { type: "container.googleapis.com/Pod" }
+  ];
 
-  // Deprecated: Do not use.
-  enum ReservationType {
-    option deprecated = true;
-
-    // Deprecated: Do not use.
-    RESERVATION_TYPE_UNSPECIFIED = 0 [deprecated = true];
-
-    // Deprecated: Do not use.
-    RESERVATION_TYPE_NO_RESERVATION = 1 [deprecated = true];
-
-    // Deprecated: Do not use.
-    RESERVATION_TYPE_ANY_RESERVATION = 2 [deprecated = true];
-
-    // Deprecated: Do not use.
-    RESERVATION_TYPE_SPECIFIC_RESERVATION = 3 [deprecated = true];
-  }
-
-  // Required. Deprecated: Do not use.
-  ReservationType type = 1
-      [deprecated = true, (google.api.field_behavior) = REQUIRED];
-
-  // Optional. Deprecated: Do not use.
-  string key = 2 [deprecated = true, (google.api.field_behavior) = OPTIONAL];
-
-  // Optional. Deprecated: Do not use.
-  repeated string values = 3
-      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
+  // Output only. The Container Engine [pod lifecycle
+  // state](https://kubernetes.io/docs/Concepts/Workloads/Pods/Pod-lifecycle/).
+  string state = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
