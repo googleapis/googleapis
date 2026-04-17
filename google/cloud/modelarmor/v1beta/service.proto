@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -128,6 +128,14 @@ service ModelArmor {
       body: "*"
     };
   }
+
+  // Streaming version of Sanitize User Prompt.
+  rpc StreamSanitizeUserPrompt(stream SanitizeUserPromptRequest)
+      returns (stream SanitizeUserPromptResponse) {}
+
+  // Streaming version of Sanitizes Model Response.
+  rpc StreamSanitizeModelResponse(stream SanitizeModelResponseRequest)
+      returns (stream SanitizeModelResponseResponse) {}
 }
 
 // Option to specify filter match state.
@@ -226,6 +234,18 @@ enum InvocationResult {
 
   // All filters were skipped or failed.
   FAILURE = 3;
+}
+
+// Streaming Mode for Sanitize* API.
+enum StreamingMode {
+  // Default value.
+  STREAMING_MODE_UNSPECIFIED = 0;
+
+  // Buffered Streaming mode.
+  STREAMING_MODE_BUFFERED = 1;
+
+  // Real Time Streaming mode.
+  STREAMING_MODE_REALTIME = 2;
 }
 
 // Message describing Template resource
@@ -354,6 +374,9 @@ message FloorSetting {
 
     // AI Platform.
     AI_PLATFORM = 1;
+
+    // Google MCP Server (via Shim Service Extension)
+    GOOGLE_MCP_SERVER = 2;
   }
 
   // Identifier. The resource name.
@@ -386,6 +409,33 @@ message FloorSetting {
   // Optional. Metadata for FloorSetting
   FloorSettingMetadata floor_setting_metadata = 8
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Google MCP Server floor setting.
+  optional McpServerFloorSetting google_mcp_server_floor_setting = 9
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Message describing MCP Server Floor Setting.
+message McpServerFloorSetting {
+  // enforcement type for Model Armor filters.
+  oneof enforcement_type {
+    // Optional. If true, Model Armor filters will be run in inspect only mode.
+    // No action will be taken on the request.
+    bool inspect_only = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. If true, Model Armor filters will be run in inspect and block
+    // mode. Requests that trip Model Armor filters will be blocked.
+    bool inspect_and_block = 2 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Optional. If true, log Model Armor filter results to Cloud Logging.
+  bool enable_cloud_logging = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. List of MCP servers for which the MCP floor setting is
+  // applicable. Examples: "bigquery.googleapis.com/mcp",
+  // "run.googleapis.com/mcp" Empty list denotes that the floor setting is
+  // applicable to all MCP servers.
+  repeated string apis = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // message describing AiPlatformFloorSetting
@@ -604,7 +654,7 @@ message PiAndJailbreakFilterSettings {
     // Enabled
     ENABLED = 1;
 
-    // Enabled
+    // Disabled
     DISABLED = 2;
   }
 
@@ -745,6 +795,10 @@ message SanitizeUserPromptRequest {
   // Optional. Metadata related to Multi Language Detection.
   MultiLanguageDetectionMetadata multi_language_detection_metadata = 6
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Streaming Mode for StreamSanitize* API.
+  optional StreamingMode streaming_mode = 7
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Sanitize Model Response request.
@@ -766,6 +820,10 @@ message SanitizeModelResponseRequest {
 
   // Optional. Metadata related for multi language detection.
   MultiLanguageDetectionMetadata multi_language_detection_metadata = 7
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Streaming Mode for StreamSanitize* API.
+  optional StreamingMode streaming_mode = 8
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -830,8 +888,18 @@ message SanitizationResult {
 message MultiLanguageDetectionMetadata {
   // Optional. Optional Source language of the user prompt.
   //
-  // If multi-language detection is enabled but language is not set in that case
-  // we would automatically detect the source language.
+  // If multi-language detection is enabled and this field is not set, the
+  // source language will be automatically detected. When a source language is
+  // provided, Model Armor uses it to sanitize the input. In that case the
+  // system does not perform auto-detection and relies solely on the specified
+  // language.
+  //
+  // This string field accepts a language code from the ISO-639 standard.
+  // For a list of languages supported by Model Armor, see
+  // [Model Armor supported languages]
+  // (https://cloud.google.com/security-command-center/docs/model-armor-overview#languages-supported).
+  // For a comprehensive list of language codes, see
+  // [ISO-639](https://cloud.google.com/translate/docs/languages#nmt).
   string source_language = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Enable detection of multi-language prompts and responses.
@@ -897,7 +965,8 @@ message RaiFilterResult {
   FilterMatchState match_state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // The map of RAI filter results where key is RAI filter type - either of
-  // "sexually_explicit", "hate_speech", "harassment", "dangerous".
+  // "sexually_explicit", "hate_speech", "harassment", "dangerous", "violence",
+  // "sexually_suggestive".
   map<string, RaiFilterTypeResult> rai_filter_type_results = 4;
 }
 
@@ -982,6 +1051,9 @@ message ByteDataItem {
 
     // CSV
     CSV = 7;
+
+    // ZIP
+    ZIP = 9;
   }
 
   // Required. The type of byte data
@@ -989,6 +1061,10 @@ message ByteDataItem {
 
   // Required. Bytes Data
   bytes byte_data = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Label of the file. This is used to identify the file in the
+  // response.
+  string file_label = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Sensitive Data Protection Deidentification Result.
@@ -1026,11 +1102,13 @@ message SdpFinding {
     // These are relative to the finding's containing element.
     // Note that when the content is not textual, this references
     // the UTF-8 encoded textual representation of the content.
+    // Note: Omitted if content is an image.
     RangeInfo byte_range = 1;
 
     // Unicode character offsets delimiting the finding.
     // These are relative to the finding's containing element.
     // Provided when the content is text.
+    // Note: Omitted if content is an image.
     RangeInfo codepoint_range = 2;
   }
 
