@@ -1,0 +1,248 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.aiplatform.v1beta1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/cloud/aiplatform/v1beta1/evaluation_service.proto";
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Google.Cloud.AIPlatform.V1Beta1";
+option go_package = "cloud.google.com/go/aiplatform/apiv1beta1/aiplatformpb;aiplatformpb";
+option java_multiple_files = true;
+option java_outer_classname = "OnlineEvaluatorProto";
+option java_package = "com.google.cloud.aiplatform.v1beta1";
+option php_namespace = "Google\\Cloud\\AIPlatform\\V1beta1";
+option ruby_package = "Google::Cloud::AIPlatform::V1beta1";
+
+// An OnlineEvaluator contains the configuration for an Online Evaluation.
+message OnlineEvaluator {
+  option (google.api.resource) = {
+    type: "aiplatform.googleapis.com/OnlineEvaluator"
+    pattern: "projects/{project}/locations/{location}/onlineEvaluators/{online_evaluator}"
+    plural: "onlineEvaluators"
+    singular: "onlineEvaluator"
+  };
+
+  // Data source for the OnlineEvaluator, based on GCP Observability stack
+  // (Cloud Trace & Cloud Logging).
+  message CloudObservability {
+    // Defines a predicate for filtering based on a numeric value.
+    message NumericPredicate {
+      // Comparison operators for numeric predicates.
+      enum ComparisonOperator {
+        // Unspecified comparison operator. This value should not be used.
+        COMPARISON_OPERATOR_UNSPECIFIED = 0;
+
+        // Less than.
+        LESS = 1;
+
+        // Less than or equal to.
+        LESS_OR_EQUAL = 2;
+
+        // Equal to.
+        EQUAL = 3;
+
+        // Not equal to.
+        NOT_EQUAL = 4;
+
+        // Greater than or equal to.
+        GREATER_OR_EQUAL = 5;
+
+        // Greater than.
+        GREATER = 6;
+      }
+
+      // Required. The comparison operator to apply.
+      ComparisonOperator comparison_operator = 1
+          [(google.api.field_behavior) = REQUIRED];
+
+      // Required. The value to compare against.
+      float value = 2 [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // If chosen, the online evaluator will evaluate single traces matching
+    // specified `filter`.
+    message TraceScope {
+      // Defines a single filter predicate.
+      message Predicate {
+        // The type of predicate.
+        oneof predicate {
+          // Filter on the duration of a trace.
+          NumericPredicate duration = 1;
+
+          // Filter on the total token usage within a trace.
+          NumericPredicate total_token_usage = 2;
+        }
+      }
+
+      // Optional. A list of predicates to filter traces. Multiple predicates
+      // are combined using AND.
+      //
+      // The maximum number of predicates is 10.
+      repeated Predicate filter = 1 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Configuration for data source following OpenTelemetry.
+    message OpenTelemetry {
+      // Required. Defines which version OTel Semantic Convention the data
+      // follows. Can be "1.39.0" or newer.
+      string semconv_version = 1 [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // Required. Defines the scope of data to be evaluated.
+    oneof eval_scope {
+      // Scope online evaluation to single traces.
+      TraceScope trace_scope = 3;
+    }
+
+    // Required. Defines which convention the data source follows.
+    oneof convention {
+      // Data source follows OpenTelemetry convention.
+      OpenTelemetry open_telemetry = 4;
+    }
+
+    // Optional. Optional log view that will be used to query logs.
+    // If empty, the `_Default` view will be used.
+    string log_view = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Optional trace view that will be used to query traces.
+    // If empty, the `_Default` view will be used.
+    //
+    // NOTE: This field is not supported yet and will be ignored if set.
+    string trace_view = 2 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Configuration for sampling behavior of the OnlineEvaluator.
+  // The OnlineEvaluator runs at a fixed interval of 10 minutes.
+  message Config {
+    // Configuration for random sampling.
+    message RandomSampling {
+      // Required. The percentage of traces to sample for evaluation.
+      // Must be an integer between `1` and `100`.
+      int32 percentage = 1 [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // Required. The sampling method used to select traces for evaluation.
+    oneof sampling_method {
+      // Random sampling method.
+      RandomSampling random_sampling = 2;
+    }
+
+    // Optional. The maximum number of evaluations to perform per run.
+    // If set to 0, the number is unbounded.
+    int64 max_evaluated_samples_per_run = 1
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Contains additional information about the state of the OnlineEvaluator.
+  message StateDetails {
+    // Output only. Human-readable message describing the state of the
+    // OnlineEvaluator.
+    string message = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // The state of the OnlineEvaluator.
+  enum State {
+    // Default value.
+    STATE_UNSPECIFIED = 0;
+
+    // Indicates that the OnlineEvaluator is active.
+    ACTIVE = 1;
+
+    // Indicates that the OnlineEvaluator is suspended. In this state, the
+    // OnlineEvaluator will not evaluate any samples.
+    SUSPENDED = 2;
+
+    // Indicates that the OnlineEvaluator is in a failed state.
+    //
+    // This can happen if, for example, the `log_view` or `trace_view` set on
+    // the `CloudObservability` does not exist.
+    FAILED = 3;
+
+    // Indicates that the OnlineEvaluator is in a warning state.
+    // This can happen if, for example, some of the metrics in the
+    // `metric_sources` are invalid. Evaluation will still run with the
+    // remaining valid metrics.
+    WARNING = 4;
+  }
+
+  // Required. The data source used to query samples for evaluations.
+  // More data sources will be supported in the future.
+  //
+  // This field is immutable. Once set, it cannot be changed.
+  oneof data_source {
+    // Data source for the OnlineEvaluator, based on GCP Observability stack
+    // (Cloud Trace & Cloud Logging).
+    CloudObservability cloud_observability = 4;
+  }
+
+  // Identifier. The resource name of the OnlineEvaluator.
+  // Format: projects/{project}/locations/{location}/onlineEvaluators/{id}.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Required. Immutable. The name of the agent that the OnlineEvaluator
+  // evaluates periodically. This value is used to filter the traces with a
+  // matching cloud.resource_id and link the evaluation results with relevant
+  // dashboards/UIs.
+  //
+  // This field is immutable. Once set, it cannot be changed.
+  string agent_resource = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // Required. A list of metric sources to be used for evaluating samples.
+  // At least one MetricSource must be provided.
+  // Right now, only predefined metrics and registered metrics are supported.
+  //
+  // Every registered metric must have `display_name` (or `title`) and
+  // `score_range` defined. Otherwise, the evaluations will fail.
+  //
+  // The maximum number of `metric_sources` is 25.
+  repeated MetricSource metric_sources = 3
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Configuration for the OnlineEvaluator.
+  Config config = 5 [(google.api.field_behavior) = REQUIRED];
+
+  // Output only. The state of the OnlineEvaluator.
+  State state = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Contains additional information about the state of the
+  // OnlineEvaluator. This is used to provide more details in the event of a
+  // failure.
+  repeated StateDetails state_details = 10
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Timestamp when the OnlineEvaluator was created.
+  google.protobuf.Timestamp create_time = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Timestamp when the OnlineEvaluator was last updated.
+  google.protobuf.Timestamp update_time = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Human-readable name for the `OnlineEvaluator`.
+  //
+  // The name doesn't have to be unique.
+  //
+  // The name can consist of any UTF-8 characters. The maximum length is `63`
+  // characters. If the display name exceeds max characters, an
+  // `INVALID_ARGUMENT` error is returned.
+  string display_name = 9 [(google.api.field_behavior) = OPTIONAL];
+}

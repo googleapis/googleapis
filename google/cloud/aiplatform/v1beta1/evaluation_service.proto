@@ -21,10 +21,14 @@ import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/aiplatform/v1beta1/content.proto";
+import "google/cloud/aiplatform/v1beta1/evaluation_agent_data.proto";
+import "google/cloud/aiplatform/v1beta1/evaluation_rubric.proto";
 import "google/cloud/aiplatform/v1beta1/io.proto";
 import "google/cloud/aiplatform/v1beta1/operation.proto";
+import "google/cloud/aiplatform/v1beta1/tool.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 
 option csharp_namespace = "Google.Cloud.AIPlatform.V1Beta1";
@@ -64,6 +68,20 @@ service EvaluationService {
       metadata_type: "EvaluateDatasetOperationMetadata"
     };
   }
+
+  // Generates rubrics for a given prompt.
+  // A rubric represents a single testable criterion for evaluation.
+  // One input prompt could have multiple rubrics
+  // This RPC allows users to get suggested rubrics based on provided prompt,
+  // which can then be reviewed and used for subsequent evaluations.
+  rpc GenerateInstanceRubrics(GenerateInstanceRubricsRequest)
+      returns (GenerateInstanceRubricsResponse) {
+    option (google.api.http) = {
+      post: "/v1beta1/{location=projects/*/locations/*}:generateInstanceRubrics"
+      body: "*"
+      additional_bindings { post: "/v1beta1:generateInstanceRubrics" body: "*" }
+    };
+  }
 }
 
 // Pairwise prediction autorater preference.
@@ -79,213 +97,6 @@ enum PairwiseChoice {
 
   // Winner cannot be determined
   TIE = 3;
-}
-
-// Operation metadata for Dataset Evaluation.
-message EvaluateDatasetOperationMetadata {
-  // Generic operation metadata.
-  GenericOperationMetadata generic_metadata = 1;
-}
-
-// The results from an evaluation run performed by the EvaluationService.
-message EvaluateDatasetResponse {
-  // Output only. Aggregation statistics derived from results of
-  // EvaluationService.
-  AggregationOutput aggregation_output = 1
-      [(google.api.field_behavior) = OUTPUT_ONLY];
-
-  // Output only. Output info for EvaluationService.
-  OutputInfo output_info = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
-}
-
-// Describes the info for output of EvaluationService.
-message OutputInfo {
-  // The output location into which evaluation output is written.
-  oneof output_location {
-    // Output only. The full path of the Cloud Storage directory created, into
-    // which the evaluation results and aggregation results are written.
-    string gcs_output_directory = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
-  }
-}
-
-// The aggregation result for the entire dataset and all metrics.
-message AggregationOutput {
-  // The dataset used for evaluation & aggregation.
-  EvaluationDataset dataset = 1;
-
-  // One AggregationResult per metric.
-  repeated AggregationResult aggregation_results = 2;
-}
-
-// The aggregation result for a single metric.
-message AggregationResult {
-  // The aggregation result.
-  oneof aggregation_result {
-    // Result for pointwise metric.
-    PointwiseMetricResult pointwise_metric_result = 5;
-
-    // Result for pairwise metric.
-    PairwiseMetricResult pairwise_metric_result = 6;
-
-    // Results for exact match metric.
-    ExactMatchMetricValue exact_match_metric_value = 7;
-
-    // Results for bleu metric.
-    BleuMetricValue bleu_metric_value = 8;
-
-    // Results for rouge metric.
-    RougeMetricValue rouge_metric_value = 9;
-  }
-
-  // Aggregation metric.
-  Metric.AggregationMetric aggregation_metric = 4;
-}
-
-// Request message for EvaluationService.EvaluateDataset.
-message EvaluateDatasetRequest {
-  // Required. The resource name of the Location to evaluate the dataset.
-  // Format: `projects/{project}/locations/{location}`
-  string location = 1 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = {
-      type: "locations.googleapis.com/Location"
-    }
-  ];
-
-  // Required. The dataset used for evaluation.
-  EvaluationDataset dataset = 2 [(google.api.field_behavior) = REQUIRED];
-
-  // Required. The metrics used for evaluation.
-  repeated Metric metrics = 3 [(google.api.field_behavior) = REQUIRED];
-
-  // Required. Config for evaluation output.
-  OutputConfig output_config = 4 [(google.api.field_behavior) = REQUIRED];
-
-  // Optional. Autorater config used for evaluation. Currently only publisher
-  // Gemini models are supported. Format:
-  // `projects/{PROJECT}/locations/{LOCATION}/publishers/google/models/{MODEL}.`
-  AutoraterConfig autorater_config = 5 [(google.api.field_behavior) = OPTIONAL];
-}
-
-// Config for evaluation output.
-message OutputConfig {
-  // The destination for evaluation output.
-  oneof destination {
-    // Cloud storage destination for evaluation output.
-    GcsDestination gcs_destination = 1;
-  }
-}
-
-// The metric used for running evaluations.
-message Metric {
-  // The per-metric statistics on evaluation results supported by
-  // `EvaluationService.EvaluateDataset`.
-  enum AggregationMetric {
-    // Unspecified aggregation metric.
-    AGGREGATION_METRIC_UNSPECIFIED = 0;
-
-    // Average aggregation metric. Not supported for Pairwise metric.
-    AVERAGE = 1;
-
-    // Mode aggregation metric.
-    MODE = 2;
-
-    // Standard deviation aggregation metric. Not supported for pairwise metric.
-    STANDARD_DEVIATION = 3;
-
-    // Variance aggregation metric. Not supported for pairwise metric.
-    VARIANCE = 4;
-
-    // Minimum aggregation metric. Not supported for pairwise metric.
-    MINIMUM = 5;
-
-    // Maximum aggregation metric. Not supported for pairwise metric.
-    MAXIMUM = 6;
-
-    // Median aggregation metric. Not supported for pairwise metric.
-    MEDIAN = 7;
-
-    // 90th percentile aggregation metric. Not supported for pairwise metric.
-    PERCENTILE_P90 = 8;
-
-    // 95th percentile aggregation metric. Not supported for pairwise metric.
-    PERCENTILE_P95 = 9;
-
-    // 99th percentile aggregation metric. Not supported for pairwise metric.
-    PERCENTILE_P99 = 10;
-  }
-
-  // The spec for the metric.
-  // It would be either a pre-defined metric, or a inline metric spec.
-  oneof metric_spec {
-    // The spec for a pre-defined metric.
-    PredefinedMetricSpec predefined_metric_spec = 8;
-
-    // Spec for a computation based metric.
-    ComputationBasedMetricSpec computation_based_metric_spec = 9;
-
-    // Spec for an LLM based metric.
-    LLMBasedMetricSpec llm_based_metric_spec = 10;
-
-    // Spec for pointwise metric.
-    PointwiseMetricSpec pointwise_metric_spec = 2;
-
-    // Spec for pairwise metric.
-    PairwiseMetricSpec pairwise_metric_spec = 3;
-
-    // Spec for exact match metric.
-    ExactMatchSpec exact_match_spec = 4;
-
-    // Spec for bleu metric.
-    BleuSpec bleu_spec = 5;
-
-    // Spec for rouge metric.
-    RougeSpec rouge_spec = 6;
-  }
-
-  // Optional. The aggregation metrics to use.
-  repeated AggregationMetric aggregation_metrics = 1
-      [(google.api.field_behavior) = OPTIONAL];
-}
-
-// The dataset used for evaluation.
-message EvaluationDataset {
-  // The source of the dataset.
-  oneof source {
-    // Cloud storage source holds the dataset. Currently only one Cloud Storage
-    // file path is supported.
-    GcsSource gcs_source = 1;
-
-    // BigQuery source holds the dataset.
-    BigQuerySource bigquery_source = 2;
-  }
-}
-
-// The configs for autorater. This is applicable to both EvaluateInstances and
-// EvaluateDataset.
-message AutoraterConfig {
-  // Optional. Number of samples for each instance in the dataset.
-  // If not specified, the default is 4. Minimum value is 1, maximum value
-  // is 32.
-  optional int32 sampling_count = 1 [(google.api.field_behavior) = OPTIONAL];
-
-  // Optional. Default is true. Whether to flip the candidate and baseline
-  // responses. This is only applicable to the pairwise metric. If enabled, also
-  // provide PairwiseMetricSpec.candidate_response_field_name and
-  // PairwiseMetricSpec.baseline_response_field_name. When rendering
-  // PairwiseMetricSpec.metric_prompt_template, the candidate and baseline
-  // fields will be flipped for half of the samples to reduce bias.
-  optional bool flip_enabled = 2 [(google.api.field_behavior) = OPTIONAL];
-
-  // Optional. The fully qualified name of the publisher model or tuned
-  // autorater endpoint to use.
-  //
-  // Publisher model format:
-  // `projects/{project}/locations/{location}/publishers/*/models/*`
-  //
-  // Tuned model endpoint format:
-  // `projects/{project}/locations/{location}/endpoints/{endpoint}`
-  string autorater_model = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request message for EvaluationService.EvaluateInstances.
@@ -407,8 +218,386 @@ message EvaluateInstancesRequest {
     }
   ];
 
+  // The metrics used for evaluation.
+  // Currently, we only support evaluating a single metric. If multiple metrics
+  // are provided, only the first one will be evaluated.
+  repeated Metric metrics = 49;
+
+  // Optional. The metrics (either inline or registered) used for evaluation.
+  // Currently, we only support evaluating a single metric. If multiple metrics
+  // are provided, only the first one will be evaluated.
+  repeated MetricSource metric_sources = 52
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // The instance to be evaluated.
+  EvaluationInstance instance = 50;
+
   // Optional. Autorater config used for evaluation.
   AutoraterConfig autorater_config = 30
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The metric used for running evaluations.
+message Metric {
+  // The per-metric statistics on evaluation results supported by
+  // `EvaluationService.EvaluateDataset`.
+  enum AggregationMetric {
+    // Unspecified aggregation metric.
+    AGGREGATION_METRIC_UNSPECIFIED = 0;
+
+    // Average aggregation metric. Not supported for Pairwise metric.
+    AVERAGE = 1;
+
+    // Mode aggregation metric.
+    MODE = 2;
+
+    // Standard deviation aggregation metric. Not supported for pairwise metric.
+    STANDARD_DEVIATION = 3;
+
+    // Variance aggregation metric. Not supported for pairwise metric.
+    VARIANCE = 4;
+
+    // Minimum aggregation metric. Not supported for pairwise metric.
+    MINIMUM = 5;
+
+    // Maximum aggregation metric. Not supported for pairwise metric.
+    MAXIMUM = 6;
+
+    // Median aggregation metric. Not supported for pairwise metric.
+    MEDIAN = 7;
+
+    // 90th percentile aggregation metric. Not supported for pairwise metric.
+    PERCENTILE_P90 = 8;
+
+    // 95th percentile aggregation metric. Not supported for pairwise metric.
+    PERCENTILE_P95 = 9;
+
+    // 99th percentile aggregation metric. Not supported for pairwise metric.
+    PERCENTILE_P99 = 10;
+  }
+
+  // The spec for the metric.
+  // It would be either a pre-defined metric, or a inline metric spec.
+  oneof metric_spec {
+    // The spec for a pre-defined metric.
+    PredefinedMetricSpec predefined_metric_spec = 8;
+
+    // Spec for a computation based metric.
+    ComputationBasedMetricSpec computation_based_metric_spec = 9;
+
+    // Spec for an LLM based metric.
+    LLMBasedMetricSpec llm_based_metric_spec = 10;
+
+    // Spec for Custom Code Execution metric.
+    CustomCodeExecutionSpec custom_code_execution_spec = 11;
+
+    // Spec for pointwise metric.
+    PointwiseMetricSpec pointwise_metric_spec = 2;
+
+    // Spec for pairwise metric.
+    PairwiseMetricSpec pairwise_metric_spec = 3;
+
+    // Spec for exact match metric.
+    ExactMatchSpec exact_match_spec = 4;
+
+    // Spec for bleu metric.
+    BleuSpec bleu_spec = 5;
+
+    // Spec for rouge metric.
+    RougeSpec rouge_spec = 6;
+  }
+
+  // Optional. The aggregation metrics to use.
+  repeated AggregationMetric aggregation_metrics = 1
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Metadata about the metric, used for visualization and
+  // organization.
+  MetricMetadata metadata = 13 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Metadata about the metric, used for visualization and organization.
+message MetricMetadata {
+  // The range of possible scores for this metric, used for plotting.
+  message ScoreRange {
+    // Required. The minimum value of the score range (inclusive).
+    optional double min = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The maximum value of the score range (inclusive).
+    optional double max = 2 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. The distance between discrete steps in the range.
+    // If unset, the range is assumed to be continuous.
+    optional double step = 3 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The description of the score explaining the directionality etc.
+    string description = 4 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Optional. The user-friendly name for the metric. If not set for a
+  // registered metric, it will default to the metric's display name.
+  string title = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The range of possible scores for this metric, used for plotting.
+  ScoreRange score_range = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Flexible metadata for user-defined attributes.
+  google.protobuf.Struct other_metadata = 3
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The metric source used for evaluation.
+message MetricSource {
+  // The source of the metric.
+  oneof metric_source {
+    // Inline metric config.
+    Metric metric = 1;
+
+    // Resource name for registered metric.
+    string metric_resource_name = 2;
+  }
+}
+
+// A single instance to be evaluated.
+// Instances are used to specify the input data for evaluation, from
+// simple string comparisons to complex, multi-turn model evaluations
+message EvaluationInstance {
+  // Instance data used to populate placeholders in a metric prompt template.
+  message InstanceData {
+    // List of standard Content messages from Gemini API.
+    message Contents {
+      // Optional. Repeated contents.
+      repeated Content contents = 1 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Supported formats for instance data.
+    oneof data {
+      // Text data.
+      string text = 1;
+
+      // List of Gemini content data.
+      Contents contents = 2;
+    }
+  }
+
+  // Instance data specified as a map.
+  message MapInstance {
+    // Optional. Map of instance data.
+    map<string, InstanceData> map_instance = 1
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Deprecated: Use `agent_eval_data` instead.
+  // Contains data specific to agent evaluations.
+  message DeprecatedAgentData {
+    option deprecated = true;
+
+    // Represents a single turn/invocation in the conversation.
+    message ConversationTurn {
+      // Required. The 0-based index of the turn in the conversation sequence.
+      optional int32 turn_index = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // Optional. A unique identifier for the turn.
+      // Useful for referencing specific turns across systems.
+      string turn_id = 2 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The list of events that occurred during this turn.
+      repeated AgentEvent events = 3 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // A single event in the execution trace.
+    message AgentEvent {
+      // Required. The ID of the agent or entity that generated this event.
+      optional string author = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // Required. The content of the event (e.g., text response, tool call,
+      // tool response).
+      Content content = 2 [(google.api.field_behavior) = REQUIRED];
+
+      // Optional. The timestamp when the event occurred.
+      google.protobuf.Timestamp event_time = 3
+          [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The change in the session state caused by this event. This is
+      // a key-value map of fields that were modified or added by the event.
+      google.protobuf.Struct state_delta = 4
+          [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The list of tools that were active/available to the agent at
+      // the time of this event. This overrides the `AgentConfig.tools` if set.
+      repeated Tool active_tools = 5 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Deprecated: Use `agent_eval_data` instead. Represents a list of tools for
+    // an agent.
+    message Tools {
+      // Optional. List of tools: each tool can have multiple function
+      // declarations.
+      repeated Tool tool = 1
+          [deprecated = true, (google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Represents a list of events for an agent.
+    message Events {
+      // Optional. A list of events.
+      repeated Content event = 1 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // --- Legacy fields below. To be deprecated. ---
+    // Deprecated: Use `agents` instead. Data for the tools available to the
+    // agent.
+    oneof tools_data {
+      // A JSON string containing a list of tools available to an agent with
+      // info such as name, description, parameters and required parameters.
+      string tools_text = 1 [deprecated = true];
+
+      // List of tools.
+      Tools tools = 2 [deprecated = true];
+    }
+
+    // The sequence of function calls and function responses that form the
+    // agent's trajectory.
+    oneof events_data {
+      // A list of events.
+      Events events = 5;
+    }
+
+    // Optional. The static Agent Configuration.
+    // This map defines the graph structure of the agent system.
+    // Key: agent_id (matches the `author` field in events).
+    // Value: The static configuration of the agent (tools, instructions,
+    // sub-agents).
+    map<string, DeprecatedAgentConfig> agents = 7
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The chronological list of conversation turns.
+    // Each turn represents a logical execution cycle (e.g., User Input -> Agent
+    // Response).
+    repeated ConversationTurn turns = 8
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Deprecated:  Use `agents.developer_instruction` or
+    // `turns.events.active_instruction` instead.
+    // A field containing instructions from the developer for the agent.
+    InstanceData developer_instruction = 3
+        [deprecated = true, (google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Deprecated: Use `agent_eval_data` instead.
+    // Agent configuration.
+    DeprecatedAgentConfig agent_config = 6
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Deprecated: Use `google.cloud.aiplatform.master.AgentConfig` in
+  // `agent_eval_data` instead.
+  // Configuration for an Agent.
+  message DeprecatedAgentConfig {
+    option deprecated = true;
+
+    // Represents a list of tools for an agent.
+    message Tools {
+      // Optional. List of tools: each tool can have multiple function
+      // declarations.
+      repeated Tool tool = 1 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Data for the tools available to the agent.
+    oneof tools_data {
+      // A JSON string containing a list of tools available to an agent with
+      // info such as name, description, parameters and required parameters.
+      string tools_text = 1;
+
+      // List of tools.
+      Tools tools = 2;
+    }
+
+    // Optional. Unique identifier of the agent.
+    // This ID is used to refer to this agent, e.g., in AgentEvent.author, or in
+    // the `sub_agents` field. It must be unique within the `agents` map.
+    string agent_id = 4 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The type or class of the agent (e.g., "LlmAgent",
+    // "RouterAgent", "ToolUseAgent"). Useful for the autorater to understand
+    // the expected behavior of the agent.
+    string agent_type = 5 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. A high-level description of the agent's role and
+    // responsibilities. Critical for evaluating if the agent is routing tasks
+    // correctly.
+    string description = 6 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The list of valid agent IDs (names) that this agent can
+    // delegate to. This defines the directed edges in the agent system graph
+    // topology.
+    repeated string sub_agents = 7 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Contains instructions from the developer for the agent. Can be
+    // static or a dynamic prompt template used with the
+    // `AgentEvent.state_delta` field.
+    InstanceData developer_instruction = 3
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Optional. Data used to populate placeholder `prompt` in a metric prompt
+  // template.
+  InstanceData prompt = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Named groups of rubrics associated with the prompt.
+  // This is used for rubric-based evaluations where rubrics can be referenced
+  // by a key. The key could represent versions, associated metrics, etc.
+  map<string, RubricGroup> rubric_groups = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Data used to populate placeholder `response` in a metric prompt
+  // template.
+  InstanceData response = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Data used to populate placeholder `reference` in a metric prompt
+  // template.
+  InstanceData reference = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Other data used to populate placeholders based on their key.
+  // If a key conflicts with a field in the EvaluationInstance (e.g. `prompt`),
+  // the value of the field will take precedence over the value in other_data.
+  MapInstance other_data = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Deprecated: Use `agent_eval_data` instead.
+  // Data used for agent evaluation.
+  DeprecatedAgentData agent_data = 6
+      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Data used for agent evaluation.
+  AgentData agent_eval_data = 7 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The configs for autorater. This is applicable to both EvaluateInstances and
+// EvaluateDataset.
+message AutoraterConfig {
+  // Optional. Number of samples for each instance in the dataset.
+  // If not specified, the default is 4. Minimum value is 1, maximum value
+  // is 32.
+  optional int32 sampling_count = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Default is true. Whether to flip the candidate and baseline
+  // responses. This is only applicable to the pairwise metric. If enabled, also
+  // provide PairwiseMetricSpec.candidate_response_field_name and
+  // PairwiseMetricSpec.baseline_response_field_name. When rendering
+  // PairwiseMetricSpec.metric_prompt_template, the candidate and baseline
+  // fields will be flipped for half of the samples to reduce bias.
+  optional bool flip_enabled = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The fully qualified name of the publisher model or tuned
+  // autorater endpoint to use.
+  //
+  // Publisher model format:
+  // `projects/{project}/locations/{location}/publishers/*/models/*`
+  //
+  // Tuned model endpoint format:
+  // `projects/{project}/locations/{location}/endpoints/{endpoint}`
+  string autorater_model = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Configuration options for model generation and outputs.
+  GenerationConfig generation_config = 4
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -539,12 +728,169 @@ message MetricResult {
   // Please refer to each metric's documentation for the meaning of the score.
   optional float score = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  // Output only. For rubric-based metrics, the verdicts for each rubric.
+  repeated RubricVerdict rubric_verdicts = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
   // Output only. The explanation for the metric result.
   optional string explanation = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The error status for the metric result.
   optional google.rpc.Status error = 4
       [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Request message for EvaluationService.GenerateInstanceRubrics.
+message GenerateInstanceRubricsRequest {
+  // Required. The resource name of the Location to generate rubrics from.
+  // Format: `projects/{project}/locations/{location}`
+  string location = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
+
+  // Required. The prompt to generate rubrics from.
+  // For single-turn queries, this is a single instance. For multi-turn queries,
+  // this is a repeated field that contains conversation history + latest
+  // request.
+  repeated Content contents = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Specification for using the rubric generation configs of a
+  // pre-defined metric, e.g. "generic_quality_v1" and
+  // "instruction_following_v1". Some of the configs may be only used in rubric
+  // generation and not supporting evaluation, e.g.
+  // "fully_customized_generic_quality_v1". If this field is set, the
+  // `rubric_generation_spec` field will be ignored.
+  PredefinedMetricSpec predefined_rubric_generation_spec = 4
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Specification for how the rubrics should be generated.
+  RubricGenerationSpec rubric_generation_spec = 3
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Agent configuration, required for agent-based rubric generation.
+  EvaluationInstance.DeprecatedAgentConfig agent_config = 5
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message for EvaluationService.GenerateInstanceRubrics.
+message GenerateInstanceRubricsResponse {
+  // Output only. A list of generated rubrics.
+  repeated Rubric generated_rubrics = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Request message for EvaluationService.EvaluateDataset.
+message EvaluateDatasetRequest {
+  // Required. The resource name of the Location to evaluate the dataset.
+  // Format: `projects/{project}/locations/{location}`
+  string location = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "locations.googleapis.com/Location"
+    }
+  ];
+
+  // Required. The dataset used for evaluation.
+  EvaluationDataset dataset = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The metrics used for evaluation.
+  repeated Metric metrics = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Config for evaluation output.
+  OutputConfig output_config = 4 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Autorater config used for evaluation. Currently only publisher
+  // Gemini models are supported. Format:
+  // `projects/{PROJECT}/locations/{LOCATION}/publishers/google/models/{MODEL}.`
+  AutoraterConfig autorater_config = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Config for evaluation output.
+message OutputConfig {
+  // The destination for evaluation output.
+  oneof destination {
+    // Cloud storage destination for evaluation output.
+    GcsDestination gcs_destination = 1;
+  }
+}
+
+// The dataset used for evaluation.
+message EvaluationDataset {
+  // The source of the dataset.
+  oneof source {
+    // Cloud storage source holds the dataset. Currently only one Cloud Storage
+    // file path is supported.
+    GcsSource gcs_source = 1;
+
+    // BigQuery source holds the dataset.
+    BigQuerySource bigquery_source = 2;
+  }
+}
+
+// The results from an evaluation run performed by the EvaluationService.
+message EvaluateDatasetResponse {
+  // Output only. Aggregation statistics derived from results of
+  // EvaluationService.
+  AggregationOutput aggregation_output = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Output info for EvaluationService.
+  OutputInfo output_info = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Operation metadata for Dataset Evaluation.
+message EvaluateDatasetOperationMetadata {
+  // Generic operation metadata.
+  GenericOperationMetadata generic_metadata = 1;
+}
+
+// Describes the info for output of EvaluationService.
+message OutputInfo {
+  // The output location into which evaluation output is written.
+  oneof output_location {
+    // Output only. The full path of the Cloud Storage directory created, into
+    // which the evaluation results and aggregation results are written.
+    string gcs_output_directory = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+}
+
+// The aggregation result for the entire dataset and all metrics.
+message AggregationOutput {
+  // The dataset used for evaluation & aggregation.
+  EvaluationDataset dataset = 1;
+
+  // One AggregationResult per metric.
+  repeated AggregationResult aggregation_results = 2;
+}
+
+// The aggregation result for a single metric.
+message AggregationResult {
+  // The aggregation result.
+  oneof aggregation_result {
+    // Result for pointwise metric.
+    PointwiseMetricResult pointwise_metric_result = 5;
+
+    // Result for pairwise metric.
+    PairwiseMetricResult pairwise_metric_result = 6;
+
+    // Results for exact match metric.
+    ExactMatchMetricValue exact_match_metric_value = 7;
+
+    // Results for bleu metric.
+    BleuMetricValue bleu_metric_value = 8;
+
+    // Results for rouge metric.
+    RougeMetricValue rouge_metric_value = 9;
+
+    // Result for code execution metric.
+    CustomCodeExecutionResult custom_code_execution_result = 10;
+  }
+
+  // Aggregation metric.
+  Metric.AggregationMetric aggregation_metric = 4;
 }
 
 // The spec for a pre-defined metric.
@@ -593,6 +939,9 @@ message LLMBasedMetricSpec {
     // Refers to a key in the rubric_groups map of EvaluationInstance.
     string rubric_group_key = 4;
 
+    // Dynamically generate rubrics using this specification.
+    RubricGenerationSpec rubric_generation_spec = 5;
+
     // Dynamically generate rubrics using a predefined spec.
     PredefinedMetricSpec predefined_rubric_generation_spec = 6;
   }
@@ -612,6 +961,52 @@ message LLMBasedMetricSpec {
   // Optional. Optional additional configuration for the metric.
   optional google.protobuf.Struct additional_config = 7
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The parser config for the metric result.
+  EvaluationParserConfig result_parser_config = 8
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Specificies a metric that is populated by evaluating user-defined Python
+// code.
+message CustomCodeExecutionSpec {
+  // Required. Python function.
+  // Expected user to define the following function, e.g.:
+  //   def evaluate(instance: dict[str, Any]) -> float:
+  // Please include this function signature in the code snippet.
+  // Instance is the evaluation instance, any fields populated in the instance
+  // are available to the function as instance[field_name].
+  //
+  // Example:
+  //  Example input:
+  //  ```
+  //  instance= EvaluationInstance(
+  //      response=EvaluationInstance.InstanceData(text="The answer is 4."),
+  //      reference=EvaluationInstance.InstanceData(text="4")
+  //  )
+  //  ```
+  //
+  //  Example converted input:
+  //  ```
+  //  {
+  //   'response': {'text': 'The answer is 4.'},
+  //   'reference': {'text': '4'}
+  //  }
+  //  ```
+  //
+  //  Example python function:
+  //  ```
+  //   def evaluate(instance: dict[str, Any]) -> float:
+  //     if instance['response']['text'] == instance['reference']['text']:
+  //       return 1.0
+  //     return 0.0
+  //  ```
+  //
+  // CustomCodeExecutionSpec is also supported in Batch Evaluation (EvalDataset
+  // RPC) and Tuning Evaluation. Each line in the input jsonl file will be
+  // converted to dict[str, Any] and passed to the evaluation function.
+  optional string evaluation_function = 1
+      [(google.api.field_behavior) = REQUIRED];
 }
 
 // Input for exact match metric.
@@ -729,6 +1124,12 @@ message RougeResults {
 // Rouge metric value for an instance.
 message RougeMetricValue {
   // Output only. Rouge score.
+  optional float score = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Result for custom code execution metric.
+message CustomCodeExecutionResult {
+  // Output only. Custom code execution score.
   optional float score = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
@@ -2062,4 +2463,97 @@ message ContentMap {
 
   // Optional. Map of placeholder to contents.
   map<string, Contents> values = 1 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Config for parsing LLM responses.
+// It can be used to parse the LLM response to be evaluated, or the LLM
+// response from LLM-based metrics/Autoraters.
+message EvaluationParserConfig {
+  // Configuration for parsing the LLM response using custom code.
+  message CustomCodeParserConfig {
+    // Required. Python function for parsing results. The function should be
+    // defined within this string.
+    //
+    // The function takes a list of strings (LLM responses) and should return
+    // either a list of dictionaries (for rubrics) or a single dictionary
+    // (for a metric result).
+    //
+    // Example function signature:
+    // def parse(responses: list[str]) -> list[dict[str, Any]] | dict[str, Any]:
+    //
+    //  When parsing rubrics, return a list of dictionaries, where each
+    //  dictionary represents a Rubric.
+    //  Example for rubrics:
+    //  [
+    //    {
+    //      "content": {"property": {"description": "The response is
+    //  factual."}},
+    //      "type": "FACTUALITY",
+    //      "importance": "HIGH"
+    //    },
+    //    {
+    //      "content": {"property": {"description": "The response is
+    //  fluent."}},
+    //      "type": "FLUENCY",
+    //      "importance": "MEDIUM"
+    //    }
+    //  ]
+    //
+    //  When parsing critique results, return a dictionary representing a
+    //  MetricResult.
+    //  Example for a metric result:
+    //  {
+    //    "score": 0.8,
+    //    "explanation": "The model followed most instructions.",
+    //    "rubric_verdicts": [...]
+    //  }
+    //
+    //  ... code for result extraction and aggregation
+    optional string parsing_function = 1
+        [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // The parser to use.
+  oneof parser {
+    // Optional. Use custom code to parse the LLM response.
+    CustomCodeParserConfig custom_code_parser_config = 2
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+}
+
+// Specification for how rubrics should be generated.
+message RubricGenerationSpec {
+  // Specifies the type of rubric content to generate.
+  enum RubricContentType {
+    // The content type to generate is not specified.
+    RUBRIC_CONTENT_TYPE_UNSPECIFIED = 0;
+
+    // Generate rubrics based on properties.
+    PROPERTY = 1;
+
+    // Generate rubrics in an NL question answer format.
+    NL_QUESTION_ANSWER = 2;
+
+    // Generate rubrics in a unit test format.
+    PYTHON_CODE_ASSERTION = 3;
+  }
+
+  // Template for the prompt used to generate rubrics.
+  // The details should be updated based on the most-recent recipe requirements.
+  string prompt_template = 1;
+
+  // Configuration for the model used in rubric generation.
+  // Configs including sampling count and base model can be specified here.
+  // Flipping is not supported for rubric generation.
+  optional AutoraterConfig model_config = 4;
+
+  // The type of rubric content to be generated.
+  RubricContentType rubric_content_type = 5;
+
+  // Optional. An optional, pre-defined list of allowed types for generated
+  // rubrics. If this field is provided, it implies `include_rubric_type` should
+  // be true, and the generated rubric types should be chosen from this
+  // ontology.
+  repeated string rubric_type_ontology = 6
+      [(google.api.field_behavior) = OPTIONAL];
 }
