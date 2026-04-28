@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -212,6 +212,29 @@ message Participant {
     END_USER = 3;
   }
 
+  // Enumeration of the Agent Desktop Source when using prebuilt Agent
+  // Assist integration modules.
+  enum AgentDesktopSource {
+    // Agent Desktop Source is not specified.
+    AGENT_DESKTOP_SOURCE_UNSPECIFIED = 0;
+
+    // Agent Desktop Source is Live Person.
+    LIVE_PERSON = 1;
+
+    // Agent Desktop Source is Genesys Cloud.
+    GENESYS_CLOUD = 2;
+
+    // Agent Desktop Source is Twilio.
+    TWILIO = 3;
+
+    // Agent Desktop Source is Salesforce.
+    SALESFORCE = 4;
+
+    // UI Modules are in use but the desktop is either not currently released or
+    // setting this field to the applicable desktop.
+    OTHER = 8;
+  }
+
   // Optional. The unique identifier of this participant.
   // Format: `projects/<Project ID>/locations/<Location
   // ID>/conversations/<Conversation ID>/participants/<Participant ID>`.
@@ -280,6 +303,19 @@ message Participant {
   // }
   // ```
   map<string, string> documents_metadata_filters = 8
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. For tracking the utilization of prebuilt Agent Assist integration
+  // modules. This field is only inscope for Integration type that include UI
+  // Modules, Backend Modules, and Agent Desktop connector, it is out of scope
+  // for CCaaS and Direct Integration.
+  // For each human agent, prebuilt UI Modules needs to trigger the
+  // UpdateParticipant API to update this field. Both
+  // [CreateParticipantRequest][google.cloud.dialogflow.v2.CreateParticipantRequest.participant]
+  // and
+  // [UpdateParticipantRequest][google.cloud.dialogflow.v2.UpdateParticipantRequest.participant]
+  // will be supported.
+  AgentDesktopSource agent_desktop_source = 10
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -652,6 +688,11 @@ message StreamingAnalyzeContentRequest {
   // return partial responses.
   bool enable_partial_automated_agent_reply = 12
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If multiple uttereances are detected in the audio stream, process
+  // them individually instead of stitching them together to form a single
+  // utterance.
+  bool output_multiple_utterances = 18 [(google.api.field_behavior) = OPTIONAL];
 
   // If true, `StreamingAnalyzeContentResponse.debugging_info` will get
   // populated.
@@ -1184,15 +1225,45 @@ message MessageAnnotation {
   bool contain_entities = 2;
 }
 
-// Represents the selection of a suggestion.
+// Represents the action to take for a tool call that requires confirmation.
 message SuggestionInput {
-  // Required. The ID of a suggestion selected by the human agent.
-  // The suggestion(s) were generated in a previous call to
-  // request Dialogflow assist.
-  // The format is:
-  // `projects/<Project ID>/locations/<Location ID>/answerRecords/<Answer Record
-  // ID>` where <Answer Record ID> is an alphanumeric string.
+  // Indicate what type of action to take with the tool call.
+  enum Action {
+    // Action not specified.
+    ACTION_UNSPECIFIED = 0;
+
+    // Indicates the user chooses to not make the tool call. It
+    // is only applicable to tool calls that are waiting for user
+    // confirmation.
+    CANCEL = 1;
+
+    // Makes the tool call with provided parameters. This action is intended
+    // for tool calls that only read but not write data.
+    REVISE = 2;
+
+    // Makes the tool call with provided parameters. This action is intended
+    // for tool calls that may write data.
+    CONFIRM = 3;
+  }
+
+  // Required. Format: `projects/<Project ID>/locations/<Location
+  // ID>/answerRecords/<Answer Record ID>`
+  // The answer record associated with the tool call.
   string answer_record = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Parameters to be used for the tool call.  If not provided, the
+  // tool will be called without any parameters.
+  google.protobuf.Struct parameters = 4
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The type of action to take with the tool.
+  Action action = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Time when the current suggest input is sent. For tool calls, this
+  // timestamp (along with the answer record) will be included in the
+  // corresponding tool call result so that it can be identified.
+  google.protobuf.Timestamp send_time = 7
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Represents the parameters of human assist query.
@@ -1274,6 +1345,217 @@ message SuggestKnowledgeAssistResponse {
   int32 context_size = 3;
 }
 
+// Debug information related to ingested context reference.
+message IngestedContextReferenceDebugInfo {
+  // Debug information related to ingested parameters from context reference.
+  message IngestedParameterDebugInfo {
+    // Enum representing the various states of parameter ingestion.
+    enum IngestionStatus {
+      // Default value, indicates that the ingestion status is not specified.
+      INGESTION_STATUS_UNSPECIFIED = 0;
+
+      // Indicates that the parameter was successfully ingested.
+      INGESTION_STATUS_SUCCEEDED = 1;
+
+      // Indicates that the parameter was not available for ingestion.
+      INGESTION_STATUS_CONTEXT_NOT_AVAILABLE = 2;
+
+      // Indicates that there was a failure parsing the parameter content.
+      INGESTION_STATUS_PARSE_FAILED = 3;
+
+      // Indicates that the context reference had an unexpected number of
+      // content entries as Context reference should only have one entry.
+      INGESTION_STATUS_INVALID_ENTRY = 4;
+
+      // Indicates that the context reference content was not in the expected
+      // format (e.g., JSON).
+      INGESTION_STATUS_INVALID_FORMAT = 5;
+
+      // Indicates that the context reference language does not match the
+      // conversation language.
+      INGESTION_STATUS_LANGUAGE_MISMATCH = 6;
+    }
+
+    // The name of the parameter in the context reference.
+    string parameter = 1;
+
+    // The ingestion status for this specific parameter.
+    IngestionStatus ingestion_status = 2;
+  }
+
+  // Indicates if the project is allowlisted to use ingested context
+  // reference.
+  bool project_not_allowlisted = 1;
+
+  // The status of context_reference retrieval from database.
+  bool context_reference_retrieved = 2;
+
+  // Parameters ingested from the context reference.
+  repeated IngestedParameterDebugInfo ingested_parameters_debug_info = 3;
+}
+
+// Message to represent the latency of the service.
+message ServiceLatency {
+  // Message to represent the latency of an internal service.
+  message InternalServiceLatency {
+    // The name of the internal service.
+    string step = 1;
+
+    // The latency of the internal service in milliseconds.
+    float latency_ms = 2;
+
+    // The start time of the internal service.
+    google.protobuf.Timestamp start_time = 3;
+
+    // The completion time of the internal service.
+    google.protobuf.Timestamp complete_time = 4;
+  }
+
+  // A list of internal service latencies.
+  repeated InternalServiceLatency internal_service_latencies = 1;
+}
+
+// Debug information related to Knowledge Assist feature.
+message KnowledgeAssistDebugInfo {
+  // Reason for query generation failure.
+  enum QueryGenerationFailureReason {
+    // Default value.
+    QUERY_GENERATION_FAILURE_REASON_UNSPECIFIED = 0;
+
+    // Query generation is blocked due to out of quota.
+    QUERY_GENERATION_OUT_OF_QUOTA = 1;
+
+    // Call to Knowedge Assist query generation model fails.
+    QUERY_GENERATION_FAILED = 2;
+
+    // Query generation model decides that there is no new topic change or
+    // there has been similar queries generated in the previous turns.
+    QUERY_GENERATION_NO_QUERY_GENERATED = 3;
+
+    // Knowedge Assist generated query is blocked by RAI (Responsible AI).
+    QUERY_GENERATION_RAI_FAILED = 4;
+
+    // Query generation is blocked by Knowledge Assist conversation profile
+    // level / agent id level filtering.
+    NOT_IN_ALLOWLIST = 5;
+
+    // The generated query is blocked due to redaction.
+    QUERY_GENERATION_QUERY_REDACTED = 6;
+
+    // Query generation failed due to LLM response parse failure.
+    QUERY_GENERATION_LLM_RESPONSE_PARSE_FAILED = 10;
+
+    // The conversation has no messages.
+    QUERY_GENERATION_EMPTY_CONVERSATION = 11;
+
+    // The last message in the conversation is empty.
+    QUERY_GENERATION_EMPTY_LAST_MESSAGE = 12;
+
+    // The trigger event condition is not met.
+    // This occurs in the following scenarios:
+    // 1. The trigger_event is CUSTOMER_MESSAGE or UNSPECIFIED, but the last
+    //    message is not from the customer.
+    // 2. The trigger_event is AGENT_MESSAGE, but the last message is not from
+    //    the agent.
+    QUERY_GENERATION_TRIGGERING_EVENT_CONDITION_NOT_MET = 13;
+  }
+
+  // Reason for query categorization failure.
+  enum QueryCategorizationFailureReason {
+    // Default value.
+    QUERY_CATEGORIZATION_FAILURE_REASON_UNSPECIFIED = 0;
+
+    // Vertex AI Search config supplied for query categorization is invalid.
+    QUERY_CATEGORIZATION_INVALID_CONFIG = 1;
+
+    // Vertex AI Search result does not contain a query categorization result.
+    QUERY_CATEGORIZATION_RESULT_NOT_FOUND = 2;
+
+    // Vertex AI Search call fails.
+    QUERY_CATEGORIZATION_FAILED = 3;
+  }
+
+  // Configured behaviors for Knowedge Assist.
+  message KnowledgeAssistBehavior {
+    // Whether data store agent rewriter was turned off for the request.
+    bool answer_generation_rewriter_on = 1;
+
+    // Whether end_user_metadata is included in the data store agent call.
+    bool end_user_metadata_included = 2;
+
+    // Whether customers configured to return query only in the
+    // conversation profile.
+    bool return_query_only = 4;
+
+    // Whether customers configured to use pubsub to deliver.
+    bool use_pubsub_delivery = 5;
+
+    // Whether customers configured to disable the synchronous delivery of
+    // Knowedge Assist response.
+    bool disable_sync_delivery = 6;
+
+    // Whether previously suggested queries are included in the query generation
+    // process.
+    bool previous_queries_included = 7;
+
+    // Translated message is included in query generation process.
+    bool use_translated_message = 8;
+
+    // Safety filter is adjusted by user.
+    bool use_custom_safety_filter_level = 9;
+
+    // Conversation transcript has mixed languages.
+    bool conversation_transcript_has_mixed_languages = 10;
+
+    // Whether the agent language from the translation generator mismatches the
+    // end-user language.
+    bool query_generation_agent_language_mismatch = 11;
+
+    // Whether the end-user language from the translation generator mismatches
+    // the end-user language.
+    bool query_generation_end_user_language_mismatch = 12;
+
+    // This field indicates whether third party connectors are enabled for the
+    // project
+    bool third_party_connector_allowed = 13;
+
+    // Indicates that the query generation model generated multiple queries.
+    bool multiple_queries_generated = 14;
+
+    // Indicates that the generated query contains search context.
+    bool query_contained_search_context = 15;
+
+    // Indicates that invalid items were skipped when parsing the LLM response.
+    bool invalid_items_query_suggestion_skipped = 16;
+
+    // True if the primary suggested query was redacted and replaced by an
+    // additional query.
+    bool primary_query_redacted_and_replaced = 17;
+
+    // The number of search contexts appended to the query.
+    int32 appended_search_context_count = 18;
+  }
+
+  // Reason for query generation.
+  QueryGenerationFailureReason query_generation_failure_reason = 1;
+
+  // Reason for query categorization.
+  QueryCategorizationFailureReason query_categorization_failure_reason = 2;
+
+  // Response reason from datastore which indicates data serving status or
+  // answer quality degradation.
+  DatastoreResponseReason datastore_response_reason = 3;
+
+  // Configured behaviors for Knowedge Assist.
+  KnowledgeAssistBehavior knowledge_assist_behavior = 4;
+
+  // Information about parameters ingested for search knowledge.
+  IngestedContextReferenceDebugInfo ingested_context_reference_debug_info = 5;
+
+  // The latency of the service.
+  ServiceLatency service_latency = 6;
+}
+
 // Represents a Knowledge Assist answer.
 message KnowledgeAssistAnswer {
   // Represents a suggested query.
@@ -1338,4 +1620,41 @@ message KnowledgeAssistAnswer {
   // Format: `projects/<Project ID>/locations/<location ID>/answer
   // Records/<Answer Record ID>`.
   string answer_record = 3;
+
+  // Debug information related to Knowledge Assist feature.
+  KnowledgeAssistDebugInfo knowledge_assist_debug_info = 7;
+}
+
+// Response reason from datastore which indicates data serving status or
+// answer quality degradation.
+enum DatastoreResponseReason {
+  // Default value.
+  DATASTORE_RESPONSE_REASON_UNSPECIFIED = 0;
+
+  // No specific response reason from datastore.
+  NONE = 1;
+
+  // Search is blocked due to out of quota.
+  SEARCH_OUT_OF_QUOTA = 2;
+
+  // Search returns empty results.
+  SEARCH_EMPTY_RESULTS = 3;
+
+  // Generative AI is disabled.
+  ANSWER_GENERATION_GEN_AI_DISABLED = 4;
+
+  // Answer generation is blocked due to out of quota.
+  ANSWER_GENERATION_OUT_OF_QUOTA = 5;
+
+  // Answer generation encounters an error.
+  ANSWER_GENERATION_ERROR = 6;
+
+  // Answer generation does not have enough information to generate answer.
+  ANSWER_GENERATION_NOT_ENOUGH_INFO = 7;
+
+  // Answer generation is blocked by RAI (Responsible AI) failure.
+  ANSWER_GENERATION_RAI_FAILED = 8;
+
+  // Answer generation is not grounded on reliable sources.
+  ANSWER_GENERATION_NOT_GROUNDED = 9;
 }

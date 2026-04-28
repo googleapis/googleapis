@@ -128,7 +128,7 @@ service RecaptchaEnterpriseService {
   }
 
   // Adds an IP override to a key. The following restrictions hold:
-  // * The maximum number of IP overrides per key is 100.
+  // * The maximum number of IP overrides per key is 1000.
   // * For any conflict (such as IP already exists or IP part of an existing
   //   IP range), an error is returned.
   rpc AddIpOverride(AddIpOverrideRequest) returns (AddIpOverrideResponse) {
@@ -278,6 +278,7 @@ message CreateAssessmentRequest {
 // Describes an event in the lifecycle of a payment transaction.
 message TransactionEvent {
   // Enum that represents an event in the payment transaction lifecycle.
+  // Ensure that applications can handle values not explicitly listed.
   enum TransactionEventType {
     // Default, unspecified event type.
     TRANSACTION_EVENT_TYPE_UNSPECIFIED = 0;
@@ -391,6 +392,18 @@ message TransactionEvent {
   // Optional. Timestamp when this transaction event occurred; otherwise assumed
   // to be the time of the API call.
   google.protobuf.Timestamp event_time = 4
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Details on a phone authentication event
+message PhoneAuthenticationEvent {
+  // Required. Phone number in E.164 format for which a multi-factor
+  // authentication challenge was initiated, succeeded, or failed.
+  string phone_number = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The time at which the multi-factor authentication event
+  // (challenge or verification) occurred.
+  google.protobuf.Timestamp event_time = 2
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -515,6 +528,11 @@ message AnnotateAssessmentRequest {
   // details on payment lifecycle events that occur in the transaction.
   TransactionEvent transaction_event = 5
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If using an external multi-factor authentication provider,
+  // provide phone authentication details for fraud detection purposes.
+  PhoneAuthenticationEvent phone_authentication_event = 6
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Empty response for AnnotateAssessment.
@@ -545,6 +563,7 @@ message EndpointVerificationInfo {
 message AccountVerificationInfo {
   // Result of the account verification as contained in the verdict token issued
   // at the end of the verification flow.
+  // Ensure that applications can handle values not explicitly listed.
   enum Result {
     // No information about the latest account verification.
     RESULT_UNSPECIFIED = 0;
@@ -701,6 +720,7 @@ message Assessment {
 // The event being assessed.
 message Event {
   // Setting that controls Fraud Prevention assessments.
+  // Ensure that applications can handle values not explicitly listed.
   enum FraudPrevention {
     // Default, unspecified setting. `fraud_prevention_assessment` is returned
     // if `transaction_data` is present in `Event` and Fraud Prevention is
@@ -753,7 +773,7 @@ message Event {
   // Optional. The URI resource the user requested that triggered an assessment.
   string requested_uri = 8 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Flag for running WAF token assessment.
+  // Optional. Flag for running Web Application Firewall (WAF) token assessment.
   // If enabled, the token must be specified, and have been created by a
   // WAF-enabled key.
   bool waf_token_assessment = 9 [(google.api.field_behavior) = OPTIONAL];
@@ -971,6 +991,7 @@ message UserId {
 // Risk analysis result for an event.
 message RiskAnalysis {
   // Reasons contributing to the risk analysis verdict.
+  // Ensure that applications can handle values not explicitly listed.
   enum ClassificationReason {
     // Default unspecified type.
     CLASSIFICATION_REASON_UNSPECIFIED = 0;
@@ -999,7 +1020,8 @@ message RiskAnalysis {
     SUSPECTED_CHARGEBACK = 7;
   }
 
-  // Challenge information for SCORE_AND_CHALLENGE and INVISIBLE keys
+  // Challenge information for POLICY_BASED_CHALLENGE and INVISIBLE keys.
+  // Ensure that applications can handle values not explicitly listed.
   enum Challenge {
     // Default unspecified type.
     CHALLENGE_UNSPECIFIED = 0;
@@ -1029,14 +1051,47 @@ message RiskAnalysis {
   repeated string extended_verdict_reasons = 3
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. Challenge information for SCORE_AND_CHALLENGE and INVISIBLE
-  // keys
+  // Output only. Challenge information for POLICY_BASED_CHALLENGE and INVISIBLE
+  // keys.
   Challenge challenge = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Bots with identities that have been verified by reCAPTCHA and
+  // detected in the event.
+  repeated Bot verified_bots = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Bot information and metadata.
+message Bot {
+  // Types of bots.
+  // Ensure that applications can handle values not explicitly listed.
+  enum BotType {
+    // Default unspecified type.
+    BOT_TYPE_UNSPECIFIED = 0;
+
+    // Software program that interacts with a site and performs tasks
+    // autonomously.
+    AI_AGENT = 1;
+
+    // Software that extracts specific data from sites for use.
+    CONTENT_SCRAPER = 2;
+
+    // Software that crawls sites and stores content for the purpose of
+    // efficient retrieval, likely as part of a search engine.
+    SEARCH_INDEXER = 3;
+  }
+
+  // Optional. Enumerated string value that indicates the identity of the bot,
+  // formatted in kebab-case.
+  string name = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Enumerated field representing the type of bot.
+  BotType bot_type = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Properties of the provided event token.
 message TokenProperties {
   // Enum that represents the types of invalid token reasons.
+  // Ensure that applications can handle values not explicitly listed.
   enum InvalidReason {
     // Default unspecified type.
     INVALID_REASON_UNSPECIFIED = 0;
@@ -1059,6 +1114,16 @@ message TokenProperties {
     // A retriable error (such as network failure) occurred on the browser.
     // Could easily be simulated by an attacker.
     BROWSER_ERROR = 6;
+
+    // The action provided at token generation was different than
+    // the `expected_action` in the assessment request. The comparison is
+    // case-insensitive. This reason can only be returned if all of the
+    // following are true:
+    //
+    //   - your `site_key` has the POLICY_BASED_CHALLENGE integration type
+    //   - you set an action score threshold higher than 0.0
+    //   - you provided a non-empty `expected_action`
+    UNEXPECTED_ACTION = 7;
   }
 
   // Output only. Whether the provided user response token is valid. When valid
@@ -1093,6 +1158,39 @@ message TokenProperties {
 
 // Assessment for Fraud Prevention.
 message FraudPreventionAssessment {
+  // Risk reasons applicable to the Fraud Prevention assessment.
+  message RiskReason {
+    // Risk reasons applicable to the Fraud Prevention assessment. New risk
+    // reasons will be added over time.
+    enum Reason {
+      // Default unspecified type.
+      REASON_UNSPECIFIED = 0;
+
+      // A suspiciously high number of recent transactions have used identifiers
+      // present in this transaction.
+      HIGH_TRANSACTION_VELOCITY = 1;
+
+      // User is cycling through a suspiciously large number of identifiers,
+      // suggesting enumeration or validation attacks within a potential fraud
+      // network.
+      EXCESSIVE_ENUMERATION_PATTERN = 2;
+
+      // User has a short history or no history in the reCAPTCHA network,
+      // suggesting the possibility of synthetic identity generation.
+      SHORT_IDENTITY_HISTORY = 3;
+
+      // Identifiers used in this transaction originate from an unusual or
+      // conflicting set of geolocations.
+      GEOLOCATION_DISCREPANCY = 4;
+
+      // This transaction is linked to a cluster of known fraudulent activity.
+      ASSOCIATED_WITH_FRAUD_CLUSTER = 5;
+    }
+
+    // Output only. Risk reasons applicable to the Fraud Prevention assessment.
+    Reason reason = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
   // Information about stolen instrument fraud, where the user is not the
   // legitimate owner of the instrument being used for the purchase.
   message StolenInstrumentVerdict {
@@ -1121,6 +1219,11 @@ message FraudPreventionAssessment {
   // the combined risk of attack vectors below. Values are from 0.0 (lowest)
   // to 1.0 (highest).
   float transaction_risk = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Reasons why the transaction is probably fraudulent and
+  // received a high transaction risk score.
+  repeated RiskReason risk_reasons = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Assessment of this transaction for risk of a stolen
   // instrument.
@@ -1156,6 +1259,7 @@ message FraudSignals {
   message CardSignals {
     // Risk labels describing the card being assessed, such as its funding
     // mechanism.
+    // Ensure that applications can handle values not explicitly listed.
     enum CardLabel {
       // No label specified.
       CARD_LABEL_UNSPECIFIED = 0;
@@ -1188,6 +1292,7 @@ message FraudSignals {
 // Information about SMS toll fraud.
 message SmsTollFraudVerdict {
   // Reasons contributing to the SMS toll fraud verdict.
+  // Ensure that applications can handle values not explicitly listed.
   enum SmsTollFraudReason {
     // Default unspecified reason
     SMS_TOLL_FRAUD_REASON_UNSPECIFIED = 0;
@@ -1215,6 +1320,7 @@ message PhoneFraudAssessment {
 // Account defender risk assessment.
 message AccountDefenderAssessment {
   // Labels returned by account defender for this request.
+  // Ensure that applications can handle values not explicitly listed.
   enum AccountDefenderLabel {
     // Default unspecified type.
     ACCOUNT_DEFENDER_LABEL_UNSPECIFIED = 0;
@@ -1451,7 +1557,7 @@ message MigrateKeyRequest {
   // Optional. If true, skips the billing check.
   // A reCAPTCHA Enterprise key or migrated key behaves differently than a
   // reCAPTCHA (non-Enterprise version) key when you reach a quota limit (see
-  // https://cloud.google.com/recaptcha/quotas#quota_limit). To avoid
+  // https://docs.cloud.google.com/recaptcha/quotas#quota_limit). To avoid
   // any disruption of your usage, we check that a billing account is present.
   // If your usage of reCAPTCHA is under the free quota, you can safely skip the
   // billing check and proceed with the migration. See
@@ -1555,14 +1661,15 @@ message Key {
   // Optional. Options for user acceptance testing.
   TestingOptions testing_options = 9 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Settings for WAF
+  // Optional. Settings for Web Application Firewall (WAF).
   WafSettings waf_settings = 10 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Options for user acceptance testing.
 message TestingOptions {
-  // Enum that represents the challenge option for challenge-based (CHECKBOX,
-  // INVISIBLE) testing keys.
+  // Enum that represents the challenge option for challenge-based (for example,
+  // CHECKBOX and INVISIBLE) testing keys.
+  // Ensure that applications can handle values not explicitly listed.
   enum TestingChallenge {
     // Perform the normal risk analysis and return either nocaptcha or a
     // challenge depending on risk and trust factors.
@@ -1591,6 +1698,7 @@ message TestingOptions {
 // Settings specific to keys that can be used by websites.
 message WebKeySettings {
   // Enum that represents the integration types for web keys.
+  // Ensure that applications can handle values not explicitly listed.
   enum IntegrationType {
     // Default type that indicates this enum hasn't been specified. This is not
     // a valid IntegrationType, one of the other types must be specified
@@ -1608,10 +1716,15 @@ message WebKeySettings {
     // Doesn't display the "I'm not a robot" checkbox, but may show captcha
     // challenges after risk analysis.
     INVISIBLE = 3;
+
+    // Displays a visual challenge or not depending on the user risk analysis
+    // score.
+    POLICY_BASED_CHALLENGE = 5;
   }
 
   // Enum that represents the possible challenge frequency and difficulty
   // configurations for a web key.
+  // Ensure that applications can handle values not explicitly listed.
   enum ChallengeSecurityPreference {
     // Default type that indicates this enum hasn't been specified.
     CHALLENGE_SECURITY_PREFERENCE_UNSPECIFIED = 0;
@@ -1626,6 +1739,32 @@ message WebKeySettings {
     SECURITY = 3;
   }
 
+  // Per-action challenge settings.
+  message ActionSettings {
+    // Required. A challenge is triggered if the end-user score is below that
+    // threshold. Value must be between 0 and 1 (inclusive).
+    float score_threshold = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Settings for POLICY_BASED_CHALLENGE keys to control when a challenge is
+  // triggered.
+  message ChallengeSettings {
+    // Required. Defines when a challenge is triggered (unless the default
+    // threshold is overridden for the given action, see `action_settings`).
+    ActionSettings default_settings = 1
+        [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. The action to score threshold map.
+    // The action name should be the same as the action name passed in the
+    // `data-action` attribute
+    // (see https://cloud.google.com/recaptcha/docs/actions-website).
+    // Action names are case-insensitive.
+    // There is a maximum of 100 action settings.
+    // An action name has a maximum length of 100.
+    map<string, ActionSettings> action_settings = 2
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
   // Optional. If set to true, it means allowed_domains are not enforced.
   bool allow_all_domains = 3 [(google.api.field_behavior) = OPTIONAL];
 
@@ -1633,6 +1772,10 @@ message WebKeySettings {
   // subdomains of an allowed domain are automatically allowed. A valid domain
   // requires a host and must not include any path, port, query or fragment.
   // Examples: 'example.com' or 'subdomain.example.com'
+  // Each key supports a maximum of 250 domains. To use a key on more domains,
+  // set `allow_all_domains` to true. When this is set, you are responsible for
+  // validating the hostname by checking the `token_properties.hostname` field
+  // in each assessment response against your list of allowed domains.
   repeated string allowed_domains = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. If set to true, the key can be used on AMP (Accelerated Mobile
@@ -1644,8 +1787,12 @@ message WebKeySettings {
 
   // Optional. Settings for the frequency and difficulty at which this key
   // triggers captcha challenges. This should only be specified for
-  // IntegrationTypes CHECKBOX and INVISIBLE and SCORE_AND_CHALLENGE.
+  // `IntegrationType` CHECKBOX, INVISIBLE or POLICY_BASED_CHALLENGE.
   ChallengeSecurityPreference challenge_security_preference = 5
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Challenge settings.
+  ChallengeSettings challenge_settings = 6
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -1656,6 +1803,11 @@ message AndroidKeySettings {
 
   // Optional. Android package names of apps allowed to use the key.
   // Example: 'com.companyname.appname'
+  // Each key supports a maximum of 250 package names. To use a key on more
+  // apps, set `allow_all_package_names` to true. When this is set, you
+  // are responsible for validating the package name by checking the
+  // `token_properties.android_package_name` field in each assessment response
+  // against your list of allowed package names.
   repeated string allowed_package_names = 1
       [(google.api.field_behavior) = OPTIONAL];
 
@@ -1671,8 +1823,13 @@ message IOSKeySettings {
   // Optional. If set to true, allowed_bundle_ids are not enforced.
   bool allow_all_bundle_ids = 2 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. iOS bundle ids of apps allowed to use the key.
+  // Optional. iOS bundle IDs of apps allowed to use the key.
   // Example: 'com.companyname.productname.appname'
+  // Each key supports a maximum of 250 bundle IDs. To use a key on more
+  // apps, set `allow_all_bundle_ids` to true. When this is set, you
+  // are responsible for validating the bundle id by checking the
+  // `token_properties.ios_bundle_id` field in each assessment response
+  // against your list of allowed bundle IDs.
   repeated string allowed_bundle_ids = 1
       [(google.api.field_behavior) = OPTIONAL];
 
@@ -2108,6 +2265,7 @@ message RelatedAccountGroup {
 message WafSettings {
   // Supported WAF features. For more information, see
   // https://cloud.google.com/recaptcha/docs/usecase#comparison_of_features.
+  // Ensure that applications can handle values not explicitly listed.
   enum WafFeature {
     // Undefined feature.
     WAF_FEATURE_UNSPECIFIED = 0;
@@ -2122,12 +2280,12 @@ message WafSettings {
     // Use reCAPTCHA action-tokens to protect user actions.
     ACTION_TOKEN = 3;
 
-    // Use reCAPTCHA WAF express protection to protect any content other than
-    // web pages, like APIs and IoT devices.
-    EXPRESS = 5;
+    // Deprecated: Use `express_settings` instead.
+    EXPRESS = 5 [deprecated = true];
   }
 
-  // Web Application Firewalls supported by reCAPTCHA.
+  // Web Application Firewalls that reCAPTCHA supports.
+  // Ensure that applications can handle values not explicitly listed.
   enum WafService {
     // Undefined WAF
     WAF_SERVICE_UNSPECIFIED = 0;
@@ -2145,10 +2303,11 @@ message WafSettings {
     AKAMAI = 5;
   }
 
-  // Required. The WAF service that uses this key.
+  // Required. The Web Application Firewall (WAF) service that uses this key.
   WafService waf_service = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // Required. The WAF feature for which this key is enabled.
+  // Required. The Web Application Firewall (WAF) feature for which this key is
+  // enabled.
   WafFeature waf_feature = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
@@ -2158,10 +2317,10 @@ message AssessmentEnvironment {
   // Optional. Identifies the client module initiating the CreateAssessment
   // request. This can be the link to the client module's project. Examples
   // include:
-  // - "github.com/GoogleCloudPlatform/recaptcha-enterprise-google-tag-manager"
-  // - "cloud.google.com/recaptcha/docs/implement-waf-akamai"
-  // - "cloud.google.com/recaptcha/docs/implement-waf-cloudflare"
-  // - "wordpress.org/plugins/recaptcha-something"
+  //
+  //   -
+  //   "github.com/GoogleCloudPlatform/recaptcha-enterprise-google-tag-manager"
+  //   - "wordpress.org/plugins/recaptcha-something"
   string client = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The version of the client module. For example, "1.0.0".
@@ -2171,6 +2330,7 @@ message AssessmentEnvironment {
 // Information about the IP or IP range override.
 message IpOverrideData {
   // Enum that represents the type of IP override.
+  // Ensure that applications can handle values not explicitly listed.
   enum OverrideType {
     // Default override type that indicates this enum hasn't been specified.
     OVERRIDE_TYPE_UNSPECIFIED = 0;

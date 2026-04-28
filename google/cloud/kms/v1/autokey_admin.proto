@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,21 +28,23 @@ option java_outer_classname = "AutokeyAdminProto";
 option java_package = "com.google.cloud.kms.v1";
 
 // Provides interfaces for managing [Cloud KMS
-// Autokey](https://cloud.google.com/kms/help/autokey) folder-level
-// configurations. A configuration is inherited by all descendent projects. A
-// configuration at one folder overrides any other configurations in its
-// ancestry. Setting a configuration on a folder is a prerequisite for Cloud KMS
-// Autokey, so that users working in a descendant project can request
-// provisioned [CryptoKeys][google.cloud.kms.v1.CryptoKey], ready for Customer
-// Managed Encryption Key (CMEK) use, on-demand.
+// Autokey](https://cloud.google.com/kms/help/autokey) folder-level or
+// project-level configurations. A configuration is inherited by all descendent
+// folders and projects. A configuration at a folder or project overrides any
+// other configurations in its ancestry. Setting a configuration on a folder is
+// a prerequisite for Cloud KMS Autokey, so that users working in a descendant
+// project can request provisioned [CryptoKeys][google.cloud.kms.v1.CryptoKey],
+// ready for Customer Managed Encryption Key (CMEK) use, on-demand when using
+// the dedicated key project mode. This is not required when using the delegated
+// key management mode for same-project keys.
 service AutokeyAdmin {
   option (google.api.default_host) = "cloudkms.googleapis.com";
   option (google.api.oauth_scopes) =
       "https://www.googleapis.com/auth/cloud-platform,"
       "https://www.googleapis.com/auth/cloudkms";
 
-  // Updates the [AutokeyConfig][google.cloud.kms.v1.AutokeyConfig] for a
-  // folder. The caller must have both `cloudkms.autokeyConfigs.update`
+  // Updates the [AutokeyConfig][google.cloud.kms.v1.AutokeyConfig] for a folder
+  // or a project. The caller must have both `cloudkms.autokeyConfigs.update`
   // permission on the parent folder and `cloudkms.cryptoKeys.setIamPolicy`
   // permission on the provided key project. A
   // [KeyHandle][google.cloud.kms.v1.KeyHandle] creation in the folder's
@@ -52,15 +54,20 @@ service AutokeyAdmin {
     option (google.api.http) = {
       patch: "/v1/{autokey_config.name=folders/*/autokeyConfig}"
       body: "autokey_config"
+      additional_bindings {
+        patch: "/v1/{autokey_config.name=projects/*/autokeyConfig}"
+        body: "autokey_config"
+      }
     };
     option (google.api.method_signature) = "autokey_config,update_mask";
   }
 
-  // Returns the [AutokeyConfig][google.cloud.kms.v1.AutokeyConfig] for a
-  // folder.
+  // Returns the [AutokeyConfig][google.cloud.kms.v1.AutokeyConfig] for a folder
+  // or project.
   rpc GetAutokeyConfig(GetAutokeyConfigRequest) returns (AutokeyConfig) {
     option (google.api.http) = {
       get: "/v1/{name=folders/*/autokeyConfig}"
+      additional_bindings { get: "/v1/{name=projects/*/autokeyConfig}" }
     };
     option (google.api.method_signature) = "name";
   }
@@ -93,7 +100,8 @@ message UpdateAutokeyConfigRequest {
 // [GetAutokeyConfig][google.cloud.kms.v1.AutokeyAdmin.GetAutokeyConfig].
 message GetAutokeyConfigRequest {
   // Required. Name of the [AutokeyConfig][google.cloud.kms.v1.AutokeyConfig]
-  // resource, e.g. `folders/{FOLDER_NUMBER}/autokeyConfig`.
+  // resource, e.g. `folders/{FOLDER_NUMBER}/autokeyConfig` or
+  // `projects/{PROJECT_NUMBER}/autokeyConfig`.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -107,6 +115,7 @@ message AutokeyConfig {
   option (google.api.resource) = {
     type: "cloudkms.googleapis.com/AutokeyConfig"
     pattern: "folders/{folder}/autokeyConfig"
+    pattern: "projects/{project}/autokeyConfig"
     plural: "autokeyConfigs"
     singular: "autokeyConfig"
   };
@@ -126,10 +135,45 @@ message AutokeyConfig {
     // The AutokeyConfig is not yet initialized or has been reset to its default
     // uninitialized state.
     UNINITIALIZED = 3;
+
+    // The service account lacks the necessary permissions in the key project to
+    // configure Autokey.
+    KEY_PROJECT_PERMISSION_DENIED = 4;
+  }
+
+  // Defines the resolution mode enum for the key project.
+  // The
+  // [KeyProjectResolutionMode][google.cloud.kms.v1.AutokeyConfig.KeyProjectResolutionMode]
+  // determines the mechanism by which
+  // [AutokeyConfig][google.cloud.kms.v1.AutokeyConfig] identifies a
+  // [key_project][google.cloud.kms.v1.AutokeyConfig.key_project] at its
+  // specific configuration node. This parameter also determines if Autokey can
+  // be used within this project or folder.
+  enum KeyProjectResolutionMode {
+    // Default value. KeyProjectResolutionMode when not specified will act as
+    // `DEDICATED_KEY_PROJECT`.
+    KEY_PROJECT_RESOLUTION_MODE_UNSPECIFIED = 0;
+
+    // Keys are created in a dedicated project specified by `key_project`.
+    DEDICATED_KEY_PROJECT = 1;
+
+    // Keys are created in the same project as the resource requesting the key.
+    // The `key_project` must not be set when this mode is used.
+    RESOURCE_PROJECT = 2;
+
+    // Disables the AutokeyConfig. When this mode is set, any AutokeyConfig
+    // from higher levels in the resource hierarchy are ignored for this
+    // resource and its descendants. This setting can be overridden
+    // by a more specific configuration at a lower level. For example,
+    // if Autokey is disabled on a folder, it can be re-enabled on a sub-folder
+    // or project within that folder by setting a different mode (e.g.,
+    // DEDICATED_KEY_PROJECT or RESOURCE_PROJECT).
+    DISABLED = 3;
   }
 
   // Identifier. Name of the [AutokeyConfig][google.cloud.kms.v1.AutokeyConfig]
-  // resource, e.g. `folders/{FOLDER_NUMBER}/autokeyConfig`.
+  // resource, e.g. `folders/{FOLDER_NUMBER}/autokeyConfig` or
+  // `projects/{PROJECT_NUMBER}/autokeyConfig`.
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
   // Optional. Name of the key project, e.g. `projects/{PROJECT_ID}` or
@@ -153,6 +197,12 @@ message AutokeyConfig {
   // an up-to-date value before proceeding. The request will be rejected with an
   // ABORTED error on a mismatched etag.
   string etag = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. KeyProjectResolutionMode for the AutokeyConfig.
+  // Valid values are `DEDICATED_KEY_PROJECT`, `RESOURCE_PROJECT`, or
+  // `DISABLED`.
+  KeyProjectResolutionMode key_project_resolution_mode = 8
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request message for

@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -37,6 +37,7 @@ option ruby_package = "Google::Cloud::DeveloperConnect::V1";
 option (google.api.resource_definition) = {
   type: "secretmanager.googleapis.com/SecretVersion"
   pattern: "projects/{project}/secrets/{secret}/versions/{secret_version}"
+  pattern: "projects/{project}/locations/{location}/secrets/{secret}/versions/{secret_version}"
 };
 option (google.api.resource_definition) = {
   type: "cloudkms.googleapis.com/CryptoKey"
@@ -45,6 +46,10 @@ option (google.api.resource_definition) = {
 option (google.api.resource_definition) = {
   type: "servicedirectory.googleapis.com/Service"
   pattern: "projects/{project}/locations/{location}/namespaces/{namespace}/services/{service}"
+};
+option (google.api.resource_definition) = {
+  type: "securesourcemanager.googleapis.com/Instance"
+  pattern: "projects/{project}/locations/{location}/instances/{instance}"
 };
 
 // Service describing handlers for resources
@@ -114,8 +119,9 @@ service DeveloperConnect {
   // Creates a GitRepositoryLink. Upon linking a Git Repository, Developer
   // Connect will configure the Git Repository to send webhook events to
   // Developer Connect. Connections that use Firebase GitHub Application will
-  // have events forwarded to the Firebase service. All other Connections will
-  // have events forwarded to Cloud Build.
+  // have events forwarded to the Firebase service. Connections that use Gemini
+  // Code Assist will have events forwarded to Gemini Code Assist service. All
+  // other Connections will have events forwarded to Cloud Build.
   rpc CreateGitRepositoryLink(CreateGitRepositoryLinkRequest)
       returns (google.longrunning.Operation) {
     option (google.api.http) = {
@@ -319,6 +325,22 @@ service DeveloperConnect {
       metadata_type: "OperationMetadata"
     };
   }
+
+  // Starts OAuth flow for an account connector.
+  rpc StartOAuth(StartOAuthRequest) returns (StartOAuthResponse) {
+    option (google.api.http) = {
+      get: "/v1/{account_connector=projects/*/locations/*/accountConnectors/*}/users:startOAuthFlow"
+    };
+    option (google.api.method_signature) = "account_connector";
+  }
+
+  // Finishes OAuth flow for an account connector.
+  rpc FinishOAuth(FinishOAuthRequest) returns (FinishOAuthResponse) {
+    option (google.api.http) = {
+      get: "/v1/{account_connector=projects/*/locations/*/accountConnectors/*}/users:finishOAuthFlow"
+    };
+    option (google.api.method_signature) = "account_connector";
+  }
 }
 
 // SystemProvider is a list of providers that are owned by Developer Connect.
@@ -428,6 +450,14 @@ message Connection {
 
     // Configuration for connections to an instance of Bitbucket Clouds.
     BitbucketCloudConfig bitbucket_cloud_config = 18;
+
+    // Configuration for connections to an instance of Secure Source Manager.
+    SecureSourceManagerInstanceConfig secure_source_manager_instance_config =
+        20;
+
+    // Optional. Configuration for connections to an HTTP service provider.
+    GenericHTTPEndpointConfig http_config = 21
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Identifier. The resource name of the connection, in the format
@@ -506,6 +536,14 @@ message GitProxyConfig {
   // Optional. Setting this to true allows the git proxy to be used for
   // performing git operations on the repositories linked in the connection.
   bool enabled = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The base URI for the HTTP proxy endpoint. Has
+  // the format
+  // `https://{generatedID}-c-h-{shortRegion}.developerconnect.dev`
+  // Populated only when enabled is set to true.
+  // This endpoint is used by other Google services that integrate with
+  // Developer Connect.
+  string http_proxy_base_uri = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Describes stage and necessary actions to be taken by the
@@ -543,6 +581,67 @@ message InstallationState {
   string action_uri = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
+// Defines the configuration for connections to an HTTP service provider.
+message GenericHTTPEndpointConfig {
+  // Basic authentication with username and password.
+  message BasicAuthentication {
+    // The password to authenticate as.
+    oneof password {
+      // The password SecretManager secret version to authenticate as.
+      string password_secret_version = 2 [(google.api.resource_reference) = {
+        type: "secretmanager.googleapis.com/SecretVersion"
+      }];
+    }
+
+    // Required. The username to authenticate as.
+    string username = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Bearer token authentication with a token.
+  message BearerTokenAuthentication {
+    // The token to authenticate as.
+    oneof token {
+      // Optional. The token SecretManager secret version to authenticate as.
+      string token_secret_version = 1 [
+        (google.api.field_behavior) = OPTIONAL,
+        (google.api.resource_reference) = {
+          type: "secretmanager.googleapis.com/SecretVersion"
+        }
+      ];
+    }
+  }
+
+  // The authentication mechanism to use for requests to the HTTP service
+  // provider.
+  oneof authentication {
+    // Optional. Basic authentication with username and password.
+    BasicAuthentication basic_authentication = 1
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Bearer token authentication with a token.
+    BearerTokenAuthentication bearer_token_authentication = 2
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Required. Immutable. The service provider's https endpoint.
+  string host_uri = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // Optional. Configuration for using Service Directory to privately connect to
+  // a HTTP service provider. This should only be set if the Http service
+  // provider is hosted on-premises and not reachable by public internet. If
+  // this field is left empty, calls to the HTTP service provider will be made
+  // over the public internet.
+  ServiceDirectoryConfig service_directory_config = 4
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The SSL certificate to use for requests to the HTTP service
+  // provider.
+  string ssl_ca_certificate = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
 // Configuration for connections to github.com.
 message GitHubConfig {
   // Represents the various GitHub Applications that can be installed to a
@@ -556,6 +655,9 @@ message GitHubConfig {
 
     // The Firebase GitHub Application.
     FIREBASE = 2;
+
+    // The Gemini Code Assist Application.
+    GEMINI_CODE_ASSIST = 3;
   }
 
   // Required. Immutable. The GitHub Application that was installed to the
@@ -591,7 +693,9 @@ message GitHubEnterpriseConfig {
   string app_slug = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Optional. SecretManager resource containing the private key of the GitHub
-  // App, formatted as `projects/*/secrets/*/versions/*`.
+  // App, formatted as `projects/*/secrets/*/versions/*` or
+  // `projects/*/locations/*/secrets/*/versions/*` (if regional secrets are
+  // supported in that location).
   string private_key_secret_version = 4 [
     (google.api.field_behavior) = OPTIONAL,
     (google.api.resource_reference) = {
@@ -600,7 +704,9 @@ message GitHubEnterpriseConfig {
   ];
 
   // Optional. SecretManager resource containing the webhook secret of the
-  // GitHub App, formatted as `projects/*/secrets/*/versions/*`.
+  // GitHub App, formatted as `projects/*/secrets/*/versions/*` or
+  // `projects/*/locations/*/secrets/*/versions/*` (if regional secrets are
+  // supported in that location).
   string webhook_secret_secret_version = 5 [
     (google.api.field_behavior) = OPTIONAL,
     (google.api.resource_reference) = {
@@ -628,6 +734,13 @@ message GitHubEnterpriseConfig {
 
   // Optional. SSL certificate to use for requests to GitHub Enterprise.
   string ssl_ca_certificate = 14 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Immutable. GitHub Enterprise organization in which the GitHub App
+  // is created.
+  string organization = 15 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
 }
 
 // ServiceDirectoryConfig represents Service Directory configuration for a
@@ -648,7 +761,9 @@ message ServiceDirectoryConfig {
 // and associated metadata.
 message OAuthCredential {
   // Required. A SecretManager resource containing the OAuth token that
-  // authorizes the connection. Format: `projects/*/secrets/*/versions/*`.
+  // authorizes the connection. Format: `projects/*/secrets/*/versions/*` or
+  // `projects/*/locations/*/secrets/*/versions/*` (if regional secrets are
+  // supported in that location).
   string oauth_token_secret_version = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -663,8 +778,9 @@ message OAuthCredential {
 // Configuration for connections to gitlab.com.
 message GitLabConfig {
   // Required. Immutable. SecretManager resource containing the webhook secret
-  // of a GitLab project, formatted as `projects/*/secrets/*/versions/*`. This
-  // is used to validate webhooks.
+  // of a GitLab project, formatted as `projects/*/secrets/*/versions/*` or
+  // `projects/*/locations/*/secrets/*/versions/*` (if regional secrets are
+  // supported in that location). This is used to validate webhooks.
   string webhook_secret_secret_version = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.field_behavior) = IMMUTABLE,
@@ -693,7 +809,9 @@ message GitLabConfig {
 message UserCredential {
   // Required. A SecretManager resource containing the user token that
   // authorizes the Developer Connect connection. Format:
-  // `projects/*/secrets/*/versions/*`.
+  // `projects/*/secrets/*/versions/*` or
+  // `projects/*/locations/*/secrets/*/versions/*` (if regional secrets are
+  // supported in that location).
   string user_token_secret_version = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -711,8 +829,9 @@ message GitLabEnterpriseConfig {
   string host_uri = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. Immutable. SecretManager resource containing the webhook secret
-  // of a GitLab project, formatted as `projects/*/secrets/*/versions/*`. This
-  // is used to validate webhooks.
+  // of a GitLab project, formatted as `projects/*/secrets/*/versions/*` or
+  // `projects/*/locations/*/secrets/*/versions/*` (if regional secrets are
+  // supported in that location). This is used to validate webhooks.
   string webhook_secret_secret_version = 2 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.field_behavior) = IMMUTABLE,
@@ -759,7 +878,9 @@ message BitbucketDataCenterConfig {
 
   // Required. Immutable. SecretManager resource containing the webhook secret
   // used to verify webhook events, formatted as
-  // `projects/*/secrets/*/versions/*`. This is used to validate webhooks.
+  // `projects/*/secrets/*/versions/*` or
+  // `projects/*/locations/*/secrets/*/versions/*` (if regional secrets are
+  // supported in that location). This is used to validate webhooks.
   string webhook_secret_secret_version = 2 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.field_behavior) = IMMUTABLE,
@@ -804,8 +925,9 @@ message BitbucketCloudConfig {
 
   // Required. Immutable. SecretManager resource containing the webhook secret
   // used to verify webhook events, formatted as
-  // `projects/*/secrets/*/versions/*`. This is used to validate and create
-  // webhooks.
+  // `projects/*/secrets/*/versions/*` or
+  // `projects/*/locations/*/secrets/*/versions/*` (if regional secrets are
+  // supported in that location). This is used to validate and create webhooks.
   string webhook_secret_secret_version = 2 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.field_behavior) = IMMUTABLE,
@@ -826,6 +948,19 @@ message BitbucketCloudConfig {
   // system account to generate these credentials.
   UserCredential authorizer_credential = 4
       [(google.api.field_behavior) = REQUIRED];
+}
+
+// Configuration for connections to Secure Source Manager instance
+message SecureSourceManagerInstanceConfig {
+  // Required. Immutable. Secure Source Manager instance resource, formatted as
+  // `projects/*/locations/*/instances/*`
+  string instance = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.resource_reference) = {
+      type: "securesourcemanager.googleapis.com/Instance"
+    }
+  ];
 }
 
 // Message for requesting list of Connections
@@ -1280,6 +1415,96 @@ message FetchAccessTokenResponse {
   ExchangeError exchange_error = 4;
 }
 
+// Message for starting an OAuth flow.
+message StartOAuthRequest {
+  // Required. The resource name of the AccountConnector in the format
+  // `projects/*/locations/*/accountConnectors/*`.
+  string account_connector = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "developerconnect.googleapis.com/AccountConnector"
+    }
+  ];
+}
+
+// Message for responding to starting an OAuth flow.
+message StartOAuthResponse {
+  // The ID of the service provider.
+  oneof id {
+    // The ID of the system provider.
+    SystemProvider system_provider_id = 7;
+  }
+
+  // The ticket to be used for post processing the callback from the service
+  // provider.
+  string ticket = 1;
+
+  // Please refer to https://datatracker.ietf.org/doc/html/rfc7636#section-4.1
+  string code_challenge = 2;
+
+  // Please refer to https://datatracker.ietf.org/doc/html/rfc7636#section-4.2
+  string code_challenge_method = 3;
+
+  // The client ID to the OAuth App of the service provider.
+  string client_id = 4;
+
+  // The list of scopes requested by the application.
+  repeated string scopes = 5;
+
+  // The authorization server URL to the OAuth flow of the service provider.
+  string auth_uri = 6;
+}
+
+// Message for finishing an OAuth flow.
+message FinishOAuthRequest {
+  // The params returned by non-Google OAuth 2.0 flow redirect.
+  message OAuthParams {
+    // Required. The code to be used for getting the token from SCM provider.
+    string code = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The ticket to be used for post processing the callback from SCM
+    // provider.
+    string ticket = 2 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // The params returned by Google OAuth flow redirects.
+  message GoogleOAuthParams {
+    // Required. The scopes returned by Google OAuth flow.
+    repeated string scopes = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. The version info returned by Google OAuth flow.
+    string version_info = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Required. The ticket to be used for post processing the callback from
+    // Google OAuth flow.
+    string ticket = 3 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // The params returned by OAuth flow redirect.
+  oneof params {
+    // The params returned by non-Google OAuth 2.0 flow redirect.
+    OAuthParams oauth_params = 2;
+
+    // The params returned by Google OAuth flow redirects.
+    GoogleOAuthParams google_oauth_params = 3;
+  }
+
+  // Required. The resource name of the AccountConnector in the format
+  // `projects/*/locations/*/accountConnectors/*`.
+  string account_connector = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "developerconnect.googleapis.com/AccountConnector"
+    }
+  ];
+}
+
+// Message for responding to finishing an OAuth flow.
+message FinishOAuthResponse {
+  // The error resulted from exchanging OAuth tokens from the service provider.
+  ExchangeError exchange_error = 1;
+}
+
 // Message for representing an error from exchanging OAuth tokens.
 message ExchangeError {
   // https://datatracker.ietf.org/doc/html/rfc6749#section-5.2 - error
@@ -1649,8 +1874,9 @@ message AccountConnector {
 
   // The AccountConnector config.
   oneof account_connector_config {
-    // Provider OAuth config.
-    ProviderOAuthConfig provider_oauth_config = 5;
+    // Optional. Provider OAuth config.
+    ProviderOAuthConfig provider_oauth_config = 5
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Identifier. The resource name of the accountConnector, in the format
@@ -1712,9 +1938,11 @@ message ProviderOAuthConfig {
   // OAuth Provider ID. It could be Developer Connect owned or providers
   // provided.
   oneof oauth_provider_id {
-    // Immutable. Developer Connect provided OAuth.
-    SystemProvider system_provider_id = 1
-        [(google.api.field_behavior) = IMMUTABLE];
+    // Optional. Immutable. Developer Connect provided OAuth.
+    SystemProvider system_provider_id = 1 [
+      (google.api.field_behavior) = IMMUTABLE,
+      (google.api.field_behavior) = OPTIONAL
+    ];
   }
 
   // Required. User selected scopes to apply to the Oauth config

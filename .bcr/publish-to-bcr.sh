@@ -82,6 +82,7 @@ function create_module_patch() {
   target_googleapis_module="$1"
   filename="$(basename "${target_googleapis_module}")"
   destination="$2"
+  mkdir -p "$(dirname ${destination})"
   diff -Nau /dev/null "${target_googleapis_module}" \
     | sed "1 s|.*|--- ${filename}|" \
     | sed "2 s|.*|+++ ${filename}|" > "${destination}"

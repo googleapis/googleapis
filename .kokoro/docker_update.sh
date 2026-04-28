@@ -36,7 +36,7 @@ echo "Updating Ruby prebuilt binaries..."
 pushd gapic-generator-ruby
 git checkout -b "${BRANCH}"
 rm -rf rules_ruby_gapic/prebuilt/ruby-*.tar.gz
-gsutil cp 'gs://gapic-images/prebuild/ruby-*.tar.gz' rules_ruby_gapic/prebuilt
+gcloud storage cp 'gs://gapic-images/prebuild/ruby-*.tar.gz' rules_ruby_gapic/prebuilt
 git add rules_ruby_gapic/prebuilt/
 git commit -m "fix: update Ruby prebuilt binary"
 echo "Pushing Ruby branch to GitHub..."

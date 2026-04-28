@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -58,6 +58,9 @@ message Job {
 
     // Terminated due to an unrecoverable failure.
     FAILED = 4;
+
+    // Queued but not yet started.
+    QUEUED = 5;
   }
 
   // Identifier. The resource name of the Job. job_id is unique
@@ -92,6 +95,9 @@ message Job {
 
     // Rewrite the object and updates metadata like KMS key.
     RewriteObject rewrite_object = 20;
+
+    // Update object custom context.
+    UpdateObjectCustomContext update_object_custom_context = 23;
   }
 
   // Optional. Logging configuration.
@@ -118,6 +124,105 @@ message Job {
 
   // Output only. State of the job.
   State state = 15 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. If true, the job will run in dry run mode, returning the total
+  // object count and, if the object configuration is a prefix list, the bytes
+  // found from source. No transformations will be performed.
+  bool dry_run = 22 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. If true, this Job operates on multiple buckets. Multibucket
+  // jobs are subject to different quota limits than single-bucket jobs.
+  bool is_multi_bucket_job = 24 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// BucketOperation represents a bucket-level breakdown of a Job.
+message BucketOperation {
+  option (google.api.resource) = {
+    type: "storagebatchoperations.googleapis.com/BucketOperation"
+    pattern: "projects/{project}/locations/{location}/jobs/{job}/bucketOperations/{bucket_operation}"
+    plural: "bucketoperations"
+    singular: "bucketOperation"
+  };
+
+  // Describes state of the BucketOperation.
+  enum State {
+    // Default value. This value is unused.
+    STATE_UNSPECIFIED = 0;
+
+    // Created but not yet started.
+    QUEUED = 1;
+
+    // In progress.
+    RUNNING = 2;
+
+    // Completed successfully.
+    SUCCEEDED = 3;
+
+    // Cancelled by the user.
+    CANCELED = 4;
+
+    // Terminated due to an unrecoverable failure.
+    FAILED = 5;
+  }
+
+  // Identifier. The resource name of the BucketOperation. This is defined by
+  // the service. Format:
+  // projects/{project}/locations/global/jobs/{job_id}/bucketOperations/{bucket_operation}.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // The bucket name of the objects to be transformed in the BucketOperation.
+  string bucket_name = 2;
+
+  // Specifies objects to be transformed in the BucketOperation.
+  oneof object_configuration {
+    // Specifies objects matching a prefix set.
+    PrefixList prefix_list = 3;
+
+    // Specifies objects in a manifest file.
+    Manifest manifest = 4;
+  }
+
+  // Action to be performed on the objects.
+  oneof transformation {
+    // Changes object hold status.
+    PutObjectHold put_object_hold = 11;
+
+    // Delete objects.
+    DeleteObject delete_object = 12;
+
+    // Updates object metadata. Allows updating fixed-key and custom metadata
+    // and fixed-key metadata i.e. Cache-Control, Content-Disposition,
+    // Content-Encoding, Content-Language, Content-Type, Custom-Time.
+    PutMetadata put_metadata = 13;
+
+    // Rewrite the object and updates metadata like KMS key.
+    RewriteObject rewrite_object = 14;
+
+    // Update object custom context.
+    UpdateObjectCustomContext update_object_custom_context = 15;
+  }
+
+  // Output only. The time that the BucketOperation was created.
+  google.protobuf.Timestamp create_time = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time that the BucketOperation was started.
+  google.protobuf.Timestamp start_time = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time that the BucketOperation was completed.
+  google.protobuf.Timestamp complete_time = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Information about the progress of the bucket operation.
+  Counters counters = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Summarizes errors encountered with sample error log entries.
+  repeated ErrorSummary error_summaries = 9
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. State of the BucketOperation.
+  State state = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Describes list of buckets and their objects to be transformed.
@@ -150,11 +255,9 @@ message Manifest {
   // a CSV file in a Google Cloud Storage bucket. Each row in the file must
   // include the object details i.e. BucketId and Name. Generation may
   // optionally be specified. When it is not specified the live object is acted
-  // upon.
-  //  `manifest_location` should either be
-  // 1) An absolute path to the object in the format of
-  // `gs://bucket_name/path/file_name.csv`.
-  // 2) An absolute path with a single wildcard character in the file name, for
+  // upon. `manifest_location` should either be 1) An absolute path to the
+  // object in the format of `gs://bucket_name/path/file_name.csv`. 2) An
+  // absolute path with a single wildcard character in the file name, for
   // example `gs://bucket_name/path/file_name*.csv`.
   // If manifest location is specified with a wildcard, objects in all manifest
   // files matching the pattern will be acted upon.
@@ -230,6 +333,31 @@ message RewriteObject {
   ];
 }
 
+// Describes options for object retention update.
+message ObjectRetention {
+  // Describes the retention mode.
+  enum RetentionMode {
+    // If set and retain_until_time is empty, clears the retention.
+    RETENTION_MODE_UNSPECIFIED = 0;
+
+    // Sets the retention mode to locked.
+    LOCKED = 1;
+
+    // Sets the retention mode to unlocked.
+    UNLOCKED = 2;
+  }
+
+  // Required. The time when the object will be retained until. UNSET will clear
+  // the retention. Must be specified in RFC 3339 format e.g.
+  // YYYY-MM-DD'T'HH:MM:SS.SS'Z' or YYYY-MM-DD'T'HH:MM:SS'Z'.
+  optional string retain_until_time = 1
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The retention mode of the object.
+  optional RetentionMode retention_mode = 2
+      [(google.api.field_behavior) = REQUIRED];
+}
+
 // Describes options for object metadata update.
 message PutMetadata {
   // Optional. Updates objects Content-Disposition fixed metadata. Unset values
@@ -253,16 +381,13 @@ message PutMetadata {
   optional string content_language = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Updates objects Content-Type fixed metadata. Unset values will be
-  // ignored.
-  //  Set empty values to clear the metadata. Refer to documentation in
-  //  https://cloud.google.com/storage/docs/metadata#content-type
+  // ignored. Set empty values to clear the metadata. Refer to documentation in
+  // https://cloud.google.com/storage/docs/metadata#content-type
   optional string content_type = 4 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Updates objects Cache-Control fixed metadata. Unset values will
-  // be
-  //  ignored. Set empty values to clear the metadata.
-  //  Additionally, the value for Custom-Time cannot decrease. Refer to
-  //  documentation in
+  // be ignored. Set empty values to clear the metadata. Additionally, the value
+  // for Custom-Time cannot decrease. Refer to documentation in
   // https://cloud.google.com/storage/docs/metadata#caching_data.
   optional string cache_control = 5 [(google.api.field_behavior) = OPTIONAL];
 
@@ -278,6 +403,49 @@ message PutMetadata {
   // https://cloud.google.com/storage/docs/metadata#custom-metadata
   map<string, string> custom_metadata = 7
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Updates objects retention lock configuration. Unset values will
+  // be ignored. Set empty values to clear the retention for the object with
+  // existing `Unlocked` retention mode. Object with existing `Locked` retention
+  // mode cannot be cleared or reduce retain_until_time. Refer to documentation
+  // in https://cloud.google.com/storage/docs/object-lock
+  optional ObjectRetention object_retention = 8
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Describes the payload of a user defined object custom context.
+message ObjectCustomContextPayload {
+  // The value of the object custom context.
+  // If set, `value` must NOT be an empty string since it is a required field in
+  // custom context. If unset, `value` will be ignored and no changes will be
+  // made to the `value` field of the custom context payload.
+  optional string value = 1;
+}
+
+// Describes a collection of updates to apply to custom contexts identified
+// by key.
+message CustomContextUpdates {
+  // Optional. Insert or update the existing custom contexts.
+  map<string, ObjectCustomContextPayload> updates = 1
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Custom contexts to clear by key.
+  // A key cannot be present in both `updates` and `keys_to_clear`.
+  repeated string keys_to_clear = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Describes options to update object custom contexts.
+message UpdateObjectCustomContext {
+  // One of the actions must be set.
+  oneof action {
+    // A collection of updates to apply to specific custom contexts.
+    // Use this to add, update or delete individual contexts by key.
+    CustomContextUpdates custom_context_updates = 1;
+
+    // If set, must be set to true and all existing object custom contexts will
+    // be deleted.
+    bool clear_all = 2;
+  }
 }
 
 // A summary of errors by error code, plus a count and sample error log
@@ -318,8 +486,31 @@ message Counters {
   // Output only. Number of objects completed.
   int64 succeeded_object_count = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. Number of objects failed.
+  // Output only. The number of objects that failed due to user errors or
+  // service errors.
   int64 failed_object_count = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Number of bytes found from source. This field is only
+  // populated for jobs with a prefix list object configuration.
+  optional int64 total_bytes_found = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Number of object custom contexts created. This field is only
+  // populated for jobs with the UpdateObjectCustomContext transformation.
+  optional int64 object_custom_contexts_created = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Number of object custom contexts deleted. This field is only
+  // populated for jobs with the UpdateObjectCustomContext transformation.
+  optional int64 object_custom_contexts_deleted = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Number of object custom contexts updated. This counter tracks
+  // custom contexts where the key already existed, but the payload was
+  // modified. This field is only populated for jobs with the
+  // UpdateObjectCustomContext transformation.
+  optional int64 object_custom_contexts_updated = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Specifies the Cloud Logging behavior.

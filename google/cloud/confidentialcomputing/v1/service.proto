@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -192,6 +192,13 @@ message VerifyAttestationRequest {
         [(google.api.field_behavior) = OPTIONAL];
   }
 
+  // An optional device attestation report.
+  oneof device_attestation {
+    // Optional. An Nvidia attestation report for GPU and NVSwitch devices.
+    NvidiaAttestation nvidia_attestation = 9
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
   // Required. The name of the Challenge whose nonce was used to generate the
   // attestation, in the format `projects/*/locations/*/challenges/*`. The
   // provided Challenge will be consumed, and cannot be used again.
@@ -221,6 +228,99 @@ message VerifyAttestationRequest {
   // Optional. An optional indicator of the attester, only applies to certain
   // products.
   string attester = 8 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// An Nvidia attestation report for GPU and NVSwitch devices.
+// Contains necessary attestation evidence that the client collects for
+// verification.
+message NvidiaAttestation {
+  // GpuInfo contains the attestation evidence for a GPU device.
+  message GpuInfo {
+    // Optional. The UUID of the GPU device.
+    string uuid = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The driver version of the GPU.
+    string driver_version = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The vBIOS version of the GPU.
+    string vbios_version = 3 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The GPU architecture type.
+    GpuArchitectureType gpu_architecture_type = 4
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The raw attestation certificate chain for the GPU device.
+    bytes attestation_certificate_chain = 5
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The raw attestation report for the GPU device.
+    // This field contains SPDM request/response defined in
+    // https://www.dmtf.org/sites/default/files/standards/documents/DSP0274_1.1.0.pdf
+    bytes attestation_report = 6 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // SwitchInfo contains the attestation evidence for a NVSwitch device.
+  message SwitchInfo {
+    // Optional. The UUID of the NVSwitch device.
+    string uuid = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The raw attestation certificate chain for the NVSwitch device.
+    bytes attestation_certificate_chain = 2
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The raw attestation report for the NvSwitch device.
+    // This field contains SPDM request/response defined in
+    // https://www.dmtf.org/sites/default/files/standards/documents/DSP0274_1.1.0.pdf
+    bytes attestation_report = 3 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Single GPU Passthrough (SPT) attestation.
+  message SinglePassthroughAttestation {
+    // Optional. Single GPU quote.
+    GpuInfo gpu_quote = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Protected PCIe (PPCIE) attestation.
+  // Eight Hopper GPUs with Four NVSwitch Passthrough.
+  message ProtectedPcieAttestation {
+    // Optional. A list of GPU infos.
+    repeated GpuInfo gpu_quotes = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. A list of SWITCH infos.
+    repeated SwitchInfo switch_quotes = 2
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // MultiGpuSecurePassthroughAttestation contains the attestation evidence
+  // for a Multi-GPU Secure Passthrough (MPT) attestation.
+  message MultiGpuSecurePassthroughAttestation {
+    // Optional. A list of GPU quotes.
+    repeated GpuInfo gpu_quotes = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // GpuArchitectureType enumerates the supported GPU architecture types.
+  enum GpuArchitectureType {
+    // Unspecified GPU architecture type.
+    GPU_ARCHITECTURE_TYPE_UNSPECIFIED = 0;
+
+    // Hopper GPU architecture type.
+    GPU_ARCHITECTURE_TYPE_HOPPER = 8;
+
+    // Blackwell GPU architecture type.
+    GPU_ARCHITECTURE_TYPE_BLACKWELL = 10;
+  }
+
+  // The Confidential Computing feature that the attestation is for.
+  oneof cc_feature {
+    // Single GPU Passthrough (SPT) attestation.
+    SinglePassthroughAttestation spt = 1;
+
+    // Protected PCIe (PPCIE) attestation.
+    ProtectedPcieAttestation ppcie = 2;
+
+    // Multi-GPU Secure Passthrough (MPT) attestation.
+    MultiGpuSecurePassthroughAttestation mpt = 3;
+  }
 }
 
 // A TDX Attestation quote.
@@ -474,6 +574,11 @@ message VerifyConfidentialSpaceRequest {
 
   // Optional. A collection of fields that modify the token output.
   ConfidentialSpaceOptions options = 7 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. An optional Nvidia attestation report, used to populate hardware
+  // rooted claims for Nvidia devices.
+  NvidiaAttestation nvidia_attestation = 8
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // GceShieldedIdentity contains information about a Compute Engine instance.
@@ -509,6 +614,22 @@ message VerifyConfidentialSpaceResponse {
 // needed for this service to verify Confidential GKE platform state of the
 // requestor.
 message VerifyConfidentialGkeRequest {
+  // Token options for Confidential GKE attestation.
+  message ConfidentialGkeOptions {
+    // Optional. Optional string to issue the token with a custom audience
+    // claim. Required if custom nonces are specified.
+    string audience = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Optional parameter to place one or more nonces in the eat_nonce
+    // claim in the output token. The minimum size for JSON-encoded EATs is 10
+    // bytes and the maximum size is 74 bytes.
+    repeated string nonce = 3 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Optional specification for how to sign the attestation token.
+    // Defaults to SIGNATURE_TYPE_OIDC if unspecified.
+    SignatureType signature_type = 4 [(google.api.field_behavior) = OPTIONAL];
+  }
+
   // Required. A tee attestation report, used to populate hardware rooted
   // claims.
   oneof tee_attestation {
@@ -526,6 +647,9 @@ message VerifyConfidentialGkeRequest {
       type: "confidentialcomputing.googleapis.com/Challenge"
     }
   ];
+
+  // Optional. A collection of fields that modify the token output.
+  ConfidentialGkeOptions options = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // VerifyConfidentialGkeResponse response is returened once a Confidential GKE

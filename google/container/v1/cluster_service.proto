@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -45,6 +45,10 @@ option (google.api.resource_definition) = {
 option (google.api.resource_definition) = {
   type: "cloudkms.googleapis.com/CryptoKeyVersion"
   pattern: "projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}/cryptoKeyVersions/{crypto_key_version}"
+};
+option (google.api.resource_definition) = {
+  type: "compute.googleapis.com/Subnetwork"
+  pattern: "projects/{project}/regions/{region}/subnetworks/{subnetwork}"
 };
 
 // Google Kubernetes Engine Cluster Manager v1
@@ -622,6 +626,69 @@ message LinuxNodeConfig {
     TRANSPARENT_HUGEPAGE_DEFRAG_NEVER = 5;
   }
 
+  // Configuration for swap memory on a node pool.
+  message SwapConfig {
+    // Defines encryption settings for the swap space.
+    message EncryptionConfig {
+      // Optional. If true, swap space will not be encrypted.
+      // Defaults to false (encrypted).
+      optional bool disabled = 1 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Swap on the node's boot disk.
+    message BootDiskProfile {
+      // Optional. Specifies the size of the swap space. If omitted, GKE
+      // determines an optimal size based on node memory.
+      oneof swap_size {
+        // Specifies the size of the swap space in gibibytes (GiB).
+        int64 swap_size_gib = 1;
+
+        // Specifies the size of the swap space as a percentage of the boot disk
+        // size.
+        int32 swap_size_percent = 2;
+      }
+    }
+
+    // Swap on the local SSD shared with pod ephemeral storage.
+    message EphemeralLocalSsdProfile {
+      // Specifies the size of the swap space to be provisioned.
+      oneof swap_size {
+        // Specifies the size of the swap space in gibibytes (GiB).
+        int64 swap_size_gib = 1;
+
+        // Specifies the size of the swap space as a percentage of the ephemeral
+        // local SSD capacity.
+        int32 swap_size_percent = 2;
+      }
+    }
+
+    // Provisions a new, separate local NVMe SSD exclusively for swap.
+    message DedicatedLocalSsdProfile {
+      // The number of physical local NVMe SSD disks to attach.
+      int64 disk_count = 1;
+    }
+
+    // Optional. Enables or disables swap for the node pool.
+    optional bool enabled = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. If omitted, swap space is encrypted by default.
+    optional EncryptionConfig encryption_config = 2
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Defines the backing storage for the swap space.
+    // If omitted, defaults to the 'boot_disk_profile'.
+    oneof performance_profile {
+      // Swap on the node's boot disk.
+      BootDiskProfile boot_disk_profile = 3;
+
+      // Swap on the local SSD shared with pod ephemeral storage.
+      EphemeralLocalSsdProfile ephemeral_local_ssd_profile = 4;
+
+      // Provisions a new, separate local NVMe SSD exclusively for swap.
+      DedicatedLocalSsdProfile dedicated_local_ssd_profile = 5;
+    }
+  }
+
   // Configuration for kernel module loading on nodes.
   message NodeKernelModuleLoading {
     // Defines the kernel module loading policy for nodes in the nodepool.
@@ -669,7 +736,12 @@ message LinuxNodeConfig {
   // net.ipv4.tcp_rmem
   // net.ipv4.tcp_wmem
   // net.ipv4.tcp_tw_reuse
+  // net.ipv4.tcp_mtu_probing
   // net.ipv4.tcp_max_orphans
+  // net.ipv4.tcp_max_tw_buckets
+  // net.ipv4.tcp_syn_retries
+  // net.ipv4.tcp_ecn
+  // net.ipv4.tcp_congestion_control
   // net.netfilter.nf_conntrack_max
   // net.netfilter.nf_conntrack_buckets
   // net.netfilter.nf_conntrack_tcp_timeout_close_wait
@@ -679,14 +751,23 @@ message LinuxNodeConfig {
   // kernel.shmmni
   // kernel.shmmax
   // kernel.shmall
+  // kernel.perf_event_paranoid
+  // kernel.sched_rt_runtime_us
+  // kernel.softlockup_panic
+  // kernel.yama.ptrace_scope
+  // kernel.kptr_restrict
+  // kernel.dmesg_restrict
+  // kernel.sysrq
   // fs.aio-max-nr
   // fs.file-max
   // fs.inotify.max_user_instances
   // fs.inotify.max_user_watches
   // fs.nr_open
   // vm.dirty_background_ratio
+  // vm.dirty_background_bytes
   // vm.dirty_expire_centisecs
   // vm.dirty_ratio
+  // vm.dirty_bytes
   // vm.dirty_writeback_centisecs
   // vm.max_map_count
   // vm.overcommit_memory
@@ -723,6 +804,10 @@ message LinuxNodeConfig {
   // for more details.
   TransparentHugepageDefrag transparent_hugepage_defrag = 5
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Enables and configures swap space on nodes.
+  // If omitted, swap is disabled.
+  optional SwapConfig swap_config = 12 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Configuration for kernel module loading on nodes.
   // When enabled, the node pool will be provisioned with a Container-Optimized
@@ -932,6 +1017,26 @@ message NodeKubeletConfig {
   // container cgroups in cgroups v2. This causes processes in the container to
   // be OOM killed individually instead of as a group.
   optional bool single_process_oom_kill = 22
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. shutdown_grace_period_seconds is the maximum allowed grace period
+  // (in seconds) the total duration that the node should delay the shutdown
+  // during a graceful shutdown. This is the total grace period for pod
+  // termination for both regular and critical pods.
+  // https://kubernetes.io/docs/concepts/cluster-administration/node-shutdown/
+  // If set to 0, node will not enable the graceful node shutdown functionality.
+  // This field is only valid for Spot VMs.
+  // Allowed values: 0, 30, 120.
+  optional int32 shutdown_grace_period_seconds = 26
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. shutdown_grace_period_critical_pods_seconds is the maximum
+  // allowed grace period (in seconds) used to terminate critical pods during a
+  // node shutdown. This value should be <= shutdown_grace_period_seconds, and
+  // is only valid if shutdown_grace_period_seconds is set.
+  // https://kubernetes.io/docs/concepts/cluster-administration/node-shutdown/
+  // Range: [0, 120].
+  optional int32 shutdown_grace_period_critical_pods_seconds = 27
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -1379,6 +1484,9 @@ message NodeConfig {
   optional SecondaryBootDiskUpdateStrategy secondary_boot_disk_update_strategy =
       50;
 
+  // The configuration for GPU Direct
+  optional GPUDirectConfig gpu_direct_config = 51;
+
   // The maximum duration for the nodes to exist.
   // If unspecified, the nodes can exist indefinitely.
   google.protobuf.Duration max_run_duration = 53;
@@ -1399,6 +1507,11 @@ message NodeConfig {
 
   // The boot disk configuration for the node pool.
   BootDisk boot_disk = 57;
+
+  // Consolidation delay defines duration after which the Cluster Autoscaler can
+  // scale down underutilized nodes. If not set, nodes are scaled down by
+  // default behavior, i.e. according to the chosen autoscaling profile.
+  google.protobuf.Duration consolidation_delay = 60;
 }
 
 // Specifies options for controlling advanced machine features.
@@ -1525,12 +1638,21 @@ message NodeNetworkConfig {
   double pod_ipv4_range_utilization = 16
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. The subnetwork path for the node pool.
+  // Optional. The subnetwork name/path for the node pool.
   // Format: projects/{project}/regions/{region}/subnetworks/{subnetwork}
-  // If the cluster is associated with multiple subnetworks, the subnetwork for
-  // the node pool is picked based on the IP utilization during node pool
-  // creation and is immutable.
-  string subnetwork = 19 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // If the cluster is associated with multiple subnetworks, the subnetwork can
+  // be either:
+  // 1. A user supplied subnetwork name/full path during node pool creation.
+  //    Example1: my-subnet
+  //    Example2: projects/gke-project/regions/us-central1/subnetworks/my-subnet
+  // 2. A subnetwork path picked based on the IP utilization during node pool
+  //    creation and is immutable.
+  string subnetwork = 19 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "compute.googleapis.com/Subnetwork"
+    }
+  ];
 
   // Output only. The network tier configuration for the node pool inherits from
   // the cluster-level configuration and remains immutable throughout the node
@@ -1703,7 +1825,7 @@ message ContainerdConfig {
       // Certificate access config. The following are supported:
       // - GCPSecretManagerCertificateConfig
       oneof certificate_config {
-        // Google Secret Manager (GCP) certificate configuration.
+        // Secret Manager certificate configuration.
         GCPSecretManagerCertificateConfig
             gcp_secret_manager_certificate_config = 2;
       }
@@ -1723,6 +1845,116 @@ message ContainerdConfig {
     bool enabled = 1 [(google.api.field_behavior) = OPTIONAL];
   }
 
+  // RegistryHostConfig configures the top-level structure for a single
+  // containerd registry server's configuration, which represents one hosts.toml
+  // file on the node. It will override the same fqdns in
+  // PrivateRegistryAccessConfig.
+  message RegistryHostConfig {
+    // CertificateConfig configures certificate for the registry.
+    message CertificateConfig {
+      // One of the methods to configure the certificate.
+      oneof certificate {
+        // The URI configures a secret from
+        // [Secret Manager](https://cloud.google.com/secret-manager)
+        // in the format
+        // "projects/$PROJECT_ID/secrets/$SECRET_NAME/versions/$VERSION" for
+        // global secret or
+        // "projects/$PROJECT_ID/locations/$REGION/secrets/$SECRET_NAME/versions/$VERSION"
+        // for regional secret. Version can be fixed (e.g. "2") or "latest"
+        string gcp_secret_manager_secret_uri = 1;
+      }
+    }
+
+    // CertificateConfigPair configures pairs of certificates, which is used for
+    // client certificate and key pairs under a registry.
+    message CertificateConfigPair {
+      // Cert configures the client certificate.
+      CertificateConfig cert = 1;
+
+      // Key configures the client private key. Optional.
+      CertificateConfig key = 2;
+    }
+
+    // RegistryHeader configures headers for the registry.
+    message RegistryHeader {
+      // Key configures the header key.
+      string key = 1;
+
+      // Value configures the header value.
+      repeated string value = 2;
+    }
+
+    // HostCapability configures capabilities for the registry host.
+    enum HostCapability {
+      // UNKNOWN should never be set.
+      HOST_CAPABILITY_UNSPECIFIED = 0;
+
+      // Pull represents the capability to fetch manifests and blobs by digest.
+      HOST_CAPABILITY_PULL = 1;
+
+      // Resolve represents the capability to fetch manifests by name.
+      HOST_CAPABILITY_RESOLVE = 2;
+
+      // Push represents the capability to push blobs and manifests.
+      HOST_CAPABILITY_PUSH = 3;
+    }
+
+    // HostConfig configures the registry host under a given Server.
+    message HostConfig {
+      // Host configures the registry host/mirror.
+      // It supports fully qualified domain names (FQDN) and IP addresses:
+      // Specifying port is supported.
+      // Wildcards are NOT supported.
+      // Examples:
+      // - my.customdomain.com
+      // - 10.0.1.2:5000
+      string host = 1;
+
+      // Capabilities represent the capabilities of the registry host,
+      // specifying what operations a host is capable of performing.
+      // If not set, containerd enables all capabilities by default.
+      repeated HostCapability capabilities = 2;
+
+      // OverridePath is used to indicate the host's API root endpoint is
+      // defined in the URL path rather than by the API specification. This may
+      // be used with non-compliant OCI registries which are missing the /v2
+      // prefix.
+      // If not set, containerd sets default false.
+      bool override_path = 3;
+
+      // Header configures the registry host headers.
+      repeated RegistryHeader header = 4;
+
+      // CA configures the registry host certificate.
+      repeated CertificateConfig ca = 5;
+
+      // Client configures the registry host client certificate and key.
+      repeated CertificateConfigPair client = 6;
+
+      // Specifies the maximum duration allowed for a connection attempt to
+      // complete. A shorter timeout helps reduce delays when falling back to
+      // the original registry if the mirror is unreachable.
+      // Maximum allowed value is 180s. If not set, containerd sets default 30s.
+      // The value should be a decimal number of seconds with an `s` suffix.
+      google.protobuf.Duration dial_timeout = 7;
+    }
+
+    // Defines the host name of the registry server, which will be used to
+    // create configuration file as /etc/containerd/hosts.d/<server>/hosts.toml.
+    // It supports fully qualified domain names (FQDN) and IP addresses:
+    // Specifying port is supported.
+    // Wildcards are NOT supported.
+    // Examples:
+    // - my.customdomain.com
+    // - 10.0.1.2:5000
+    string server = 1;
+
+    // HostConfig configures a list of host-specific configurations for the
+    // server.
+    // Each server can have at most 10 host configurations.
+    repeated HostConfig hosts = 2;
+  }
+
   // PrivateRegistryAccessConfig is used to configure access configuration
   // for private container registries.
   PrivateRegistryAccessConfig private_registry_access_config = 1;
@@ -1730,6 +1962,11 @@ message ContainerdConfig {
   // Optional. WritableCgroups defines writable cgroups configuration for the
   // node pool.
   WritableCgroups writable_cgroups = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // RegistryHostConfig configures containerd registry host configuration.
+  // Each registry_hosts represents a hosts.toml file.
+  // At most 25 registry_hosts are allowed.
+  repeated RegistryHostConfig registry_hosts = 3;
 }
 
 // Kubernetes taint is composed of three fields: key, value, and effect. Effect
@@ -1907,6 +2144,10 @@ message AddonsConfig {
 
   // Configuration for the Lustre CSI driver.
   LustreCsiDriverConfig lustre_csi_driver_config = 23;
+
+  // Optional. Configuration for the slice controller add-on.
+  SliceControllerConfig slice_controller_config = 26
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Configuration options for the HTTP (L7) load balancing controller addon,
@@ -2104,6 +2345,12 @@ message LustreCsiDriverConfig {
   bool enable_legacy_lustre_port = 3 [deprecated = true];
 }
 
+// Configuration for the Slice Controller.
+message SliceControllerConfig {
+  // Optional. Indicates whether Slice Controller is enabled in the cluster.
+  bool enabled = 1 [(google.api.field_behavior) = OPTIONAL];
+}
+
 // Configuration options for the Ray Operator add-on.
 message RayOperatorConfig {
   // Whether the Ray Operator addon is enabled for this cluster.
@@ -2277,7 +2524,7 @@ message IPAllocationPolicy {
   // netmask.
   //
   // Set to a
-  // [CIDR](http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
+  // [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
   // notation (e.g. `10.96.0.0/14`) from the RFC-1918 private networks (e.g.
   // `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) to pick a specific range
   // to use.
@@ -2293,7 +2540,7 @@ message IPAllocationPolicy {
   // netmask.
   //
   // Set to a
-  // [CIDR](http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
+  // [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
   // notation (e.g. `10.96.0.0/14`) from the RFC-1918 private networks (e.g.
   // `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) to pick a specific range
   // to use.
@@ -2310,7 +2557,7 @@ message IPAllocationPolicy {
   // netmask.
   //
   // Set to a
-  // [CIDR](http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
+  // [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
   // notation (e.g. `10.96.0.0/14`) from the RFC-1918 private networks (e.g.
   // `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) to pick a specific range
   // to use.
@@ -2327,7 +2574,7 @@ message IPAllocationPolicy {
   // netmask.
   //
   // Set to a
-  // [CIDR](http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
+  // [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
   // notation (e.g. `10.96.0.0/14`) from the RFC-1918 private networks (e.g.
   // `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) to pick a specific range
   // to use.
@@ -2509,7 +2756,7 @@ message Cluster {
   string network = 8;
 
   // The IP address range of the container pods in this cluster, in
-  // [CIDR](http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
+  // [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
   // notation (e.g. `10.96.0.0/14`). Leave blank to have
   // one automatically chosen or specify a `/14` block in `10.0.0.0/8`.
   string cluster_ipv4_cidr = 9;
@@ -2707,7 +2954,7 @@ message Cluster {
 
   // Output only. The IP address range of the Kubernetes services in
   // this cluster, in
-  // [CIDR](http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
+  // [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
   // notation (e.g. `1.2.3.4/29`). Service addresses are
   // typically put in the last `/16` from the container CIDR.
   string services_ipv4_cidr = 110 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -2738,7 +2985,7 @@ message Cluster {
   bool enable_tpu = 115 [deprecated = true];
 
   // Output only. The IP address range of the Cloud TPUs in this cluster, in
-  // [CIDR](http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
+  // [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
   // notation (e.g. `1.2.3.4/29`).
   // This field is deprecated due to the deprecation of 2VM TPU. The end of life
   // date for 2VM TPU is 2025-04-25.
@@ -2819,6 +3066,9 @@ message Cluster {
   // Configuration for limiting anonymous access to all endpoints except the
   // health checks.
   AnonymousAuthenticationConfig anonymous_authentication_config = 164;
+
+  // Configuration for Managed OpenTelemetry pipeline.
+  ManagedOpenTelemetryConfig managed_opentelemetry_config = 168;
 }
 
 // RBACBindingConfig allows user to restrict ClusterRoleBindings an RoleBindings
@@ -2886,6 +3136,11 @@ message UserManagedKeysConfig {
       [(google.api.resource_reference) = {
         type: "cloudkms.googleapis.com/CryptoKeyVersion"
       }];
+
+  // Output only. All of the versions of the Cloud KMS cryptoKey that are used
+  // by Confidential Hyperdisks on the control plane nodes.
+  repeated string control_plane_disk_encryption_key_versions = 18
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Resource path of the Cloud KMS cryptoKey to use for encryption of internal
   // etcd backups.
@@ -3357,6 +3612,12 @@ message ClusterUpdate {
 
   // The desired network tier configuration for the cluster.
   NetworkTierConfig desired_network_tier_config = 155;
+
+  // The desired privileged admission config for the cluster.
+  PrivilegedAdmissionConfig desired_privileged_admission_config = 159;
+
+  // The desired managed open telemetry configuration.
+  ManagedOpenTelemetryConfig desired_managed_opentelemetry_config = 163;
 }
 
 // AdditionalPodRangesConfig is the configuration for additional pod secondary
@@ -3373,6 +3634,25 @@ message AdditionalPodRangesConfig {
 // AdditionalIPRangesConfig is the configuration for individual additional
 // subnetwork attached to the cluster
 message AdditionalIPRangesConfig {
+  // Additional subnet with DRAINING status will not be selected during new node
+  // pool creation. To undrain the draining status, update the cluster to set
+  // the sunbet to ACTIVE status. To remove the additional subnet, use the
+  // update cluster API to remove the subnet from the
+  // desired_additional_ip_ranges list. IP ranges can be removed regardless of
+  // its status, as long as no node pools are using them.
+  enum Status {
+    // Not set, same as ACTIVE.
+    STATUS_UNSPECIFIED = 0;
+
+    // ACTIVE status indicates that the subnet is available for new node pool
+    // creation.
+    ACTIVE = 1;
+
+    // DRAINING status indicates that the subnet is not used for new node pool
+    // creation.
+    DRAINING = 2;
+  }
+
   // Name of the subnetwork. This can be the full path of the subnetwork or
   // just the name.
   // Example1: my-subnet
@@ -3384,6 +3664,9 @@ message AdditionalIPRangesConfig {
   // Example1: gke-pod-range1
   // Example2: gke-pod-range1,gke-pod-range2
   repeated string pod_ipv4_range_names = 2;
+
+  // Draining status of the additional subnet.
+  Status status = 3;
 }
 
 // DesiredAdditionalIPRangesConfig is a wrapper used for cluster update
@@ -3920,6 +4203,14 @@ message UpdateNodePoolRequest {
   // Initiates an upgrade operation that migrates the nodes in the
   // node pool to the specified boot disk config.
   BootDisk boot_disk = 47;
+
+  // The desired node drain configuration for nodes in the node pool.
+  NodePool.NodeDrainConfig node_drain_config = 48;
+
+  // Consolidation delay defines duration after which the Cluster Autoscaler can
+  // scale down underutilized nodes. If not set, nodes are scaled down by
+  // default behavior, i.e. according to the chosen autoscaling profile.
+  google.protobuf.Duration consolidation_delay = 49;
 }
 
 // SetNodePoolAutoscalingRequest sets the autoscaler settings of a node pool.
@@ -4674,6 +4965,13 @@ message NodePool {
     bool enabled = 1;
   }
 
+  // NodeDrainConfig contains the node drain related configurations for this
+  // nodepool.
+  message NodeDrainConfig {
+    // Whether to respect PDB during node pool deletion.
+    optional bool respect_pdb_during_node_pool_deletion = 3;
+  }
+
   // The name of the node pool.
   string name = 1;
 
@@ -4765,6 +5063,9 @@ message NodePool {
 
   // Enable best effort provisioning for nodes
   BestEffortProvisioning best_effort_provisioning = 113;
+
+  // Specifies the node drain configuration for this node pool.
+  NodeDrainConfig node_drain_config = 116;
 }
 
 // NodeManagement defines the set of node management services turned on for the
@@ -4902,7 +5203,7 @@ message RecurringTimeWindow {
   TimeWindow window = 1;
 
   // An RRULE (https://tools.ietf.org/html/rfc5545#section-3.8.5.3) for how
-  // this window reccurs. They go on for the span of time between the start and
+  // this window recurs. They go on for the span of time between the start and
   // end time.
   //
   // For example, to have something repeat every weekday, you'd use:
@@ -5076,6 +5377,15 @@ message ClusterAutoscaling {
     BALANCED = 2;
   }
 
+  // Defines possible options for Autopilot general profile.
+  enum AutopilotGeneralProfile {
+    // Use default configuration.
+    AUTOPILOT_GENERAL_PROFILE_UNSPECIFIED = 0;
+
+    // Avoid extra IP consumption.
+    NO_PERFORMANCE = 1;
+  }
+
   // Enables automatic node pool creation and deletion.
   bool enable_node_autoprovisioning = 1;
 
@@ -5097,6 +5407,10 @@ message ClusterAutoscaling {
 
   // Default compute class is a configuration for default compute class.
   DefaultComputeClassConfig default_compute_class_config = 9;
+
+  // Autopilot general profile for the cluster, which defines the
+  // configuration for the cluster.
+  AutopilotGeneralProfile autopilot_general_profile = 14;
 }
 
 // AutoprovisioningNodePoolDefaults contains defaults for a node pool created
@@ -6153,6 +6467,21 @@ message FastSocket {
   bool enabled = 1;
 }
 
+// GPUDirectConfig specifies the GPU direct strategy on the node pool.
+message GPUDirectConfig {
+  // Option for GPU direct Strategies
+  enum GPUDirectStrategy {
+    // Default value. No GPU Direct strategy is enabled on the node.
+    GPU_DIRECT_STRATEGY_UNSPECIFIED = 0;
+
+    // GPUDirect-RDMA on A3 Ultra, and A4 machine types
+    RDMA = 2;
+  }
+
+  // The type of GPU direct strategy to enable on the node pool.
+  optional GPUDirectStrategy gpu_direct_strategy = 1;
+}
+
 // PrivateIPv6GoogleAccess controls whether and how the pods can communicate
 // with Google Services through gRPC over IPv6.
 enum PrivateIPv6GoogleAccess {
@@ -6318,6 +6647,9 @@ message UpgradeInfoEvent {
 
     // UPGRADE_LIFECYCLE indicates the event is about the upgrade lifecycle.
     UPGRADE_LIFECYCLE = 3;
+
+    // DISRUPTION_EVENT indicates the event is about the disruption.
+    DISRUPTION_EVENT = 4;
   }
 
   // The resource type associated with the upgrade.
@@ -6356,6 +6688,54 @@ message UpgradeInfoEvent {
 
   // The type of the event.
   EventType event_type = 12;
+
+  // The information about the disruption event. This field is only populated
+  // when event_type is DISRUPTION_EVENT.
+  optional DisruptionEvent disruption_event = 14;
+}
+
+// DisruptionEvent is a notification sent to customers about the disruption
+// event of a resource.
+message DisruptionEvent {
+  // The type of the disruption event.
+  enum DisruptionType {
+    // DISRUPTION_TYPE_UNSPECIFIED indicates the disruption type is unspecified.
+    DISRUPTION_TYPE_UNSPECIFIED = 0;
+
+    // POD_NOT_ENOUGH_PDB indicates there are still running pods
+    // on the node during node drain because their evictions are blocked by PDB.
+    POD_NOT_ENOUGH_PDB = 1;
+
+    // POD_PDB_VIOLATION indicates that there are force pod
+    // evictions during node drain which violate the PDB.
+    POD_PDB_VIOLATION = 2;
+  }
+
+  // The namespace/name of the pod whose eviction is blocked by PDB.
+  message PdbBlockedPod {
+    // The namespace of the pod.
+    string namespace = 1;
+
+    // The name of the pod.
+    string name = 2;
+  }
+
+  // The type of the disruption event.
+  DisruptionType disruption_type = 1;
+
+  // The node whose drain is blocked by PDB. This field is set for both
+  // POD_PDB_VIOLATION and POD_NOT_ENOUGH_PDB event.
+  string pdb_blocked_node = 2;
+
+  // The pods whose evictions are blocked by PDB. This field is set for
+  // both POD_PDB_VIOLATION and POD_NOT_ENOUGH_PDB event.
+  repeated PdbBlockedPod pdb_blocked_pod = 3;
+
+  // The timeout in seconds for which the node drain is blocked by PDB.
+  // After this timeout, pods are forcefully evicted.
+  // This field is only populated when event_type is
+  // POD_PDB_VIOLATION.
+  optional google.protobuf.Duration pdb_violation_timeout = 4;
 }
 
 // UpgradeAvailableEvent is a notification sent to customers when a new
@@ -6665,6 +7045,11 @@ enum NodePoolUpdateStrategy {
   // SURGE is the traditional way of upgrade a node pool.
   // max_surge and max_unavailable determines the level of upgrade parallelism.
   SURGE = 3;
+
+  // SHORT_LIVED is the dedicated upgrade strategy for
+  // QueuedProvisioning and flex start nodepools scaled up only by enqueueing to
+  // the Dynamic Workload Scheduler (DWS).
+  SHORT_LIVED = 5;
 }
 
 // ManagedPrometheusConfig defines the configuration for
@@ -7261,4 +7646,24 @@ message NetworkTierConfig {
 
   // Network tier configuration.
   NetworkTier network_tier = 1;
+}
+
+// ManagedOpenTelemetryConfig is the configuration for the GKE Managed
+// OpenTelemetry pipeline.
+message ManagedOpenTelemetryConfig {
+  // Scope is the scope of the Managed OpenTelemetry pipeline.
+  enum Scope {
+    // SCOPE_UNSPECIFIED is when the scope is not set.
+    SCOPE_UNSPECIFIED = 0;
+
+    // NONE is used to disable the Managed OpenTelemetry pipeline.
+    NONE = 1;
+
+    // COLLECTION_AND_INSTRUMENTATION_COMPONENTS is used to enable the Managed
+    // OpenTelemetry pipeline for collection and instrumentation components.
+    COLLECTION_AND_INSTRUMENTATION_COMPONENTS = 2;
+  }
+
+  // Scope of the Managed OpenTelemetry pipeline.
+  optional Scope scope = 1;
 }

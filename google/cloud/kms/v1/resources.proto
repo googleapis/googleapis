@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,6 +28,8 @@ option java_multiple_files = true;
 option java_outer_classname = "KmsResourcesProto";
 option java_package = "com.google.cloud.kms.v1";
 option php_namespace = "Google\\Cloud\\Kms\\V1";
+
+// LINT: LEGACY_NAMES
 
 // A [KeyRing][google.cloud.kms.v1.KeyRing] is a toplevel logical grouping of
 // [CryptoKeys][google.cloud.kms.v1.CryptoKey].
@@ -200,7 +202,12 @@ message CryptoKey {
   // if [CryptoKeyVersions][google.cloud.kms.v1.CryptoKeyVersion] have a
   // [ProtectionLevel][google.cloud.kms.v1.ProtectionLevel] of
   // [EXTERNAL_VPC][google.cloud.kms.v1.ProtectionLevel.EXTERNAL_VPC], with the
-  // resource name in the format `projects/*/locations/*/ekmConnections/*`.
+  // resource name in the format `projects/*/locations/*/ekmConnections/*`. Only
+  // applicable if [CryptoKeyVersions][google.cloud.kms.v1.CryptoKeyVersion]
+  // have a [ProtectionLevel][google.cloud.kms.v1.ProtectionLevel] of
+  // [HSM_SINGLE_TENANT][google.cloud.kms.v1.ProtectionLevel.HSM_SINGLE_TENANT],
+  // with the resource name in the format
+  // `projects/*/locations/*/singleTenantHsmInstances/*`.
   // Note, this list is non-exhaustive and may apply to additional
   // [ProtectionLevels][google.cloud.kms.v1.ProtectionLevel] in the future.
   string crypto_key_backend = 15 [
@@ -216,6 +223,10 @@ message CryptoKey {
   // justification codes.
   // https://cloud.google.com/assured-workloads/key-access-justifications/docs/justification-codes
   // By default, this field is absent, and all justification codes are allowed.
+  // If the
+  // `key_access_justifications_policy.allowed_access_reasons`
+  // is empty (zero allowed justification code), all encrypt, decrypt, and sign
+  // operations will fail.
   KeyAccessJustificationsPolicy key_access_justifications_policy = 17
       [(google.api.field_behavior) = OPTIONAL];
 }
@@ -484,12 +495,39 @@ message CryptoKeyVersion {
     KEM_XWING = 63;
 
     // The post-quantum Module-Lattice-Based Digital Signature Algorithm, at
+    // security level 1. Randomized version.
+    PQ_SIGN_ML_DSA_44 = 68;
+
+    // The post-quantum Module-Lattice-Based Digital Signature Algorithm, at
     // security level 3. Randomized version.
     PQ_SIGN_ML_DSA_65 = 56;
+
+    // The post-quantum Module-Lattice-Based Digital Signature Algorithm, at
+    // security level 5. Randomized version.
+    PQ_SIGN_ML_DSA_87 = 69;
 
     // The post-quantum stateless hash-based digital signature algorithm, at
     // security level 1. Randomized version.
     PQ_SIGN_SLH_DSA_SHA2_128S = 57;
+
+    // The post-quantum stateless hash-based digital signature algorithm, at
+    // security level 1. Randomized pre-hash version supporting SHA256 digests.
+    PQ_SIGN_HASH_SLH_DSA_SHA2_128S_SHA256 = 60;
+
+    // The post-quantum Module-Lattice-Based Digital Signature Algorithm, at
+    // security level 1. Randomized version supporting externally-computed
+    // message representatives.
+    PQ_SIGN_ML_DSA_44_EXTERNAL_MU = 70;
+
+    // The post-quantum Module-Lattice-Based Digital Signature Algorithm, at
+    // security level 3. Randomized version supporting externally-computed
+    // message representatives.
+    PQ_SIGN_ML_DSA_65_EXTERNAL_MU = 67;
+
+    // The post-quantum Module-Lattice-Based Digital Signature Algorithm, at
+    // security level 5. Randomized version supporting externally-computed
+    // message representatives.
+    PQ_SIGN_ML_DSA_87_EXTERNAL_MU = 71;
   }
 
   // The state of a [CryptoKeyVersion][google.cloud.kms.v1.CryptoKeyVersion],
@@ -986,6 +1024,18 @@ message ImportJob {
   // protection level of [HSM][google.cloud.kms.v1.ProtectionLevel.HSM].
   KeyOperationAttestation attestation = 8
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Immutable. The resource name of the backend environment where the key
+  // material for the wrapping key resides and where all related cryptographic
+  // operations are performed. Currently, this field is only populated for keys
+  // stored in HSM_SINGLE_TENANT. Note, this list is non-exhaustive and may
+  // apply to additional [ProtectionLevels][google.cloud.kms.v1.ProtectionLevel]
+  // in the future. Supported resources:
+  // * `"projects/*/locations/*/singleTenantHsmInstances/*"`
+  string crypto_key_backend = 11 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.resource_reference) = { type: "*" }
+  ];
 }
 
 // ExternalProtectionLevelOptions stores a group of additional fields for
@@ -1010,14 +1060,52 @@ message ExternalProtectionLevelOptions {
 // [KeyAccessJustificationsPolicy][google.cloud.kms.v1.KeyAccessJustificationsPolicy]
 // specifies zero or more allowed
 // [AccessReason][google.cloud.kms.v1.AccessReason] values for encrypt, decrypt,
-// and sign operations on a [CryptoKey][google.cloud.kms.v1.CryptoKey].
+// and sign operations on a [CryptoKey][google.cloud.kms.v1.CryptoKey] or
+// [KeyAccessJustificationsPolicyConfig][google.cloud.kms.v1.KeyAccessJustificationsPolicyConfig]
+// (the default Key Access Justifications policy).
 message KeyAccessJustificationsPolicy {
   // The list of allowed reasons for access to a
-  // [CryptoKey][google.cloud.kms.v1.CryptoKey]. Zero allowed access reasons
-  // means all encrypt, decrypt, and sign operations for the
-  // [CryptoKey][google.cloud.kms.v1.CryptoKey] associated with this policy will
-  // fail.
+  // [CryptoKey][google.cloud.kms.v1.CryptoKey]. Note that empty
+  // allowed_access_reasons has a different meaning depending on where this
+  // message appears. If this is under
+  // [KeyAccessJustificationsPolicyConfig][google.cloud.kms.v1.KeyAccessJustificationsPolicyConfig],
+  // it means allow-all. If this is under
+  // [CryptoKey][google.cloud.kms.v1.CryptoKey], it means deny-all.
   repeated AccessReason allowed_access_reasons = 1;
+}
+
+// A RetiredResource resource represents the record of a deleted
+// [CryptoKey][google.cloud.kms.v1.CryptoKey]. Its purpose is to provide
+// visibility into retained user data and to prevent reuse of these names for
+// new [CryptoKeys][google.cloud.kms.v1.CryptoKey].
+message RetiredResource {
+  option (google.api.resource) = {
+    type: "cloudkms.googleapis.com/RetiredResource"
+    pattern: "projects/{project}/locations/{location}/retiredResources/{retired_resource}"
+    plural: "retiredResources"
+    singular: "retiredResource"
+  };
+
+  // Output only. Identifier. The resource name for this
+  // [RetiredResource][google.cloud.kms.v1.RetiredResource] in the format
+  // `projects/*/locations/*/retiredResources/*`.
+  string name = 1 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.field_behavior) = IDENTIFIER
+  ];
+
+  // Output only. The full resource name of the original
+  // [CryptoKey][google.cloud.kms.v1.CryptoKey] that was deleted in the format
+  // `projects/*/locations/*/keyRings/*/cryptoKeys/*`.
+  string original_resource = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The resource type of the original deleted resource.
+  string resource_type = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time at which the original resource was deleted and this
+  // RetiredResource record was created.
+  google.protobuf.Timestamp delete_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // [ProtectionLevel][google.cloud.kms.v1.ProtectionLevel] specifies how
@@ -1038,6 +1126,9 @@ enum ProtectionLevel {
 
   // Crypto operations are performed in an EKM-over-VPC backend.
   EXTERNAL_VPC = 4;
+
+  // Crypto operations are performed in a single-tenant HSM.
+  HSM_SINGLE_TENANT = 5;
 }
 
 // Describes the reason for a data access. Please refer to
@@ -1070,6 +1161,12 @@ enum AccessReason {
   // No reason is expected for this key request.
   REASON_NOT_EXPECTED = 7;
 
+  // Deprecated: This code is no longer generated by
+  // Google Cloud. The GOOGLE_RESPONSE_TO_PRODUCTION_ALERT justification codes
+  // available in both Key Access Justifications and Access Transparency logs
+  // provide customer-visible signals of emergency access in more precise
+  // contexts.
+  //
   // Customer uses their account to perform any access to their own data which
   // their IAM policy authorizes, and one of the following is true:
   //
@@ -1078,8 +1175,14 @@ enum AccessReason {
   // * A Google-initiated emergency access operation has interacted with a
   //   resource in the same project or folder as the currently accessed resource
   //   within the past 7 days.
-  MODIFIED_CUSTOMER_INITIATED_ACCESS = 8;
+  MODIFIED_CUSTOMER_INITIATED_ACCESS = 8 [deprecated = true];
 
+  // Deprecated: This code is no longer generated by
+  // Google Cloud. The GOOGLE_RESPONSE_TO_PRODUCTION_ALERT justification codes
+  // available in both Key Access Justifications and Access Transparency logs
+  // provide customer-visible signals of emergency access in more precise
+  // contexts.
+  //
   // Google systems access customer data to help optimize the structure of the
   // data or quality for future uses by the customer, and one of the following
   // is true:
@@ -1089,7 +1192,7 @@ enum AccessReason {
   // * A Google-initiated emergency access operation has interacted with a
   //   resource in the same project or folder as the currently accessed resource
   //   within the past 7 days.
-  MODIFIED_GOOGLE_INITIATED_SYSTEM_OPERATION = 9;
+  MODIFIED_GOOGLE_INITIATED_SYSTEM_OPERATION = 9 [deprecated = true];
 
   // Google-initiated access to maintain system reliability.
   GOOGLE_RESPONSE_TO_PRODUCTION_ALERT = 10;

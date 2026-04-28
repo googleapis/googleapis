@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import "google/api/field_info.proto";
 import "google/api/resource.proto";
 import "google/cloud/vectorsearch/v1beta/common.proto";
 import "google/cloud/vectorsearch/v1beta/embedding_config.proto";
+import "google/cloud/vectorsearch/v1beta/encryption_spec.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
@@ -30,10 +31,13 @@ import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 
+option csharp_namespace = "Google.Cloud.VectorSearch.V1Beta";
 option go_package = "cloud.google.com/go/vectorsearch/apiv1beta/vectorsearchpb;vectorsearchpb";
 option java_multiple_files = true;
 option java_outer_classname = "VectorSearchServiceProto";
 option java_package = "com.google.cloud.vectorsearch.v1beta";
+option php_namespace = "Google\\Cloud\\VectorSearch\\V1beta";
+option ruby_package = "Google::Cloud::VectorSearch::V1beta";
 
 // VectorSearchService provides methods for managing Collection resources, and
 // Collection Index resources. The primary resources offered by this service are
@@ -132,6 +136,19 @@ service VectorSearchService {
     };
   }
 
+  // Updates the parameters of a single Index.
+  rpc UpdateIndex(UpdateIndexRequest) returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      patch: "/v1beta/{index.name=projects/*/locations/*/collections/*/indexes/*}"
+      body: "index"
+    };
+    option (google.api.method_signature) = "index,update_mask";
+    option (google.longrunning.operation_info) = {
+      response_type: "Index"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
   // Deletes a single Index.
   rpc DeleteIndex(DeleteIndexRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
@@ -154,6 +171,19 @@ service VectorSearchService {
     option (google.longrunning.operation_info) = {
       response_type: "ImportDataObjectsResponse"
       metadata_type: "ImportDataObjectsMetadata"
+    };
+  }
+
+  // Initiates a Long-Running Operation to export DataObjects from a Collection.
+  rpc ExportDataObjects(ExportDataObjectsRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1beta/{name=projects/*/locations/*/collections/*}:exportDataObjects"
+      body: "*"
+    };
+    option (google.longrunning.operation_info) = {
+      response_type: "ExportDataObjectsResponse"
+      metadata_type: "ExportDataObjectsMetadata"
     };
   }
 }
@@ -200,8 +230,18 @@ message Collection {
   // Optional. JSON Schema for data.
   // Field names must contain only alphanumeric characters,
   // underscores, and hyphens.
+  // The schema must be compliant with
+  // [JSON Schema Draft 7](https://json-schema.org/draft-07/schema).
   google.protobuf.Struct data_schema = 10
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Immutable. Specifies the customer-managed encryption key spec for
+  // a Collection. If set, this Collection and all sub-resources of this
+  // Collection will be secured by this key.
+  EncryptionSpec encryption_spec = 11 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = OPTIONAL
+  ];
 }
 
 // Message describing a vector field.
@@ -290,7 +330,7 @@ message CreateCollectionRequest {
 
   // Required. ID of the Collection to create.
   // The id must be 1-63 characters long, and comply with
-  // <a href="https://www.ietf.org/rfc/rfc1035.txt" target="_blank">RFC1035</a>.
+  // [RFC1035](https://www.ietf.org/rfc/rfc1035.txt).
   // Specifically, it must be 1-63 characters long and match the regular
   // expression `[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?`.
   string collection_id = 2 [(google.api.field_behavior) = REQUIRED];
@@ -329,7 +369,8 @@ message UpdateCollectionRequest {
   // The following fields support update: `display_name`, `description`,
   // `labels`, `data_schema`, `vector_schema`.
   // For `data_schema` and `vector_schema`, fields can only be added, not
-  // modified or deleted.
+  // deleted, but `vertex_embedding_config` in `vector_schema` can be added or
+  // removed.
   // Partial updates for `data_schema` and `vector_schema` are also supported
   // by using sub-field paths in `update_mask`, e.g.
   // `data_schema.properties.foo` or `vector_schema.my_vector_field`.
@@ -398,6 +439,19 @@ message Index {
     singular: "index"
   };
 
+  // The infrastructure type of the index.
+  oneof infra_type {
+    // Optional. Dedicated infrastructure for the index.
+    DedicatedInfrastructure dedicated_infrastructure = 11
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // The type of the index.
+  oneof index_type {
+    // Optional. Dense ScaNN index.
+    DenseScannIndex dense_scann = 12 [(google.api.field_behavior) = OPTIONAL];
+  }
+
   // Identifier. name of resource
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
@@ -448,7 +502,7 @@ message CreateIndexRequest {
 
   // Required. ID of the Index to create.
   // The id must be 1-63 characters long, and comply with
-  // <a href="https://www.ietf.org/rfc/rfc1035.txt" target="_blank">RFC1035</a>.
+  // [RFC1035](https://www.ietf.org/rfc/rfc1035.txt).
   // Specifically, it must be 1-63 characters long and match the regular
   // expression `[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?`.
   string index_id = 2 [(google.api.field_behavior) = REQUIRED];
@@ -470,6 +524,48 @@ message CreateIndexRequest {
   // The request ID must be a valid UUID with the exception that zero UUID is
   // not supported (00000000-0000-0000-0000-000000000000).
   string request_id = 4 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
+// Message for updating an Index.
+message UpdateIndexRequest {
+  // Required. The resource being updated.
+  Index index = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Specifies the fields to be overwritten in the Index resource by
+  // the update. The fields specified in the update_mask are relative to the
+  // resource, not the full request. A field will be overwritten if it is in the
+  // mask. If the user does not provide a mask then all fields present in the
+  // request with non-empty values will be overwritten.
+  //
+  // The following fields support update:
+  //   * `display_name`
+  //   * `description`
+  //   * `labels`
+  //   * `dedicated_infrastructure.autoscaling_spec.min_replica_count`
+  //   * `dedicated_infrastructure.autoscaling_spec.max_replica_count`
+  //
+  // If `*` is provided in the `update_mask`, full replacement of mutable fields
+  // will be performed.
+  google.protobuf.FieldMask update_mask = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. An optional request ID to identify requests. Specify a unique
+  // request ID so that if you must retry your request, the server will know to
+  // ignore the request if it has already been completed. The server will
+  // guarantee that for at least 60 minutes since the first request.
+  //
+  // For example, consider a situation where you make an initial request and the
+  // request times out. If you make the request again with the same request
+  // ID, the server can check if original operation with the same request ID
+  // was received, and if so, will ignore the second request. This prevents
+  // clients from accidentally creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 3 [
     (google.api.field_info).format = UUID4,
     (google.api.field_behavior) = OPTIONAL
   ];
@@ -581,7 +677,8 @@ message OperationMetadata {
   string api_version = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
-// Request message for [DataObjectService.ImportDataObjects][].
+// Request message for
+// [VectorSearchService.ImportDataObjects][google.cloud.vectorsearch.v1beta.VectorSearchService.ImportDataObjects].
 message ImportDataObjectsRequest {
   // Google Cloud Storage configuration for the import.
   message GcsImportConfig {
@@ -591,6 +688,12 @@ message ImportDataObjectsRequest {
     // Required. URI prefix of the Cloud Storage location to write any errors
     // encountered during the import.
     string error_uri = 2 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. URI prefix of the Cloud Storage location to write DataObject
+    // `IDs` and `etags` of DataObjects that were successfully imported. The
+    // service will write the successfully imported DataObjects to sharded files
+    // under this prefix. If this field is empty, no output will be written.
+    string output_uri = 3 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // The configuration for the import data and error results.
@@ -609,23 +712,138 @@ message ImportDataObjectsRequest {
   ];
 }
 
-// Metadata for [DataObjectService.ImportDataObjects][].
+// Metadata for
+// [VectorSearchService.ImportDataObjects][google.cloud.vectorsearch.v1beta.VectorSearchService.ImportDataObjects].
 message ImportDataObjectsMetadata {
-  // The time the operation was created.
-  google.protobuf.Timestamp create_time = 1;
+  // Output only. The time the operation was created.
+  google.protobuf.Timestamp create_time = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // The time the operation was last updated.
-  google.protobuf.Timestamp update_time = 2;
+  // Output only. The time the operation was last updated.
+  google.protobuf.Timestamp update_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Number of DataObjects that were processed successfully.
-  int64 success_count = 3;
+  // Output only. Number of DataObjects that were processed successfully.
+  int64 success_count = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Number of DataObjects that failed during processing.
-  int64 failure_count = 4;
+  // Output only. Number of DataObjects that failed during processing.
+  int64 failure_count = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
-// Response for [DataObjectService.ImportDataObjects][].
+// Response for
+// [VectorSearchService.ImportDataObjects][google.cloud.vectorsearch.v1beta.VectorSearchService.ImportDataObjects].
 message ImportDataObjectsResponse {
   // Status of the LRO
   google.rpc.Status status = 1;
+}
+
+// Request message for
+// [VectorSearchService.ExportDataObjects][google.cloud.vectorsearch.v1beta.VectorSearchService.ExportDataObjects].
+message ExportDataObjectsRequest {
+  // Google Cloud Storage configuration for the export.
+  message GcsExportDestination {
+    // Options for the format of the exported Data Objects.
+    enum Format {
+      // Unspecified format.
+      FORMAT_UNSPECIFIED = 0;
+
+      // Deprecated: Exports Data Objects in `JSON` format. Use `JSONL` instead.
+      JSON = 1 [deprecated = true];
+
+      // Exports Data Objects in `JSONL` format.
+      JSONL = 2;
+    }
+
+    // Required. URI prefix of the Cloud Storage where to export Data Objects.
+    // The bucket is required to be in the same region as the collection.
+    string export_uri = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The format of the exported Data Objects.
+    Format format = 2 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // The configuration for the export data.
+  oneof destination {
+    // The Cloud Storage location where user wants to export Data Objects.
+    GcsExportDestination gcs_destination = 2;
+  }
+
+  // Required. The resource name of the Collection from which we want to export
+  // Data Objects. Format:
+  // `projects/{project}/locations/{location}/collections/{collection}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "vectorsearch.googleapis.com/Collection"
+    }
+  ];
+}
+
+// Metadata for the ExportDataObjects LRO.
+message ExportDataObjectsMetadata {
+  // Output only. The time the operation was created.
+  google.protobuf.Timestamp create_time = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time the operation finished.
+  google.protobuf.Timestamp finish_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Response for the ExportDataObjects LRO.
+message ExportDataObjectsResponse {}
+
+// Represents dedicated infrastructure for the index.
+message DedicatedInfrastructure {
+  // Specification for autoscaling.
+  message AutoscalingSpec {
+    // Optional. The minimum number of replicas. If not set or set to `0`,
+    // defaults to `2`. Must be >= `1` and <= `1000`.
+    int32 min_replica_count = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The maximum number of replicas.  Must be >=
+    // `min_replica_count` and <= `1000`.
+    // For the v1beta version, if not set or set to `0`, defaults to
+    // the greater of `min_replica_count` and `5`.
+    // For all other versions, if not set or set to `0`, defaults to
+    // the greater of `min_replica_count` and `2`.
+    int32 max_replica_count = 2 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Mode of the dedicated infrastructure.
+  enum Mode {
+    // Default will use `PERFORMANCE_OPTIMIZED`.
+    MODE_UNSPECIFIED = 0;
+
+    // This is storage optimized variation.
+    STORAGE_OPTIMIZED = 1;
+
+    // This is Performance optimized on E2 or equivalent family.
+    PERFORMANCE_OPTIMIZED = 2;
+  }
+
+  // Optional. Mode of the dedicated infrastructure.
+  optional Mode mode = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Autoscaling specification.
+  AutoscalingSpec autoscaling_spec = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Dense ScaNN index configuration.
+message DenseScannIndex {
+  // Feature norm type for ScaNN index.
+  enum FeatureNormType {
+    // Unspecified feature norm type.
+    FEATURE_NORM_TYPE_UNSPECIFIED = 0;
+
+    // No norm applied.
+    NONE = 1;
+
+    // Unit L2 norm.
+    UNIT_L2_NORM = 2;
+  }
+
+  // Optional. Feature norm type.
+  FeatureNormType feature_norm_type = 2
+      [(google.api.field_behavior) = OPTIONAL];
 }
