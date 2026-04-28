@@ -17,6 +17,7 @@ syntax = "proto3";
 package backstory;
 
 import "backstory/data_access.proto";
+import "backstory/entity_risk.proto";
 import "backstory/id.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";
@@ -30,6 +31,83 @@ option java_multiple_files = true;
 option java_package = "com.backstory";
 option php_namespace = "Backstory";
 option ruby_package = "Backstory";
+
+// A Unified Data Model event.
+message UDM {
+  // Event metadata such as timestamp, source product, etc.
+  Metadata metadata = 1;
+
+  // Any important vendor-specific event data that cannot be adequately
+  // represented within the formal sections of the UDM model.
+  google.protobuf.Struct additional = 2;
+
+  // Represents the acting entity that originates the activity
+  // described in the event. The principal must include at least one machine
+  // detail (hostname, MACs, IPs, port, product-specific identifiers like an
+  // EDR asset ID) or user detail (for example, username), and optionally
+  // include process details. It must NOT include any of the following fields:
+  // email, files, registry keys or values.
+  Noun principal = 3;
+
+  // Represents a source entity being acted upon by the participant along with
+  // the device or process context for the source object (the machine where the
+  // source object resides). For example, if user U copies file A on machine X
+  // to file B on machine Y, both file A and machine X would be specified in the
+  // src portion of the UDM event.
+  Noun src = 4;
+
+  // Represents a target entity being referenced by the event or an object on
+  // the target entity. For example, in a firewall connection from device A to
+  // device B, A is described as the principal and B is described as the target.
+  // For a process injection by process C into target process D, process C is
+  // described as the principal and process D is described as the target.
+  Noun target = 5;
+
+  // Represents details on one or more intermediate entities processing activity
+  // described in the event. This includes device details about a proxy server
+  // or SMTP relay server. If an active event (that has a principal and
+  // possibly target) passes through any intermediaries, they're added here.
+  // Intermediaries can impact the overall action, for example blocking or
+  // modifying an ongoing request.  A rule of thumb here is that 'principal',
+  // 'target', and description of the initial action should be the same
+  // regardless of the intermediary or its action.  A successful network
+  // connection from A->B should look the same in principal/target/intermediary
+  // as one blocked by firewall C: principal: A, target: B (intermediary: C).
+  repeated Noun intermediary = 6;
+
+  // Represents an observer entity (for example, a packet sniffer or
+  // network-based vulnerability scanner), which is not a direct intermediary,
+  // but which observes and reports on the event in question.
+  Noun observer = 7;
+
+  // Represents entities referenced by the event that are not otherwise
+  // described in principal, src, target, intermediary or observer. For example,
+  // it could be used to track email file attachments, domains/URLs/IPs embedded
+  // within an email body, and DLLs that are loaded during a PROCESS_LAUNCH
+  // event.
+  repeated Noun about = 8;
+
+  // A list of security results.
+  repeated SecurityResult security_result = 9;
+
+  // All network details go here, including sub-messages with details on each
+  // protocol (for example, DHCP, DNS, or HTTP).
+  Network network = 10;
+
+  // All other first-class, event-specific metadata goes in this message.
+  // Do not place protocol metadata in Extensions; put it in Network.
+  Extensions extensions = 11;
+
+  // Flattened fields extracted from the log.
+  google.protobuf.Struct extracted = 12;
+
+  // Related UDM fields that are grouped together.
+  optional GroupedFields grouped = 13;
+
+  // Reserving "udm" and "entity" so we don't have ambiguity between the
+  // optional source part of a variable name.
+  reserved "udm", "entity", "graph";
+}
 
 // General information associated with a UDM event.
 message Metadata {
@@ -1203,6 +1281,48 @@ message ProxyInfo {
   bool relay_proxy = 11;
 }
 
+// Extensions to a UDM event.
+message Extensions {
+  // An authentication extension.
+  Authentication auth = 1;
+
+  // A vulnerability extension.
+  Vulnerabilities vulns = 2;
+
+  // An entity risk change extension.
+  EntityRisk entity_risk = 3;
+
+  // A Linux Utmp extension. This captures details specific to Linux Utmp
+  // events, which record login and logout sessions on a Linux system.
+  LinuxUtmp linux_utmp = 4;
+
+  // A Windows Event Log extension. This captures details specific to Windows
+  // Event Log events, providing structured information from various Windows
+  // logs.
+  WindowsEventLog windows_event_log = 5;
+
+  // A resource usage extension. This captures details about what entity
+  // (e.g., process, user) is using a specific resource.
+  ResourceUsage resource_usage = 6;
+
+  // A system event details extension. This captures additional details for
+  // system-level events, such as message type, sender image ID, and subsystem.
+  SystemEventDetails system_event_details = 7;
+
+  // A Microsoft Outlook specific metadata extension. This includes metadata
+  // related to Outlook items, such as comments, templates, and security flags.
+  OutlookMetadata outlook_metadata = 8;
+
+  // A SRUM extension. This captures details specific to Windows System Resource
+  // Usage Monitor (SRUM) events, providing insights into application resource
+  // consumption.
+  Srum srum = 9;
+
+  // A UserAssist extension. This captures details specific to Windows User
+  // Assist events, which track application usage and execution.
+  UserAssist user_assist = 10;
+}
+
 // The Authentication extension captures details specific to authentication
 // events.
 // General guidelines for authentication events:
@@ -1220,6 +1340,94 @@ message ProxyInfo {
 //   about the cloud service they logged into, and the intermediary captures
 //   details about the SSO solution.
 message Authentication {
+  // Type of system the authentication event is associated with.
+  enum AuthType {
+    // The default type.
+    AUTHTYPE_UNSPECIFIED = 0;
+
+    // A machine authentication.
+    MACHINE = 1;
+
+    // An SSO authentication.
+    SSO = 2;
+
+    // A VPN authentication.
+    VPN = 3;
+
+    // A Physical authentication (e.g. "Badge reader").
+    PHYSICAL = 4;
+
+    // A TACACS family protocol for networked systems authentication
+    // (e.g. TACACS, TACACS+).
+    TACACS = 5;
+  }
+
+  // Mechanism(s) used to authenticate.
+  enum Mechanism {
+    // The default mechanism.
+    MECHANISM_UNSPECIFIED = 0;
+
+    // Username + password authentication.
+    USERNAME_PASSWORD = 1;
+
+    // OTP authentication.
+    OTP = 2;
+
+    // Hardware key authentication.
+    HARDWARE_KEY = 3;
+
+    // Local authentication.
+    LOCAL = 4;
+
+    // Remote authentication.
+    REMOTE = 5;
+
+    // RDP, Terminal Services, or VNC.
+    REMOTE_INTERACTIVE = 6;
+
+    // Some other mechanism that is not defined here.
+    MECHANISM_OTHER = 7;
+
+    // Badge reader authentication
+    BADGE_READER = 8;
+
+    // Network authentication.
+    NETWORK = 9;
+
+    // Batch authentication.
+    BATCH = 10;
+
+    // Service authentication
+    SERVICE = 11;
+
+    // Direct human-interactive unlock authentication.
+    UNLOCK = 12;
+
+    // Network clear text authentication.
+    NETWORK_CLEAR_TEXT = 13;
+
+    // Authentication with new credentials.
+    NEW_CREDENTIALS = 14;
+
+    // Interactive authentication.
+    INTERACTIVE = 15;
+
+    // Interactive authentication using cached credentials.
+    CACHED_INTERACTIVE = 16;
+
+    // Cached Remote Interactive authentication using cached credentials.
+    CACHED_REMOTE_INTERACTIVE = 17;
+
+    // Cached Remote Interactive authentication using cached credentials.
+    CACHED_UNLOCK = 18;
+
+    // Biometric device such as a fingerprint reader.
+    BIOMETRIC = 19;
+
+    // Wearable such as an Apple Watch.
+    WEARABLE = 20;
+  }
+
   // Authentication status, can be used to describe the status of authentication
   // for a user or particular credential.
   enum AuthenticationStatus {
@@ -1238,6 +1446,209 @@ message Authentication {
     // The authentication method has been deleted.
     DELETED = 4;
   }
+
+  // The outcome of the authentication event.
+  enum Outcome {
+    // The default outcome.
+    OUTCOME_UNSPECIFIED = 0;
+
+    // The authentication was successful.
+    SUCCESS = 1;
+
+    // The authentication failed.
+    FAILURE = 2;
+  }
+
+  // The type of authentication.
+  AuthType type = 1;
+
+  // The authentication mechanism.
+  repeated Mechanism mechanism = 2;
+
+  // The vendor defined details of the authentication.
+  string auth_details = 3;
+
+  // The outcome of the authentication event.
+  Outcome outcome = 4;
+}
+
+// The LinuxUtmp extension captures details specific to Linux Utmp events.
+message LinuxUtmp {
+  // The type of activity record from the Utmp file.
+  enum RecordType {
+    // The default record type.
+    RECORD_TYPE_UNSPECIFIED = 0;
+
+    // Run-level change.
+    RUN_LVL = 1;
+
+    // System boot time.
+    BOOT_TIME = 2;
+
+    // New time after system clock change.
+    NEW_TIME = 3;
+
+    // Old time before system clock change.
+    OLD_TIME = 4;
+
+    // Process spawned by init.
+    INIT_PROCESS = 5;
+
+    // Login process.
+    LOGIN_PROCESS = 6;
+
+    // Normal user process (logged-in session).
+    USER_PROCESS = 7;
+
+    // Terminated process (session ended).
+    DEAD_PROCESS = 8;
+
+    // Accounting message.
+    ACCOUNTING = 9;
+  }
+
+  // The activity record type.
+  RecordType record_type = 1;
+}
+
+// The WindowsEventLog extension captures details specific to Windows Event Log
+// events.
+message WindowsEventLog {
+  // The channel specifies the source or category of the event.
+  enum Channel {
+    // Default channel.
+    CHANNEL_UNSPECIFIED = 0;
+
+    // The security channel.
+    SECURITY = 1;
+
+    // The system channel.
+    SYSTEM = 2;
+
+    // The application channel.
+    APPLICATION = 3;
+
+    // The setup channel.
+    SETUP = 4;
+
+    // The forwarded events channel.
+    FORWARDED_EVENTS = 5;
+
+    // The other channel.
+    OTHER = 6;
+  }
+
+  // The channel of the event.
+  Channel channel = 1;
+
+  // A unique identifier for a specific type of event.
+  string event_id = 2;
+
+  // A GUID (Globally Unique Identifier) used to link a sequence of related
+  // events together.
+  string activity_id = 3;
+}
+
+// The ResourceUsage extension captures details about what is using a resource.
+message ResourceUsage {
+  // The name of the entity (e.g., process, user) that is using the resource.
+  string used_entity = 1;
+
+  // A numerical identifier for the entity using the resource (e.g., PID, UID).
+  string used_entity_id = 2;
+}
+
+// Captures additional details for system-level events.
+message SystemEventDetails {
+  // The specific type or category of the message.
+  string message_type = 1;
+
+  // An identifier for the image associated with the sender of the message.
+  string sender_image_id = 2;
+
+  // The subsystem or component that generated the event.
+  string subsystem = 3;
+}
+
+// Microsoft Outlook specific metadata.
+message OutlookMetadata {
+  // A user-defined comment or note associated with the Outlook item.
+  string comment = 1;
+
+  // The name of the template file used to create the Outlook item.
+  string template = 2;
+
+  // The title of the Outlook item.
+  string title = 3;
+
+  // Count of Security-related flags for the message, such as encryption or
+  // signing status.
+  int32 security_flags_count = 4;
+}
+
+// The Srum extension captures details specific to Windows System Resource
+// Usage Monitor (SRUM) events.
+message Srum {
+  // A unique identifier for the SRUM record or the application/user being
+  // monitored.
+  string id = 1;
+
+  // The number of bytes read by the application while running in the
+  // background.
+  int64 background_bytes_read = 2;
+
+  // The number of bytes written by the application while running in the
+  // background.
+  int64 background_bytes_written = 3;
+
+  // The number of context switches performed by the application's threads
+  // while in the background.
+  int64 background_context_switches = 4;
+
+  // The amount of CPU cycle time consumed by the application in the
+  // background, measured in clock cycles.
+  int64 background_cycle_count = 5;
+
+  // The number of flush operations performed by the application in the
+  // background.
+  int64 background_flushes_count = 6;
+
+  // The number of read operations performed by the application in the
+  // background.
+  int64 background_read_operations = 7;
+
+  // The number of write operations performed by the application in the
+  // background.
+  int64 background_write_operations = 8;
+
+  // The Locally Unique Identifier (LUID) for the network interface used for
+  // data transfer.
+  string interface_luid = 9;
+}
+
+// The UserAssist extension captures details specific to Windows User Assist
+// events.
+message UserAssist {
+  // The number of times the application associated with the entry gained
+  // focus.
+  int64 application_focus_count = 1;
+
+  // The total duration the application associated with the entry was in focus.
+  google.protobuf.Duration application_focus_duration = 2;
+
+  // The number of times the application associated with the entry has been
+  // executed.
+  int64 executions_count = 3;
+
+  // The index or identifier of the user assist entry, unique per user.
+  int64 entry_index = 4;
+}
+
+// The Vulnerabilities extension captures details on observed/detected
+// vulnerabilities.
+message Vulnerabilities {
+  // A list of vulnerabilities.
+  repeated Vulnerability vulnerabilities = 1 [packed = false];
 }
 
 // A vulnerability.
@@ -6163,4 +6574,32 @@ message Uint64Sequence {
 message StringSequence {
   // string sequence.
   repeated string string_vals = 1;
+}
+
+// Grouped fields are aliases for groups of related UDM fields. All
+// fields grouped together are of type string.
+message GroupedFields {
+  // IP addresses.
+  repeated string ip = 1;
+
+  // Domains.
+  repeated string domain = 2;
+
+  // Hostnames.
+  repeated string hostname = 3;
+
+  // Users.
+  repeated string user = 4;
+
+  // Emails.
+  repeated string email = 5;
+
+  // File paths.
+  repeated string file_path = 6;
+
+  // File Hashes.
+  repeated string hash = 7;
+
+  // Process Identifiers.
+  repeated string process_id = 8;
 }
