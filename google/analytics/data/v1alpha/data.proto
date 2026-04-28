@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -154,6 +154,24 @@ message Metric {
   // invisible, the metric will not produce a column in the response, but can be
   // used in `metricFilter`, `orderBys`, or a metric `expression`.
   bool invisible = 3;
+}
+
+// Defines an individual comparison. Most requests will include multiple
+// comparisons so that the report compares between the comparisons.
+message Comparison {
+  // Each comparison produces separate rows in the response. In the response,
+  // this comparison is identified by this name. If name is unspecified, we will
+  // use the saved comparisons display name.
+  optional string name = 1;
+
+  oneof one_comparison {
+    // A basic comparison.
+    FilterExpression dimension_filter = 2;
+
+    // A saved comparison identified by the comparison's resource name.
+    // For example, 'comparisons/1234'.
+    string comparison = 3;
+  }
 }
 
 // To express dimension or metric filters. The fields in the same
@@ -487,6 +505,25 @@ message CohortReportSettings {
   bool accumulate = 1;
 }
 
+// Identifies if the report data is from the standard report data or
+// conversion data
+enum Section {
+  // Should never be specified.
+  SECTION_UNSPECIFIED = 0;
+
+  // The report data is from the standard report data. Google Analytics reports
+  // include acquisition, engagement, and user behavior reports. Reports use
+  // dimensions like session source & landing page; reports use metrics like
+  // sessions, views, and engagement time.
+  SECTION_REPORT = 1;
+
+  // The report data is from the conversion data. The Google Analytics
+  // Advertising section reports on conversion performance. Advertising reports
+  // use dimensions like source & medium; advertising reports use metrics like
+  // all conversions and ads cost.
+  SECTION_ADVERTISING = 2;
+}
+
 // Response's metadata carrying additional information about the report content.
 message ResponseMetaData {
   // The schema restrictions actively enforced in creating this report. To learn
@@ -561,15 +598,18 @@ message ResponseMetaData {
   // Interests](https://support.google.com/analytics/answer/2799357).
   optional bool subject_to_thresholding = 8;
 
-  // If this report's results are
+  // If this report results is
   // [sampled](https://support.google.com/analytics/answer/13331292), this
   // describes the percentage of events used in this report. One
   // `samplingMetadatas` is populated for each date range. Each
-  // `samplingMetadatas` corresponds to a date range in the order that date
-  // ranges were specified in the request.
+  // `samplingMetadatas` corresponds to a date range in order that date ranges
+  // were specified in the request.
   //
   // However if the results are not sampled, this field will not be defined.
   repeated SamplingMetadata sampling_metadatas = 9;
+
+  // Identifies the type of data in the report.
+  Section section = 10;
 }
 
 // Describes a dimension column in the report. Dimensions requested in a report
@@ -1488,8 +1528,8 @@ message FunnelResponseMetadata {
   // [sampled](https://support.google.com/analytics/answer/13331292), this
   // describes what percentage of events were used in this funnel report. One
   // `samplingMetadatas` is populated for each date range. Each
-  // `samplingMetadatas` corresponds to a date range in the order that date
-  // ranges were specified in the request.
+  // `samplingMetadatas` corresponds to a date range in order that date ranges
+  // were specified in the request.
   //
   // However if the results are not sampled, this field will not be defined.
   repeated SamplingMetadata sampling_metadatas = 1;
@@ -1608,4 +1648,167 @@ enum SamplingLevel {
   // explorations. To learn more, see
   // https://support.google.com/analytics/answer/10896953.
   UNSAMPLED = 3;
+}
+
+// Controls conversion reporting.
+//
+// <aside class="caution">
+//   This feature may not be available to your Google Analytics property. The
+//   Google Analytics team is actively working to expand this feature to more
+//   properties. Please reach out to your
+//   <a href="https://support.google.com/analytics/gethelp">support team</a> if
+//   you have questions about the eligibility of your property.
+// </aside>
+message ConversionSpec {
+  // Attribution model to use in the Conversion Report
+  enum AttributionModel {
+    // Unspecified attribution model.
+    ATTRIBUTION_MODEL_UNSPECIFIED = 0;
+
+    // Attribution was based on the paid and organic data driven model
+    DATA_DRIVEN = 1;
+
+    // Attribution was based on the paid and organic last click model
+    LAST_CLICK = 2;
+  }
+
+  // The conversion action IDs to include in the report. If empty, all
+  // conversions are included. Valid conversion action IDs can be retrieved from
+  // the `conversion_action` field within the `conversions` list in the
+  // response of the `GetMetadata` method. For example,
+  // 'conversionActions/1234'.
+  repeated string conversion_actions = 1;
+
+  // The attribution model to use in the Conversion Report. If unspecified,
+  // `DATA_DRIVEN` is used.
+  AttributionModel attribution_model = 2;
+}
+
+// Explains a dimension.
+message DimensionMetadata {
+  // This dimension's name. Usable in [Dimension](#Dimension)'s `name`. For
+  // example, `eventName`.
+  string api_name = 1;
+
+  // This dimension's name within the Google Analytics user interface. For
+  // example, `Event name`.
+  string ui_name = 2;
+
+  // Description of how this dimension is used and calculated.
+  string description = 3;
+
+  // Still usable but deprecated names for this dimension. If populated, this
+  // dimension is available by either `apiName` or one of `deprecatedApiNames`
+  // for a period of time. After the deprecation period, the dimension will be
+  // available only by `apiName`.
+  repeated string deprecated_api_names = 4;
+
+  // True if the dimension is custom to this property. This includes user,
+  // event, & item scoped custom dimensions; to learn more about custom
+  // dimensions, see https://support.google.com/analytics/answer/14240153. This
+  // also include custom channel groups; to learn more about custom channel
+  // groups, see https://support.google.com/analytics/answer/13051316.
+  bool custom_definition = 5;
+
+  // The display name of the category that this dimension belongs to. Similar
+  // dimensions and metrics are categorized together.
+  string category = 6;
+
+  // Specifies the Google Analytics sections this dimension applies to.
+  repeated Section sections = 7;
+}
+
+// Explains a metric.
+message MetricMetadata {
+  // Justifications for why this metric is blocked.
+  enum BlockedReason {
+    // Will never be specified in API response.
+    BLOCKED_REASON_UNSPECIFIED = 0;
+
+    // If present, your access is blocked to revenue related metrics for this
+    // property, and this metric is revenue related.
+    NO_REVENUE_METRICS = 1;
+
+    // If present, your access is blocked to cost related metrics for this
+    // property, and this metric is cost related.
+    NO_COST_METRICS = 2;
+  }
+
+  // A metric name. Usable in [Metric](#Metric)'s `name`. For example,
+  // `eventCount`.
+  string api_name = 1;
+
+  // This metric's name within the Google Analytics user interface. For example,
+  // `Event count`.
+  string ui_name = 2;
+
+  // Description of how this metric is used and calculated.
+  string description = 3;
+
+  // Still usable but deprecated names for this metric. If populated, this
+  // metric is available by either `apiName` or one of `deprecatedApiNames`
+  // for a period of time. After the deprecation period, the metric will be
+  // available only by `apiName`.
+  repeated string deprecated_api_names = 4;
+
+  // The type of this metric.
+  MetricType type = 5;
+
+  // The mathematical expression for this derived metric. Can be used in
+  // [Metric](#Metric)'s `expression` field for equivalent reports. Most metrics
+  // are not expressions, and for non-expressions, this field is empty.
+  string expression = 6;
+
+  // True if the metric is a custom metric for this property.
+  bool custom_definition = 7;
+
+  // If reasons are specified, your access is blocked to this metric for this
+  // property. API requests from you to this property for this metric will
+  // succeed; however, the report will contain only zeros for this metric. API
+  // requests with metric filters on blocked metrics will fail. If reasons are
+  // empty, you have access to this metric.
+  //
+  // To learn more, see [Access and data-restriction
+  // management](https://support.google.com/analytics/answer/10851388).
+  repeated BlockedReason blocked_reasons = 8;
+
+  // The display name of the category that this metrics belongs to. Similar
+  // dimensions and metrics are categorized together.
+  string category = 9;
+
+  // Specifies the Google Analytics sections this metric applies to.
+  repeated Section sections = 10;
+}
+
+// The metadata for a single comparison.
+message ComparisonMetadata {
+  // This comparison's resource name. Usable in [Comparison](#Comparison)'s
+  // `comparison` field. For example, 'comparisons/1234'.
+  string api_name = 1;
+
+  // This comparison's name within the Google Analytics user interface.
+  string ui_name = 2;
+
+  // This comparison's description.
+  string description = 3;
+}
+
+// The metadata for a single conversion.
+//
+// <aside class="caution">
+//   This feature may not be available to your Google Analytics property. The
+//   Google Analytics team is actively working to expand this feature to more
+//   properties. Please reach out to your
+//   <a href="https://support.google.com/analytics/gethelp">support team</a> if
+//   you have questions about the eligibility of your property.
+// </aside>
+message ConversionMetadata {
+  // The unique identifier of the conversion action. This ID is used to specify
+  // which conversions to include in a report by populating the
+  // `conversion_actions` field in the `ConversionsSpec` of a report request.
+  // For example, 'conversionActions/1234'.
+  string conversion_action = 1;
+
+  // This conversion's name within the Google Analytics user interface.
+  string display_name = 2;
 }
