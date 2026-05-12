@@ -19,6 +19,7 @@ package google.container.v1;
 import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
+import "google/api/field_info.proto";
 import "google/api/resource.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
@@ -26,6 +27,8 @@ import "google/protobuf/timestamp.proto";
 import "google/protobuf/wrappers.proto";
 import "google/rpc/code.proto";
 import "google/rpc/status.proto";
+import "google/type/date.proto";
+import "google/type/timeofday.proto";
 
 option csharp_namespace = "Google.Cloud.Container.V1";
 option go_package = "cloud.google.com/go/container/apiv1/containerpb;containerpb";
@@ -55,7 +58,9 @@ option (google.api.resource_definition) = {
 service ClusterManager {
   option (google.api.default_host) = "container.googleapis.com";
   option (google.api.oauth_scopes) =
-      "https://www.googleapis.com/auth/cloud-platform";
+      "https://www.googleapis.com/auth/cloud-platform,"
+      "https://www.googleapis.com/auth/container,"
+      "https://www.googleapis.com/auth/container.read-only";
 
   // Lists all clusters owned by a project in either the specified zone or all
   // zones.
@@ -538,7 +543,7 @@ service ClusterManager {
     option (google.api.method_signature) = "name";
   }
 
-  // Fetch upgrade information of a specific nodepool.
+  // Fetch upgrade information of a specific node pool.
   rpc FetchNodePoolUpgradeInfo(FetchNodePoolUpgradeInfoRequest)
       returns (NodePoolUpgradeInfo) {
     option (google.api.http) = {
@@ -626,6 +631,44 @@ message LinuxNodeConfig {
     TRANSPARENT_HUGEPAGE_DEFRAG_NEVER = 5;
   }
 
+  // Support for running custom init code while bootstrapping nodes.
+  message CustomNodeInit {
+    // InitScript provide a simply bash script to be executed on the node.
+    message InitScript {
+      // The Cloud Storage URI for storing the init script.
+      // Format: gs://BUCKET_NAME/OBJECT_NAME
+      // The service account on the node pool must have read access to the
+      // object.
+      // User can't configure both gcs_uri and gcp_secret_manager_secret_uri.
+      string gcs_uri = 1;
+
+      // The generation of the init script stored in Gloud Storage.
+      // This is the required field to identify the version of the
+      // init script.
+      // User can get the genetaion from
+      // `gcloud storage objects describe gs://BUCKET_NAME/OBJECT_NAME
+      // --format="value(generation)"` or from the "Version history" tab of the
+      // object in the Cloud Console UI.
+      int64 gcs_generation = 2;
+
+      // Optional. The optional arguments line to be passed to the init script.
+      repeated string args = 3 [(google.api.field_behavior) = OPTIONAL];
+
+      // The resource name of the secret manager secret hosting the init script.
+      // Both global and regional secrets are supported with format below:
+      // Global secret: projects/{project}/secrets/{secret}/versions/{version}
+      // Regional secret:
+      // projects/{project}/locations/{location}/secrets/{secret}/versions/{version}
+      // Example: projects/1234567890/secrets/script_1/versions/1.
+      // Accept version number only, not support version alias.
+      // User can't configure both gcp_secret_manager_secret_uri and gcs_uri.
+      string gcp_secret_manager_secret_uri = 4;
+    }
+
+    // Optional. The init script to be executed on the node.
+    InitScript init_script = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
   // Configuration for swap memory on a node pool.
   message SwapConfig {
     // Defines encryption settings for the swap space.
@@ -691,7 +734,7 @@ message LinuxNodeConfig {
 
   // Configuration for kernel module loading on nodes.
   message NodeKernelModuleLoading {
-    // Defines the kernel module loading policy for nodes in the nodepool.
+    // Defines the kernel module loading policy for nodes in the node pool.
     enum Policy {
       // Default behavior. GKE selects the image based on node type.
       // For CPU and TPU nodes, the image will not allow loading external
@@ -717,6 +760,13 @@ message LinuxNodeConfig {
 
     // Set the node module loading policy for nodes in the node pool.
     Policy policy = 1;
+  }
+
+  // AccurateTimeConfig contains configuration for the accurate time
+  // synchronization feature.
+  message AccurateTimeConfig {
+    // Enables enhanced time synchronization using PTP-KVM.
+    optional bool enable_ptp_kvm_time_sync = 1;
   }
 
   // The Linux kernel parameters to be applied to the nodes and all pods running
@@ -805,6 +855,10 @@ message LinuxNodeConfig {
   TransparentHugepageDefrag transparent_hugepage_defrag = 5
       [(google.api.field_behavior) = OPTIONAL];
 
+  // Optional. Allow users to run arbitrary bash script or container on the
+  // node.
+  CustomNodeInit custom_node_init = 11 [(google.api.field_behavior) = OPTIONAL];
+
   // Optional. Enables and configures swap space on nodes.
   // If omitted, swap is disabled.
   optional SwapConfig swap_config = 12 [(google.api.field_behavior) = OPTIONAL];
@@ -813,6 +867,10 @@ message LinuxNodeConfig {
   // When enabled, the node pool will be provisioned with a Container-Optimized
   // OS image that enforces kernel module signature verification.
   NodeKernelModuleLoading node_kernel_module_loading = 13
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The accurate time configuration for the node pool.
+  optional AccurateTimeConfig accurate_time_config = 14
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -838,6 +896,24 @@ message WindowsNodeConfig {
 
 // Node kubelet configs.
 message NodeKubeletConfig {
+  // Contains config to modify node-level parameters for container restart
+  // behavior.
+  message CrashLoopBackOffConfig {
+    // Optional. The maximum duration the backoff delay can accrue to for
+    // container restarts, minimum 1 second, maximum 300 seconds. If not set,
+    // defaults to the internal crashloopbackoff maximum.
+    //
+    // The string must be a sequence of decimal numbers, each with optional
+    // fraction and a unit suffix, such as "300ms".
+    // Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+    //
+    // See
+    // https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#configurable-container-restart-delay
+    // for more details.
+    string max_container_restart_period = 1
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
   // Control the CPU management policy on the node.
   // See
   // https://kubernetes.io/docs/tasks/administer-cluster/cpu-management-policies/
@@ -1017,6 +1093,11 @@ message NodeKubeletConfig {
   // container cgroups in cgroups v2. This causes processes in the container to
   // be OOM killed individually instead of as a group.
   optional bool single_process_oom_kill = 22
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Contains configuration options to modify node-level parameters
+  // for container restart behavior.
+  CrashLoopBackOffConfig crash_loop_back_off = 24
       [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. shutdown_grace_period_seconds is the maximum allowed grace period
@@ -1332,14 +1413,23 @@ message NodeConfig {
   // for available image types.
   string image_type = 5;
 
-  // The map of Kubernetes labels (key/value pairs) to be applied to each node.
-  // These will added in addition to any default label(s) that
-  // Kubernetes may apply to the node.
-  // In case of conflict in label keys, the applied set may differ depending on
-  // the Kubernetes version -- it's best to assume the behavior is undefined
-  // and conflicts should be avoided.
-  // For more information, including usage and the valid values, see:
-  // https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+  // The Kubernetes labels (key/value pairs) to apply to each node. The values
+  // in this field are added to the set of default labels Kubernetes applies to
+  // nodes.
+  //
+  // This field has the following restrictions:
+  //
+  // * Labels must use a valid Kubernetes syntax and character set, as defined
+  //   in
+  //   https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set.
+  // * This field supports up to 1,024 total characters in a single request.
+  //
+  // Depending on the Kubernetes version, keys in this field might conflict with
+  // the keys of the default labels, which might change which of your labels
+  // are applied to the nodes. Assume that the behavior is unpredictable and
+  // avoid label key conflicts. For more information about the default labels,
+  // see:
+  // https://kubernetes.io/docs/reference/labels-annotations-taints/
   map<string, string> labels = 6;
 
   // The number of local SSD disks to be attached to the node.
@@ -1512,6 +1602,30 @@ message NodeConfig {
   // scale down underutilized nodes. If not set, nodes are scaled down by
   // default behavior, i.e. according to the chosen autoscaling profile.
   google.protobuf.Duration consolidation_delay = 60;
+
+  // Optional. The taint configuration for the node pool.
+  optional TaintConfig taint_config = 62
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// TaintConfig contains the configuration for the taints of the node pool.
+message TaintConfig {
+  // Controls architecture tainting behavior for a node pool.
+  // New values may be added in the future.
+  enum ArchitectureTaintBehavior {
+    // Specifies that the behavior is unspecified, defaults to ARM.
+    ARCHITECTURE_TAINT_BEHAVIOR_UNSPECIFIED = 0;
+
+    // Disables default architecture taints on the node pool.
+    NONE = 1;
+
+    // Taints all the nodes in the node pool with the default ARM taint.
+    ARM = 2;
+  }
+
+  // Optional. Controls architecture tainting behavior.
+  optional ArchitectureTaintBehavior architecture_taint_behavior = 2
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Specifies options for controlling advanced machine features.
@@ -1611,7 +1725,7 @@ message NodeNetworkConfig {
   optional NetworkPerformanceConfig network_performance_config = 11;
 
   // [PRIVATE FIELD]
-  // Pod CIDR size overprovisioning config for the nodepool.
+  // Pod CIDR size overprovisioning config for the node pool.
   //
   // Pod CIDR size per node depends on max_pods_per_node. By default, the value
   // of max_pods_per_node is rounded off to next power of 2 and we then double
@@ -1642,11 +1756,14 @@ message NodeNetworkConfig {
   // Format: projects/{project}/regions/{region}/subnetworks/{subnetwork}
   // If the cluster is associated with multiple subnetworks, the subnetwork can
   // be either:
-  // 1. A user supplied subnetwork name/full path during node pool creation.
-  //    Example1: my-subnet
-  //    Example2: projects/gke-project/regions/us-central1/subnetworks/my-subnet
-  // 2. A subnetwork path picked based on the IP utilization during node pool
-  //    creation and is immutable.
+  // - A user supplied subnetwork name during node pool creation (e.g.,
+  // `my-subnet`). The name must be between 1 and 63 characters long, start
+  // with a letter, contain only letters, numbers, and hyphens, and end with a
+  // letter or a number.
+  // - A full subnetwork path during node pool creation, such as
+  // `projects/gke-project/regions/us-central1/subnetworks/my-subnet`
+  // - A subnetwork path picked based on the IP utilization during node pool
+  // creation and is immutable.
   string subnetwork = 19 [
     (google.api.field_behavior) = OPTIONAL,
     (google.api.resource_reference) = {
@@ -1659,6 +1776,13 @@ message NodeNetworkConfig {
   // pool's lifecycle, including during upgrades.
   NetworkTierConfig network_tier_config = 20
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Immutable. The accelerator network profile for the node pool. For now the
+  // only valid value is "auto". If specified, the network configuration of the
+  // nodes in this node pool will be managed by this profile for the supported
+  // machine types, zone, etc.
+  string accelerator_network_profile = 21
+      [(google.api.field_behavior) = IMMUTABLE];
 }
 
 // AdditionalNodeNetworkConfig is the configuration for additional node networks
@@ -1818,8 +1942,8 @@ message ContainerdConfig {
       // Specifying port is supported.
       // Wildcards are NOT supported.
       // Examples:
-      // - my.customdomain.com
-      // - 10.0.1.2:5000
+      // - `my.customdomain.com`
+      // - `10.0.1.2:5000`
       repeated string fqdns = 1;
 
       // Certificate access config. The following are supported:
@@ -1902,12 +2026,14 @@ message ContainerdConfig {
     // HostConfig configures the registry host under a given Server.
     message HostConfig {
       // Host configures the registry host/mirror.
-      // It supports fully qualified domain names (FQDN) and IP addresses:
-      // Specifying port is supported.
+      // It supports fully qualified domain names (FQDNs) and IP addresses.
+      // Specifying scheme, port or path is supported. Scheme can only be http
+      // or https.
       // Wildcards are NOT supported.
       // Examples:
-      // - my.customdomain.com
-      // - 10.0.1.2:5000
+      // - `my.customdomain.com`
+      // - `https://my.customdomain.com/path`
+      // - `10.0.1.2:5000`
       string host = 1;
 
       // Capabilities represent the capabilities of the registry host,
@@ -1942,11 +2068,11 @@ message ContainerdConfig {
     // Defines the host name of the registry server, which will be used to
     // create configuration file as /etc/containerd/hosts.d/<server>/hosts.toml.
     // It supports fully qualified domain names (FQDN) and IP addresses:
-    // Specifying port is supported.
+    // Specifying port is supported, while scheme and path are NOT supported.
     // Wildcards are NOT supported.
     // Examples:
-    // - my.customdomain.com
-    // - 10.0.1.2:5000
+    // - `my.customdomain.com`
+    // - `10.0.1.2:5000`
     string server = 1;
 
     // HostConfig configures a list of host-specific configurations for the
@@ -2145,8 +2271,19 @@ message AddonsConfig {
   // Configuration for the Lustre CSI driver.
   LustreCsiDriverConfig lustre_csi_driver_config = 23;
 
+  // Optional. Configuration for the Pod Snapshot feature.
+  PodSnapshotConfig pod_snapshot_config = 24
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Configuration for the Slurm Operator.
+  SlurmOperatorConfig slurm_operator_config = 25;
+
   // Optional. Configuration for the slice controller add-on.
   SliceControllerConfig slice_controller_config = 26
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Configuration for NodeReadinessController add-on.
+  NodeReadinessConfig node_readiness_config = 29
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -2343,6 +2480,27 @@ message LustreCsiDriverConfig {
   // 1.33.2-gke.4655000, unless you are connecting to a Lustre instance
   // that has the `gke-support-enabled` flag.
   bool enable_legacy_lustre_port = 3 [deprecated = true];
+
+  // When set to true, this disables multi-NIC support for the Lustre CSI
+  // driver.
+  // By default, GKE enables multi-NIC support, which allows the Lustre
+  // CSI driver to automatically detect and configure all suitable network
+  // interfaces on a node to maximize I/O performance for demanding workloads.
+  bool disable_multi_nic = 4;
+}
+
+// Configuration for the Slurm Operator.
+message SlurmOperatorConfig {
+  // When enabled, it runs a Slurm Operator that manages the set of compute pods
+  // for Slurm Cluster.
+  bool enabled = 1;
+}
+
+// Configuration for the GKE Node Readiness Controller.
+message NodeReadinessConfig {
+  // Optional. Whether the GKE Node Readiness Controller is enabled for this
+  // cluster.
+  bool enabled = 1 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Configuration for the Slice Controller.
@@ -3026,8 +3184,9 @@ message Cluster {
   // Fleet information for the cluster.
   Fleet fleet = 140;
 
-  // Enable/Disable Security Posture API features for the cluster.
-  SecurityPostureConfig security_posture_config = 145;
+  // Optional. Enable/Disable Security Posture API features for the cluster.
+  SecurityPostureConfig security_posture_config = 145
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Configuration for all cluster's control plane endpoints.
   ControlPlaneEndpointsConfig control_plane_endpoints_config = 146;
@@ -3044,8 +3203,13 @@ message Cluster {
   // Secret CSI driver configuration.
   SecretManagerConfig secret_manager_config = 150;
 
+  // Optional. Deprecated: Compliance Posture is no longer supported.
+  // For more details, see
+  // https://cloud.google.com/kubernetes-engine/docs/deprecations/posture-management-deprecation.
+  //
   // Enable/Disable Compliance Posture features for the cluster.
-  CompliancePostureConfig compliance_posture_config = 151;
+  CompliancePostureConfig compliance_posture_config = 151
+      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
 
   // Output only. Reserved for future use.
   optional bool satisfies_pzs = 152 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -3067,8 +3231,64 @@ message Cluster {
   // health checks.
   AnonymousAuthenticationConfig anonymous_authentication_config = 164;
 
+  // Optional. Configuration for scheduled upgrades.
+  ScheduleUpgradeConfig schedule_upgrade_config = 165
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Configuration for sync Secret Manager secrets as k8s secrets.
+  SecretSyncConfig secret_sync_config = 166;
+
   // Configuration for Managed OpenTelemetry pipeline.
   ManagedOpenTelemetryConfig managed_opentelemetry_config = 168;
+
+  // Configuration for control plane egress control.
+  ControlPlaneEgress control_plane_egress = 169;
+
+  // Configuration for Managed Machine Learning Diagnostics.
+  ManagedMachineLearningDiagnosticsConfig
+      managed_machine_learning_diagnostics_config = 171;
+
+  // Optional. Configuration for Node Creation Mode.
+  NodeCreationConfig node_creation_config = 174
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// NodeCreationConfig defines the settings of node creation mode.
+message NodeCreationConfig {
+  // The mode of node creation.
+  enum Mode {
+    // When no user input is provided.
+    MODE_UNSPECIFIED = 0;
+
+    // Kubelet registers itself.
+    VIA_KUBELET = 1;
+
+    // gcp-controller-manager automatically creates the node object after
+    // CSR approval.
+    VIA_CONTROL_PLANE = 2;
+  }
+
+  // The mode of node creation.
+  Mode node_creation_mode = 1;
+}
+
+// ControlPlaneEgress defines the settings needed to enable
+// control plane egress control.
+message ControlPlaneEgress {
+  // Mode defines the mode of control plane egress.
+  enum Mode {
+    // Default value not specified.
+    MODE_UNSPECIFIED = 0;
+
+    // Control plane has public IP and no restriction on egress.
+    VIA_CONTROL_PLANE = 1;
+
+    // No public IP on control plane and only internal allowlisted egress.
+    NONE = 2;
+  }
+
+  // Defines the mode of control plane egress.
+  Mode mode = 1;
 }
 
 // RBACBindingConfig allows user to restrict ClusterRoleBindings an RoleBindings
@@ -3170,9 +3390,15 @@ message AnonymousAuthenticationConfig {
   Mode mode = 1;
 }
 
+// Deprecated: Compliance Posture is no longer supported.
+// For more details, see
+// https://cloud.google.com/kubernetes-engine/docs/deprecations/posture-management-deprecation.
+//
 // CompliancePostureConfig defines the settings needed to enable/disable
 // features for the Compliance Posture.
 message CompliancePostureConfig {
+  option deprecated = true;
+
   // Mode defines enablement mode for Compliance Posture.
   enum Mode {
     // Default value not specified.
@@ -3218,8 +3444,12 @@ message SecurityPostureConfig {
     // Applies Security Posture features on the cluster.
     BASIC = 2;
 
+    // Deprecated: Security Posture Enterprise features are no longer supported.
+    // For more details, see
+    // https://cloud.google.com/kubernetes-engine/docs/deprecations/posture-management-deprecation.
+    //
     // Applies the Security Posture off cluster Enterprise level features.
-    ENTERPRISE = 3;
+    ENTERPRISE = 3 [deprecated = true];
   }
 
   // VulnerabilityMode defines enablement mode for vulnerability scanning.
@@ -3230,8 +3460,12 @@ message SecurityPostureConfig {
     // Disables vulnerability scanning on the cluster.
     VULNERABILITY_DISABLED = 1;
 
+    // Deprecated: Basic vulnerability scanning is no longer supported.
+    // For more details, see
+    // https://cloud.google.com/kubernetes-engine/docs/deprecations/posture-management-deprecation.
+    //
     // Applies basic vulnerability scanning on the cluster.
-    VULNERABILITY_BASIC = 2;
+    VULNERABILITY_BASIC = 2 [deprecated = true];
 
     // Applies the Security Posture's vulnerability on cluster Enterprise level
     // features.
@@ -3557,8 +3791,13 @@ message ClusterUpdate {
   // Enable/Disable Secret Manager Config.
   optional SecretManagerConfig desired_secret_manager_config = 139;
 
+  // Deprecated: Compliance Posture is no longer supported.
+  // For more details, see
+  // https://cloud.google.com/kubernetes-engine/docs/deprecations/posture-management-deprecation.
+  //
   // Enable/Disable Compliance Posture features for the cluster.
-  optional CompliancePostureConfig desired_compliance_posture_config = 140;
+  optional CompliancePostureConfig desired_compliance_posture_config = 140
+      [deprecated = true];
 
   // The desired node kubelet config for the cluster.
   NodeKubeletConfig desired_node_kubelet_config = 141;
@@ -3613,11 +3852,28 @@ message ClusterUpdate {
   // The desired network tier configuration for the cluster.
   NetworkTierConfig desired_network_tier_config = 155;
 
+  // Configuration for sync Secret Manager secrets as k8s secrets.
+  SecretSyncConfig desired_secret_sync_config = 158;
+
   // The desired privileged admission config for the cluster.
   PrivilegedAdmissionConfig desired_privileged_admission_config = 159;
 
+  // The desired control plane egress control config for the cluster.
+  ControlPlaneEgress desired_control_plane_egress = 160;
+
   // The desired managed open telemetry configuration.
   ManagedOpenTelemetryConfig desired_managed_opentelemetry_config = 163;
+
+  // The desired autopilot cluster policies that to be enforced in the cluster.
+  ClusterPolicyConfig desired_autopilot_cluster_policy_config = 164;
+
+  // The desired managed machine learning diagnostics configuration.
+  ManagedMachineLearningDiagnosticsConfig
+      desired_managed_machine_learning_diagnostics_config = 166;
+
+  // Optional. The desired NodeCreationConfig for the cluster.
+  NodeCreationConfig desired_node_creation_config = 171
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // AdditionalPodRangesConfig is the configuration for additional pod secondary
@@ -3636,7 +3892,7 @@ message AdditionalPodRangesConfig {
 message AdditionalIPRangesConfig {
   // Additional subnet with DRAINING status will not be selected during new node
   // pool creation. To undrain the draining status, update the cluster to set
-  // the sunbet to ACTIVE status. To remove the additional subnet, use the
+  // the subnet to ACTIVE status. To remove the additional subnet, use the
   // update cluster API to remove the subnet from the
   // desired_additional_ip_ranges list. IP ranges can be removed regardless of
   // its status, as long as no node pools are using them.
@@ -4211,6 +4467,9 @@ message UpdateNodePoolRequest {
   // scale down underutilized nodes. If not set, nodes are scaled down by
   // default behavior, i.e. according to the chosen autoscaling profile.
   google.protobuf.Duration consolidation_delay = 49;
+
+  // The taint configuration for the node pool.
+  TaintConfig taint_config = 51;
 }
 
 // SetNodePoolAutoscalingRequest sets the autoscaler settings of a node pool.
@@ -4959,17 +5218,48 @@ message NodePool {
 
   // QueuedProvisioning defines the queued provisioning used by the node pool.
   message QueuedProvisioning {
-    // Denotes that this nodepool is QRM specific, meaning nodes can be only
+    // Denotes that this node pool is QRM specific, meaning nodes can be only
     // obtained through queuing via the Cluster Autoscaler ProvisioningRequest
     // API.
     bool enabled = 1;
   }
 
   // NodeDrainConfig contains the node drain related configurations for this
-  // nodepool.
+  // node pool.
   message NodeDrainConfig {
+    // The duration of the PDB timeout period for node drain.
+    optional google.protobuf.Duration pdb_timeout_duration = 1;
+
+    // The duration of the grace termination period for node drain.
+    optional google.protobuf.Duration grace_termination_duration = 2;
+
     // Whether to respect PDB during node pool deletion.
     optional bool respect_pdb_during_node_pool_deletion = 3;
+  }
+
+  // Defines the maintenance exclusion for the node pool.
+  message ExclusionUntilEndOfSupport {
+    // Optional. Indicates whether the exclusion is enabled.
+    bool enabled = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Output only. The start time of the maintenance exclusion. It is output
+    // only. It is the exclusion creation time.
+    google.protobuf.Timestamp start_time = 2
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The end time of the maintenance exclusion. It is output
+    // only. It is the cluster control plane version's end of support time, or
+    // end of extended support time when the cluster is on extended support
+    // channel.
+    google.protobuf.Timestamp end_time = 3
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Defines the maintenance policy for the node pool.
+  message NodePoolMaintenancePolicy {
+    // Optional. The exclusion until end of support for the node pool.
+    ExclusionUntilEndOfSupport exclusion_until_end_of_support = 1
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // The name of the node pool.
@@ -5066,6 +5356,10 @@ message NodePool {
 
   // Specifies the node drain configuration for this node pool.
   NodeDrainConfig node_drain_config = 116;
+
+  // Optional. Specifies the maintenance policy for the node pool.
+  NodePoolMaintenancePolicy maintenance_policy = 118
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // NodeManagement defines the set of node management services turned on for the
@@ -5124,6 +5418,33 @@ message MaintenancePolicy {
   // Make a `get()` request to the cluster to get the current
   // resource version and include it with requests to set the policy.
   string resource_version = 3;
+
+  // Optional. The upgrade disruption budget for the cluster control plane.
+  DisruptionBudget disruption_budget = 4
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// DisruptionBudget defines the upgrade disruption budget for the cluster
+// control plane.
+message DisruptionBudget {
+  // Optional. The minimum duration between two minor version upgrades of the
+  // control plane.
+  google.protobuf.Duration minor_version_disruption_interval = 1
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The minimum duration between two patch version upgrades of the
+  // control plane.
+  google.protobuf.Duration patch_version_disruption_interval = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The last time a minor version upgrade was performed on the
+  // control plane.
+  google.protobuf.Timestamp last_minor_version_disruption_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The last time a disruption was performed on the control plane.
+  google.protobuf.Timestamp last_disruption_time = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // MaintenanceWindow defines the maintenance window to be used for the cluster.
@@ -5136,6 +5457,12 @@ message MaintenanceWindow {
     // maintenance to occur. The time windows may be overlapping. If no
     // maintenance windows are set, maintenance can occur at any time.
     RecurringTimeWindow recurring_window = 3;
+
+    // RecurringMaintenanceWindow specifies some number of recurring time
+    // periods for maintenance to occur. The time windows may be overlapping.
+    // If no maintenance windows are set, maintenance can occur at any time.
+    // Alternative to RecurringWindow, with renamed fields.
+    RecurringMaintenanceWindow recurring_maintenance_window = 5;
   }
 
   // Exceptions to maintenance window. Non-emergency maintenance should not
@@ -5235,6 +5562,41 @@ message RecurringTimeWindow {
   // to specify duration of the window and when it first starts.
   // The FREQ values of HOURLY, MINUTELY, and SECONDLY are not supported.
   string recurrence = 2;
+}
+
+// Represents an arbitrary window of time that recurs.
+// Will replace RecurringTimeWindow.
+message RecurringMaintenanceWindow {
+  // Optional. Specifies the date before which will not be scheduled.
+  // Depending on the recurrence, this may be the date the first window appears.
+  // Days are measured in the UTC timezone. This setting must be used when
+  // INTERVAL>1 or FREQ=WEEKLY/MONTHLY and no BYDAY specified.
+  optional google.type.Date delay_until = 1
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. Start time of the window on days that it is scheduled,
+  // assuming UTC timezone.
+  google.type.TimeOfDay window_start_time = 2
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Duration of the window.
+  google.protobuf.Duration window_duration = 3
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Required. An RRULE (https://tools.ietf.org/html/rfc5545#section-3.8.5.3)
+  // for how this window recurs.
+  //
+  // For example, to have something repeat every weekday, you'd use:
+  // `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR`
+  //
+  // To repeat some window daily (equivalent to the DailyMaintenanceWindow):
+  // `FREQ=DAILY`
+  //
+  // For the first weekend of every month:
+  // `FREQ=MONTHLY;BYSETPOS=1;BYDAY=SA,SU`
+  //
+  // The FREQ values of HOURLY, MINUTELY, and SECONDLY are not supported.
+  string recurrence = 4 [(google.api.field_behavior) = REQUIRED];
 }
 
 // Time window specified for daily maintenance operations.
@@ -5384,6 +5746,9 @@ message ClusterAutoscaling {
 
     // Avoid extra IP consumption.
     NO_PERFORMANCE = 1;
+
+    // Use default configuration.
+    NONE = 2;
   }
 
   // Enables automatic node pool creation and deletion.
@@ -5497,7 +5862,7 @@ message DefaultComputeClassConfig {
 // adjust the size of the node pool to the current cluster usage.
 message NodePoolAutoscaling {
   // Location policy specifies how zones are picked when scaling up the
-  // nodepool.
+  // node pool.
   enum LocationPolicy {
     // Not set.
     LOCATION_POLICY_UNSPECIFIED = 0;
@@ -5524,7 +5889,7 @@ message NodePoolAutoscaling {
   // Can this node pool be deleted automatically.
   bool autoprovisioned = 4;
 
-  // Location policy used when scaling up a nodepool.
+  // Location policy used when scaling up a node pool.
   LocationPolicy location_policy = 5;
 
   // Minimum number of nodes in the node pool. Must be greater than or equal
@@ -6244,6 +6609,11 @@ message DatabaseEncryption {
     // Secrets in etcd are stored in plain text (at etcd level) - this is
     // unrelated to Compute Engine level full disk encryption.
     DECRYPTED = 2;
+
+    // Encryption of all objects in the storage is enabled. There is no
+    // guarantee that all objects in the storage are encrypted, but eventually
+    // they will be.
+    ALL_OBJECTS_ENCRYPTION_ENABLED = 3;
   }
 
   // Current State of etcd encryption.
@@ -6271,6 +6641,17 @@ message DatabaseEncryption {
 
     // De-crypting Secrets to plain text in etcd encountered an error.
     CURRENT_STATE_DECRYPTION_ERROR = 6;
+
+    // Encryption of all objects in the storage is enabled.
+    // It does not guarantee that all objects in the storage are encrypted,
+    // but eventually they will be.
+    CURRENT_STATE_ALL_OBJECTS_ENCRYPTION_ENABLED = 8;
+
+    // Enablement of the encryption of all objects in storage is pending.
+    CURRENT_STATE_ALL_OBJECTS_ENCRYPTION_PENDING = 9;
+
+    // Enabling encryption of all objects in storage encountered an error.
+    CURRENT_STATE_ALL_OBJECTS_ENCRYPTION_ERROR = 10;
   }
 
   // OperationError records errors seen from CloudKMS keys
@@ -6618,6 +6999,9 @@ message UpgradeInfoEvent {
     // STATE_UNSPECIFIED indicates the state is unspecified.
     STATE_UNSPECIFIED = 0;
 
+    // SCHEDULED indicates the upgrade was scheduled.
+    SCHEDULED = 1;
+
     // STARTED indicates the upgrade has started.
     STARTED = 3;
 
@@ -6812,6 +7196,27 @@ message Autopilot {
   // PrivilegedAdmissionConfig is the configuration related to privileged
   // admission control.
   PrivilegedAdmissionConfig privileged_admission_config = 4;
+
+  // ClusterPolicyConfig denotes cluster level policies that are enforced for
+  // the cluster.
+  ClusterPolicyConfig cluster_policy_config = 5;
+}
+
+// ClusterPolicyConfig stores the configuration for cluster wide policies.
+message ClusterPolicyConfig {
+  // Denotes that preventing creation and mutation of resources in GKE
+  // managed namespaces and cluster-scoped GKE managed resources .
+  optional bool no_system_mutation = 1;
+
+  // Denotes preventing impersonation and CSRs for GKE System users.
+  optional bool no_system_impersonation = 2;
+
+  // Denotes preventing unsafe webhooks.
+  optional bool no_unsafe_webhooks = 3;
+
+  // Denotes preventing standard node pools and requiring only autopilot node
+  // pools.
+  optional bool no_standard_node_pools = 5;
 }
 
 // PrivilegedAdmissionConfig stores the list of authorized allowlist
@@ -6938,7 +7343,7 @@ message RayClusterMonitoringConfig {
   bool enabled = 1;
 }
 
-// NodePoolLoggingConfig specifies logging configuration for nodepools.
+// NodePoolLoggingConfig specifies logging configuration for node pools.
 message NodePoolLoggingConfig {
   // Logging variant configuration.
   LoggingVariantConfig variant_config = 1;
@@ -7047,8 +7452,8 @@ enum NodePoolUpdateStrategy {
   SURGE = 3;
 
   // SHORT_LIVED is the dedicated upgrade strategy for
-  // QueuedProvisioning and flex start nodepools scaled up only by enqueueing to
-  // the Dynamic Workload Scheduler (DWS).
+  // QueuedProvisioning and flex start node pools scaled up only by enqueueing
+  // to the Dynamic Workload Scheduler (DWS).
   SHORT_LIVED = 5;
 }
 
@@ -7339,7 +7744,7 @@ message SecretManagerConfig {
   optional RotationConfig rotation_config = 2;
 }
 
-// BootDisk specifies the boot disk configuration for nodepools.
+// BootDisk specifies the boot disk configuration for node pools.
 message BootDisk {
   // Disk type of the boot disk.
   // (i.e. Hyperdisk-Balanced, PD-Balanced, etc.)
@@ -7527,9 +7932,9 @@ message UpgradeDetails {
 }
 
 // FetchNodePoolUpgradeInfoRequest fetches the upgrade information of a
-// nodepool.
+// node pool.
 message FetchNodePoolUpgradeInfoRequest {
-  // Required. The name (project, location, cluster, nodepool) of the nodepool
+  // Required. The name (project, location, cluster, node pool) of the node pool
   // to get. Specified in the format
   // `projects/*/locations/*/clusters/*/nodePools/*` or
   // `projects/*/zones/*/clusters/*/nodePools/*`.
@@ -7539,7 +7944,7 @@ message FetchNodePoolUpgradeInfoRequest {
   string version = 100;
 }
 
-// NodePoolUpgradeInfo contains the upgrade information of a nodepool.
+// NodePoolUpgradeInfo contains the upgrade information of a node pool.
 message NodePoolUpgradeInfo {
   // AutoUpgradeStatus indicates the status of auto upgrade.
   enum AutoUpgradeStatus {
@@ -7594,11 +7999,17 @@ message NodePoolUpgradeInfo {
   // The list of past auto upgrades.
   repeated UpgradeDetails upgrade_details = 5;
 
-  // The nodepool's current minor version's end of standard support timestamp.
+  // The node pool's current minor version's end of standard support timestamp.
   optional string end_of_standard_support_timestamp = 6;
 
-  // The nodepool's current minor version's end of extended support timestamp.
+  // The node pool's current minor version's end of extended support timestamp.
   optional string end_of_extended_support_timestamp = 7;
+}
+
+// Configuration for scheduled upgrades on the cluster.
+message ScheduleUpgradeConfig {
+  // Optional. Whether or not scheduled upgrades are enabled.
+  bool enabled = 1 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // GkeAutoUpgradeConfig is the configuration for GKE auto upgrades.
@@ -7648,6 +8059,25 @@ message NetworkTierConfig {
   NetworkTier network_tier = 1;
 }
 
+// Configuration for sync Secret Manager secrets as k8s secrets.
+message SecretSyncConfig {
+  // SyncRotationConfig is config for secret manager auto rotation.
+  message SyncRotationConfig {
+    // Whether the rotation is enabled.
+    optional bool enabled = 1;
+
+    // The interval between two consecutive rotations. Default rotation interval
+    // is 2 minutes.
+    optional google.protobuf.Duration rotation_interval = 2;
+  }
+
+  // Enable/Disable Secret Sync Config.
+  optional bool enabled = 1;
+
+  // Rotation config for secret manager.
+  optional SyncRotationConfig rotation_config = 2;
+}
+
 // ManagedOpenTelemetryConfig is the configuration for the GKE Managed
 // OpenTelemetry pipeline.
 message ManagedOpenTelemetryConfig {
@@ -7666,4 +8096,17 @@ message ManagedOpenTelemetryConfig {
 
   // Scope of the Managed OpenTelemetry pipeline.
   optional Scope scope = 1;
+}
+
+// ManagedMachineLearningDiagnosticsConfig is the configuration for the GKE
+// Managed Machine Learning Diagnostics pipeline.
+message ManagedMachineLearningDiagnosticsConfig {
+  // Enable/Disable Managed Machine Learning Diagnostics.
+  optional bool enabled = 1;
+}
+
+// PodSnapshotConfig is the configuration for GKE Pod Snapshots feature.
+message PodSnapshotConfig {
+  // Whether or not the Pod Snapshots feature is enabled.
+  bool enabled = 1;
 }
