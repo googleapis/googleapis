@@ -380,17 +380,17 @@ load("@rules_gapic//python:py_gapic_repositories.bzl", "py_gapic_repositories")
 
 py_gapic_repositories()
 
-_gapic_generator_python_commit = generator_versions["python"]["commit"]
+_google_cloud_python_commit = generator_versions["python"]["commit"]
 
-_gapic_generator_python_version = generator_versions["python"]["version"]
+_google_cloud_python_version = generator_versions["python"]["version"]
 
-_gapic_generator_python_sha256 = generator_versions["python"]["sha"]
+_google_cloud_python_sha256 = generator_versions["python"]["sha"]
 
 http_archive(
     name = "gapic_generator_python",
-    sha256 = _gapic_generator_python_sha256,
-    strip_prefix = "gapic-generator-python-%s" % _gapic_generator_python_version if _gapic_generator_python_version else "gapic-generator-python-%s" % _gapic_generator_python_commit,
-    urls = ["https://github.com/googleapis/gapic-generator-python/archive/v%s.zip" % _gapic_generator_python_version if _gapic_generator_python_version else "https://github.com/googleapis/gapic-generator-python/archive/%s.tar.gz" % _gapic_generator_python_commit],
+    sha256 = _google_cloud_python_sha256,
+    strip_prefix = "google-cloud-python-gapic-generator-v%s/packages/gapic-generator" % _google_cloud_python_version if _google_cloud_python_version else "google-cloud-python-%s/packages/gapic-generator" % _google_cloud_python_commit,
+    urls = ["https://github.com/googleapis/google-cloud-python/archive/gapic-generator-v%s.zip" % _google_cloud_python_version if _google_cloud_python_version else "https://github.com/googleapis/google-cloud-python/archive/%s.zip" % _google_cloud_python_commit],
 )
 
 load(
