@@ -19,12 +19,14 @@ package google.cloud.databasecenter.v1beta;
 import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
 import "google/cloud/databasecenter/v1beta/affiliation.proto";
 import "google/cloud/databasecenter/v1beta/machine_config.proto";
 import "google/cloud/databasecenter/v1beta/maintenance.proto";
 import "google/cloud/databasecenter/v1beta/metric_data.proto";
 import "google/cloud/databasecenter/v1beta/product.proto";
 import "google/cloud/databasecenter/v1beta/signals.proto";
+import "google/protobuf/duration.proto";
 import "google/type/date.proto";
 
 option csharp_namespace = "Google.Cloud.DatabaseCenter.V1Beta";
@@ -72,6 +74,23 @@ service DatabaseCenter {
     option (google.api.http) = {
       post: "/v1beta:aggregateIssueStats"
       body: "*"
+    };
+  }
+
+  // AggregateQueryStats provides database resource query execution statistics.
+  rpc AggregateQueryStats(AggregateQueryStatsRequest)
+      returns (AggregateQueryStatsResponse) {
+    option (google.api.http) = {
+      post: "/v1beta/{parent=organizations/*}:aggregateQueryStats"
+      body: "*"
+      additional_bindings {
+        post: "/v1beta/{parent=folders/*}:aggregateQueryStats"
+        body: "*"
+      }
+      additional_bindings {
+        post: "/v1beta/{parent=projects/*}:aggregateQueryStats"
+        body: "*"
+      }
     };
   }
 
@@ -487,6 +506,80 @@ message AggregateIssueStatsRequest {
       [(google.api.field_behavior) = OPTIONAL];
 }
 
+// AggregateQueryStatsRequest represents the input to the AggregateQueryStats
+// method.
+message AggregateQueryStatsRequest {
+  // Required. Parent can be a project, a folder, or an organization. The search
+  // is limited to the resources within the `parent`.
+  //
+  // The allowed values are:
+  //
+  // * projects/{PROJECT_ID} (e.g., "projects/foo-bar")
+  // * projects/{PROJECT_NUMBER} (e.g., "projects/12345678")
+  // * folders/{FOLDER_NUMBER} (e.g., "folders/1234567")
+  // * organizations/{ORGANIZATION_NUMBER} (e.g., "organizations/123456")
+  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The expression to order the results by.
+  // Example: `order_by="execution_count"`
+  // Example: `order_by="execution_count desc"`
+  // Supported order by fields are `execution_count`, `rows_processed`,
+  // `total_cpu_time`, `avg_cpu_time`.
+  string order_by = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The expression to filter resources.
+  //
+  // Supported fields are: `full_resource_name`, `resource_type`, `container`,
+  //   `product.type`, `product.engine`, `product.version`, `location`,
+  //   `labels`, `issues`, fields of availability_info,
+  //   data_protection_info,'resource_name', etc.
+  //
+  // The expression is a list of zero or more restrictions combined via logical
+  // operators `AND` and `OR`. When `AND` and `OR` are both used in the
+  // expression, parentheses must be appropriately used to group the
+  // combinations.
+  //
+  // Example: `location="us-east1"`
+  // Example: `container="projects/123" OR container="projects/456"`
+  // Example: `(container="projects/123" OR
+  //           container="projects/456") AND location="us-east1"`
+  // Additional specific fields for query stats are: `metric_window`,
+  // `query_hash`, `normalized_query`.
+  // Example: `metric_window="LAST_ONE_DAY"`
+  // (Possible values  for `metric_window` are: `LAST_ONE_DAY`,
+  // `LAST_ONE_WEEK`, `LAST_TWO_WEEKS`)
+  // Example: `query_hash="12345678"`
+  // Example: `normalized_query="SELECT * FROM table"`
+  string filter = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If unspecified, at most 100 query stats will be returned.
+  // The maximum value is 1000; values above 1000 will be coerced to 1000.
+  int32 page_size = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A page token, received from a previous
+  // `AggregateQueryStatsRequest` call. Provide this to retrieve the subsequent
+  // page. All parameters except page_token should match the parameters in the
+  // call that provided the page token.
+  string page_token = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The response message containing relevant query stats
+// for database resources.
+message AggregateQueryStatsResponse {
+  // List of query stats where each group contains stats for resources having a
+  // particular combination of relevant query stats.
+  repeated QueryStatsInfo query_stats = 1;
+
+  // A token that can be sent as `page_token` to retrieve the next page.
+  // If this field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
+
+  // Unordered list. List of unreachable regions from where data could not be
+  // retrieved.
+  repeated string unreachable = 3
+      [(google.api.field_behavior) = UNORDERED_LIST];
+}
+
 // The response message containing one of more group of relevant health issues
 // for database resources.
 message AggregateIssueStatsResponse {
@@ -650,6 +743,93 @@ message AggregateFleetRequest {
   // indicates the current state of the fleet.
   optional google.type.Date baseline_date = 7
       [(google.api.field_behavior) = OPTIONAL];
+}
+
+// QueryStatsInfo contains the aggregated and detailed query stats for a
+// particular combination of relevant query stats for queries having same
+// normalized query.
+message QueryStatsInfo {
+  // Aggregated query stats for the resources for same normalized query.
+  QueryStats aggregated_query_stats = 1;
+
+  // List of query stats for the resources in the group.
+  // This stats is stats at resource level for the resources having same
+  // normalized query.
+  repeated QueryStats query_stats = 2;
+}
+
+// ResourceId contains the identifier for a database resource,
+// including the full resource name, resource type, and product.
+message ResourceId {
+  // The full resource name of the resource.
+  string full_resource_name = 1;
+
+  // The type of the resource.
+  // sqladmin.googleapis.com/Instance
+  // alloydb.googleapis.com/Cluster
+  // alloydb.googleapis.com/Instance
+  string resource_type = 2;
+
+  // The product of the resource, including the type, engine, and version.
+  Product product = 3;
+}
+
+// QueryStats contains the stats for a particular combination of query_hash,
+// query_string and resource_type.
+message QueryStats {
+  // The query hash of the query.
+  string query_hash = 1;
+
+  // The query string is normalized query without any PII data.
+  string normalized_query = 2;
+
+  // The type of the resource.
+  // sqladmin.googleapis.com/Instance
+  // alloydb.googleapis.com/Cluster
+  // alloydb.googleapis.com/Instance
+  string resource_type = 4 [(google.api.resource_reference) = { type: "*" }];
+
+  // The resource ids for which the query stats are collected.
+  repeated ResourceId resource_ids = 5;
+
+  // Metrics related to the query performance.
+  QueryMetrics query_metrics = 6;
+
+  // Information about inefficient query.
+  InefficientQueryInfo inefficient_query_info = 7;
+}
+
+// QueryMetrics contains the metrics related to the query execution.
+message QueryMetrics {
+  // Enum to represent the window over which the metrics are aggregated.
+  enum MetricsWindow {
+    // Unspecified. Default value.
+    METRICS_WINDOW_UNSPECIFIED = 0;
+
+    // Metrics are aggregated over the last 1 day.
+    LAST_ONE_DAY = 1;
+
+    // Metrics are aggregated over the last 7 days.
+    LAST_ONE_WEEK = 2;
+
+    // Metrics are aggregated over the last 14 days.
+    LAST_TWO_WEEKS = 3;
+  }
+
+  // The number of times the query was executed.
+  int64 execution_count = 1;
+
+  // The average execution period of the query across all runs.
+  google.protobuf.Duration avg_cpu_time = 2;
+
+  // The total CPU time consumed by the query across all runs.
+  google.protobuf.Duration total_cpu_time = 3;
+
+  // The average number of rows processed by the query across all runs.
+  int64 rows_processed = 4;
+
+  // The window over which the metrics are aggregated.
+  MetricsWindow metrics_window = 5;
 }
 
 // The response message to aggregate a fleet by some group by
