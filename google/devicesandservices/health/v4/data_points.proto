@@ -133,8 +133,17 @@ service DataPointsService {
 
   // Exports exercise data in TCX format.
   //
+  // **IMPORTANT:** HTTP clients must append `?alt=media` to the
+  // request URL to download the raw TCX file.
   //
-  // Note: While the Authorization section below states that any one of the
+  // Example:
+  // `https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints/EXERCISE_ID:exportExerciseTcx?alt=media`
+  //
+  // Without `alt=media`, the server returns a JSON response
+  // (`ExportExerciseTcxResponse`)
+  // which is intended primarily for gRPC clients.
+  //
+  // **Note:** While the Authorization section below states that any one of the
   // listed scopes is accepted, this specific method requires the user to
   // provide both one of the `activity_and_fitness` scopes (`normal` or
   // `readonly`) AND one of the `location` scopes (`normal` or `readonly`) in
@@ -162,6 +171,9 @@ message DataPoint {
   // These messages represent the data payload for each data type and are
   // embedded within the `DataPoint` resource. They are not standalone resources
   // themselves.
+  // Unless otherwise noted, data types will exclude data points that are
+  // identified as recorded by wearables in intervals when they were not
+  // actually worn.
   oneof data {
     // Optional. Data for points in the `steps` interval data type collection.
     Steps steps = 4 [(google.api.field_behavior) = OPTIONAL];
@@ -323,6 +335,9 @@ message ReconciledDataPoint {
   // These messages represent the data payload for each data type and are
   // embedded within the `DataPoint` resource. They are not standalone resources
   // themselves.
+  // Unless otherwise noted, data types reconciliation algorithm will exclude
+  // data points that are identified as recorded by wearables in intervals
+  // when they were not actually worn.
   oneof data {
     // Data for points in the `steps` interval data type collection.
     Steps steps = 4;
@@ -449,7 +464,10 @@ message ReconciledDataPoint {
   string data_point_name = 1 [(google.api.field_behavior) = IDENTIFIER];
 }
 
-// Value of a rollup for a single physical time interval (aggregation window)
+// Value of a rollup for a single physical time interval (aggregation window) of
+// reconciled data points from all data sources, excluding those data points
+// that are identified as recorded by wearables in intervals when they were not
+// actually worn.
 message RollupDataPoint {
   // Outcome of a rollup of the requested data type.
   //
@@ -460,7 +478,11 @@ message RollupDataPoint {
   // `{original_field_name}_{aggregation_function}`. For example:
   // `confidence_min`, `confidence_sum`.
   //
-  // If there were no data points in this interval, the value will not be set.
+  // If there were no manual, on-wrist data points in this interval,
+  // the value will not be set. When the value is set, but the data shows zero,
+  // e.g. `steps.count_sum = 0`, it means that a device was worn but it did not
+  // record any data points for this data type.
+  //
   // These messages represent the aggregated data payload for each data type
   // and are embedded within the `RollupDataPoint`. They are not standalone
   // resources themselves.
@@ -559,6 +581,9 @@ message RollupDataPoint {
 }
 
 // Value of a daily rollup for a single civil time interval (aggregation window)
+// of reconciled data points from all data sources, excluding those data points
+// that are identified as recorded by wearables in intervals when they were not
+// actually worn.
 message DailyRollupDataPoint {
   // Outcome of a rollup of the requested roll-up type.
   //
@@ -569,7 +594,11 @@ message DailyRollupDataPoint {
   // `{original_field_name}_{aggregation_function}`. For example:
   // `confidence_min`, `confidence_sum`.
   //
-  // If there were no data points in this interval, the value will not be set.
+  // If there were no manual, on-wrist data points in this interval,
+  // the value will not be set. When the value is set, but the data shows zero,
+  // e.g. `steps.count_sum = 0`, it means that a device was worn but it did not
+  // record any data points for this data type.
+  //
   // These messages represent the aggregated data payload for each data type
   // and are embedded within the `DailyRollupDataPoint`. They are not standalone
   // resources themselves.
@@ -782,10 +811,19 @@ message ListDataPointsRequest {
   //     - Date literal expected in ISO 8601 `YYYY-MM-DD` format
   //     - Supported logical operators: `AND`
   //     - Example:
-  //        - `daily_resting_heart_rate.date >= "2024-08-14"`
   //        - `daily_heart_rate_variability.date < "2024-08-15"`
   //
   //
+  //
+  // - Session start time (**ECG specific**):
+  //     - Pattern: `electrocardiogram.interval.start_time`
+  //     - Supported comparison operators: `>=`
+  //     - Timestamp literal expected in RFC-3339 format
+  //     - Example:
+  //         - `electrocardiogram.interval.start_time >= "2024-08-14T12:34:56Z"`
+  //     - Note: Only filtering by start time is supported for ECG. Filtering
+  //       by end time (e.g., `electrocardiogram.interval.end_time`) is not
+  //       supported.
   // - Session civil start time (**Excluding Sleep**):
   //     - Pattern: `{session_data_type}.interval.civil_start_time`
   //     - Supported comparison operators: `>=`, `<`
@@ -1139,5 +1177,9 @@ message ExportExerciseTcxRequest {
 // Represents a Response for exporting exercise data in TCX format.
 message ExportExerciseTcxResponse {
   // Contains the exported TCX data.
+  //
+  // This field is intended for gRPC clients, as media download integration
+  // is not supported for gRPC. HTTP clients should instead use the `alt=media`
+  // query parameter to download the raw binary TCX file.
   string tcx_data = 2;
 }

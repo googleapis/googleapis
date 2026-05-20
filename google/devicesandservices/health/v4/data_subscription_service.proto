@@ -1,0 +1,398 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.devicesandservices.health.v4;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/longrunning/operations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Google.DevicesAndServices.Health.V4";
+option go_package = "google.golang.org/genproto/googleapis/devicesandservices/health/apiv4main;healthpb";
+option java_multiple_files = true;
+option java_outer_classname = "DataSubscriptionServiceProto";
+option java_package = "com.google.devicesandservices.health.v4";
+option php_namespace = "Google\\DevicesAndServices\\Health\\V4";
+option ruby_package = "Google::DevicesAndServices::Health::V4";
+
+// Data Subscription Service that allows clients (e.g., Fitbit 3P
+// applications, internal Fitbit Services) to manage their subscriber endpoints.
+// This service provides CRUD APIs for subscribers,
+// and also offers functionalities for subscriber verification and statistics.
+service DataSubscriptionService {
+  option (google.api.default_host) = "health.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform";
+
+  // Registers a new subscriber endpoint to receive notifications.
+  // A subscriber represents an application or service that wishes to receive
+  // data change notifications for users who have granted consent.
+  //
+  // **Endpoint Verification:**
+  // For a subscriber to be successfully created, the provided `endpoint_uri`
+  // must be a valid HTTPS endpoint and must pass an automated verification
+  // check. The backend will send two HTTP POST requests to the `endpoint_uri`:
+  //
+  // 1.  **Verification with Authorization:**
+  //     *   **Headers:** Includes `Content-Type: application/json` and
+  //         `Authorization` (with the exact value from
+  //         `CreateSubscriberPayload.endpoint_authorization.secret`).
+  //     *   **Body:** `{"type": "verification"}`
+  //     *   **Expected Response:** HTTP `201 Created`.
+  //
+  // 2.  **Verification without Authorization:**
+  //     *   **Headers:** Includes `Content-Type: application/json`. The
+  //         `Authorization` header is OMITTED.
+  //     *   **Body:** `{"type": "verification"}`
+  //     *   **Expected Response:** HTTP `401 Unauthorized` or `403 Forbidden`.
+  //
+  // Both tests must pass for the subscriber creation to succeed. If
+  // verification fails, the operation will not be completed and an error will
+  // be returned. This process ensures the endpoint is reachable and correctly
+  // validates the `Authorization` header.
+  rpc CreateSubscriber(CreateSubscriberRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v4/{parent=projects/*}/subscribers"
+      body: "subscriber"
+    };
+    option (google.api.method_signature) = "parent,subscriber,subscriber_id";
+    option (google.longrunning.operation_info) = {
+      response_type: "Subscriber"
+      metadata_type: "CreateSubscriberMetadata"
+    };
+  }
+
+  // Lists all subscribers registered within the owned Google Cloud Project.
+  rpc ListSubscribers(ListSubscribersRequest)
+      returns (ListSubscribersResponse) {
+    option (google.api.http) = {
+      get: "/v4/{parent=projects/*}/subscribers"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Updates the configuration of an existing subscriber, such as the
+  // endpoint URI or the data types it's interested in.
+  //
+  // **Endpoint Verification:**
+  // If the `endpoint_uri` or `endpoint_authorization` field is included in the
+  // `update_mask`, the backend will re-verify the endpoint. The verification
+  // process is the same as described in `CreateSubscriber`:
+  //
+  // 1.  **Verification with Authorization:** POST to the new or existing
+  //     `endpoint_uri` with the new or existing `Authorization` secret. Expects
+  //     HTTP `201 Created`.
+  // 2.  **Verification without Authorization:** POST to the `endpoint_uri`
+  //     without the `Authorization` header. Expects HTTP `401 Unauthorized` or
+  //     `403 Forbidden`.
+  //
+  // Both tests must pass using the potentially updated values for the
+  // subscriber update to succeed. If verification fails, the update will not
+  // be applied, and an error will be returned.
+  rpc UpdateSubscriber(UpdateSubscriberRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      patch: "/v4/{subscriber.name=projects/*/subscribers/*}"
+      body: "subscriber"
+    };
+    option (google.api.method_signature) = "subscriber,update_mask";
+    option (google.longrunning.operation_info) = {
+      response_type: "Subscriber"
+      metadata_type: "UpdateSubscriberMetadata"
+    };
+  }
+
+  // Deletes a subscriber registration. This will stop all notifications
+  // to the subscriber's endpoint.
+  rpc DeleteSubscriber(DeleteSubscriberRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      delete: "/v4/{name=projects/*/subscribers/*}"
+    };
+    option (google.api.method_signature) = "name";
+    option (google.longrunning.operation_info) = {
+      response_type: "google.protobuf.Empty"
+      metadata_type: "DeleteSubscriberMetadata"
+    };
+  }
+}
+
+// -- Messages --
+// Request message for CreateSubscriber.
+message CreateSubscriberRequest {
+  // Required. The parent resource where this subscriber will be created.
+  // Format: projects/{project}
+  // Example: projects/my-project-123
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "health.googleapis.com/Subscriber"
+    }
+  ];
+
+  // Required. The subscriber to create.
+  CreateSubscriberPayload subscriber = 2
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The ID to use for the subscriber, which will become the final
+  // component of the subscriber's resource name.
+  //
+  // This value should be 4-36 characters, and valid characters
+  // are /[a-z]([a-z0-9-]{2,34}[a-z0-9])/.
+  string subscriber_id = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request message for ListSubscribers.
+message ListSubscribersRequest {
+  // Required. The parent, which owns this collection of subscribers.
+  // Format: projects/{project}
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "health.googleapis.com/Subscriber"
+    }
+  ];
+
+  // Optional. The maximum number of subscribers to return. The service may
+  // return fewer than this value. If unspecified, at most 50 subscribers will
+  // be returned. The maximum value is 1000; values above 1000 will be coerced
+  // to 1000.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A page token, received from a previous `ListSubscribers` call.
+  // Provide this to retrieve the subsequent page.
+  // When paginating, all other parameters provided to `ListSubscribers` must
+  // match the call that provided the page token.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message for ListSubscribers.
+message ListSubscribersResponse {
+  // Subscribers from the specified project.
+  repeated Subscriber subscribers = 1;
+
+  // A token, which can be sent as `page_token` to retrieve the next page.
+  // If this field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
+
+  // The total number of subscribers matching the request.
+  int32 total_size = 3;
+}
+
+// Request message for UpdateSubscriber.
+message UpdateSubscriberRequest {
+  // Required. The subscriber resource to update. Its 'name' field is mapped to
+  // the URI, and the value of the 'name' field should be of the form:
+  // "projects/{project}/subscribers/{subscriber_id}".
+  // The remaining fields of the Subscriber object represent the new values
+  // for the corresponding fields in the existing subscriber resource.
+  Subscriber subscriber = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. A field mask that specifies which fields of the Subscriber
+  // message are to be updated. This allows for partial updates. Supported
+  // fields:
+  // - endpoint_uri
+  // - subscriber_configs
+  // - endpoint_authorization
+  google.protobuf.FieldMask update_mask = 2
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request message for DeleteSubscriber.
+message DeleteSubscriberRequest {
+  // Required. The name of the subscriber to delete.
+  // Format: projects/{project}/subscribers/{subscriber}
+  // Example: projects/my-project/subscribers/my-subscriber-123
+  // The {subscriber} ID is user-settable (4-36 characters, matching
+  // /[a-z]([a-z0-9-]{2,34}[a-z0-9])/) or system-generated if not provided
+  // during creation.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "health.googleapis.com/Subscriber"
+    }
+  ];
+
+  // Optional. If set to true, any child resources (e.g., subscriptions) will
+  // also be deleted. If false (default) and child resources exist, the request
+  // will fail.
+  bool force = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// -- Resource Messages --
+// A subscriber receives notifications from Google Health API.
+message Subscriber {
+  option (google.api.resource) = {
+    type: "health.googleapis.com/Subscriber"
+    pattern: "projects/{project}/subscribers/{subscriber}"
+    plural: "subscribers"
+    singular: "subscriber"
+  };
+
+  // The state of the subscriber.
+  enum State {
+    // Represents an unspecified subscriber state.
+    STATE_UNSPECIFIED = 0;
+
+    // Represents an unverified subscriber. This is the initial state of the
+    // subscriber when it is created. The backend will verify the subscriber's
+    // endpoint_uri.
+    UNVERIFIED = 1;
+
+    // Represents an active subscriber. The endpoint has been verified.
+    ACTIVE = 2;
+
+    // Represents an inactive subscriber.
+    INACTIVE = 3;
+  }
+
+  // Identifier. The resource name of the Subscriber.
+  // Format: projects/{project}/subscribers/{subscriber}
+  // The {project} ID is a Google Cloud Project ID or Project Number.
+  // The {subscriber} ID is user-settable (4-36 characters, matching
+  // /[a-z]([a-z0-9-]{2,34}[a-z0-9])/) if provided during creation, or
+  // system-generated otherwise (e.g., a UUID).
+  // Example (User-settable subscriber ID):
+  // projects/my-project/subscribers/my-sub-123
+  // Example (System-generated subscriber ID):
+  // projects/my-project/subscribers/a1b2c3d4-e5f6-7890-1234-567890abcdef
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Required. The full HTTPS URI where update notifications will be sent.
+  // The URI must be a valid URL and use HTTPS as the scheme.
+  // This endpoint will be verified during CreateSubscriber and UpdateSubscriber
+  // calls. See RPC documentation for verification details.
+  string endpoint_uri = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Output only. The time at which the subscriber was created.
+  google.protobuf.Timestamp create_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time at which the subscriber was last updated.
+  google.protobuf.Timestamp update_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Configuration for the subscriber.
+  repeated SubscriberConfig subscriber_configs = 5
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. Authorization mechanism for a subscriber endpoint.
+  // This is required to ensure the endpoint can be verified.
+  EndpointAuthorization endpoint_authorization = 7
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Output only. The state of the subscriber.
+  State state = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Configuration for a subscriber.
+// A notification is sent to a subscription ONLY if the subscriber has a config
+// for the data type.
+message SubscriberConfig {
+  // Policy for subscription creation.
+  enum SubscriptionCreatePolicy {
+    // Represents an unspecified policy.
+    SUBSCRIPTION_CREATE_POLICY_UNSPECIFIED = 0;
+
+    // When using `AUTOMATIC`, individual subscriptions are not created or
+    // stored. Instead, eligibility for notifications is computed dynamically.
+    // When a data update occurs for a given data type, notifications are sent
+    // to all subscribers with an `AUTOMATIC` policy for that data type,
+    // provided the user has granted the necessary consents.
+    //
+    // This means you do not need to call `CreateSubscription` for each user;
+    // notifications are managed automatically based on user consents. As
+    // `Subscription` resources are not stored, they cannot be retrieved or
+    // managed through `GetSubscription`, `ListSubscriptions`,
+    // `UpdateSubscription`, or `DeleteSubscription`.
+    AUTOMATIC = 1;
+
+    // Requires subscriptions to be created manually for new users.
+    // The developer needs to call CreateSubscription for new users.
+    MANUAL = 2;
+  }
+
+  // Required. See [Google Health API data
+  // types](https://developers.google.com/health/data-types) for the list of
+  // supported data types.  Values should be in kebab-case.
+  repeated string data_types = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "health.googleapis.com/DataType" }
+  ];
+
+  // Required. Policy for subscription creation.
+  SubscriptionCreatePolicy subscription_create_policy = 2
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// Authorization mechanism for a subscriber endpoint.
+// For all requests sent by the Webhooks service, the JSON payload is
+// cryptographically signed. The signature is delivered in the
+// `X-HEALTHAPI-SIGNATURE` HTTP header. This is an ECDSA (NIST P256)
+// signature of the JSON payload. Clients must verify this signature using
+// Google Health API's public key to confirm the payload was sent by the Health
+// API.
+message EndpointAuthorization {
+  // Required. Input only. Provides a client-provided secret that will be sent
+  // with each notification to the subscriber endpoint using the "Authorization"
+  // header. The value must include the authorization scheme, e.g., "Bearer
+  // <token>" or "Basic <credentials>", as it will be used as the full
+  // Authorization header value. This secret is used by the API to test the
+  // endpoint during `CreateSubscriber` and `UpdateSubscriber` calls, and will
+  // be sent in the `Authorization` header for all subsequent webhook
+  // notifications to this endpoint.
+  string secret = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.field_behavior) = INPUT_ONLY
+  ];
+
+  // Output only. Whether the secret is set.
+  bool secret_set = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Payload for creating a subscriber.
+message CreateSubscriberPayload {
+  // Required. The full HTTPS URI where update notifications will be sent.
+  // The URI must be a valid URL and use HTTPS as the scheme.
+  // This endpoint will be verified during the `CreateSubscriber` call.
+  // See CreateSubscriber RPC documentation for verification details.
+  string endpoint_uri = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Configuration for the subscriber.
+  repeated SubscriberConfig subscriber_configs = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. Authorization mechanism for the subscriber endpoint.
+  // The `secret` within this message is crucial for endpoint verification
+  // and for securing webhook notifications.
+  EndpointAuthorization endpoint_authorization = 3
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// Represents metadata for creating a subscriber.
+message CreateSubscriberMetadata {}
+
+// Represents metadata for updating a subscriber.
+message UpdateSubscriberMetadata {}
+
+// Represents metadata for deleting a subscriber.
+message DeleteSubscriberMetadata {}
