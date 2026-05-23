@@ -21,6 +21,7 @@ import "google/api/field_info.proto";
 import "google/api/resource.proto";
 import "google/cloud/saasplatform/saasservicemgmt/v1beta1/common.proto";
 import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
 
 option csharp_namespace = "Google.Cloud.SaasPlatform.SaasServiceMgmt.V1Beta1";
 option go_package = "cloud.google.com/go/saasplatform/saasservicemgmt/apiv1beta1/saasservicemgmtpb;saasservicemgmtpb";
@@ -29,6 +30,19 @@ option java_outer_classname = "SaasDeploymentsResourcesProto";
 option java_package = "com.google.cloud.saasplatform.saasservicemgmt.v1beta1";
 option php_namespace = "Google\\Cloud\\SaasPlatform\\SaasServiceMgmt\\V1beta1";
 option ruby_package = "Google::Cloud::SaasPlatform::SaasServiceMgmt::V1beta1";
+option (google.api.resource_definition) = {
+  type: "apphub.googleapis.com/Application"
+  pattern: "projects/{project}/locations/{location}/applications/{application}"
+};
+option (google.api.resource_definition) = {
+  type: "designcenter.googleapis.com/ApplicationTemplate"
+  pattern: "projects/{project}/locations/{location}/spaces/{space}/applicationTemplates/{applicationTemplate}"
+  pattern: "projects/{project}/locations/{location}/workspaces/{workspace}/applicationTemplates/{applicationTemplate}"
+};
+option (google.api.resource_definition) = {
+  type: "designcenter.googleapis.com/ApplicationTemplateRevision"
+  pattern: "projects/{project}/locations/{location}/spaces/{space}/applicationTemplates/{application_template}/revisions/{revision}"
+};
 
 // Location information that the service is available in.
 message Location {
@@ -45,6 +59,34 @@ message Saas {
     singular: "saas"
   };
 
+  // State of the Saas.
+  enum State {
+    option allow_alias = true;
+
+    // State type is unspecified.
+    STATE_TYPE_UNSPECIFIED = 0;
+
+    // The Saas is ready
+    STATE_ACTIVE = 1;
+
+    // In the process of importing, synchronizing or replicating
+    // ApplicationTemplates
+    STATE_RUNNING = 2;
+
+    // Failure during process of importing, synchronizing or replicating
+    // ApplicationTemplate processing
+    STATE_FAILED = 3;
+
+    // Deprecated: Use STATE_ACTIVE.
+    ACTIVE = 1 [deprecated = true];
+
+    // Deprecated: Use STATE_RUNNING.
+    RUNNING = 2 [deprecated = true];
+
+    // Deprecated: Use STATE_FAILED.
+    FAILED = 3 [deprecated = true];
+  }
+
   // Identifier. The resource name (full URI of the resource) following the
   // standard naming scheme:
   //
@@ -54,6 +96,31 @@ message Saas {
   // Optional. List of locations that the service is available in. Rollout
   // refers to the list to generate a rollout plan.
   repeated Location locations = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Reference to composite ApplicationTemplate.
+  // When specified, the template components will be imported into their
+  // equivalent UnitKind, Release and Blueprint resources.
+  // Deleted references will not delete imported resources.
+  // Should only be specified on source regions, and be unspecified on replica
+  // regions.
+  CompositeRef application_template = 5;
+
+  // Output only. Name of repository in Artifact Registry for system-generated
+  // Blueprints, eg. Blueprints of imported ApplicationTemplates.
+  string blueprint_repo = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. State of the Saas.
+  // It is always in ACTIVE state if the application_template is empty.
+  State state = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. A set of conditions which indicate the various conditions this
+  // resource can have.
+  repeated SaasCondition conditions = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. If the state is FAILED, the corresponding error code and
+  // message. Defaults to code=OK for all other states.
+  google.rpc.Status error = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Optional. The labels on the resource, which can be used for categorization.
   // similar to Kubernetes resource labels.
@@ -238,6 +305,14 @@ message UnitKind {
       type: "saasservicemgmt.googleapis.com/Saas"
     }
   ];
+
+  // Output only. Reference to component and revision in a composite
+  // ApplicationTemplate.
+  ComponentRef application_template_component = 10
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // AppParams contains the parameters for creating an AppHub Application.
+  AppParams app_params = 11;
 
   // Optional. The labels on the resource, which can be used for categorization.
   // similar to Kubernetes resource labels.
@@ -488,6 +563,16 @@ message Unit {
     (google.api.field_behavior) = OUTPUT_ONLY
   ];
 
+  // Optional. Reference to the AppHub Application this unit belongs to.
+  // All resources deployed in this Unit will be associated with the specified
+  // Application.
+  string application = 29 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "apphub.googleapis.com/Application"
+    }
+  ];
+
   // Optional. The labels on the resource, which can be used for categorization.
   // similar to Kubernetes resource labels.
   map<string, string> labels = 10401 [(google.api.field_behavior) = OPTIONAL];
@@ -525,6 +610,13 @@ message Unit {
   // Changes to a resource made by the service should refresh this value.
   google.protobuf.Timestamp update_time = 10304
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Indicates whether the resource location satisfies Zone
+  // Separation constraints. This is false by default.
+  bool satisfies_pzs = 10305 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Reserved for future use.
+  bool satisfies_pzi = 10306 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Set of dependencies for this unit. Maximum 10.
@@ -551,7 +643,7 @@ message UnitDependency {
 // unit to focus only on the change they have requested.
 //
 // This is a base object that contains the common fields in all unit operations.
-// Next: 19
+// Next: 22
 message UnitOperation {
   option (google.api.resource) = {
     type: "saasservicemgmt.googleapis.com/UnitOperation"
@@ -701,6 +793,11 @@ message UnitOperation {
   // Changes to a resource made by the service should refresh this value.
   google.protobuf.Timestamp update_time = 10304
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The timestamp when the resource was marked for deletion
+  // (deletion is an asynchronous operation).
+  google.protobuf.Timestamp delete_time = 10305
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Provision is the unit operation that provision the underlying resources
@@ -818,6 +915,11 @@ message Release {
   repeated UnitVariable input_variable_defaults = 7
       [(google.api.field_behavior) = OPTIONAL];
 
+  // Output only. Reference to component and revision in a composite
+  // ApplicationTemplate.
+  ComponentRef application_template_component = 9
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
   // Optional. The labels on the resource, which can be used for categorization.
   // similar to Kubernetes resource labels.
   map<string, string> labels = 10401 [(google.api.field_behavior) = OPTIONAL];
@@ -909,4 +1011,83 @@ message Dependency {
 
   // Required. An alias for the dependency. Used for input variable mapping.
   string alias = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// CompositeRef represents a reference to a composite resource.
+// Next ID: 4
+message CompositeRef {
+  // Required. Reference to the ApplicationTemplate resource.
+  string application_template = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "designcenter.googleapis.com/ApplicationTemplate"
+    }
+  ];
+
+  // Revision of the ApplicationTemplate to use.
+  // Changes to revision will trigger manual resynchronization.
+  // If empty, ApplicationTemplate will be ignored.
+  string revision = 2 [(google.api.resource_reference) = {
+    type: "designcenter.googleapis.com/ApplicationTemplateRevision"
+  }];
+
+  // Output only. Reference to on-going AppTemplate import and replication
+  // operation (i.e. the operation_id for the long-running operation). This
+  // field is opaque for external usage.
+  string sync_operation = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// ComponentRef represents a reference to a component resource.
+// Next ID: 4
+message ComponentRef {
+  // Reference to the Composite ApplicationTemplate.
+  CompositeRef composite_ref = 1;
+
+  // Name of the component in composite.Components
+  string component = 2;
+
+  // Revision of the component.
+  // If the component does not have a revision, this field will be explicitly
+  // set to the revision of the composite ApplicationTemplate.
+  string revision = 3;
+}
+
+// AppParams contains the parameters for creating an AppHub Application.
+message AppParams {
+  // Scope of an application.
+  message Scope {
+    // Scope Type.
+    enum Type {
+      option allow_alias = true;
+
+      // Unspecified type.
+      TYPE_UNSPECIFIED = 0;
+
+      // Regional type.
+      TYPE_REGIONAL = 1;
+
+      // Global type.
+      TYPE_GLOBAL = 2;
+
+      // Deprecated: Use TYPE_REGIONAL.
+      REGIONAL = 1 [deprecated = true];
+
+      // Deprecated: Use TYPE_GLOBAL.
+      GLOBAL = 2 [deprecated = true];
+    }
+
+    // Required. Scope Type.
+    Type type = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Grouping used to construct the name of the AppHub Application.
+  // Multiple UnitKinds can specify the same group to use the same Application
+  // across their respective units.
+  // Corresponds to the app_boundary_id in the ADC composite
+  // ApplicationTemplate. Defaults to UnitKind.name
+  string group = 1;
+
+  // Corresponds to the scope in the ADC composite ApplicationTemplate.
+  // Defaults to TYPE_REGIONAL.
+  Scope scope = 2;
 }
