@@ -44,7 +44,10 @@ option java_package = "com.google.cloud.dataplex.v1";
 service DataScanService {
   option (google.api.default_host) = "dataplex.googleapis.com";
   option (google.api.oauth_scopes) =
-      "https://www.googleapis.com/auth/cloud-platform";
+      "https://www.googleapis.com/auth/cloud-platform,"
+      "https://www.googleapis.com/auth/cloud-platform.read-only,"
+      "https://www.googleapis.com/auth/dataplex.read-write,"
+      "https://www.googleapis.com/auth/dataplex.readonly";
 
   // Creates a DataScan resource.
   rpc CreateDataScan(CreateDataScanRequest)
@@ -129,6 +132,16 @@ service DataScanService {
     option (google.api.method_signature) = "parent";
   }
 
+  // Cancels a running/pending DataScan job.
+  rpc CancelDataScanJob(CancelDataScanJobRequest)
+      returns (CancelDataScanJobResponse) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/dataScans/*/jobs/*}:cancel"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
   // Generates recommended data quality rules based on the results of a data
   // profiling scan.
   //
@@ -163,14 +176,15 @@ message CreateDataScanRequest {
   // Required. DataScan resource.
   DataScan data_scan = 2 [(google.api.field_behavior) = REQUIRED];
 
-  // Required. DataScan identifier.
+  // Optional. DataScan identifier. If not provided, a unique ID will be
+  // generated with the prefix "data-scan-".
   //
   // * Must contain only lowercase letters, numbers and hyphens.
   // * Must start with a letter.
   // * Must end with a number or a letter.
   // * Must be between 1-63 characters.
   // * Must be unique within the customer project / location.
-  string data_scan_id = 3 [(google.api.field_behavior) = REQUIRED];
+  string data_scan_id = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Only validate the request, but do not perform mutations.
   // The default is `false`.
@@ -392,6 +406,23 @@ message ListDataScanJobsResponse {
   string next_page_token = 2;
 }
 
+// Request message for the `CancelDataScanJob` method.
+message CancelDataScanJobRequest {
+  // Required. The resource name of the DataScanJob:
+  // `projects/{project_id_or_number}/locations/{location_id}/dataScans/{data_scan_id}/jobs/{data_scan_job_id}`
+  // where `project_id_or_number` refers to a *project_id* or *project_number*
+  // and `location_id` refers to a Google Cloud region.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "dataplex.googleapis.com/DataScanJob"
+    }
+  ];
+}
+
+// Response message for the `CancelDataScanJob` method.
+message CancelDataScanJobResponse {}
+
 // Request details for generating data quality rule recommendations.
 message GenerateDataQualityRulesRequest {
   // Required. The name must be one of the following:
@@ -426,10 +457,11 @@ message GenerateDataQualityRulesResponse {
 // * Data discovery: scans data in Cloud Storage buckets to extract and then
 //   catalog metadata. For more information, see [Discover and catalog Cloud
 //   Storage data](https://cloud.google.com/bigquery/docs/automatic-discovery).
-// * Data documentation: analyzes the table details and generates insights
-// including descriptions and sample SQL queries for the table. For more
-// information, see [Generate data insights in
-// BigQuery](https://cloud.google.com/bigquery/docs/data-insights).
+// * Data documentation: analyzes the table or dataset metadata and generates
+//   insights. For tables, insights include descriptions and sample SQL
+//   queries. For datasets, insights include descriptions, schema relationships
+//   and sample SQL queries. For more information, see [Generate data insights
+//   in BigQuery](https://cloud.google.com/bigquery/docs/data-insights).
 message DataScan {
   option (google.api.resource) = {
     type: "dataplex.googleapis.com/DataScan"
@@ -564,6 +596,46 @@ message DataScan {
     DataDocumentationResult data_documentation_result = 203
         [(google.api.field_behavior) = OUTPUT_ONLY];
   }
+
+  // Optional. Immutable. The identity to run the datascan.
+  // If not specified, defaults to the Dataplex Service Agent.
+  ExecutionIdentity execution_identity = 300 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+}
+
+// The identity to run the datascan.
+message ExecutionIdentity {
+  // The Dataplex service agent associated with the user's project.
+  message DataplexServiceAgent {}
+
+  // The credential of the calling user.
+  message UserCredential {}
+
+  // The service account
+  message ServiceAccount {
+    // Required. Service account email. The datascan will execute with this
+    // service account's credentials. The user calling this API must have
+    // permissions to act as this service account. Dataplex service agent must
+    // be granted iam.serviceAccounts.getAccessToken permission on this service
+    // account, for example, through the iam.serviceAccountTokenCreator role .
+    string email = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // The identity to run the datascan.
+  oneof identity {
+    // Optional. The Dataplex service agent associated with the user's project.
+    DataplexServiceAgent dataplex_service_agent = 1
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The credential of the calling user. Supports only ONE_TIME
+    // trigger type.
+    UserCredential user_credential = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The provided service account.
+    ServiceAccount service_account = 3 [(google.api.field_behavior) = OPTIONAL];
+  }
 }
 
 // A DataScanJob represents an instance of DataScan execution.
@@ -595,6 +667,9 @@ message DataScanJob {
 
     // The DataScanJob has been created but not started to run yet.
     PENDING = 7;
+
+    // The DataScanJob succeeded with errors.
+    SUCCEEDED_WITH_ERRORS = 8;
   }
 
   // Output only. Identifier. The relative resource name of the DataScanJob, of
@@ -615,6 +690,10 @@ message DataScanJob {
 
   // Output only. The time when the DataScanJob was created.
   google.protobuf.Timestamp create_time = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. A message indicating partial failure details.
+  string partial_failure_message = 9
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The time when the DataScanJob was started.

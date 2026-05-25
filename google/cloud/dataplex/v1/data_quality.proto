@@ -18,6 +18,7 @@ package google.cloud.dataplex.v1;
 
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/cloud/dataplex/v1/data_quality_rule_template.proto";
 import "google/cloud/dataplex/v1/datascans_common.proto";
 import "google/cloud/dataplex/v1/processing.proto";
 
@@ -123,6 +124,28 @@ message DataQualitySpec {
   // Optional. If set, the latest DataScan job result will be published as
   // Dataplex Universal Catalog metadata.
   bool catalog_publishing_enabled = 8 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If enabled, the data scan will retrieve rules defined in the
+  // dataplex-types.global.data-rules aspect on all paths of the catalog entry
+  // corresponding to the BigQuery table resource and all attached glossary
+  // terms. The path that data-rules aspect is attached on the table entry
+  // defines the column that the rule will be evaluated against. For glossary
+  // terms, the path that the terms are attached on the table entry defines the
+  // column that the rule will be evaluated against. At the start of scan
+  // execution, the rules reflect the latest state retrieved from the catalog
+  // entry and any updates on the rules thereafter are ignored for that
+  // execution. The updates will be reflected from the next execution. Rules
+  // defined in the datascan must be empty if this field is enabled.
+  bool enable_catalog_based_rules = 10 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Filter for selectively running a subset of rules. You can filter
+  // the request by the name or attribute key-value pairs defined on the rule.
+  // If not specified, all rules are run. The filter is applicable to both, the
+  // rules retrieved from catalog and explicitly defined rules in the scan.
+  // Please see [filter
+  // syntax](https://docs.cloud.google.com/dataplex/docs/auto-data-quality-overview#rule-filtering)
+  // for more details.
+  string filter = 11 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // The output of a DataQualityScan.
@@ -471,6 +494,101 @@ message DataQualityRule {
     string sql_statement = 1 [(google.api.field_behavior) = OPTIONAL];
   }
 
+  // A rule that constructs a SQL statement to evaluate using a rule template
+  // and parameter values. If the constructed statement returns any rows, this
+  // rule fails
+  message TemplateReference {
+    // Represents a parameter value.
+    message ParameterValue {
+      // Required. Represents the string value of the parameter.
+      string value = 1 [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // Required. The template entry name. Entry must be of EntryType
+    // `projects/dataplex-types/locations/global/entryTypes/data-quality-rule-template`
+    // and contains top-level aspect of AspectType
+    // `projects/dataplex-types/locations/global/aspectTypes/data-quality-rule-template`.
+    // The format is:
+    // `projects/{project_id_or_number}/locations/{location_id}/entryGroups/{entry_group_id}/entries/{entry_id}`
+    string name = 1 [
+      (google.api.field_behavior) = REQUIRED,
+      (google.api.resource_reference) = {
+        type: "dataplex.googleapis.com/Entry"
+      }
+    ];
+
+    // Optional. Provides the map of parameter name and value.
+    // The maximum size of the field is 120KB (encoded as UTF-8).
+    map<string, ParameterValue> values = 5
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Output only. The resolved SQL statement generated from the template with
+    // parameters substituted. It is only populated in the result.
+    string resolved_sql = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The rule template used to resolve the rule. It is only
+    // populated in the result.
+    DataQualityRuleTemplate rule_template = 4
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Represents the rule source information from Catalog.
+  message RuleSource {
+    // Path Element represents the direct relationship between the rule origin
+    // (aspects) to the BigQuery Entry. Ordering of the rule relationship will
+    // be maintained such that the first entry in the list is the closest
+    // ancestor (BigQuery table itself). A blank source denotes that the rule is
+    // derived directly from the DataScan itself.
+    message RulePathElement {
+      // Entry source represents information about the related source entry.
+      message EntrySource {
+        // Output only. The entry type to represent the current characteristics
+        // of the entry in the form of:
+        // `projects/{project_id_or_number}/locations/{location_id}/entryTypes/{entry-type-id}`.
+        string entry_type = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+        // Output only. The entry name in the form of:
+        // `projects/{project_id_or_number}/locations/{location_id}/entryGroups/{entry_group_id}/entries/{entry_id}`
+        string entry = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+        // Output only. The display name of the entry.
+        string display_name = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+      }
+
+      // Entry link source represents information about the entry link.
+      message EntryLinkSource {
+        // Output only. The entry link type to represent the current
+        // relationship between the entry and the next entry in the path.
+        // In the form of:
+        // `projects/{project_id_or_number}/locations/{location_id}/entryLinkTypes/{entry_link_type_id}`
+        string entry_link_type = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+        // Output only. The entry link name in the form of:
+        // `projects/{project_id_or_number}/locations/{location_id}/entryGroups/{entry_group_id}/entryLinks/{entry_link_id}`
+        string entry_link = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+      }
+
+      // The source type of the rule.
+      oneof source_type {
+        // Output only. Entry source represents information about the related
+        // source entry.
+        EntrySource entry_source = 1
+            [(google.api.field_behavior) = OUTPUT_ONLY];
+
+        // Output only. Entry link source represents information about the entry
+        // link.
+        EntryLinkSource entry_link_source = 2
+            [(google.api.field_behavior) = OUTPUT_ONLY];
+      }
+    }
+
+    // Output only. Rule path elements represent information about the
+    // individual items in the relationship path between the scan resource and
+    // rule origin in that order.
+    repeated RulePathElement rule_path_elements = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
   // Specifies a SQL statement that is evaluated to return up to 10 scalar
   // values that are used to debug rules. If the rule fails, the values can help
   // diagnose the cause of the failure.
@@ -536,6 +654,11 @@ message DataQualityRule {
     // Aggregate rule which evaluates the number of rows returned for the
     // provided statement. If any rows are returned, this rule fails.
     SqlAssertion sql_assertion = 202;
+
+    // Aggregate rule which references a rule template and provides the
+    // parameters to be substituted in the template. If any rows are returned,
+    // this rule fails.
+    TemplateReference template_reference = 5;
   }
 
   // Optional. The unnested column which this rule is evaluated against.
@@ -583,6 +706,15 @@ message DataQualityRule {
   // Optional. Whether the Rule is active or suspended.
   // Default is false.
   bool suspended = 506 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Map of attribute name and value linked to the rule. The rules to
+  // evaluate can be filtered based on attributes provided here and a filter
+  // expression provided in the DataQualitySpec.filter field.
+  map<string, string> attributes = 507 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Contains information about the source of the rule and its
+  // relationship with the BigQuery table, where applicable.
+  RuleSource rule_source = 508 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Optional. Specifies the debug queries for this rule.
   // Currently, only one query is supported, but this may be expanded in the
