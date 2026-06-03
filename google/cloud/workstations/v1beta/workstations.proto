@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package google.cloud.workstations.v1beta;
 import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
+import "google/api/field_info.proto";
 import "google/api/resource.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/duration.proto";
@@ -265,6 +266,8 @@ service Workstations {
 
   // Returns a short-lived credential that can be used to send authenticated and
   // authorized traffic to a workstation.
+  // Once generated this token cannot be revoked and is good for the lifetime
+  // of the token.
   rpc GenerateAccessToken(GenerateAccessTokenRequest)
       returns (GenerateAccessTokenResponse) {
     option (google.api.http) = {
@@ -272,6 +275,22 @@ service Workstations {
       body: "*"
     };
     option (google.api.method_signature) = "workstation";
+  }
+
+  // Pushes credentials to a running workstation on behalf of a user. Once
+  // complete, supported credential types (application_default_credentials) are
+  // made available to processes running in the user container.
+  rpc PushCredentials(PushCredentialsRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1beta/{workstation=projects/*/locations/*/workstationClusters/*/workstationConfigs/*/workstations/*}:pushCredentials"
+      body: "*"
+    };
+    option (google.api.method_signature) = "workstation";
+    option (google.longrunning.operation_info) = {
+      response_type: "Workstation"
+      metadata_type: "PushCredentialsMetadata"
+    };
   }
 }
 
@@ -301,7 +320,7 @@ message WorkstationCluster {
     string cluster_hostname = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 
     // Output only. Service attachment URI for the workstation cluster. The
-    // service attachemnt is created when private endpoint is enabled. To access
+    // service attachment is created when private endpoint is enabled. To access
     // workstations in the workstation cluster, configure access to the managed
     // service using [Private Service
     // Connect](https://cloud.google.com/vpc/docs/configure-private-service-connect-services).
@@ -315,15 +334,31 @@ message WorkstationCluster {
         [(google.api.field_behavior) = OPTIONAL];
   }
 
-  // Full name of this workstation cluster.
-  string name = 1;
+  // Configuration options for a custom domain.
+  message DomainConfig {
+    // Immutable. Domain used by Workstations for HTTP ingress.
+    string domain = 1 [(google.api.field_behavior) = IMMUTABLE];
+  }
+
+  // Configuration options for Cluster HTTP Gateway.
+  message GatewayConfig {
+    // Optional. Whether HTTP/2 is enabled for this workstation cluster.
+    // Defaults to false.
+    bool http2_enabled = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Identifier. Full name of this workstation cluster.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
   // Optional. Human-readable name for this workstation cluster.
   string display_name = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. A system-assigned unique identifier for this workstation
   // cluster.
-  string uid = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string uid = 3 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
 
   // Output only. Indicates whether this workstation cluster is currently being
   // updated to match its intended state.
@@ -374,16 +409,58 @@ message WorkstationCluster {
   PrivateClusterConfig private_cluster_config = 12
       [(google.api.field_behavior) = OPTIONAL];
 
+  // Optional. Configuration options for a custom domain.
+  DomainConfig domain_config = 17 [(google.api.field_behavior) = OPTIONAL];
+
   // Output only. Whether this workstation cluster is in degraded mode, in which
-  // case it may require user action to restore full functionality. Details can
-  // be found in
-  // [conditions][google.cloud.workstations.v1beta.WorkstationCluster.conditions].
+  // case it may require user action to restore full functionality. The
+  // [conditions][google.cloud.workstations.v1beta.WorkstationCluster.conditions]
+  // field contains detailed information about the status of the cluster.
   bool degraded = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Status conditions describing the workstation cluster's current
   // state.
   repeated google.rpc.Status conditions = 14
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Reserved for future use.
+  bool satisfies_pzs = 18 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Reserved for future use.
+  bool satisfies_pzi = 19 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Input only. Immutable. Tag keys/values directly bound to this
+  // resource. For example:
+  //   "123/environment": "production",
+  //   "123/costCenter": "marketing"
+  map<string, string> tags = 20 [
+    (google.api.field_behavior) = INPUT_ONLY,
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+
+  // Optional. Configuration options for Cluster HTTP Gateway.
+  GatewayConfig gateway_config = 21 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Specifies the redirect URL for unauthorized requests received by
+  // workstation VMs in this cluster.
+  //
+  // Redirects to this endpoint will send a base64 encoded `state` query param
+  // containing the target workstation name and original request hostname. The
+  // endpoint is responsible for retrieving a token using `GenerateAccessToken`
+  // and redirecting back to the original hostname with the token.
+  string workstation_authorization_url = 22
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Specifies the launch URL for workstations in this cluster.
+  // Requests sent to unstarted workstations will be redirected to this URL.
+  //
+  // Requests redirected to the launch endpoint will be sent with a
+  // `workstation` and `project` query parameter containing the full workstation
+  // resource name and project ID, respectively. The launch endpoint is
+  // responsible for starting the workstation, polling it until it reaches
+  // `STATE_RUNNING`, and then issuing a redirect to the workstation's host URL.
+  string workstation_launch_url = 23 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // A workstation configuration resource in the Cloud Workstations API.
@@ -439,6 +516,120 @@ message WorkstationConfig {
         int32 count = 2 [(google.api.field_behavior) = OPTIONAL];
       }
 
+      // A boost configuration is a set of resources that a workstation can use
+      // to increase its performance. If you specify a boost configuration, upon
+      // startup, workstation users can choose to use a VM provisioned under the
+      // boost config by passing the boost config ID in the start request. If
+      // the workstation user does not provide a boost config ID  in the start
+      // request, the system will choose a VM from the pool provisioned under
+      // the default config.
+      message BoostConfig {
+        // Required. The ID to be used for the boost configuration.
+        string id = 1 [(google.api.field_behavior) = REQUIRED];
+
+        // Optional. The type of machine that boosted VM instances will use—for
+        // example, `e2-standard-4`. For more information about machine types
+        // that Cloud Workstations supports, see the list of [available machine
+        // types](https://cloud.google.com/workstations/docs/available-machine-types).
+        // Defaults to `e2-standard-4`.
+        string machine_type = 2 [(google.api.field_behavior) = OPTIONAL];
+
+        // Optional. A list of the type and count of accelerator cards attached
+        // to the boost instance. Defaults to `none`.
+        repeated Accelerator accelerators = 3
+            [(google.api.field_behavior) = OPTIONAL];
+
+        // Optional. The size of the boot disk for the VM in gigabytes (GB).
+        // The minimum boot disk size is `30` GB. Defaults to `50` GB.
+        int32 boot_disk_size_gb = 4 [(google.api.field_behavior) = OPTIONAL];
+
+        // Optional. Whether to enable nested virtualization on boosted Cloud
+        // Workstations VMs running using this boost configuration.
+        //
+        // Defaults to false.
+        //
+        // Nested virtualization lets you run virtual machine (VM) instances
+        // inside your workstation. Before enabling nested virtualization,
+        // consider the following important considerations. Cloud Workstations
+        // instances are subject to the [same restrictions as Compute Engine
+        // instances](https://cloud.google.com/compute/docs/instances/nested-virtualization/overview#restrictions):
+        //
+        // * **Organization policy**: projects, folders, or
+        // organizations may be restricted from creating nested VMs if the
+        // **Disable VM nested virtualization** constraint is enforced in
+        // the organization policy. For more information, see the
+        // Compute Engine section,
+        // [Checking whether nested virtualization is
+        // allowed](https://cloud.google.com/compute/docs/instances/nested-virtualization/managing-constraint#checking_whether_nested_virtualization_is_allowed).
+        // * **Performance**: nested VMs might experience a 10% or greater
+        // decrease in performance for workloads that are CPU-bound and
+        // possibly greater than a 10% decrease for workloads that are
+        // input/output bound.
+        // * **Machine Type**: nested virtualization can only be enabled on
+        // boost configurations that specify a
+        // [machine_type][google.cloud.workstations.v1beta.WorkstationConfig.Host.GceInstance.BoostConfig.machine_type]
+        // in the N1 or N2 machine series.
+        bool enable_nested_virtualization = 7
+            [(google.api.field_behavior) = OPTIONAL];
+
+        // Optional. The number of boost VMs that the system should keep idle so
+        // that workstations can be boosted quickly. Defaults to `0`.
+        int32 pool_size = 5 [(google.api.field_behavior) = OPTIONAL];
+
+        // Optional.
+        // [ReservationAffinity](https://cloud.google.com/compute/docs/instances/reserving-zonal-resources)
+        // specifies a reservation that can be consumed to create boost VM
+        // instances. If SPECIFIC_RESERVATION is specified, Cloud Workstations
+        // will only create VMs in the zone where the reservation is located.
+        // This would affect availability since the service will no longer be
+        // resilient to zonal outages. If ANY_RESERVATION is specified, creating
+        // reservations in both zones that the config creates VMs in will ensure
+        // higher availability.
+        // **Important Considerations for Reservation Affinity:**
+        //
+        // *   This feature is intended for advanced users and requires
+        // familiarity with Google Compute Engine reservations.
+        // *   Using reservations incurs charges, regardless of utilization.
+        // *   The resources in the pool will consume the specified
+        //     reservation. Take this into account when setting the
+        //     pool size.
+        ReservationAffinity reservation_affinity = 6
+            [(google.api.field_behavior) = OPTIONAL];
+      }
+
+      // ReservationAffinity is the configuration of the desired reservation
+      // from which instances can consume resources.
+      message ReservationAffinity {
+        // Indicates whether to consume capacity from a reservation or not.
+        enum Type {
+          // Default value. This should not be used.
+          TYPE_UNSPECIFIED = 0;
+
+          // Do not consume from any reserved capacity.
+          NO_RESERVATION = 1;
+
+          // Consume any reservation available.
+          ANY_RESERVATION = 2;
+
+          // Must consume from a specific reservation. Must specify key value
+          // fields for specifying the reservations.
+          SPECIFIC_RESERVATION = 3;
+        }
+
+        // Optional. Corresponds to the type of reservation consumption.
+        Type consume_reservation_type = 1
+            [(google.api.field_behavior) = OPTIONAL];
+
+        // Optional. Corresponds to the label key of reservation resource.
+        string key = 2 [(google.api.field_behavior) = OPTIONAL];
+
+        // Optional. Corresponds to the label values of reservation resources.
+        // Valid values are either the name of a reservation in the same project
+        // or "projects/{project}/reservations/{reservation}" to target a shared
+        // reservation in the same zone but in a different project.
+        repeated string values = 3 [(google.api.field_behavior) = OPTIONAL];
+      }
+
       // Optional. The type of machine to use for VM instances—for example,
       // `"e2-standard-4"`. For more information about machine types that
       // Cloud Workstations supports, see the list of
@@ -448,10 +639,12 @@ message WorkstationConfig {
 
       // Optional. The email address of the service account for Cloud
       // Workstations VMs created with this configuration. When specified, be
-      // sure that the service account has `logginglogEntries.create` permission
-      // on the project so it can write logs out to Cloud Logging. If using a
-      // custom container image, the service account must have permissions to
-      // pull the specified image.
+      // sure that the service account has `logging.logEntries.create` and
+      // `monitoring.timeSeries.create` permissions on the project so it can
+      // write logs out to Cloud Logging. If using a custom container image, the
+      // service account must have [Artifact Registry
+      // Reader](https://cloud.google.com/artifact-registry/docs/access-control#roles)
+      // permission to pull the specified image.
       //
       // If you as the administrator want to be able to `ssh` into the
       // underlying VM, you need to set this value to a service account
@@ -467,9 +660,8 @@ message WorkstationConfig {
 
       // Optional. Scopes to grant to the
       // [service_account][google.cloud.workstations.v1beta.WorkstationConfig.Host.GceInstance.service_account].
-      // Various scopes are automatically added based on feature usage. When
-      // specified, users of workstations under this configuration must have
-      // `iam.serviceAccounts.actAs` on the service account.
+      // When specified, users of workstations under this configuration must
+      // have `iam.serviceAccounts.actAs` on the service account.
       repeated string service_account_scopes = 3
           [(google.api.field_behavior) = OPTIONAL];
 
@@ -502,7 +694,9 @@ message WorkstationConfig {
           [(google.api.field_behavior) = OPTIONAL];
 
       // Optional. Whether to enable nested virtualization on Cloud Workstations
-      // VMs created under this workstation configuration.
+      // VMs created using this workstation configuration.
+      //
+      // Defaults to false.
       //
       // Nested virtualization lets you run virtual machine (VM) instances
       // inside your workstation. Before enabling nested virtualization,
@@ -525,16 +719,6 @@ message WorkstationConfig {
       // workstation configurations that specify a
       // [machine_type][google.cloud.workstations.v1beta.WorkstationConfig.Host.GceInstance.machine_type]
       // in the N1 or N2 machine series.
-      // * **GPUs**: nested virtualization may not be enabled on workstation
-      // configurations with accelerators.
-      // * **Operating System**: Because
-      // [Container-Optimized
-      // OS](https://cloud.google.com/compute/docs/images/os-details#container-optimized_os_cos)
-      // does not support nested virtualization, when nested virtualization is
-      // enabled, the underlying Compute Engine VM instances boot from an
-      // [Ubuntu
-      // LTS](https://cloud.google.com/compute/docs/images/os-details#ubuntu_lts)
-      // image.
       bool enable_nested_virtualization = 7
           [(google.api.field_behavior) = OPTIONAL];
 
@@ -554,18 +738,73 @@ message WorkstationConfig {
       // the instance.
       repeated Accelerator accelerators = 11
           [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. A list of the boost configurations that workstations created
+      // using this workstation configuration are allowed to use. If specified,
+      // users will have the option to choose from the list of boost configs
+      // when starting a workstation.
+      repeated BoostConfig boost_configs = 25
+          [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Whether to disable SSH access to the VM.
+      bool disable_ssh = 13 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Resource manager tags to be bound to this instance.
+      // Tag keys and values have the same definition as [resource manager
+      // tags](https://cloud.google.com/resource-manager/docs/tags/tags-overview).
+      // Keys must be in the format `tagKeys/{tag_key_id}`, and
+      // values are in the format `tagValues/456`.
+      map<string, string> vm_tags = 14 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional.
+      // [ReservationAffinity](https://cloud.google.com/compute/docs/instances/reserving-zonal-resources)
+      // specifies a reservation that can be consumed to create VM
+      // instances. If SPECIFIC_RESERVATION is specified, Cloud Workstations
+      // will only create VMs in the zone where the reservation is located.
+      // This would affect availability since the service will no longer be
+      // resilient to zonal outages. If ANY_RESERVATION is specified, creating
+      // reservations in both zones that the config creates VMs in will ensure
+      // higher availability.
+      // **Important Considerations for Reservation Affinity:**
+      //
+      // *   This feature is intended for advanced users and requires
+      // familiarity with Google Compute Engine reservations.
+      // *   Using reservations incurs charges, regardless of utilization.
+      // *   The resources in the pool will consume the specified
+      //     reservation. Take this into account when setting the
+      //     pool size.
+      ReservationAffinity reservation_affinity = 15
+          [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Link to the startup script stored in Cloud Storage. This
+      // script will be run on the host workstation VM when the VM is created.
+      // The URI must be of the form gs://{bucket-name}/{object-name}. If
+      // specifying a startup script, the service account must have [Permission
+      // to access the bucket and script file in Cloud
+      // Storage](https://cloud.google.com/storage/docs/access-control/iam-permissions).
+      // Otherwise, the script must be publicly accessible.
+      // Note that the service regularly updates the OS version of the host VM,
+      // and it is the responsibility of the user to ensure the script stays
+      // compatible with the OS version.
+      string startup_script_uri = 26 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Custom metadata to apply to Compute Engine instances.
+      map<string, string> instance_metadata = 27
+          [(google.api.field_behavior) = OPTIONAL];
     }
 
-    // Type of host that will be used for the workstation's runtime.
+    // Type of host to be used for the workstation's runtime.
     oneof config {
       // Specifies a Compute Engine instance as the host.
       GceInstance gce_instance = 1;
     }
   }
 
-  // A directory to persist across workstation sessions.
+  // A directory to persist across workstation sessions. Updates to this field
+  // will not update existing workstations and will only take effect on new
+  // workstations.
   message PersistentDirectory {
-    // A PersistentDirectory backed by a Compute Engine regional persistent
+    // A Persistent Directory backed by a Compute Engine regional persistent
     // disk. The
     // [persistent_directories][google.cloud.workstations.v1beta.WorkstationConfig.persistent_directories]
     // field is repeated, but it may contain only one entry. It creates a
@@ -602,6 +841,10 @@ message WorkstationConfig {
       // `"pd-balanced"` or `"pd-ssd"`.
       int32 size_gb = 1 [(google.api.field_behavior) = OPTIONAL];
 
+      // Optional. Maximum size in GB to which this persistent directory can be
+      // resized. Defaults to unlimited if not set.
+      int32 max_size_gb = 7 [(google.api.field_behavior) = OPTIONAL];
+
       // Optional. Type of file system that the disk should be formatted with.
       // The workstation image must support this file system type. Must be empty
       // if
@@ -619,19 +862,90 @@ message WorkstationConfig {
       // [size_gb][google.cloud.workstations.v1beta.WorkstationConfig.PersistentDirectory.GceRegionalPersistentDisk.size_gb]
       // and
       // [fs_type][google.cloud.workstations.v1beta.WorkstationConfig.PersistentDirectory.GceRegionalPersistentDisk.fs_type]
-      // must be empty.
+      // must be empty. Must be formatted as ext4 file system with no
+      // partitions.
       string source_snapshot = 5 [(google.api.field_behavior) = OPTIONAL];
 
       // Optional. Whether the persistent disk should be deleted when the
       // workstation is deleted. Valid values are `DELETE` and `RETAIN`.
       // Defaults to `DELETE`.
       ReclaimPolicy reclaim_policy = 4 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Number of seconds to wait after initially creating or
+      // subsequently shutting down the workstation before converting its disk
+      // into a snapshot. This generally saves costs at the expense of greater
+      // startup time on next workstation start, as the service will need to
+      // create a disk from the archival snapshot.
+      //
+      // A value of `"0s"` indicates that the disk will never be archived.
+      google.protobuf.Duration archive_timeout = 6
+          [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // A Persistent Directory backed by a Compute Engine
+    // [Hyperdisk Balanced High Availability
+    // Disk](https://cloud.google.com/compute/docs/disks/hd-types/hyperdisk-balanced-ha).
+    // This is a high-availability block storage solution that offers a balance
+    // between performance and cost for most general-purpose workloads.
+    message GceHyperdiskBalancedHighAvailability {
+      // Value representing what should happen to the disk after the workstation
+      // is deleted.
+      enum ReclaimPolicy {
+        // Do not use.
+        RECLAIM_POLICY_UNSPECIFIED = 0;
+
+        // Delete the persistent disk when deleting the workstation.
+        DELETE = 1;
+
+        // Keep the persistent disk when deleting the workstation.
+        // An administrator must manually delete the disk.
+        RETAIN = 2;
+      }
+
+      // Optional. The GB capacity of a persistent home directory for each
+      // workstation created with this configuration. Must be empty if
+      // [source_snapshot][google.cloud.workstations.v1beta.WorkstationConfig.PersistentDirectory.GceHyperdiskBalancedHighAvailability.source_snapshot]
+      // is set.
+      //
+      // Valid values are `10`, `50`, `100`, `200`, `500`, or `1000`.
+      // Defaults to `200`.
+      int32 size_gb = 1 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Maximum size in GB to which this persistent directory can be
+      // resized. Defaults to unlimited if not set.
+      int32 max_size_gb = 5 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Name of the snapshot to use as the source for the disk. If
+      // set,
+      // [size_gb][google.cloud.workstations.v1beta.WorkstationConfig.PersistentDirectory.GceHyperdiskBalancedHighAvailability.size_gb]
+      // must be empty. Must be formatted as ext4 file system with no
+      // partitions.
+      string source_snapshot = 2 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Whether the persistent disk should be deleted when the
+      // workstation is deleted. Valid values are `DELETE` and `RETAIN`.
+      // Defaults to `DELETE`.
+      ReclaimPolicy reclaim_policy = 3 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Number of seconds to wait after initially creating or
+      // subsequently shutting down the workstation before converting its disk
+      // into a snapshot. This generally saves costs at the expense of greater
+      // startup time on next workstation start, as the service will need to
+      // create a disk from the archival snapshot.
+      //
+      // A value of `"0s"` indicates that the disk will never be archived.
+      google.protobuf.Duration archive_timeout = 4
+          [(google.api.field_behavior) = OPTIONAL];
     }
 
     // How a persistent directory should be implemented.
     oneof directory_type {
       // A PersistentDirectory backed by a Compute Engine persistent disk.
       GceRegionalPersistentDisk gce_pd = 2;
+
+      // A PersistentDirectory backed by a Compute Engine hyperdisk high
+      // availability disk.
+      GceHyperdiskBalancedHighAvailability gce_hd = 3;
     }
 
     // Optional. Location of this directory in the running workstation.
@@ -649,10 +963,19 @@ message WorkstationConfig {
       // Optional. Name of the snapshot to use as the source for the disk. Must
       // be empty if
       // [source_image][google.cloud.workstations.v1beta.WorkstationConfig.EphemeralDirectory.GcePersistentDisk.source_image]
-      // is set. Updating
+      // is set. Must be empty if
+      // [read_only][google.cloud.workstations.v1beta.WorkstationConfig.EphemeralDirectory.GcePersistentDisk.read_only]
+      // is false. Updating
       // [source_snapshot][google.cloud.workstations.v1beta.WorkstationConfig.EphemeralDirectory.GcePersistentDisk.source_snapshot]
       // will update content in the ephemeral directory after the workstation is
-      // restarted. This field is mutable.
+      // restarted.
+      //
+      // Only file systems supported by Container-Optimized OS (COS)
+      // are explicitly supported. For a list of supported file systems, see
+      // [the filesystems available in Container-Optimized
+      // OS](https://cloud.google.com/container-optimized-os/docs/concepts/supported-filesystems).
+      //
+      // This field is mutable.
       string source_snapshot = 2 [(google.api.field_behavior) = OPTIONAL];
 
       // Optional. Name of the disk image to use as the source for the disk.
@@ -661,7 +984,14 @@ message WorkstationConfig {
       // is set. Updating
       // [source_image][google.cloud.workstations.v1beta.WorkstationConfig.EphemeralDirectory.GcePersistentDisk.source_image]
       // will update content in the ephemeral directory after the workstation is
-      // restarted. This field is mutable.
+      // restarted.
+      //
+      // Only file systems supported by Container-Optimized OS (COS)
+      // are explicitly supported. For a list of supported file systems, please
+      // refer to the [COS
+      // documentation](https://cloud.google.com/container-optimized-os/docs/concepts/supported-filesystems).
+      //
+      // This field is mutable.
       string source_image = 3 [(google.api.field_behavior) = OPTIONAL];
 
       // Optional. Whether the disk is read only. If true, the disk may be
@@ -692,7 +1022,10 @@ message WorkstationConfig {
     // [custom container
     // images](https://cloud.google.com/workstations/docs/custom-container-images).
     // If using a private image, the `host.gceInstance.serviceAccount` field
-    // must be specified in the workstation configuration and must have
+    // must be specified in the workstation configuration.
+    // If using a custom container image, the service account must have
+    // [Artifact Registry
+    // Reader](https://cloud.google.com/artifact-registry/docs/access-control#roles)
     // permission to pull the specified image. Otherwise, the image must be
     // publicly accessible.
     string image = 1 [(google.api.field_behavior) = OPTIONAL];
@@ -747,15 +1080,58 @@ message WorkstationConfig {
     int32 port = 2 [(google.api.field_behavior) = OPTIONAL];
   }
 
-  // Full name of this workstation configuration.
-  string name = 1;
+  // HTTP options for the running workstations.
+  message HttpOptions {
+    // Optional. By default, the workstations service makes sure that all
+    // requests to the workstation are authenticated. CORS preflight requests do
+    // not include cookies or custom headers, and so are considered
+    // unauthenticated and blocked by the workstations service. Enabling this
+    // option allows these unauthenticated CORS preflight requests through to
+    // the workstation, where it becomes the responsibility of the destination
+    // server in the workstation to validate the request.
+    bool allowed_unauthenticated_cors_preflight_requests = 1
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. By default, the workstations service replaces references to
+    // localhost, 127.0.0.1, and 0.0.0.0 with the workstation's hostname in http
+    // responses from the workstation so that applications under development run
+    // properly on the workstation. This may intefere with some applications,
+    // and so this option allows that behavior to be disabled.
+    bool disable_localhost_replacement = 2
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // A PortRange defines a range of ports. Both
+  // [first][google.cloud.workstations.v1beta.WorkstationConfig.PortRange.first]
+  // and
+  // [last][google.cloud.workstations.v1beta.WorkstationConfig.PortRange.last]
+  // are inclusive. To specify a single port, both
+  // [first][google.cloud.workstations.v1beta.WorkstationConfig.PortRange.first]
+  // and
+  // [last][google.cloud.workstations.v1beta.WorkstationConfig.PortRange.last]
+  // should be the same.
+  message PortRange {
+    // Required. Starting port number for the current range of ports.
+    // Valid ports are 22, 80, and ports within the range 1024-65535.
+    int32 first = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. Ending port number for the current range of ports.
+    // Valid ports are 22, 80, and ports within the range 1024-65535.
+    int32 last = 2 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Identifier. Full name of this workstation configuration.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
   // Optional. Human-readable name for this workstation configuration.
   string display_name = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. A system-assigned unique identifier for this workstation
   // configuration.
-  string uid = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string uid = 3 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
 
   // Output only. Indicates whether this workstation configuration is currently
   // being updated to match its intended state.
@@ -825,6 +1201,22 @@ message WorkstationConfig {
   google.protobuf.Duration running_timeout = 11
       [(google.api.field_behavior) = OPTIONAL];
 
+  // Optional. Maximum number of workstations under this configuration a user
+  // can have `workstations.workstation.use` permission on.
+  //
+  // Only enforced on CreateWorkstation API calls on the user issuing the API
+  // request. Can be overridden by:
+  //
+  // - granting a user
+  // workstations.workstationConfigs.exemptMaxUsableWorkstationLimit permission,
+  // or
+  // - having a user with that permission create a workstation and
+  // granting another user `workstations.workstation.use` permission on
+  // that workstation.
+  //
+  // If not specified, defaults to `0`, which indicates unlimited.
+  int32 max_usable_workstations = 28 [(google.api.field_behavior) = OPTIONAL];
+
   // Optional. Runtime host for the workstation.
   Host host = 12 [(google.api.field_behavior) = OPTIONAL];
 
@@ -880,22 +1272,73 @@ message WorkstationConfig {
     (google.api.field_behavior) = IMMUTABLE
   ];
 
-  // Output only. Whether this resource is degraded, in which case it may
-  // require user action to restore full functionality. See also the
+  // Output only. Whether this workstation configuration is in degraded mode, in
+  // which case it may require user action to restore full functionality. The
   // [conditions][google.cloud.workstations.v1beta.WorkstationConfig.conditions]
-  // field.
+  // field contains detailed information about the status of the configuration.
   bool degraded = 15 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. Status conditions describing the current resource state.
+  // Output only. Status conditions describing the workstation configuration's
+  // current state.
   repeated google.rpc.Status conditions = 16
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Optional. Whether to enable Linux `auditd` logging on the workstation. When
-  // enabled, a service account must also be specified that has
-  // `logging.buckets.write` permission on the project. Operating system audit
+  // enabled, a
+  // [service_account][google.cloud.workstations.v1beta.WorkstationConfig.Host.GceInstance.service_account]
+  // must also be specified that has `roles/logging.logWriter` and
+  // `roles/monitoring.metricWriter` on the project. Operating system audit
   // logging is distinct from [Cloud Audit
-  // Logs](https://cloud.google.com/workstations/docs/audit-logging).
+  // Logs](https://cloud.google.com/workstations/docs/audit-logging) and
+  // [Container output
+  // logging](https://cloud.google.com/workstations/docs/container-output-logging#overview).
+  // Operating system audit logs are available in the
+  // [Cloud Logging](https://cloud.google.com/logging/docs) console by querying:
+  //
+  //     resource.type="gce_instance"
+  //     log_name:"/logs/linux-auditd"
   bool enable_audit_agent = 20 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. HTTP options that customize the behavior of the workstation
+  // service's HTTP proxy.
+  HttpOptions http_options = 21 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Disables support for plain TCP connections in the workstation.
+  // By default the service supports TCP connections through a websocket relay.
+  // Setting this option to true disables that relay, which prevents the usage
+  // of services that require plain TCP connections, such as SSH.
+  // When enabled, all communication must occur over HTTPS or WSS.
+  bool disable_tcp_connections = 24 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A list of
+  // [PortRange][google.cloud.workstations.v1beta.WorkstationConfig.PortRange]s
+  // specifying single ports or ranges of ports that are externally accessible
+  // in the workstation. Allowed ports must be one of 22, 80, or within range
+  // 1024-65535. If not specified defaults to ports 22, 80, and ports
+  // 1024-65535.
+  repeated PortRange allowed_ports = 25
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Reserved for future use.
+  bool satisfies_pzs = 26 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Reserved for future use.
+  bool satisfies_pzi = 27 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Grant creator of a workstation `roles/workstations.policyAdmin`
+  // role along with `roles/workstations.user` role on the workstation created
+  // by them. This allows workstation users to share access to either their
+  // entire workstation, or individual ports. Defaults to false.
+  bool grant_workstation_admin_role_on_create = 29
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Enables pushing user provided credentials to Workstations by
+  // calling workstations.pushCredentials. If application_default_credentials
+  // are supplied to pushCredentials, the provided token is returned when tools
+  // and applications running in the user container make a request for Default
+  // Application Credentials. Please note that any credentials supplied are made
+  // available to all users with access to the workstation.
+  bool enable_pushing_credentials = 30 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // A single instance of a developer workstation with its own persistent storage.
@@ -907,6 +1350,58 @@ message Workstation {
     singular: "workstation"
     style: DECLARATIVE_FRIENDLY
   };
+
+  // A directory to persist across workstation sessions. Updates to this field
+  // will only take effect on this workstation after it is restarted.
+  message WorkstationPersistentDirectory {
+    // Optional. The mount path of the persistent directory.
+    string mount_path = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Size of the persistent directory in GB. If specified in an
+    // update request, this is the desired size of the directory.
+    int32 size_gb = 3 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Boost configuration for this workstation. This object is populated from the
+  // parent workstation configuration.
+  message WorkstationBoostConfig {
+    // Output only. Boost configuration ID.
+    string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Whether or not the current workstation is actively boosted
+    // with this id.
+    bool running = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Runtime host for the workstation.
+  message RuntimeHost {
+    // The Compute Engine instance host.
+    message GceInstanceHost {
+      // Optional. Output only. The name of the Compute Engine instance.
+      string name = 1 [
+        (google.api.field_behavior) = OPTIONAL,
+        (google.api.field_behavior) = OUTPUT_ONLY
+      ];
+
+      // Optional. Output only. The ID of the Compute Engine instance.
+      string id = 2 [
+        (google.api.field_behavior) = OPTIONAL,
+        (google.api.field_behavior) = OUTPUT_ONLY
+      ];
+
+      // Optional. Output only. The zone of the Compute Engine instance.
+      string zone = 3 [
+        (google.api.field_behavior) = OPTIONAL,
+        (google.api.field_behavior) = OUTPUT_ONLY
+      ];
+    }
+
+    // Type of host used by the workstation.
+    oneof host_type {
+      // Specifies a Compute Engine instance as the host.
+      GceInstanceHost gce_instance_host = 1;
+    }
+  }
 
   // Whether a workstation is running and ready to receive user requests.
   enum State {
@@ -928,14 +1423,17 @@ message Workstation {
     STATE_STOPPED = 4;
   }
 
-  // Full name of this workstation.
-  string name = 1;
+  // Identifier. Full name of this workstation.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
   // Optional. Human-readable name for this workstation.
   string display_name = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. A system-assigned unique identifier for this workstation.
-  string uid = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string uid = 3 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
 
   // Output only. Indicates whether this workstation is currently being updated
   // to match its intended state.
@@ -972,6 +1470,10 @@ message Workstation {
   // proceeding.
   string etag = 9 [(google.api.field_behavior) = OPTIONAL];
 
+  // Optional. Directories to persist across workstation sessions.
+  repeated WorkstationPersistentDirectory persistent_directories = 25
+      [(google.api.field_behavior) = OPTIONAL];
+
   // Output only. Current state of the workstation.
   State state = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
 
@@ -985,6 +1487,44 @@ message Workstation {
   // Optional. Environment variables passed to the workstation container's
   // entrypoint.
   map<string, string> env = 12 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The name of the Google Cloud KMS encryption key used to
+  // encrypt this workstation. The KMS key can only be configured in the
+  // WorkstationConfig. The expected format is
+  // `projects/*/locations/*/keyRings/*/cryptoKeys/*`.
+  string kms_key = 15 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. List of available boost configuration IDs that this
+  // workstation can be boosted up to.
+  repeated WorkstationBoostConfig boost_configs = 16
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The source workstation from which this workstation's persistent
+  // directories were cloned on creation.
+  string source_workstation = 17 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Reserved for future use.
+  bool satisfies_pzs = 18 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Reserved for future use.
+  bool satisfies_pzi = 19 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Output only. Runtime host for the workstation when in
+  // STATE_RUNNING.
+  RuntimeHost runtime_host = 21 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
+
+  // Output only. Whether this workstation is in degraded mode, in which case it
+  // may require user action to restore full functionality. The
+  // [conditions][google.cloud.workstations.v1beta.Workstation.conditions] field
+  // contains detailed information about the status of the workstation.
+  bool degraded = 23 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Status conditions describing the workstation's current state.
+  repeated google.rpc.Status conditions = 24
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Request message for GetWorkstationCluster.
@@ -1014,6 +1554,10 @@ message ListWorkstationClustersRequest {
   // Optional. next_page_token value returned from a previous List request, if
   // any.
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Filter the WorkstationClusters to be listed. Possible filters are
+  // described in https://google.aip.dev/160.
+  string filter = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Response message for ListWorkstationClusters.
@@ -1046,7 +1590,7 @@ message CreateWorkstationClusterRequest {
   WorkstationCluster workstation_cluster = 3
       [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. If set, validate the request and preview the review, but do not
+  // Optional. If set, validate the request and preview the result, but do not
   // actually apply it.
   bool validate_only = 4 [(google.api.field_behavior) = OPTIONAL];
 }
@@ -1062,7 +1606,7 @@ message UpdateWorkstationClusterRequest {
   google.protobuf.FieldMask update_mask = 2
       [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. If set, validate the request and preview the review, but do not
+  // Optional. If set, validate the request and preview the result, but do not
   // actually apply it.
   bool validate_only = 3 [(google.api.field_behavior) = OPTIONAL];
 
@@ -1082,7 +1626,7 @@ message DeleteWorkstationClusterRequest {
     }
   ];
 
-  // Optional. If set, validate the request and preview the review, but do not
+  // Optional. If set, validate the request and preview the result, but do not
   // apply it.
   bool validate_only = 2 [(google.api.field_behavior) = OPTIONAL];
 
@@ -1123,6 +1667,10 @@ message ListWorkstationConfigsRequest {
   // Optional. next_page_token value returned from a previous List request, if
   // any.
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Filter the WorkstationConfigs to be listed. Possible filters are
+  // described in https://google.aip.dev/160.
+  string filter = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Response message for ListWorkstationConfigs.
@@ -1182,18 +1730,18 @@ message CreateWorkstationConfigRequest {
   // Required. ID to use for the workstation configuration.
   string workstation_config_id = 2 [(google.api.field_behavior) = REQUIRED];
 
-  // Required. Config to create.
+  // Required. Workstation configuration to create.
   WorkstationConfig workstation_config = 3
       [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. If set, validate the request and preview the review, but do not
+  // Optional. If set, validate the request and preview the result, but do not
   // actually apply it.
   bool validate_only = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request message for UpdateWorkstationConfig.
 message UpdateWorkstationConfigRequest {
-  // Required. Config to update.
+  // Required. Workstation configuration to update.
   WorkstationConfig workstation_config = 1
       [(google.api.field_behavior) = REQUIRED];
 
@@ -1202,7 +1750,7 @@ message UpdateWorkstationConfigRequest {
   google.protobuf.FieldMask update_mask = 2
       [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. If set, validate the request and preview the review, but do not
+  // Optional. If set, validate the request and preview the result, but do not
   // actually apply it.
   bool validate_only = 3 [(google.api.field_behavior) = OPTIONAL];
 
@@ -1222,7 +1770,7 @@ message DeleteWorkstationConfigRequest {
     }
   ];
 
-  // Optional. If set, validate the request and preview the review, but do not
+  // Optional. If set, validate the request and preview the result, but do not
   // actually apply it.
   bool validate_only = 2 [(google.api.field_behavior) = OPTIONAL];
 
@@ -1263,6 +1811,10 @@ message ListWorkstationsRequest {
   // Optional. next_page_token value returned from a previous List request, if
   // any.
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Filter the Workstations to be listed. Possible filters are
+  // described in https://google.aip.dev/160.
+  string filter = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Response message for ListWorkstations.
@@ -1322,10 +1874,14 @@ message CreateWorkstationRequest {
   // Required. ID to use for the workstation.
   string workstation_id = 2 [(google.api.field_behavior) = REQUIRED];
 
-  // Required. Workstation to create.
+  // Required. Workstation to create. If source_workstation is specified, the
+  // user must have `workstations.workstations.use` permission on the source
+  // workstation, and the Cloud Workstations Service Agent for the project where
+  // you are creating the new workstation must have compute.disks.createSnapshot
+  // and compute.snapshots.useReadOnly on the source project.
   Workstation workstation = 3 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. If set, validate the request and preview the review, but do not
+  // Optional. If set, validate the request and preview the result, but do not
   // actually apply it.
   bool validate_only = 4 [(google.api.field_behavior) = OPTIONAL];
 }
@@ -1335,18 +1891,17 @@ message UpdateWorkstationRequest {
   // Required. Workstation to update.
   Workstation workstation = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // Required. Mask specifying which fields in the workstation configuration
-  // should be updated.
+  // Required. Mask specifying which fields in the workstation should be
+  // updated.
   google.protobuf.FieldMask update_mask = 2
       [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. If set, validate the request and preview the review, but do not
+  // Optional. If set, validate the request and preview the result, but do not
   // actually apply it.
   bool validate_only = 3 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. If set and the workstation configuration is not found, a new
-  // workstation configuration is created. In this situation, update_mask
-  // is ignored.
+  // Optional. If set and the workstation is not found, a new workstation is
+  // created. In this situation, update_mask is ignored.
   bool allow_missing = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -1360,7 +1915,7 @@ message DeleteWorkstationRequest {
     }
   ];
 
-  // Optional. If set, validate the request and preview the review, but do not
+  // Optional. If set, validate the request and preview the result, but do not
   // actually apply it.
   bool validate_only = 2 [(google.api.field_behavior) = OPTIONAL];
 
@@ -1379,13 +1934,17 @@ message StartWorkstationRequest {
     }
   ];
 
-  // Optional. If set, validate the request and preview the review, but do not
+  // Optional. If set, validate the request and preview the result, but do not
   // actually apply it.
   bool validate_only = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. If set, the request will be rejected if the latest version of the
   // workstation on the server does not have this ETag.
   string etag = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If set, the workstation starts using the boost configuration with
+  // the specified ID.
+  string boost_config = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request message for StopWorkstation.
@@ -1398,7 +1957,7 @@ message StopWorkstationRequest {
     }
   ];
 
-  // Optional. If set, validate the request and preview the review, but do not
+  // Optional. If set, validate the request and preview the result, but do not
   // actually apply it.
   bool validate_only = 2 [(google.api.field_behavior) = OPTIONAL];
 
@@ -1431,6 +1990,13 @@ message GenerateAccessTokenRequest {
       type: "workstations.googleapis.com/Workstation"
     }
   ];
+
+  // Optional. Port for which the access token should be generated. If
+  // specified, the generated access token grants access only to the
+  // specified port of the workstation. If specified, values must be within the
+  // range [1 - 65535]. If not specified, the generated access token grants
+  // access to all ports of the workstation.
+  int32 port = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Response message for GenerateAccessToken.
@@ -1444,6 +2010,47 @@ message GenerateAccessTokenResponse {
   // Time at which the generated token will expire.
   google.protobuf.Timestamp expire_time = 2;
 }
+
+// Request message for PushCredentials.
+message PushCredentialsRequest {
+  // OAuth token.
+  message OAuthToken {
+    // Optional. The email address encapsulated in the OAuth token.
+    string email = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The scopes encapsulated in the OAuth token.
+    // See https://developers.google.com/identity/protocols/oauth2/scopes for
+    // more information.
+    string scopes = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Required. The OAuth token.
+    string access_token = 3 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. The time the OAuth access token will expire. This should be the
+    // time the access token was generated plus the expires_in offset returned
+    // from the Access Token Response.
+    google.protobuf.Timestamp expire_time = 4
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Required. Name of the workstation for which the credentials should be
+  // pushed.
+  string workstation = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "workstations.googleapis.com/Workstation"
+    }
+  ];
+
+  // Optional. Credentials used by Cloud Client Libraries, Google API Client
+  // Libraries, and other tooling within the user conainer:
+  // https://cloud.google.com/docs/authentication/application-default-credentials
+  OAuthToken application_default_credentials = 2
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Metadata message for PushCredentials.
+message PushCredentialsMetadata {}
 
 // Metadata for long-running operations.
 message OperationMetadata {
