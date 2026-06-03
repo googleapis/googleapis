@@ -68,11 +68,18 @@ message DatasourceReferences {
 }
 
 // Message representing references to BigQuery tables and property graphs.
-// At least one of `table_references` or `property_graph_references` must be
-// populated.
+// At least one of `table_references`, `property_graph_references`, or
+// `search_scope` must be populated.
 message BigQueryTableReferences {
   // Optional. References to BigQuery tables.
   repeated BigQueryTableReference table_references = 1
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Preview feature. References to BigQuery property graphs.
+  // Note: Data sources must exclusively use either tables or property graphs,
+  // not both. When using property graphs, a maximum of one graph reference is
+  // supported.
+  repeated BigQueryPropertyGraphReference property_graph_references = 2
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -93,8 +100,9 @@ message BigQueryTableReference {
 
 // Message representing references to Looker Studio datasources.
 message StudioDatasourceReferences {
-  // The references to the studio datasources.
-  repeated StudioDatasourceReference studio_references = 2;
+  // Optional. The references to the studio datasources.
+  repeated StudioDatasourceReference studio_references = 2
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Message representing a reference to a single Looker Studio datasource.
@@ -116,6 +124,40 @@ message AlloyDbReference {
       [(google.api.field_behavior) = OPTIONAL];
 }
 
+// Message representing a table including its schema.
+message DatabaseTableReference {
+  // Required. The name of the table as defined in the database.
+  //
+  // Note: The precise rules for table naming, including valid characters,
+  // length limits, and case sensitivity, are determined by the specific
+  // database system.
+  //
+  // Requirements:
+  // - Exact Match: The provided name must be identical to the name stored
+  //   in the database.
+  // - Case Sensitivity: Respect the case sensitivity rules of the specific
+  //   database system and how the table was created. For example, "Orders"
+  //   and "orders" may be distinct table names.
+  // - Special Characters/Keywords: If the table name includes spaces, special
+  //   characters, or is a database reserved keyword, provide the literal name
+  //   as it is stored. Do not add any database-specific identifier quoting
+  //   characters (e.g., ", `, []).
+  //
+  // Examples:
+  //   - Simple name: "orders", "UserActivity"
+  //   - Case sensitive: "MyTable"
+  //   - Name with spaces: "Order Details"
+  //   - Name with other special characters: "user/data", "order-items"
+  //   - Name that is a keyword: "Group", "Order"
+  //
+  // Permissions: The caller's credentials must have the necessary database
+  // permissions to access the table's schema and data.
+  string table_id = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The schema of the table.
+  Schema schema = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
 // Message representing a reference to a single AlloyDB database.
 message AlloyDbDatabaseReference {
   // Required. The project the instance belongs to.
@@ -135,6 +177,12 @@ message AlloyDbDatabaseReference {
 
   // Optional. The table ids. Denotes all tables if unset.
   repeated string table_ids = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. References to tables within the database. Each reference
+  // specifies a table and can optionally include the table's schema to provide
+  // context for the query.
+  repeated DatabaseTableReference database_table_references = 7
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Message representing reference to a Spanner database and agent context.
@@ -170,9 +218,6 @@ message SpannerDatabaseReference {
   // Required. The project the instance belongs to.
   string project_id = 1 [(google.api.field_behavior) = REQUIRED];
 
-  // Required. The region of the instance.
-  string region = 2 [(google.api.field_behavior) = REQUIRED];
-
   // Required. The instance id.
   string instance_id = 3 [(google.api.field_behavior) = REQUIRED];
 
@@ -181,6 +226,23 @@ message SpannerDatabaseReference {
 
   // Optional. The table ids. Denotes all tables if unset.
   repeated string table_ids = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. References to tables within the database. Each reference
+  // specifies a table and can optionally include the table's schema to provide
+  // context for the query.
+  repeated DatabaseTableReference database_table_references = 7
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Priority for the queries to Spanner. Should be a value supported
+  // by Cloud Spanner e.g.: LOW, MEDIUM, HIGH. Unsupported values will be
+  // ignored. See
+  // https://docs.cloud.google.com/spanner/docs/reference/rest/v1/RequestOptions#Priority
+  // for complete list.
+  string priority = 8 [(google.api.field_behavior) = OPTIONAL];
+
+  // Tag to be attached to all queries to Spanner. Allows to identify and
+  // monitor queries sent to Spanner by the GDA service.
+  string request_tag = 9;
 }
 
 // Message representing reference to a CloudSQL database and agent context.
@@ -227,6 +289,12 @@ message CloudSqlDatabaseReference {
 
   // Optional. The table ids. Denotes all tables if unset.
   repeated string table_ids = 7 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. References to tables within the database. Each reference
+  // specifies a table and can optionally include the table's schema to provide
+  // context for the query.
+  repeated DatabaseTableReference database_table_references = 8
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Message representing references to Looker explores.
@@ -235,13 +303,15 @@ message LookerExploreReferences {
   repeated LookerExploreReference explore_references = 1
       [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. The credentials to use when calling the Looker API.
+  // Optional. Deprecated: Use credentials in ChatRequest.
+  // The credentials to use when calling the Looker API.
   //
   // Currently supports both OAuth token and API key-based credentials, as
   // described in
   // [Authentication with an
   // SDK](https://cloud.google.com/looker/docs/api-auth#authentication_with_an_sdk).
-  Credentials credentials = 2 [(google.api.field_behavior) = OPTIONAL];
+  Credentials credentials = 2
+      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
 }
 
 // Message representing a reference to a single Looker explore.
@@ -269,6 +339,18 @@ message LookerExploreReference {
 
   // Optional. The schema of the datasource.
   Schema schema = 8 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Message representing a reference to a single BigQuery property graph.
+message BigQueryPropertyGraphReference {
+  // Required. The project that the property graph belongs to.
+  string project_id = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The dataset that the property graph belongs to.
+  string dataset_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The property graph id.
+  string property_graph_id = 3 [(google.api.field_behavior) = REQUIRED];
 }
 
 // Message representing a private Looker instance info required if the Looker
@@ -302,6 +384,9 @@ message Datasource {
 
     // A reference to a CloudSQL database.
     CloudSqlReference cloud_sql_reference = 14;
+
+    // A reference to a BigQuery property graph.
+    BigQueryPropertyGraphReference bigquery_property_graph_reference = 16;
   }
 
   // Optional. The schema of the datasource.
@@ -378,8 +463,6 @@ message Field {
   repeated Field subfields = 9 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Field category, not required, currently only useful for Looker.
-  // We are using a string to avoid depending on an external package and keep
-  // this package self-contained.
   string category = 10 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Looker only. Value format of the field.

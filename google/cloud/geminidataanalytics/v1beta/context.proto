@@ -17,6 +17,7 @@ syntax = "proto3";
 package google.cloud.geminidataanalytics.v1beta;
 
 import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
 import "google/cloud/geminidataanalytics/v1beta/datasource.proto";
 import "google/protobuf/wrappers.proto";
 
@@ -72,12 +73,12 @@ message Context {
     // index in the `left_schema_paths` list.
     SchemaPaths right_schema_paths = 2;
 
-    // Sources which generated the schema relation edge.
-    repeated Source sources = 3;
+    // Optional. Sources which generated the schema relation edge.
+    repeated Source sources = 3 [(google.api.field_behavior) = OPTIONAL];
 
-    // A confidence score for the suggested relationship.
+    // Optional. A confidence score for the suggested relationship.
     // Manually added edges have the highest confidence score.
-    float confidence_score = 4;
+    float confidence_score = 4 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Optional. The basic entry point for data owners creating domain knowledge
@@ -97,17 +98,19 @@ message Context {
 
   // Optional. A list of example queries, providing examples of relevant and
   // commonly used SQL queries and their corresponding natural language queries
-  // optionally present. Currently only used for BigQuery data sources.
+  // optionally present. Currently only used for BigQuery data sources and
+  // databases (alloydb, cloudsql, spanner) data sources.
   repeated ExampleQuery example_queries = 5
       [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. A list of golden queries, providing examples of relevant and
   // commonly used Looker queries and their corresponding natural language
-  // queries optionally present.
+  // queries optionally present. Only supported for Looker data sources.
   repeated LookerGoldenQuery looker_golden_queries = 11
       [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Term definitions (currently, only user authored)
+  // Not supported for databases (alloydb, cloudsql, spanner) data sources.
   repeated GlossaryTerm glossary_terms = 8
       [(google.api.field_behavior) = OPTIONAL];
 
@@ -115,6 +118,37 @@ message Context {
   // referenced columns.
   repeated SchemaRelationship schema_relationships = 9
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A collection of user functions to be included in context.
+  UserFunctions user_functions = 10 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A collection of user functions to be included in context.
+message UserFunctions {
+  // A list of BigQuery routines to include in the context.
+  repeated BigQueryRoutine bq_routines = 1;
+}
+
+// A reference to a BigQuery routine.
+message BigQueryRoutine {
+  // The reference to the BigQuery routine.
+  BigQueryRoutineReference routine_reference = 1;
+
+  // User override or addition to description, to tell the agent when to use the
+  // UDF.
+  string description = 2;
+}
+
+// A reference to a BigQuery routine.
+message BigQueryRoutineReference {
+  // The project ID of the routine.
+  string project_id = 1;
+
+  // The dataset ID of the routine.
+  string dataset_id = 2;
+
+  // The routine ID of the routine.
+  string routine_id = 3;
 }
 
 // Example of relevant and commonly used SQL query and its corresponding natural
@@ -133,6 +167,53 @@ message ExampleQuery {
   // Optional. A natural language question that a user might ask.
   // For example: "How many orders were placed last month?"
   string natural_language_question = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The list of query parameters.
+  // Example: The parameterized SQL query
+  // "SELECT * FROM my_table WHERE id = @id" can be matched with any value of
+  // id.
+  repeated QueryParameter parameters = 3
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A query parameter message represents a parameter that can be used to
+// parameterize a SQL query.
+message QueryParameter {
+  // Required. The name of the parameter reference in the SQL query.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The description of the parameter that can be used by LLM to
+  // extract the parameter value from the user question.
+  string description = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. The data type of the parameter, e.g. "STRING", "INT64", "DATE",
+  // etc. For valid values, see the [BigQuery
+  // documentation](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types).
+  // This will be used to populate
+  // google.cloud.bigquery.v2.QueryParameterType.type.
+  string data_type = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A matched query message represents the agent having matched one of the
+// example queries supplied in context as being applicable to the current
+// question. It will also contain additional info during the matching process.
+message MatchedQuery {
+  // The query that was matched based on an example query.
+  ExampleQuery example_query = 1;
+
+  // The extracted values for the query parameters.
+  repeated QueryParameterValues query_parameter_values = 2;
+}
+
+// A query parameter values message represents the values for the query
+// parameters that were extracted from the user question by LLM, based on the
+// example query.
+message QueryParameterValues {
+  // Required. The name of the parameter.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The value of the parameter.
+  string value = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
 // A golden query for Looker, including natural language questions and a
@@ -156,8 +237,10 @@ message LookerQuery {
     // Required. The field to filter on.
     string field = 1 [(google.api.field_behavior) = REQUIRED];
 
-    // Required. The value for the field to filter on.
-    string value = 2 [(google.api.field_behavior) = REQUIRED];
+    // Optional. The value for the field to filter on.
+    // Optional so we can preserve the default value as an empty
+    // string, important to get a valid and working Looker Explore url.
+    optional string value = 2 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Required. The LookML model used to generate the query.
@@ -177,6 +260,16 @@ message LookerQuery {
 
   // Optional. Limit in the query.
   optional string limit = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The primary identifier for the query resource in Looker, used for
+  // API operations. Maps to `id` (or `slug`) in the Looker API `Query`
+  // resource.
+  optional string query_id = 10 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The short alphanumeric identifier for the query, used for share
+  // links and Explore URLs (e.g., in the `qid` parameter). Maps to `client_id`
+  // in the Looker API `Query` resource.
+  optional string client_id = 11 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Definition of a term within a specific domain.
@@ -197,6 +290,17 @@ message GlossaryTerm {
 
 // Options for the conversation.
 message ConversationOptions {
+  // Allowed models for the agent/conversation.
+  enum Model {
+    // No model specified. The model may be set on the chat request, or the
+    // default model will be used.
+    MODEL_UNSPECIFIED = 0;
+
+    // Use the most up-to-date non-preview model. This may constrain certain
+    // request level settings.
+    LATEST_GA_MODEL = 1;
+  }
+
   // Optional. Options for chart generation.
   ChartOptions chart = 1 [(google.api.field_behavior) = OPTIONAL];
 
@@ -205,6 +309,9 @@ message ConversationOptions {
 
   // Optional. Options for datasources.
   DatasourceOptions datasource = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The model to use for the agent loop.
+  optional Model model = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Options for datasources configurations.
@@ -253,4 +360,69 @@ message AnalysisOptions {
 
   // Optional. Options for Python analysis.
   Python python = 1 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Source attributions for content.
+message Citation {
+  // Output only. List of the sources being cited.
+  repeated CitationSource sources = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. List of the anchors of the citations.
+  repeated CitationAnchor anchors = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The source of the citation.
+message CitationSource {
+  // The source of the citation, which can be one of the supported types.
+  oneof source_type {
+    // Output only. The uri used as the source, such as a web grounding URL.
+    string uri = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The example query used as the source.
+    ExampleQuery example_query = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The glossary term used as the source.
+    GlossaryTerm glossary_term = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Output only. Unique identifier of the source. This ID is service-generated
+  // and is unique within the scope of a single `Citation` message.
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The title of the source.
+  string title = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The anchor of the citation.
+message CitationAnchor {
+  // Citation anchor within a TextMessage.
+  message TextMessageCitationAnchor {
+    // Output only. The 0-based index of the part within the TextMessage.parts
+    // field.
+    int32 part_index = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The offset, measured in UTF-8 bytes, within the part string
+    // where the citation begins (inclusive). Example: For the text "Hello,
+    // world" where "world" is cited, the start offset bytes (inclusive) is 7
+    // and the end offset bytes (exclusive) is 12.
+    int32 start_offset_bytes = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The offset, measured in UTF-8 bytes, within the part string
+    // where the citation ends (exclusive). Example: For the text "Hello, world"
+    // where "world" is cited, the start offset bytes (inclusive) is 7 and the
+    // end offset bytes (exclusive) is 12.
+    int32 end_offset_bytes = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The ids of the sources that are cited.
+    repeated string source_ids = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // The anchor of the citation, which can be one of the supported types.
+  oneof anchor_type {
+    // Output only. Only set if the citation is for a TextMessage.
+    TextMessageCitationAnchor text_message_anchor = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
 }
