@@ -20,6 +20,7 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/ces/v1beta/app.proto";
 import "google/cloud/ces/v1beta/common.proto";
+import "google/cloud/ces/v1beta/evaluation_metrics_config.proto";
 import "google/cloud/ces/v1beta/example.proto";
 import "google/cloud/ces/v1beta/fakes.proto";
 import "google/cloud/ces/v1beta/golden_run.proto";
@@ -190,11 +191,38 @@ message Evaluation {
       // LLM.
       ToolResponse mock_tool_response = 7
           [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Check that no tools were called during this turn.
+      bool no_tool_calls = 13 [(google.api.field_behavior) = OPTIONAL];
     }
 
     // Optional. A note for this requirement, useful in reporting when specific
     // checks fail. E.g., "Check_Payment_Tool_Called".
     string note = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. If set to true, this specific expectation will not be
+    // evaluated.
+    bool skip_evaluation = 8 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Overrides metrics at the step level.
+    EvaluationMetricsThresholds.GoldenEvaluationMetricsThresholds
+        .ExpectationLevelMetricsThresholds
+            expectation_level_metrics_thresholds_override = 9
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Overrides for agent_response semantic similarity metrics.
+    EvaluationMetricsConfig.SemanticSimilarityMetricsConfig
+        agent_response_semantic_similarity_metrics_config_override = 10
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Overrides for agent_response hallucination metrics.
+    EvaluationMetricsConfig.HallucinationMetricsConfig
+        agent_response_hallucination_metrics_config_override = 11
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The comparison type to use for the expectation check.
+    EvaluationMetricsConfig.ComparisonType comparison_type = 12
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // A step defines a singular action to happen during the evaluation.
@@ -219,13 +247,25 @@ message Evaluation {
     repeated Step steps = 1 [(google.api.field_behavior) = REQUIRED];
 
     // Optional. The root span of the golden turn for processing and maintaining
-    // audio information.
+    // audio information. The uri for the audio must contain audio saved in
+    // 16Khz sample rate.
     Span root_span = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Overrides for turn-level metric thresholds.
+    EvaluationMetricsThresholds.GoldenEvaluationMetricsThresholds
+        .TurnLevelMetricsThresholds turn_level_metrics_thresholds_override = 3
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Override for turn-level hallucination metric behavior.
+    EvaluationMetricsThresholds.HallucinationMetricBehavior
+        hallucination_metric_behavior_override = 4
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // The steps required to replay a golden conversation.
   message Golden {
     // Required. The golden turns required to replay a golden conversation.
+    // The maximum number of allowed turns is 100.
     repeated GoldenTurn turns = 2 [(google.api.field_behavior) = REQUIRED];
 
     // Optional. The evaluation expectations to evaluate the replayed
@@ -312,8 +352,8 @@ message Evaluation {
     // Optional. The user facts to be used by the scenario.
     repeated UserFact user_facts = 4 [(google.api.field_behavior) = OPTIONAL];
 
-    // Optional. The maximum number of turns to simulate. If not specified, the
-    // simulation will continue until the task is complete.
+    // Optional. The maximum number of turns to simulate. The maximum allowed
+    // value is 100. The default value is 100.
     int32 max_turns = 5 [(google.api.field_behavior) = OPTIONAL];
 
     // Required. The rubrics to score the scenario against.
@@ -351,6 +391,10 @@ message Evaluation {
         type: "ces.googleapis.com/EvaluationExpectation"
       }
     ];
+
+    // Optional. The execution mode for scenario evaluations.
+    EvaluationSettings.ScenarioExecutionMode scenario_execution_mode = 12
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // The inputs for the evaluation
@@ -432,6 +476,14 @@ message Evaluation {
   // ListEvaluationsRequest or GetEvaluationRequest.
   repeated EvaluationResult last_ten_results = 19
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Overrides metrics thresholds for this specific evaluation.
+  EvaluationMetricsThresholds evaluation_metrics_threshold_override = 20
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Overrides metrics config for this specific evaluation.
+  EvaluationMetricsConfig evaluation_metrics_config_override = 21
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // An evaluation dataset represents a set of evaluations that are grouped
@@ -529,6 +581,12 @@ message EvaluationResult {
 
       // Output only. The result of the agent transfer expectation.
       AgentTransfer observed_agent_transfer = 5
+          [(google.api.field_behavior) = OUTPUT_ONLY];
+
+      // Output only. An observed custom payload.
+      // There are no expectations for custom payloads. This is only used for
+      // metrics calculation. The outcome is always SKIPPED.
+      google.protobuf.Struct observed_payload = 9
           [(google.api.field_behavior) = OUTPUT_ONLY];
     }
 
@@ -929,6 +987,9 @@ message EvaluationResult {
     // Evaluation result execution state is not specified.
     EXECUTION_STATE_UNSPECIFIED = 0;
 
+    // Evaluation result execution is queued.
+    QUEUED = 5;
+
     // Evaluation result execution is running.
     RUNNING = 1;
 
@@ -937,6 +998,9 @@ message EvaluationResult {
 
     // Evaluation result execution failed due to an internal error.
     ERROR = 3;
+
+    // Evaluation result execution was cancelled.
+    CANCELLED = 4;
   }
 
   // The result of the evaluation. Only populated when the execution_state is
@@ -1071,6 +1135,10 @@ message EvaluationRun {
     // PASS. (EvaluationResult.execution_state is COMPLETED and
     // EvaluationResult.evaluation_status is PASS).
     int32 passed_count = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Number of evaluation results that were cancelled.
+    // (EvaluationResult.execution_state is CANCELLED).
+    int32 cancelled_count = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
   // Contains the summary of passed and failed result counts for a specific
@@ -1110,6 +1178,9 @@ message EvaluationRun {
     // Evaluation run state is not specified.
     EVALUATION_RUN_STATE_UNSPECIFIED = 0;
 
+    // Indicates the evaluation run is queued.
+    QUEUED = 5;
+
     // Evaluation run is running.
     RUNNING = 1;
 
@@ -1118,6 +1189,9 @@ message EvaluationRun {
 
     // The evaluation run has an error.
     ERROR = 3;
+
+    // Evaluation run was cancelled.
+    CANCELLED = 4;
   }
 
   // Identifier. The unique identifier of the evaluation run.
@@ -1248,6 +1322,11 @@ message EvaluationRun {
   // Output only. The method used to run the evaluation.
   GoldenRunMethod golden_run_method = 21
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The operation that created this evaluation run.
+  // Format:
+  // `projects/{project}/locations/{location}/operations/{operation}`
+  string operation = 26 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Latency report for the evaluation run.
@@ -1473,6 +1552,10 @@ message EvaluationErrorInfo {
 
   // Output only. The session ID for the conversation that caused the error.
   string session_id = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The user facing error message.
+  string user_facing_error_message = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Request message for
