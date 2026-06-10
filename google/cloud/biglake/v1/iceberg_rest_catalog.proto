@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,12 +19,15 @@ package google.cloud.biglake.v1;
 import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
+import "google/api/field_info.proto";
 import "google/api/httpbody.proto";
 import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
 
 option go_package = "cloud.google.com/go/biglake/apiv1/biglakepb;biglakepb";
 option java_multiple_files = true;
@@ -38,35 +41,26 @@ option (google.api.resource_definition) = {
   type: "biglake.googleapis.com/Namespace"
   pattern: "projects/{project}/catalogs/{catalog}/namespaces/{namespace}"
 };
+option (google.api.resource_definition) = {
+  type: "secretmanager.googleapis.com/Secret"
+  pattern: "projects/{project}/secrets/{secret}"
+  pattern: "projects/{project}/locations/{location}/secrets/{secret}"
+  plural: "secrets"
+  singular: "secret"
+};
+option (google.api.resource_definition) = {
+  type: "servicedirectory.googleapis.com/Service"
+  pattern: "projects/{project}/locations/{location}/namespaces/{namespace}/services/{service}"
+};
 
-// Iceberg Catalog Service API: this implements the open-source Iceberg REST
-// Catalog API.
-// See the API definition here:
-// https://github.com/apache/iceberg/blob/main/open-api/rest-catalog-open-api.yaml
 //
-// The API is defined as OpenAPI 3.1.1 spec.
-//
-// Currently we only support the following methods:
-// - GetConfig/GetIcebergCatalogConfig
-// - ListIcebergNamespaces
-// - CheckIcebergNamespaceExists
-// - GetIcebergNamespace
-// - CreateIcebergNamespace (only supports single level)
-// - DeleteIcebergNamespace
-// - UpdateIcebergNamespace properties
-// - ListTableIdentifiers
-// - CreateIcebergTable
-// - DeleteIcebergTable
-// - GetIcebergTable
-// - UpdateIcebergTable (CommitTable)
-// - LoadIcebergTableCredentials
-// - RegisterTable
-//
-// Users are required to provided the `X-Goog-User-Project` header with the
-// project id or number which can be different from the bucket project id.
-// That project will be charged for the API calls and the calling user must have
-// access to that project. The caller must have `serviceusage.services.use`
-// permission on the project.
+// Lakehouse runtime catalog supports the following catalog management methods:
+// - GetIcebergCatalog
+// - ListIcebergCatalogs
+// - DeleteIcebergCatalog
+// - UpdateIcebergCatalog
+// - CreateIcebergCatalog
+// - FailoverIcebergCatalog
 service IcebergCatalogService {
   option (google.api.default_host) = "biglake.googleapis.com";
   option (google.api.oauth_scopes) =
@@ -162,7 +156,7 @@ service IcebergCatalogService {
       post: "/iceberg/v1/restcatalog/v1/{parent=projects/*/catalogs/*/namespaces/*}/tables"
       body: "*"
     };
-    option (google.api.method_signature) = "parent,http_body";
+    option (google.api.method_signature) = "parent";
   }
 
   // Returns 204 if the table exists, 404 otherwise. This is a `HEAD` HTTP
@@ -217,6 +211,16 @@ service IcebergCatalogService {
     };
   }
 
+  // Reports a metrics report for a table.
+  rpc ReportIcebergTableMetrics(ReportIcebergTableMetricsRequest)
+      returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/iceberg/v1/restcatalog/v1/{name=projects/*/catalogs/*/namespaces/*/tables/*}/metrics"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
   // Returns the Iceberg REST Catalog configuration options.
   rpc GetIcebergCatalog(GetIcebergCatalogRequest) returns (IcebergCatalog) {
     option (google.api.http) = {
@@ -258,7 +262,6 @@ service IcebergCatalogService {
   }
 
   // Creates the Iceberg REST Catalog.
-  // Currently only supports Google Cloud Storage Bucket catalogs.
   // Google Cloud Storage Bucket catalog id is the bucket for which the
   // catalog is created (e.g. `my-catalog` for `gs://my-catalog`).
   //
@@ -272,6 +275,8 @@ service IcebergCatalogService {
     };
     option (google.api.method_signature) =
         "parent,iceberg_catalog,iceberg_catalog_id";
+    option (google.api.method_signature) =
+        "parent,iceberg_catalog,iceberg_catalog_id,primary_location";
   }
 
   // Failover the catalog to a new primary replica region.
@@ -285,30 +290,6 @@ service IcebergCatalogService {
   }
 }
 
-// The request message for the `RegisterIcebergTable` API.
-message RegisterIcebergTableRequest {
-  // Required. Table to register in the format:
-  // `projects/{project_id}/catalogs/{catalog_id}/namespaces/{namespace}`.
-  string parent = 1 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = {
-      type: "biglake.googleapis.com/Namespace"
-    }
-  ];
-
-  // Required. The name of the table to register.
-  string name = 2 [(google.api.field_behavior) = REQUIRED];
-
-  // Required. The metadata location of the table.
-  string metadata_location = 3
-      [json_name = "metadata-location", (google.api.field_behavior) = REQUIRED];
-
-  // Optional. Whether to overwrite the table if it already exists. Default is
-  // false. Currently this field is ignored and an error is returned if the
-  // table already exists.
-  string overwrite = 4 [(google.api.field_behavior) = OPTIONAL];
-}
-
 // The Iceberg REST Catalog information.
 message IcebergCatalog {
   option (google.api.resource) = {
@@ -318,13 +299,232 @@ message IcebergCatalog {
     singular: "catalog"
   };
 
+  // The replica of the Catalog.
+  message Replica {
+    // If the catalog is replicated to multiple regions, this enum describes the
+    // current state of the replica.
+    enum State {
+      // The replica state is unknown.
+      STATE_UNKNOWN = 0;
+
+      // The replica is the writable primary.
+      STATE_PRIMARY = 1;
+
+      // The replica has been recently assigned as the primary, but not all
+      // namespaces are writeable yet.
+      STATE_PRIMARY_IN_PROGRESS = 2;
+
+      // The replica is a read-only secondary replica.
+      STATE_SECONDARY = 3;
+    }
+
+    // Output only. The region of the replica. For example "us-east1"
+    string region = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The current state of the replica.
+    State state = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Configuration of location restrictions.
+  message RestrictedLocationsConfig {
+    // Optional. Additional Google Cloud Storage buckets and locations (e.g.,
+    // `gs://my-other-bucket/...`) that are permitted for use by resources
+    // within a catalog. This field is currently only used for BigLake catalogs.
+    //
+    // If `restricted_locations` is empty and unrestricted catalog creation is
+    // enabled, all accessible locations are allowed.
+    // Otherwise, only `default_location` and locations in this list are
+    // allowed.
+    repeated string restricted_locations = 1 [
+      json_name = "restricted-locations",
+      (google.api.field_behavior) = OPTIONAL
+    ];
+  }
+
+  // Configuration options for a federated catalog.
+  message FederatedCatalogOptions {
+    // Unity Catalog info.
+    message UnityCatalogInfo {
+      // Required. The instance name is the first part of the URL when logging
+      // into the Databricks deployment. For example, for a Databricks on GCP
+      // workspace URL https://1.1.gcp.databricks.com, the instance name is
+      // 1.1.gcp.databricks.com.
+      optional string instance_name = 1
+          [json_name = "instance-name", (google.api.field_behavior) = REQUIRED];
+
+      // Required. The catalog name in Unity Catalog.
+      optional string catalog_name = 2
+          [json_name = "catalog-name", (google.api.field_behavior) = REQUIRED];
+
+      // Optional. The application ID of the Databricks service principal that
+      // will be used to access the Unity Catalog in the OIDC authentication
+      // flow. With OIDC, the secret_name field is not used.
+      optional string service_principal_application_id = 3 [
+        json_name = "service-principal-application-id",
+        (google.api.field_info).format = UUID4,
+        (google.api.field_behavior) = OPTIONAL
+      ];
+    }
+
+    // AWS Glue Catalog info. We support regional AWS Glue default account
+    // catalog and S3 Table Buckets.
+    message GlueCatalogInfo {
+      // Required. Immutable. The warehouse to connect to a regional AWS Glue
+      // Iceberg REST Catalog. For top level access, use the AWS account ID
+      // (e.g. 111222333444). For an S3 table bucket, the warehouse is of the
+      // form: 111222333444:s3tablescatalog/<table-bucket-name>. The URL to
+      // access catalog will be
+      // https://glue.{aws_region}.amazonaws.com/iceberg/v1?warehouse={warehouse}.
+      // Must be non-empty and is immutable.
+      optional string warehouse = 1 [
+        (google.api.field_behavior) = REQUIRED,
+        (google.api.field_behavior) = IMMUTABLE
+      ];
+
+      // Required. Immutable. The AWS region of the Glue catalog to connect to.
+      // The region should be in the same geographical region and jurisdiction
+      // as the federated catalog.
+      // Must be non-empty and is immutable.
+      optional string aws_region = 2 [
+        json_name = "aws-region",
+        (google.api.field_behavior) = REQUIRED,
+        (google.api.field_behavior) = IMMUTABLE
+      ];
+
+      // Required. The AWS role ARN of the Glue catalog that the federated
+      // catalog will assume to access the catalog. Must be non-empty. Can be
+      // updated.
+      optional string aws_role_arn = 3
+          [json_name = "aws-role-arn", (google.api.field_behavior) = REQUIRED];
+    }
+
+    // Schedule defines if and when metadata refresh should be scheduled.
+    message RefreshSchedule {
+      // Optional. The interval for refreshing metadata from the remote catalog.
+      // If unset or if the value is <= 0, the background refresh will be
+      // disabled. If this field is updated for an existing federated catalog,
+      // the previous background refresh must complete before the new refresh
+      // interval will take effect.
+      optional google.protobuf.Duration refresh_interval = 1 [
+        json_name = "refresh-interval",
+        (google.api.field_behavior) = OPTIONAL
+      ];
+    }
+
+    // The scope defines a subset of namespaces to be refreshed.
+    message RefreshScope {
+      // Optional. Filters to determine which namespaces are included in the
+      // refresh process.
+      // - empty list means include all namespaces.
+      // - "[namespaces]" means include the specified namespaces.
+      //   ['ns1', 'ns2']    : Discover only namespaces 'ns1' and 'ns2'.
+      // The maximum number of namespace filters allowed is 32.
+      repeated string namespace_filters = 1 [
+        json_name = "namespace-filters",
+        (google.api.field_behavior) = OPTIONAL
+      ];
+    }
+
+    // Refresh configuration.
+    message RefreshOptions {
+      // Optional. Schedule defines if and when metadata refresh should be
+      // scheduled.
+      RefreshSchedule refresh_schedule = 1 [
+        json_name = "refresh-schedule",
+        (google.api.field_behavior) = OPTIONAL
+      ];
+
+      // Optional. Refresh scope configurations.
+      RefreshScope refresh_scope = 2
+          [json_name = "refresh-scope", (google.api.field_behavior) = OPTIONAL];
+    }
+
+    // Remote catalog background refresh status.
+    message RefreshStatus {
+      // Output only. When the catalog refresh has started, including
+      // in-progress refreshes.
+      optional google.protobuf.Timestamp start_time = 1
+          [json_name = "start-time", (google.api.field_behavior) = OUTPUT_ONLY];
+
+      // Output only. When the catalog refresh has ended, unset for in-progress
+      // refreshes.
+      optional google.protobuf.Timestamp end_time = 2
+          [json_name = "end-time", (google.api.field_behavior) = OUTPUT_ONLY];
+
+      // Output only. The status of the last background refresh operation, unset
+      // for in-progress refreshes.
+      optional google.rpc.Status status = 3
+          [(google.api.field_behavior) = OUTPUT_ONLY];
+    }
+
+    // Info specific to a remote Iceberg REST catalog.
+    oneof remote_catalog_info {
+      // Optional. Info specific to a Unity Catalog by Databricks.
+      UnityCatalogInfo unity_catalog_info = 2 [
+        json_name = "unity-catalog-info",
+        (google.api.field_behavior) = OPTIONAL
+      ];
+
+      // Optional. Info specific to an AWS Glue Catalog.
+      GlueCatalogInfo glue_catalog_info = 4 [
+        json_name = "glue-catalog-info",
+        (google.api.field_behavior) = OPTIONAL
+      ];
+    }
+
+    // Optional. The secret resource name in Secret Manager, in the format
+    // `projects/{project_id}/locations/{location}/secrets/{secret_id}` or
+    // `projects/{project_id}/locations/{location}/secrets/{secret_id}/versions/{version_id}`.
+    //
+    // The project ID must match the catalog's project and location must match
+    // the catalog's location.
+    // If the version is not specified, the latest version will be used.
+    //
+    // This field is not used when `service_principal_application_id` is set.
+    optional string secret_name = 1 [
+      json_name = "secret-name",
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.resource_reference) = {
+        type: "secretmanager.googleapis.com/Secret"
+      }
+    ];
+
+    // Optional. The service directory resource name for routing traffic over a
+    // private network connection through Cross-Cloud Interconnect, in the
+    // format
+    // `projects/{project_id}/locations/{location_id}/namespaces/{namespace_id}/services/{service_id}`.
+    optional string service_directory_name = 5 [
+      json_name = "service-directory-name",
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.resource_reference) = {
+        type: "servicedirectory.googleapis.com/Service"
+      }
+    ];
+
+    // Optional. Refresh configuration.
+    RefreshOptions refresh_options = 3
+        [json_name = "refresh-options", (google.api.field_behavior) = OPTIONAL];
+
+    // Output only. The status of the background refresh operations.
+    RefreshStatus refresh_status = 6 [
+      json_name = "refresh-status",
+      (google.api.field_behavior) = OUTPUT_ONLY
+    ];
+  }
+
   // Determines the catalog type.
   enum CatalogType {
     // Default value. This value is unused.
     CATALOG_TYPE_UNSPECIFIED = 0;
 
-    // Catalog type for Google Cloud Storage Buckets.
+    // Google Cloud Storage bucket catalog type.
     CATALOG_TYPE_GCS_BUCKET = 1;
+
+    // BigLake catalog type.
+    CATALOG_TYPE_BIGLAKE = 3;
+
+    // Federated catalog type.
+    CATALOG_TYPE_FEDERATED = 4;
   }
 
   // The credential mode used for the catalog.
@@ -361,9 +561,19 @@ message IcebergCatalog {
       [json_name = "credential-mode", (google.api.field_behavior) = OPTIONAL];
 
   // Output only. The service account used for credential vending, output only.
-  // Might be empty if Credential vending was never enabled for the catalog.
+  // Might be empty if Credential vending was never enabled for the catalog. For
+  // federated catalogs, the service account will be always provisioned and will
+  // be used to access the remote Iceberg REST Catalog using access to Secret
+  // Manager secret or identity federation.
   string biglake_service_account = 3 [
     json_name = "biglake-service-account",
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
+
+  // Output only. The unique ID of the service account. This is used for
+  // federation scenarios.
+  string biglake_service_account_unique_id = 14 [
+    json_name = "biglake-service-account-id",
     (google.api.field_behavior) = OUTPUT_ONLY
   ];
 
@@ -371,16 +581,27 @@ message IcebergCatalog {
   CatalogType catalog_type = 4
       [json_name = "catalog-type", (google.api.field_behavior) = REQUIRED];
 
-  // Optional. The default location for the catalog. For the Google Cloud
-  // Storage Bucket catalog this is output only.
+  // Optional. The default storage location for the catalog, e.g.,
+  // `gs://my-bucket`. For Google Cloud Storage bucket catalogs, this is output
+  // only.
+  //
+  // For BigLake catalogs, this field must be provided and point to a
+  // Google Cloud Storage bucket or a path within that bucket. This path serves
+  // as the base directory for constructing the full path to a table's data and
+  // metadata directories when a location is not specified at the namespace or
+  // table level. The full path is formed by appending the namespace and table
+  // identifiers to the default location.
   string default_location = 5
       [json_name = "default-location", (google.api.field_behavior) = OPTIONAL];
 
-  // Output only. The GCP region(s) where the catalog metadata is stored.
-  // This will contain one value for all locations, except for the catalogs that
-  // are configured to use custom dual region buckets.
-  repeated string catalog_regions = 6 [
-    json_name = "catalog-regions",
+  // Output only. The GCP region(s) of the default location's bucket, e.g.
+  // `us-central1`, `nam4` or `us`. This will contain one value for all
+  // locations, except for the catalogs that are configured to use custom dual
+  // region buckets, in which case it will contain the two regions of the
+  // bucket. The region(s) of this field should be in the jurisdiction of or
+  // nearby the primary location of the catalog.
+  repeated string storage_regions = 10 [
+    json_name = "storage-regions",
     (google.api.field_behavior) = OUTPUT_ONLY
   ];
 
@@ -391,6 +612,33 @@ message IcebergCatalog {
   // Output only. When the catalog was last updated.
   google.protobuf.Timestamp update_time = 8
       [json_name = "update-time", (google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The replicas for the catalog metadata.
+  repeated Replica replicas = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. A user-provided description of the catalog. The description must
+  // be a UTF-8 string with a maximum length of 1024 characters.
+  string description = 12 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Restricted locations configuration. This field is currently only
+  // used for BigLake catalogs.
+  //
+  // If this field is unset, or if
+  // `restricted_locations_config.restricted_locations` is empty, all
+  // accessible locations are allowed. If
+  // `restricted_locations_config.restricted_locations` is not empty, only
+  // locations in `default_location` and
+  // `restricted_locations_config.restricted_locations` are allowed.
+  RestrictedLocationsConfig restricted_locations_config = 15 [
+    json_name = "restricted-locations-config",
+    (google.api.field_behavior) = OPTIONAL
+  ];
+
+  // Optional. Configuration options for federated catalogs.
+  FederatedCatalogOptions federated_catalog_options = 13 [
+    json_name = "federated-catalog-options",
+    (google.api.field_behavior) = OPTIONAL
+  ];
 }
 
 // The request message for the `CreateIcebergCatalog` API.
@@ -416,6 +664,21 @@ message CreateIcebergCatalogRequest {
   // Optionally: credential_mode can be provided, if Credential Vending is
   // desired.
   IcebergCatalog iceberg_catalog = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The primary location where the catalog metadata will be stored.
+  //
+  // For Google Cloud Storage bucket catalogs and BigLake catalogs, if this
+  // is not specified, then the region is inferred from the bucket's region
+  // (`default_location` bucket for BigLake catalogs). If specified, the region
+  // must be in jurisdiction (near the `default_location` bucket's region and
+  // the `restricted_locations` buckets' regions for BigLake catalogs).
+  //
+  // For federated catalogs, this must be specified and be a Lakehouse-supported
+  // location (https://docs.cloud.google.com/lakehouse/docs/locations). It
+  // should be close to the remote catalog's location for the best
+  // performance and cost.
+  string primary_location = 4
+      [json_name = "primary_location", (google.api.field_behavior) = OPTIONAL];
 }
 
 // The request message for the `DeleteIcebergCatalog` API.
@@ -497,7 +760,8 @@ message ListIcebergCatalogsResponse {
     (google.api.field_behavior) = OUTPUT_ONLY
   ];
 
-  // Output only. The list of unreachable cloud regions for router fanout.
+  // Output only. The list of unreachable cloud regions. If non-empty, the
+  // result set might be incomplete.
   repeated string unreachable = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
@@ -544,17 +808,14 @@ message FailoverIcebergCatalogResponse {
 // The update message for the `UpdateIcebergTable` API.
 message UpdateIcebergTableRequest {
   // Required. Table to commit in the format:
-  // `projects/{project_id}/namespaces/{namespace}/tables/{table}`.
+  // `projects/{projectId}/catalogs/{catalogId}/namespaces/{namespace}/tables/{table}`.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = { type: "biglake.googleapis.com/Table" }
   ];
 
-  // Required. The request body that should be in the format of Apache Iceberg's
-  // `#/components/schemas/CommitTableRequest`. Content type is expected to be
-  // `application/json`. Added this field for easier json parsing.
-  google.api.HttpBody http_body = 2
-      [json_name = "updates", (google.api.field_behavior) = REQUIRED];
+  // Required.
+  google.api.HttpBody http_body = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
 // The request message for the `GetIcebergTable` API.
@@ -586,7 +847,7 @@ message DeleteIcebergTableRequest {
 // The request message for the `CreateIcebergTable` API.
 message CreateIcebergTableRequest {
   // Required. The parent resource where this table will be created.
-  // Format: projects/{project_id}/namespaces/{namespace}
+  // Format: projects/{project_id}/catalogs/{catalog_id}/namespaces/{namespace}
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -594,10 +855,44 @@ message CreateIcebergTableRequest {
     }
   ];
 
-  // Required. The request body that should be in the format of Apache Iceberg's
-  // `#/components/schemas/CreateTableRequest`. Content type is expected to be
-  // `application/json`.
+  // Required.
   google.api.HttpBody http_body = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The request message for the `RegisterIcebergTable` API.
+message RegisterIcebergTableRequest {
+  // Required. Table to register in the format:
+  // `projects/{project_id}/catalogs/{catalog_id}/namespaces/{namespace}`.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "biglake.googleapis.com/Namespace"
+    }
+  ];
+
+  // Required. The name of the table to register.
+  string name = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The metadata location of the table.
+  string metadata_location = 3
+      [json_name = "metadata-location", (google.api.field_behavior) = REQUIRED];
+
+  // Optional. Whether to overwrite the table if it already exists. Default is
+  // false.
+  bool overwrite = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The request message for the `ReportIcebergTableMetrics` API.
+message ReportIcebergTableMetricsRequest {
+  // Required. Table to report metrics for in the format:
+  // `projects/{project_id}/namespaces/{namespace}/tables/{table}`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "biglake.googleapis.com/Table" }
+  ];
+
+  // Required.
+  google.api.HttpBody http_body = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
 // The request message for the `ListIcebergTableIdentifiers` API.
@@ -656,7 +951,7 @@ message UpdateIcebergNamespaceRequest {
   // Required. The namespace to update.
   //
   // The namespace's `name` field is used to identify the namespace to update.
-  // Format: projects/{project_id}/namespaces/{namespace}
+  // Format: projects/{project_id}/catalogs/{catalog_id}/namespaces/{namespace}
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -686,7 +981,7 @@ message UpdateIcebergNamespaceResponse {
 // The request message for the `DeleteIcebergNamespace` API.
 message DeleteIcebergNamespaceRequest {
   // Required. Iceberg namespace to delete in the format:
-  // `projects/{project_id}/namespaces/{namespace}`.
+  // `projects/{project_id}/catalogs/{catalog_id}/namespaces/{namespace}`.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -707,7 +1002,7 @@ message IcebergNamespace {
 // The request message for the `CreateIcebergNamespace` API.
 message CreateIcebergNamespaceRequest {
   // Required. The parent resource where this namespace will be created.
-  // Format: projects/{project_id}/restcatalog/v1/catalogs/{catalog_id}
+  // Format: projects/{project_id}/catalogs/{catalog_id}
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = { type: "biglake.googleapis.com/Catalog" }
@@ -742,7 +1037,7 @@ message IcebergCatalogConfig {
 // The request message for the `GetIcebergNamespace` API.
 message GetIcebergNamespaceRequest {
   // Required. Iceberg namespace to fetch in the format:
-  // `projects/{project_id}/namespaces/{namespace}`.
+  // `projects/{project_id}/catalogs/{catalog_id}/namespaces/{namespace}`.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -753,13 +1048,14 @@ message GetIcebergNamespaceRequest {
 
 // ListIcebergNamespacesRequest
 message ListIcebergNamespacesRequest {
-  // Optional. PageToken
+  // Optional. Specify the page_token returned in the previous response to
+  // retrieve the next page of results.
   string page_token = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. For servers that support pagination, this signals an upper bound
   // of the number of results that a client will receive. For servers that do
   // not support pagination, clients may receive results larger than the
-  // indicated `pageSize`.
+  // indicated `pageSize`. Defaults to 100 if not set.
   int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. The parent from the resource path.
@@ -780,6 +1076,10 @@ message ListIcebergNamespacesResponse {
 
   // The next page token for pagination.
   string next_page_token = 2 [json_name = "next-page-token"];
+
+  // Output only. A list of skipped locations that were unreachable. If
+  // non-empty, the result set might be incomplete.
+  repeated string unreachable = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // The storage credential for a path in the table.
