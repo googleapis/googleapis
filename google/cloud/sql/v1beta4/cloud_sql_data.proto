@@ -1,0 +1,221 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.sql.v1beta4;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/rpc/status.proto";
+
+option go_package = "cloud.google.com/go/sql/apiv1beta4/sqlpb;sqlpb";
+option java_multiple_files = true;
+option java_outer_classname = "CloudSqlDataProto";
+option java_package = "com.google.cloud.sql.v1beta4";
+
+// Service for streaming data to and from Cloud SQL instances.
+service SqlDataService {
+  option (google.api.default_host) = "sqladmin.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform,"
+      "https://www.googleapis.com/auth/sqlservice.admin";
+
+  // `StreamSqlData` establishes a bidirectional stream to a Cloud SQL instance,
+  // and then streams data to and from the instance.
+  //
+  // The first message from the client MUST be a `StreamSqlDataRequest` request
+  // with configuration settings, including required values for the
+  // `connection_settings` field. Subsequent messages from the client may
+  // contain the `payload` field.
+  //
+  // Messages from the server may contain the `payload` field.
+  //
+  // The `payload` fields of the request and response streams contain the raw
+  // data of the database's native wire protocol (e.g., PostgreSQL wire
+  // protocol). The database client is responsible for generating and parsing
+  // this data.
+  //
+  // Any errors on initial connection (e.g., connection failure, authorization
+  // issues, network problems) will result in the stream being terminated with
+  // an appropriate RPC status exception.
+  //
+  // After a successful connection is made, if an error occurs, then the server
+  // terminates connection and returns the appropriate RPC status exception.
+  //
+  // Add the request params headers to the request to ensure that
+  // the streaming request is routed to the correct service for your database.
+  //
+  // Use this format for the request params header:
+  //
+  //    `x-goog-request-params`:
+  //        location_id={location_path}&instance_id={instance_path}`
+  //
+  //  `location_path` is `locations/{location_name}`
+  //  `instance_path` is `projects/{project_name}/instances/{instance_name}`
+  //
+  // for example:
+  //     `x-goog-request-params`:
+  //     `location_id=locations/us-central1&instance_id=projects/myproject/instances/instancename`
+  rpc StreamSqlData(stream StreamSqlDataRequest)
+      returns (stream StreamSqlDataResponse) {}
+}
+
+// Message sent from the client to `SqlDataService`.
+message StreamSqlDataRequest {
+  // Optional. Acknowledges data received by the client.
+  Ack ack = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // The message to the server.
+  oneof message {
+    // Starts a new session. When starting a new session, this is the first
+    // message the client sends.
+    StartSession start_session = 5;
+
+    // Continues an existing session. When continuing an existing session, this
+    // is the first message the client sends.
+    ContinueSession continue_session = 6;
+
+    // Database data.
+    DataPacket data = 7;
+
+    // Terminates the session. This closes the connection to the database.
+    TerminateSession terminate_session = 8;
+  }
+
+  // Optional. Deprecated: Use `StartSession.instance_id` or
+  // `ContinueSession.instance_id` instead.
+  // The Cloud SQL instance resource name, for example:
+  // projects/example-project/instances/example-instance
+  string instance_id = 9 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "cloudsql.googleapis.com/Instance"
+    }
+  ];
+}
+
+// Start a new session. The client must send this as the first message to the
+// server to start a new session. The client may immediately send Data messages
+// without waiting for a reply from the server.
+message StartSession {
+  // Required. `location_id` is used to route the
+  // request to a specific region. Use the same region which was used to create
+  // the instance. Use the format `locations/{location}`, for example:
+  // `locations/us-central1`.
+  string location_id = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The Cloud SQL instance resource name, for example:
+  // projects/example-project/instances/example-instance
+  string instance_id = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudsql.googleapis.com/Instance"
+    }
+  ];
+
+  // Optional. The session id, chosen by the client. This should be an
+  // unguessable string. If the client does not intend to reconnect to this
+  // session, the client may leave session_id unset.
+  string session_id = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Reconnects to an existing session. The client must send this as the first
+// message to the server to reconnect to an existing session. The client may
+// immediately send Data messages without waiting for a reply from the server.
+message ContinueSession {
+  // Required. `location_id` is used to route the
+  // request to a specific region. Use the same region which was used to create
+  // the instance. Use the format `locations/{location}`, for example:
+  // `locations/us-central1`.
+  string location_id = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The Cloud SQL instance resource name, for example:
+  // projects/example-project/instances/example-instance
+  string instance_id = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudsql.googleapis.com/Instance"
+    }
+  ];
+
+  // Required. The id of the session to reconnect.
+  string session_id = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Message sent from SqlDataService back to the client.
+message StreamSqlDataResponse {
+  // Acknowledges data received by the server.
+  Ack ack = 2;
+
+  // A message from the server to the client.
+  oneof message {
+    // The first message from the server to the client, containing metadata
+    // about this session.
+    SessionMetadata session_metadata = 3;
+
+    // Data from the database.
+    DataPacket data = 4;
+
+    // Terminates the session. This indicates that the database connection
+    // is closed. When the client receives this message, it should not
+    // attempt to reconnect.
+    TerminateSession terminate_session = 5;
+  }
+}
+
+// Metadata from the server to the client about the session. The server will
+// always send this as the first message
+message SessionMetadata {
+  // The features supported by the server for this session. This field is used
+  // by the client to determine which features are available on the server.
+  // The features supported by the server for this session.
+  repeated SqlDataFeature supported_features = 1;
+}
+
+// Contains data being sent or received by the database.
+message DataPacket {
+  // Optional. The absolute byte offset of the first byte in this payload.
+  // 0 for new connections or resumed connections that hasn't acked any bytes
+  // from server. Non-zero for resumed connections
+  int64 first_byte_offset = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. Raw data being sent or received by the database.
+  bytes data = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Acknowledges data received by the client or server.
+message Ack {
+  // Required. The absolute number of bytes processed in the session.
+  int64 received_offset = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Indicates that the session is permanently ended.
+message TerminateSession {
+  // Required. The session termination status.
+  google.rpc.Status status = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The session features. The server must send the supported features in its
+// first message to the client.
+enum SqlDataFeature {
+  // The feature is not specified. This value should not be used.
+  SQL_DATA_FEATURE_UNSPECIFIED = 0;
+
+  // The server supports reconnecting to the session. If this feature is not
+  // present, the client should not attempt to reconnect to the session.
+  SQL_DATA_FEATURE_RECONNECT = 1;
+}
