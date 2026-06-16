@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/discoveryengine/v1beta/answer.proto";
 import "google/cloud/discoveryengine/v1beta/conversation.proto";
+import "google/cloud/discoveryengine/v1beta/safety.proto";
 import "google/cloud/discoveryengine/v1beta/search_service.proto";
 import "google/cloud/discoveryengine/v1beta/session.proto";
 import "google/protobuf/empty.proto";
@@ -40,7 +41,9 @@ option ruby_package = "Google::Cloud::DiscoveryEngine::V1beta";
 service ConversationalSearchService {
   option (google.api.default_host) = "discoveryengine.googleapis.com";
   option (google.api.oauth_scopes) =
-      "https://www.googleapis.com/auth/cloud-platform";
+      "https://www.googleapis.com/auth/cloud-platform,"
+      "https://www.googleapis.com/auth/discoveryengine.readwrite,"
+      "https://www.googleapis.com/auth/discoveryengine.serving.readwrite";
 
   // Converses a conversation.
   rpc ConverseConversation(ConverseConversationRequest)
@@ -161,6 +164,29 @@ service ConversationalSearchService {
       }
       additional_bindings {
         post: "/v1beta/{serving_config=projects/*/locations/*/collections/*/engines/*/servingConfigs/*}:answer"
+        body: "*"
+      }
+    };
+  }
+
+  // Answer query method (streaming).
+  //
+  // It takes one
+  // [AnswerQueryRequest][google.cloud.discoveryengine.v1beta.AnswerQueryRequest]
+  // and returns multiple
+  // [AnswerQueryResponse][google.cloud.discoveryengine.v1beta.AnswerQueryResponse]
+  // messages in a stream.
+  rpc StreamAnswerQuery(AnswerQueryRequest)
+      returns (stream AnswerQueryResponse) {
+    option (google.api.http) = {
+      post: "/v1beta/{serving_config=projects/*/locations/*/dataStores/*/servingConfigs/*}:streamAnswer"
+      body: "*"
+      additional_bindings {
+        post: "/v1beta/{serving_config=projects/*/locations/*/collections/*/dataStores/*/servingConfigs/*}:streamAnswer"
+        body: "*"
+      }
+      additional_bindings {
+        post: "/v1beta/{serving_config=projects/*/locations/*/collections/*/engines/*/servingConfigs/*}:streamAnswer"
         body: "*"
       }
     };
@@ -473,10 +499,50 @@ message ListConversationsResponse {
 // method.
 message AnswerQueryRequest {
   // Safety specification.
+  // There are two use cases:
+  // 1. when only safety_spec.enable is set, the BLOCK_LOW_AND_ABOVE threshold
+  // will be applied for all categories.
+  // 2. when safety_spec.enable is set and some safety_settings are set, only
+  // specified safety_settings are applied.
   message SafetySpec {
+    // Safety settings.
+    message SafetySetting {
+      // Probability based thresholds levels for blocking.
+      enum HarmBlockThreshold {
+        // Unspecified harm block threshold.
+        HARM_BLOCK_THRESHOLD_UNSPECIFIED = 0;
+
+        // Block low threshold and above (i.e. block more).
+        BLOCK_LOW_AND_ABOVE = 1;
+
+        // Block medium threshold and above.
+        BLOCK_MEDIUM_AND_ABOVE = 2;
+
+        // Block only high threshold (i.e. block less).
+        BLOCK_ONLY_HIGH = 3;
+
+        // Block none.
+        BLOCK_NONE = 4;
+
+        // Turn off the safety filter.
+        OFF = 5;
+      }
+
+      // Required. Harm category.
+      HarmCategory category = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // Required. The harm block threshold.
+      HarmBlockThreshold threshold = 2 [(google.api.field_behavior) = REQUIRED];
+    }
+
     // Enable the safety filtering on the answer response. It is false by
     // default.
     bool enable = 1;
+
+    // Optional. Safety settings.
+    // This settings are effective only when the safety_spec.enable is true.
+    repeated SafetySetting safety_settings = 2
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Related questions specification.
@@ -525,6 +591,28 @@ message AnswerQueryRequest {
     message PromptSpec {
       // Customized preamble.
       string preamble = 1;
+    }
+
+    // Multimodal specification: Will return an image from specified source.
+    // If multiple sources are specified, the pick is a quality based decision.
+    message MultimodalSpec {
+      // Specifies the image source.
+      enum ImageSource {
+        // Unspecified image source (multimodal feature is disabled by default).
+        IMAGE_SOURCE_UNSPECIFIED = 0;
+
+        // Behavior when service determines the pick from all available sources.
+        ALL_AVAILABLE_SOURCES = 1;
+
+        // Includes image from corpus in the answer.
+        CORPUS_IMAGE_ONLY = 2;
+
+        // Triggers figure generation in the answer.
+        FIGURE_GENERATION_ONLY = 3;
+      }
+
+      // Optional. Source of image returned in the answer.
+      ImageSource image_source = 3 [(google.api.field_behavior) = OPTIONAL];
     }
 
     // Answer generation model specification.
@@ -584,6 +672,9 @@ message AnswerQueryRequest {
     // messages instead.
     bool ignore_jail_breaking_query = 8
         [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Multimodal specification.
+    MultimodalSpec multimodal_spec = 9 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Search specification.
@@ -779,6 +870,9 @@ message AnswerQueryRequest {
 
         // Non-answer-seeking query classification type, for no clear intent.
         NON_ANSWER_SEEKING_QUERY_V2 = 4;
+
+        // User defined query classification type.
+        USER_DEFINED_CLASSIFICATION_QUERY = 5;
       }
 
       // Enabled query classification types.
@@ -787,6 +881,27 @@ message AnswerQueryRequest {
 
     // Query rephraser specification.
     message QueryRephraserSpec {
+      // Query Rephraser Model specification.
+      message ModelSpec {
+        // Query rephraser types. Currently only supports single-hop
+        // (max_rephrase_steps = 1) model selections. For multi-hop
+        // (max_rephrase_steps > 1), there is only one default model.
+        enum ModelType {
+          // Unspecified model type.
+          MODEL_TYPE_UNSPECIFIED = 0;
+
+          // Small query rephraser model. Gemini 1.0 XS model.
+          SMALL = 1;
+
+          // Large query rephraser model. Gemini 1.0 Pro model.
+          LARGE = 2;
+        }
+
+        // Optional. Enabled query rephraser model type. If not set, it will use
+        // LARGE by default.
+        ModelType model_type = 1 [(google.api.field_behavior) = OPTIONAL];
+      }
+
       // Disable query rephraser.
       bool disable = 1;
 
@@ -794,6 +909,9 @@ message AnswerQueryRequest {
       // The max number is 5 steps.
       // If not set or set to < 1, it will be set to 1 by default.
       int32 max_rephrase_steps = 2;
+
+      // Optional. Query Rephraser Model specification.
+      ModelSpec model_spec = 3 [(google.api.field_behavior) = OPTIONAL];
     }
 
     // Query classification specification.
@@ -801,12 +919,54 @@ message AnswerQueryRequest {
 
     // Query rephraser specification.
     QueryRephraserSpec query_rephraser_spec = 2;
+
+    // Optional. Whether to disable spell correction.
+    // The default value is `false`.
+    bool disable_spell_correction = 3 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // End user specification.
+  message EndUserSpec {
+    // End user metadata.
+    message EndUserMetaData {
+      // Chunk information.
+      message ChunkInfo {
+        // Document metadata contains the information of the document of
+        // the current chunk.
+        message DocumentMetadata {
+          // Title of the document.
+          string title = 1;
+        }
+
+        // Chunk textual content. It is limited to 8000 characters.
+        string content = 1;
+
+        // Metadata of the document from the current chunk.
+        DocumentMetadata document_metadata = 2;
+      }
+
+      // Search result content.
+      oneof content {
+        // Chunk information.
+        ChunkInfo chunk_info = 1;
+      }
+    }
+
+    // Optional. End user metadata.
+    repeated EndUserMetaData end_user_metadata = 1
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Required. The resource name of the Search serving config, such as
   // `projects/*/locations/global/collections/default_collection/engines/*/servingConfigs/default_serving_config`,
   // or
   // `projects/*/locations/global/collections/default_collection/dataStores/*/servingConfigs/default_serving_config`.
+  //
+  // Or the resource name of the agent engine serving config, such as:
+  // `projects/*/locations/global/collections/default_collection/engines/*/servingConfigs/default_agent_answer`.
+  // (use when `enable_agent_invocation` set to true, and you have custom
+  // `AI_MODE` agent engine configured)
+  //
   // This field is used to identify the serving configuration name, set
   // of models used to make the search.
   string serving_config = 1 [
@@ -890,6 +1050,9 @@ message AnswerQueryRequest {
   // Document](https://cloud.google.com/resource-manager/docs/creating-managing-labels#requirements)
   // for more details.
   map<string, string> user_labels = 13;
+
+  // Optional. End user specification.
+  EndUserSpec end_user_spec = 14 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Response message for
@@ -941,6 +1104,14 @@ message CreateSessionRequest {
 
   // Required. The session to create.
   Session session = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The ID to use for the session, which will become the final
+  // component of the session's resource name.
+  //
+  // This value should be 1-63 characters, and valid characters
+  // are /[a-z0-9][a-z0-9-]{0,61}[a-z0-9]/. If not specified, a unique ID will
+  // be generated.
+  string session_id = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request for UpdateSession method.
@@ -1006,7 +1177,9 @@ message ListSessionsRequest {
   string page_token = 3;
 
   // A comma-separated list of fields to filter by, in EBNF grammar.
+  //
   // The supported fields are:
+  //
   // * `user_pseudo_id`
   // * `state`
   // * `display_name`
@@ -1015,29 +1188,36 @@ message ListSessionsRequest {
   // * `labels`
   // * `create_time`
   // * `update_time`
+  // * `collaborative_project`
   //
   // Examples:
-  // "user_pseudo_id = some_id"
-  // "display_name = \"some_name\""
-  // "starred = true"
-  // "is_pinned=true AND (NOT labels:hidden)"
-  // "create_time > \"1970-01-01T12:00:00Z\""
+  //
+  // * `user_pseudo_id = some_id`
+  // * `display_name = "some_name"`
+  // * `starred = true`
+  // * `is_pinned=true AND (NOT labels:hidden)`
+  // * `create_time > "1970-01-01T12:00:00Z"`
+  // * `collaborative_project =
+  //      "projects/123/locations/global/collections/default_collection/engines/"
+  //      "default_engine/collaborative_projects/cp1"`
   string filter = 4;
 
   // A comma-separated list of fields to order by, sorted in ascending order.
   // Use "desc" after a field name for descending.
+  //
   // Supported fields:
   //
   //   * `update_time`
   //   * `create_time`
   //   * `session_name`
   //   * `is_pinned`
+  //   * `display_name`
   //
   // Example:
   //
-  // * "update_time desc"
-  // * "create_time"
-  // * "is_pinned desc,update_time desc": list sessions by is_pinned first, then
+  // * `update_time desc`
+  // * `create_time`
+  // * `is_pinned desc,update_time desc`: list sessions by is_pinned first, then
   //    by update_time.
   string order_by = 5;
 }

@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,7 +18,10 @@ package google.cloud.discoveryengine.v1beta;
 
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/cloud/discoveryengine/v1beta/agent_gateway_setting.proto";
+import "google/cloud/discoveryengine/v1beta/cmek_config_service.proto";
 import "google/cloud/discoveryengine/v1beta/common.proto";
+import "google/cloud/discoveryengine/v1beta/logging.proto";
 import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "Google.Cloud.DiscoveryEngine.V1Beta";
@@ -50,8 +53,128 @@ message Engine {
     // if not specified.
     SearchTier search_tier = 1;
 
+    // Optional. The required subscription tier of this engine.
+    //
+    // They cannot be modified after engine creation. If the required
+    // subscription tier is search, user with higher license tier like assist
+    // can still access the standalone app associated with this engine.
+    SubscriptionTier required_subscription_tier = 3
+        [(google.api.field_behavior) = OPTIONAL];
+
     // The add-on that this search engine enables.
     repeated SearchAddOn search_add_ons = 2;
+  }
+
+  // Additional config specs for a Media Recommendation engine.
+  message MediaRecommendationEngineConfig {
+    // Custom threshold for `cvr` optimization_objective.
+    message OptimizationObjectiveConfig {
+      // Required. The name of the field to target. Currently supported
+      // values: `watch-percentage`, `watch-time`.
+      string target_field = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // Required. The threshold to be applied to the target (e.g., 0.5).
+      float target_field_value_float = 2
+          [(google.api.field_behavior) = REQUIRED];
+    }
+
+    // More feature configs of the selected engine type.
+    message EngineFeaturesConfig {
+      // Feature related configurations applied to a specific type of media
+      // recommendation engines.
+      oneof type_dedicated_config {
+        // Recommended for you engine feature config.
+        RecommendedForYouFeatureConfig recommended_for_you_config = 1;
+
+        // Most popular engine feature config.
+        MostPopularFeatureConfig most_popular_config = 2;
+      }
+    }
+
+    // Additional feature configurations for creating a `recommended-for-you`
+    // engine.
+    message RecommendedForYouFeatureConfig {
+      // The type of event with which the engine is queried at prediction time.
+      // If set to `generic`, only `view-item`, `media-play`,and
+      // `media-complete` will be used as `context-event` in engine training. If
+      // set to `view-home-page`, `view-home-page` will also be used as
+      // `context-events` in addition to `view-item`, `media-play`, and
+      // `media-complete`. Currently supported for the `recommended-for-you`
+      // engine. Currently supported values: `view-home-page`, `generic`.
+      string context_event_type = 1;
+    }
+
+    // Feature configurations that are required for creating a Most Popular
+    // engine.
+    message MostPopularFeatureConfig {
+      // The time window of which the engine is queried at training and
+      // prediction time. Positive integers only. The value translates to the
+      // last X days of events. Currently required for the `most-popular-items`
+      // engine.
+      int64 time_window_days = 1;
+    }
+
+    // The training state of the engine.
+    enum TrainingState {
+      // Unspecified training state.
+      TRAINING_STATE_UNSPECIFIED = 0;
+
+      // The engine training is paused.
+      PAUSED = 1;
+
+      // The engine is training.
+      TRAINING = 2;
+    }
+
+    // Required. The type of engine. e.g., `recommended-for-you`.
+    //
+    // This field together with
+    // [optimization_objective][google.cloud.discoveryengine.v1beta.Engine.MediaRecommendationEngineConfig.optimization_objective]
+    // describe engine metadata to use to control engine training and serving.
+    //
+    // Currently supported values: `recommended-for-you`, `others-you-may-like`,
+    // `more-like-this`, `most-popular-items`.
+    string type = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // The optimization objective. e.g., `cvr`.
+    //
+    // This field together with
+    // [optimization_objective][google.cloud.discoveryengine.v1beta.Engine.MediaRecommendationEngineConfig.type]
+    // describe engine metadata to use to control engine training and serving.
+    //
+    // Currently supported
+    // values: `ctr`, `cvr`.
+    //
+    //  If not specified, we choose default based on engine type.
+    // Default depends on type of recommendation:
+    //
+    // `recommended-for-you` => `ctr`
+    //
+    // `others-you-may-like` => `ctr`
+    string optimization_objective = 2;
+
+    // Name and value of the custom threshold for cvr optimization_objective.
+    // For target_field `watch-time`, target_field_value must be an integer
+    // value indicating the media progress time in seconds between (0, 86400]
+    // (excludes 0, includes 86400) (e.g., 90).
+    // For target_field `watch-percentage`, the target_field_value must be a
+    // valid float value between (0, 1.0] (excludes 0, includes 1.0) (e.g.,
+    // 0.5).
+    OptimizationObjectiveConfig optimization_objective_config = 3;
+
+    // The training state that the engine is in (e.g.
+    // `TRAINING` or `PAUSED`).
+    //
+    // Since part of the cost of running the service
+    // is frequency of training - this can be used to determine when to train
+    // engine in order to control cost. If not specified: the default value for
+    // `CreateEngine` method is `TRAINING`. The default value for
+    // `UpdateEngine` method is to keep the state the same as before.
+    TrainingState training_state = 4;
+
+    // Optional. Additional engine features config.
+    EngineFeaturesConfig engine_features_config = 5
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Configurations for a Chat Engine.
@@ -114,6 +237,20 @@ message Engine {
     // [ChatEngineMetadata.dialogflow_agent][google.cloud.discoveryengine.v1beta.Engine.ChatEngineMetadata.dialogflow_agent]
     // for actual agent association after Engine is created.
     string dialogflow_agent_to_link = 2;
+
+    // Optional. If the flag set to true, we allow the agent and engine are in
+    // different locations, otherwise the agent and engine are required to be in
+    // the same location. The flag is set to false by default.
+    //
+    // Note that the `allow_cross_region` are one-time consumed by and
+    // passed to
+    // [EngineService.CreateEngine][google.cloud.discoveryengine.v1beta.EngineService.CreateEngine].
+    // It means they cannot be retrieved using
+    // [EngineService.GetEngine][google.cloud.discoveryengine.v1beta.EngineService.GetEngine]
+    // or
+    // [EngineService.ListEngines][google.cloud.discoveryengine.v1beta.EngineService.ListEngines]
+    // API after engine creation.
+    bool allow_cross_region = 3 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Common configurations for an Engine.
@@ -121,6 +258,51 @@ message Engine {
     // The name of the company, business or entity that is associated with the
     // engine. Setting this may help improve LLM related features.
     string company_name = 1;
+  }
+
+  // Configuration message for the Knowledge Graph.
+  message KnowledgeGraphConfig {
+    // Feature config for the Knowledge Graph.
+    message FeatureConfig {
+      // Whether to disable the private KG query understanding for the engine.
+      //
+      // Defaults to false if not specified.
+      bool disable_private_kg_query_understanding = 1;
+
+      // Whether to disable the private KG enrichment for the engine.
+      //
+      // Defaults to false if not specified.
+      bool disable_private_kg_enrichment = 2;
+
+      // Whether to disable the private KG auto complete for the engine.
+      //
+      // Defaults to false if not specified.
+      bool disable_private_kg_auto_complete = 3;
+
+      // Whether to disable the private KG for query UI chips.
+      //
+      // Defaults to false if not specified.
+      bool disable_private_kg_query_ui_chips = 4;
+    }
+
+    // Whether to enable the Cloud Knowledge Graph for the engine.
+    //
+    // Defaults to false if not specified.
+    bool enable_cloud_knowledge_graph = 1;
+
+    // Specify entity types to support.
+    repeated string cloud_knowledge_graph_types = 2;
+
+    // Whether to enable the Private Knowledge Graph for the engine.
+    //
+    // Defaults to false if not specified.
+    bool enable_private_knowledge_graph = 3;
+
+    // Specify entity types to support.
+    repeated string private_knowledge_graph_types = 4;
+
+    // Optional. Feature config for the Knowledge Graph.
+    FeatureConfig feature_config = 5 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Additional information of a Chat Engine.
@@ -132,6 +314,74 @@ message Engine {
     // Format: `projects/<Project ID>/locations/<Location ID>/agents/<Agent
     // ID>`.
     string dialogflow_agent = 1;
+  }
+
+  // The app of the engine.
+  enum AppType {
+    // All non specified apps.
+    APP_TYPE_UNSPECIFIED = 0;
+
+    // App type for intranet search and Agentspace.
+    APP_TYPE_INTRANET = 1;
+  }
+
+  // The state of the feature for the engine.
+  enum FeatureState {
+    // The feature state is unspecified.
+    FEATURE_STATE_UNSPECIFIED = 0;
+
+    // The feature is turned on to be accessible.
+    FEATURE_STATE_ON = 1;
+
+    // The feature is turned off to be inaccessible.
+    FEATURE_STATE_OFF = 2;
+  }
+
+  // Configuration for configurable billing approach.
+  enum ConfigurableBillingApproach {
+    // Default value. For Spark and non-Spark non-configurable billing approach.
+    // General pricing model.
+    CONFIGURABLE_BILLING_APPROACH_UNSPECIFIED = 0;
+
+    // The billing approach follows configurations specified by customer.
+    CONFIGURABLE_BILLING_APPROACH_ENABLED = 1;
+  }
+
+  // The status of the model for the engine.
+  enum ModelState {
+    // The model state is unspecified.
+    MODEL_STATE_UNSPECIFIED = 0;
+
+    // The model is enabled by admin.
+    MODEL_ENABLED = 1;
+
+    // The model is disabled by admin.
+    MODEL_DISABLED = 2;
+  }
+
+  // Represents which marketplace agents are visible to any users in agent
+  // gallery.
+  enum MarketplaceAgentVisibility {
+    // Defaults to `MARKETPLACE_AGENT_VISIBILITY_UNSPECIFIED`.
+    MARKETPLACE_AGENT_VISIBILITY_UNSPECIFIED = 0;
+
+    // Only agents that are currently available for use by the user are visible.
+    SHOW_AVAILABLE_AGENTS_ONLY = 1;
+
+    // Show marketplace agents that the user does not yet have access to but
+    // are integrated into the engine. This level also includes all agents
+    // visible with `SHOW_AVAILABLE_AGENTS_ONLY`.
+    SHOW_AGENTS_ALREADY_INTEGRATED = 2;
+
+    // Show all agents visible with `SHOW_AGENTS_ALREADY_INTEGRATED`, plus
+    // agents that have already been purchased by the project/organization, even
+    // if they are not currently integrated into the engine.
+    SHOW_AGENTS_ALREADY_PURCHASED = 3;
+
+    // All agents in the marketplace are visible, regardless of access or
+    // purchase status. This level encompasses all agents shown in the previous
+    // levels.
+    SHOW_ALL_AGENTS = 4;
   }
 
   // Additional config specs that defines the behavior of the engine.
@@ -147,6 +397,15 @@ message Engine {
     // is
     // [SOLUTION_TYPE_SEARCH][google.cloud.discoveryengine.v1beta.SolutionType.SOLUTION_TYPE_SEARCH].
     SearchEngineConfig search_engine_config = 13;
+
+    // Configurations for the Media Engine. Only applicable on the data
+    // stores with
+    // [solution_type][google.cloud.discoveryengine.v1beta.Engine.solution_type]
+    // [SOLUTION_TYPE_RECOMMENDATION][google.cloud.discoveryengine.v1beta.SolutionType.SOLUTION_TYPE_RECOMMENDATION]
+    // and
+    // [IndustryVertical.MEDIA][google.cloud.discoveryengine.v1beta.IndustryVertical.MEDIA]
+    // vertical.
+    MediaRecommendationEngineConfig media_recommendation_engine_config = 14;
   }
 
   // Engine metadata to monitor the status of the engine.
@@ -160,7 +419,7 @@ message Engine {
         [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
-  // Immutable. The fully qualified resource name of the engine.
+  // Immutable. Identifier. The fully qualified resource name of the engine.
   //
   // This field must be a UTF-8 encoded string with a length limit of 1024
   // characters.
@@ -169,7 +428,10 @@ message Engine {
   // `projects/{project}/locations/{location}/collections/{collection}/engines/{engine}`
   // engine should be 1-63 characters, and valid characters are
   // /[a-z0-9][a-z0-9-_]*/. Otherwise, an INVALID_ARGUMENT error is returned.
-  string name = 1 [(google.api.field_behavior) = IMMUTABLE];
+  string name = 1 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = IDENTIFIER
+  ];
 
   // Required. The display name of the engine. Should be human readable. UTF-8
   // encoded string with limit of 1024 characters.
@@ -183,7 +445,7 @@ message Engine {
   google.protobuf.Timestamp update_time = 4
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // The data stores associated with this engine.
+  // Optional. The data stores associated with this engine.
   //
   // For
   // [SOLUTION_TYPE_SEARCH][google.cloud.discoveryengine.v1beta.SolutionType.SOLUTION_TYPE_SEARCH]
@@ -203,22 +465,112 @@ message Engine {
   // [CreateEngineRequest][google.cloud.discoveryengine.v1beta.CreateEngineRequest],
   // one DataStore id must be provided as the system will use it for necessary
   // initializations.
-  repeated string data_store_ids = 5;
+  repeated string data_store_ids = 5 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. The solutions of the engine.
   SolutionType solution_type = 6 [(google.api.field_behavior) = REQUIRED];
 
-  // The industry vertical that the engine registers.
+  // Optional. The industry vertical that the engine registers.
   // The restriction of the Engine industry vertical is based on
-  // [DataStore][google.cloud.discoveryengine.v1beta.DataStore]: If unspecified,
-  // default to `GENERIC`. Vertical on Engine has to match vertical of the
-  // DataStore linked to the engine.
-  IndustryVertical industry_vertical = 16;
+  // [DataStore][google.cloud.discoveryengine.v1beta.DataStore]: Vertical on
+  // Engine has to match vertical of the DataStore linked to the engine.
+  IndustryVertical industry_vertical = 16
+      [(google.api.field_behavior) = OPTIONAL];
 
   // Common config spec that specifies the metadata of the engine.
   CommonConfig common_config = 15;
 
+  // Optional. Configurations for the Knowledge Graph. Only applicable if
+  // [solution_type][google.cloud.discoveryengine.v1beta.Engine.solution_type]
+  // is
+  // [SOLUTION_TYPE_SEARCH][google.cloud.discoveryengine.v1beta.SolutionType.SOLUTION_TYPE_SEARCH].
+  KnowledgeGraphConfig knowledge_graph_config = 23
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Immutable. This the application type which this engine resource
+  // represents. NOTE: this is a new concept independ of existing industry
+  // vertical or solution type.
+  AppType app_type = 24 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
   // Optional. Whether to disable analytics for searches performed on this
   // engine.
   bool disable_analytics = 26 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Feature config for the engine to opt in or opt out of features.
+  // Supported keys:
+  //
+  // * `*`: all features, if it's present, all other feature state settings are
+  //        ignored.
+  // * `agent-gallery`
+  // * `no-code-agent-builder`
+  // * `prompt-gallery`
+  // * `model-selector`
+  // * `notebook-lm`
+  // * `people-search`
+  // * `people-search-org-chart`
+  // * `bi-directional-audio`
+  // * `feedback`
+  // * `session-sharing`
+  // * `personalization-memory`
+  // * `personalization-suggested-highlights`
+  // * `mobile-app-access`
+  // * `disable-agent-sharing`
+  // * `disable-image-generation`
+  // * `disable-video-generation`
+  // * `disable-onedrive-upload`
+  // * `disable-talk-to-content`
+  // * `disable-google-drive-upload`
+  // * `disable-welcome-emails`
+  // * `disable-canvas`
+  // * `disable-canvas-workspace`
+  // * `disable-skills`
+  // * `enable-end-user-sharing-with-groups`
+  // * `single-agent-orchestration`
+  // * `multi-agent-orchestration`
+  // * `cross-product-intelligence`
+  map<string, FeatureState> features = 30
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. CMEK-related information for the Engine.
+  CmekConfig cmek_config = 32 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Configuration for configurable billing approach.
+  ConfigurableBillingApproach configurable_billing_approach = 36
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Maps a model name to its specific configuration for this engine.
+  // This allows admin users to turn on/off individual models. This only stores
+  // models whose states are overridden by the admin.
+  //
+  // When the state is unspecified, or model_configs is empty for this
+  // model, the system will decide if this model should be available or not
+  // based on the default configuration. For example, a preview model
+  // should be disabled by default if the admin has not chosen to enable it.
+  map<string, ModelState> model_configs = 37
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Observability config for the engine.
+  ObservabilityConfig observability_config = 39
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Maps a connector ID (e.g., "hybrid-github", "shopify") to
+  // tenant-specific information required for that connector. The structure of
+  // the tenant information string is connector-dependent.
+  map<string, string> connector_tenant_info = 42
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The agent gateway setting for the engine.
+  AgentGatewaySetting agent_gateway_setting = 43
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The visibility of marketplace agents in the agent gallery.
+  MarketplaceAgentVisibility marketplace_agent_visibility = 44
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The emails of the procurement contacts.
+  repeated string procurement_contact_emails = 45
+      [(google.api.field_behavior) = OPTIONAL];
 }
