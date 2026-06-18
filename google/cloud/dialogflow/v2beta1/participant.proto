@@ -322,8 +322,8 @@ message Participant {
   //
   // 2. If you set this field in
   //    [AnalyzeContent][google.cloud.dialogflow.v2beta1.AnalyzeContentRequest.obfuscated_external_user_id]
-  //    or
-  //    [StreamingAnalyzeContent][google.cloud.dialogflow.v2beta1.StreamingAnalyzeContentRequest.obfuscated_external_user_id],
+  //    or [StreamingAnalyzeContent]
+  //    [google.cloud.dialogflow.v2beta1.StreamingAnalyzeContentRequest.obfuscated_external_user_id],
   //    Dialogflow will update
   //    [Participant.obfuscated_external_user_id][google.cloud.dialogflow.v2beta1.Participant.obfuscated_external_user_id].
   //
@@ -334,6 +334,11 @@ message Participant {
   // Dialogflow also uses this user id for Agent Assist suggestion
   // personalization. For example, Dialogflow can use it to provide personalized
   // smart reply suggestions for this user.
+  //
+  // Additionally, to link an escalated Virtual Agent conversation
+  // with its corresponding Agent Assist conversation for analytics, this field
+  // in Agent Assist conversations should be populated to indicate the user id
+  // of the `END_USER` participant in the escalated conversation.
   //
   // Note:
   //
@@ -1060,8 +1065,11 @@ message StreamingAnalyzeContentRequest {
 //
 // 1.  If the input was set to streaming audio, the first one or more messages
 //     contain `recognition_result`. Each `recognition_result` represents a more
-//     complete transcript of what the user said. The last `recognition_result`
-//     has `is_final` set to `true`.
+//     complete transcript of what the user said. When a user speaks multiple
+//     sentences, the API will emit multiple messages where `is_final = true`.
+//     Each time the system detects a distinct pause or completed thought, it
+//     locks in that segment, marks it `is_final = true`, and then immediately
+//     starts a new recognition cycle for the next sentence on the same stream.
 //
 // 2.  In virtual agent stage: if `enable_partial_automated_agent_reply` is
 //     true, the following N (currently 1 <= N <= 4) messages
@@ -1857,6 +1865,13 @@ message SuggestKnowledgeAssistResponse {
   // [SuggestKnowledgeAssistRequest.context_size][google.cloud.dialogflow.v2beta1.SuggestKnowledgeAssistRequest.context_size]
   // field in the request if there are fewer messages in the conversation.
   int32 context_size = 3;
+
+  // Optional. The list of additional suggested queries based on the context.
+  // This is used for the cases when we want to generate multiple queries
+  // for a single request.
+  repeated KnowledgeAssistAnswer.AdditionalSuggestedQueryResult
+      additional_suggested_query_results = 4
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Debug information related to ingested context reference.
@@ -2050,6 +2065,18 @@ message KnowledgeAssistDebugInfo {
     int32 appended_search_context_count = 18;
   }
 
+  // Token usage metadata for query generation.
+  message QueryGenerationDebugInfo {
+    // The total number of tokens in the prompt.
+    int32 prompt_token_count = 1;
+
+    // The total number of tokens in the generated candidates.
+    int32 candidates_token_count = 2;
+
+    // The total number of tokens for the entire request.
+    int32 total_token_count = 3;
+  }
+
   // Reason for query generation.
   QueryGenerationFailureReason query_generation_failure_reason = 1;
 
@@ -2068,14 +2095,56 @@ message KnowledgeAssistDebugInfo {
 
   // The latency of the service.
   ServiceLatency service_latency = 6;
+
+  // Token usage metadata for query generation.
+  QueryGenerationDebugInfo query_generation_debug_info = 7;
+
+  // Debug information from CES runtime API.
+  google.protobuf.Struct ces_debug_info = 8;
 }
 
 // Represents a Knowledge Assist answer.
 message KnowledgeAssistAnswer {
   // Represents a suggested query.
   message SuggestedQuery {
+    // Search context is information useful for knowledge search that helps
+    // enrich the query.
+    // Example:
+    // search_context {
+    //   key: "application name"
+    //   value: "DesignApp"
+    // }
+    message SearchContext {
+      // Optional. The key of the search context, e.g. "application name".
+      string key = 1 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The value of the search context, e.g. "DesignApp".
+      string value = 2 [(google.api.field_behavior) = OPTIONAL];
+    }
+
     // Suggested query text.
     string query_text = 1;
+
+    // Optional. The search contexts for the query.
+    repeated SearchContext search_contexts = 4
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Represents a single suggested query result.
+  message AdditionalSuggestedQueryResult {
+    // Output only. The suggested query based on the context.
+    SuggestedQuery suggested_query = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The name of the answer record.
+    // Format: `projects/<Project ID>/locations/<Location
+    // ID>/answerRecords/<Answer Record ID>`
+    string answer_record = 5 [
+      (google.api.field_behavior) = OUTPUT_ONLY,
+      (google.api.resource_reference) = {
+        type: "dialogflow.googleapis.com/AnswerRecord"
+      }
+    ];
   }
 
   // Represents an answer from Knowledge. Currently supports FAQ and Generative
@@ -2109,6 +2178,15 @@ message KnowledgeAssistAnswer {
       repeated Snippet snippets = 1;
     }
 
+    // Details about source of Event answer.
+    message EventSource {
+      // Name of the triggered event.
+      string event = 1;
+
+      // Sources used in event fulfillment.
+      GenerativeSource snippets = 2;
+    }
+
     // The piece of text from the `source` that answers this suggested query.
     string answer_text = 1;
 
@@ -2119,6 +2197,12 @@ message KnowledgeAssistAnswer {
 
       // Populated if the prediction was Generative.
       GenerativeSource generative_source = 4;
+
+      // Populated if the prediction was from Playbook.
+      GenerativeSource playbook_source = 7;
+
+      // Populated if the prediction was from an event.
+      EventSource event_source = 8;
     }
   }
 
@@ -2197,6 +2281,26 @@ message BidiStreamingAnalyzeContentRequest {
 
   // Input that forms data for a single turn.
   message TurnInput {
+    // The execution result of a specific tool from the client.
+    message ToolResponse {
+      // Required. The matching ID of the tool call the response is for.
+      string id = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // Required. The identifier of the tool that got executed.
+      string tool = 2 [(google.api.field_behavior) = REQUIRED];
+
+      // Optional. The tool execution result in JSON object format.
+      google.protobuf.Struct response = 3
+          [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // The tool responses from the client.
+    message ToolResponses {
+      // Optional. The list of tool responses.
+      repeated ToolResponse tool_responses = 1
+          [(google.api.field_behavior) = OPTIONAL];
+    }
+
     // Content that indicates the end of the turn.
     oneof main_content {
       // The UTF-8 encoded natural language text to be processed.
@@ -2220,6 +2324,9 @@ message BidiStreamingAnalyzeContentRequest {
     // Optional. Parameters to be passed to the virtual agent.
     google.protobuf.Struct virtual_agent_parameters = 4
         [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The tool responses from the client.
+    ToolResponses tool_responses = 5 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Input for the conversation.
@@ -2259,6 +2366,24 @@ message BidiStreamingAnalyzeContentResponse {
   // Indicate that the turn is complete.
   message TurnComplete {}
 
+  // Request for the client to execute the specified tool.
+  message ToolCall {
+    // The unique identifier of the tool call.
+    string id = 1;
+
+    // The identifier of the tool to execute.
+    string tool = 2;
+
+    // The input parameters and values for the tool in JSON object format.
+    google.protobuf.Struct args = 3;
+  }
+
+  // The tool calls from the server.
+  message ToolCalls {
+    // The list of tool calls.
+    repeated ToolCall tool_calls = 1;
+  }
+
   // The output response.
   oneof response {
     // The result of speech recognition.
@@ -2274,6 +2399,9 @@ message BidiStreamingAnalyzeContentResponse {
 
     // Indicate that the turn is complete.
     TurnComplete turn_complete = 4;
+
+    // The tool calls from the server.
+    ToolCalls tool_calls = 5;
   }
 }
 
