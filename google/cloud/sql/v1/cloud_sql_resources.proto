@@ -27,6 +27,14 @@ option go_package = "cloud.google.com/go/sql/apiv1/sqlpb;sqlpb";
 option java_multiple_files = true;
 option java_outer_classname = "CloudSqlResourcesProto";
 option java_package = "com.google.cloud.sql.v1";
+option (google.api.resource_definition) = {
+  type: "compute.googleapis.com/ServiceConnectionPolicy"
+  pattern: "projects/{project}/regions/{region}/serviceConnectionPolicies/{service_connection_policy}"
+};
+option (google.api.resource_definition) = {
+  type: "cloudsql.googleapis.com/Instance"
+  pattern: "projects/{project}/instances/{instance}"
+};
 
 // An entry for an Access Control list.
 message AclEntry {
@@ -155,8 +163,12 @@ message BackupConfiguration {
   // disabled, binarylog must be disabled as well.
   google.protobuf.BoolValue binary_log_enabled = 4;
 
-  // Reserved for future use.
-  google.protobuf.BoolValue replication_log_archiving_enabled = 5;
+  // Optional. Deprecated: replication_log_archiving_enabled is deprecated and
+  // will be removed from a future version of the API. Use
+  // [point_in_time_recovery_enabled][google.cloud.sql.v1.BackupConfiguration.point_in_time_recovery_enabled]
+  // instead.
+  google.protobuf.BoolValue replication_log_archiving_enabled = 5
+      [deprecated = true, (google.api.field_behavior) = OPTIONAL];
 
   // Location of the backup
   string location = 6;
@@ -930,22 +942,27 @@ message PscConfig {
   // format: projects/PROJECT/regions/REGION/networkAttachments/ID
   string network_attachment_uri = 4 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Indicates whether PSC DNS automation is enabled for this
-  // instance. When enabled, Cloud SQL provisions a universal DNS record across
-  // all networks configured with Private Service Connect (PSC)
-  // auto-connections. This will default to true for new instances when Private
-  // Service Connect is enabled.
+  // Optional. Indicates whether Private Service Connect DNS automation is
+  // enabled for this instance. When enabled, Cloud SQL provisions a universal
+  // DNS record across all networks configured with Private Service Connect
+  // auto-connections. This will default to true for new instances when
+  // Private Service Connect is enabled.
   optional bool psc_auto_dns_enabled = 5
       [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Indicates whether PSC write endpoint DNS automation is enabled
-  // for this instance. When enabled, Cloud SQL provisions a universal global
-  // DNS record across all networks configured with Private Service Connect
-  // (PSC) auto-connections that always points to the cluster primary instance.
-  // This feature is only supported for Enterprise Plus edition.
-  // This will default to true for new Enterprise Plus instances when
+  // Optional. Indicates whether Private Service Connect write endpoint DNS
+  // automation is enabled for this instance. When enabled, Cloud SQL provisions
+  // a universal global DNS record across all networks configured with Private
+  // Service Connect auto-connections that points to the cluster primary
+  // instance. This feature is only supported for Enterprise Plus edition. This
+  // will default to true for new Enterprise Plus instances when
   // `psc_auto_dns_enabled` is enabled.
   optional bool psc_write_endpoint_dns_enabled = 6
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether to set up the PSC service connection policy
+  // automatically.
+  optional bool psc_auto_connection_policy_enabled = 7
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -977,6 +994,31 @@ message PscAutoConnectionConfig {
 
   // The connection policy status of the consumer network.
   optional string consumer_network_status = 5;
+
+  // Output only. The service connection policy created automatically for the
+  // consumer network when `psc_auto_connection_policy_enabled` is true. It is
+  // in the format of:
+  // `projects/{project}/regions/{region}/serviceConnectionPolicies/{policy_id}`
+  // The `policy_id` is in format of `$NETWORK-$RANDOM`.
+  optional string service_connection_policy = 6 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "compute.googleapis.com/ServiceConnectionPolicy"
+    }
+  ];
+
+  // Output only. The status of service connection policy creation.
+  optional string service_connection_policy_creation_result = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The status of automated DNS provisioning.
+  optional AutoDnsStatus instance_auto_dns_status = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The status of automated DNS provisioning for the write
+  // endpoint.
+  optional AutoDnsStatus write_endpoint_auto_dns_status = 9
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Preferred location. This specifies where a Cloud SQL instance is located.
@@ -1361,6 +1403,11 @@ message Operation {
 
     // Pre-checks the major version upgrade operation.
     PRE_CHECK_MAJOR_VERSION_UPGRADE = 54;
+
+    // This operation type represents individual steps in a multi-step setup
+    // migration workflow: including configuration, replication,
+    // switchover/back, and data reseeding, as defined by operation's intent.
+    SETUP_MIGRATION = 55;
   }
 
   // The status of an operation.
@@ -1562,7 +1609,7 @@ message Settings {
     ON_DEMAND = 3 [deprecated = true];
   }
 
-  // The edition of the instance.
+  // The list of Cloud SQL editions available to users.
   enum Edition {
     // The instance did not specify the edition.
     EDITION_UNSPECIFIED = 0;
@@ -1572,6 +1619,9 @@ message Settings {
 
     // The instance is an Enterprise Plus edition.
     ENTERPRISE_PLUS = 3;
+
+    // This instance is a Cloud SQL developer edition instance.
+    DEVELOPER = 5;
   }
 
   // The options for enforcing Cloud SQL connectors in the instance.
@@ -1715,7 +1765,7 @@ message Settings {
   // SQL Server specific audit configuration.
   SqlServerAuditConfig sql_server_audit_config = 29;
 
-  // Optional. The edition of the instance.
+  // Optional. The edition type of the Cloud SQL instance.
   Edition edition = 38 [(google.api.field_behavior) = OPTIONAL];
 
   // Specifies if connections must use Cloud SQL connectors.
@@ -1817,6 +1867,20 @@ message Settings {
 
 // Performance capture configuration.
 message PerformanceCaptureConfig {
+  // Defines the categories of long-running transactions eligible for automatic
+  // termination by the Performance Capture.
+  enum TransactionKillType {
+    // Unspecified.
+    TRANSACTION_KILL_TYPE_UNSPECIFIED = 0;
+
+    // Only read-only transactions are eligible for termination.
+    READ_ONLY_TRANSACTIONS = 1;
+
+    // All transactions are eligible for termination, including those with write
+    // operations (such as INSERT, UPDATE, DELETE, or DDL).
+    ALL_TRANSACTIONS = 2;
+  }
+
   // Optional. Enables or disables the performance capture feature.
   optional bool enabled = 1 [(google.api.field_behavior) = OPTIONAL];
 
@@ -1842,6 +1906,61 @@ message PerformanceCaptureConfig {
   // Optional. Specifies the amount of time in seconds that a transaction needs
   // to have been open before the watcher starts recording it.
   optional int32 transaction_duration_threshold = 8
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Specifies the minimum percentage of CPU utilization to trigger
+  // the performance capture. Valid integers range from `10` to `99`. Enter `0`
+  // to disable the check.
+  optional int32 cpu_utilization_threshold_percent = 9
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Specifies the minimum percentage of memory usage to trigger the
+  // performance capture.
+  // Valid integers range from `10` to `99`. Enter `0` to disable the check.
+  optional int32 memory_usage_threshold_percent = 10
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Specifies the minimum allowed number of transactions in lock wait
+  // state to trigger the performance capture. Valid integers range from `10` to
+  // `10000`. Enter `0` to disable the check.
+  optional int32 transaction_lock_wait_threshold_count = 11
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Specifies the minimum allowed number of semaphore waits to
+  // trigger the performance capture. Valid integers range from `10` to `10000`.
+  // Enter `0` to disable the check.
+  optional int32 semaphore_wait_threshold_count = 12
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Specifies the minimum number of undo log entries in the history
+  // list length to trigger the performance capture. Valid integers range from
+  // `10000` to `10000000`. Enter `0` to disable the check.
+  optional int32 history_list_length_threshold_count = 13
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Specifies the amount of time in seconds that a transaction needs
+  // to have been open before the watcher starts terminating it. Valid integers
+  // range from `60` to `604800` (7 days). Enter `0` to disable. If enabled
+  // (i.e., > 0), this value must be greater than or equal to
+  // `transaction_duration_threshold`. Configurations where
+  // `0 < transaction_kill_threshold_seconds < transaction_duration_threshold`
+  // will be rejected.
+  optional int32 transaction_kill_threshold_seconds = 14
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Specifies a customer-defined list of users to exclude from
+  // transaction termination. Entries can be in the format 'user@host' or just
+  // 'user'. A standalone 'user' implies 'user@%', excluding the user from any
+  // host. Wildcard '%' is allowed in the host part of the 'user@host' format.
+  // Example: `["app_user", "db_admin@10.1.2.3", "report_user@%"]`
+  repeated string transaction_kill_excluded_user_hosts = 16
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Determines which transactions are allowed to be terminated when
+  // they exceed `transaction_kill_threshold_seconds`. This allows protecting
+  // write-heavy transactions from auto-termination if desired. Defaults to
+  // `READ_ONLY_TRANSACTIONS` if unspecified.
+  optional TransactionKillType transaction_kill_type = 17
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -2197,6 +2316,9 @@ enum SqlDatabaseVersion {
   // The database version is PostgreSQL 19.
   POSTGRES_19 = 684;
 
+  // The database version is PostgreSQL 20.
+  POSTGRES_20 = 781;
+
   // The database version is SQL Server 2019 Standard.
   SQLSERVER_2019_STANDARD = 26;
 
@@ -2385,4 +2507,19 @@ message DnsNameMapping {
 
   // Output only. The manager for this DNS record.
   RecordManager record_manager = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The status of automated DNS provisioning.
+enum AutoDnsStatus {
+  // Unspecified status. This means status is missing from dependency service.
+  AUTO_DNS_STATUS_UNSPECIFIED = 0;
+
+  // DNS provisioning is OK.
+  AUTO_DNS_OK = 1;
+
+  // DNS provisioning failed.
+  AUTO_DNS_FAILED = 2;
+
+  // DNS provisioning status is not recognized by Cloud SQL.
+  AUTO_DNS_UNKNOWN = 3;
 }
