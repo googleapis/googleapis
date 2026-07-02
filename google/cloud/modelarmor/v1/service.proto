@@ -249,6 +249,23 @@ enum StreamingMode {
   STREAMING_MODE_REALTIME = 2;
 }
 
+// This enum is used in the TemplateMetadata message to indicate the modality
+// supported for sanitize API calls.
+enum Modality {
+  // Unspecified modality. If specified, all modalities will be sanitized.
+  MODALITY_UNSPECIFIED = 0;
+
+  // Represents text modality. If specified, it will sanitize text fields, and
+  // text extracted from rich text files (like PDFs, DOCs) and plain text files
+  // (like TXT).
+  MODALITY_TEXT = 1;
+
+  // Represents image modality. If specified, it will sanitize image files. The
+  // visual content and the text content in the image will be sanitized
+  // depending on the filter configuration.
+  MODALITY_IMAGE = 2;
+}
+
 // Message describing Template resource
 message Template {
   option (google.api.resource) = {
@@ -319,6 +336,10 @@ message Template {
     // Optional. Metadata for multi language detection.
     MultiLanguageDetection multi_language_detection = 9
         [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Specifies the modalities to scan.
+    // If empty, only text modality will be scanned.
+    repeated Modality modalities = 11 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Identifier. name of resource
@@ -625,7 +646,7 @@ message PiAndJailbreakFilterSettings {
     // Enabled
     ENABLED = 1;
 
-    // Enabled
+    // Disabled
     DISABLED = 2;
   }
 
@@ -930,7 +951,8 @@ message RaiFilterResult {
   FilterMatchState match_state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // The map of RAI filter results where key is RAI filter type - either of
-  // "sexually_explicit", "hate_speech", "harassment", "dangerous".
+  // "sexually_explicit", "hate_speech", "harassment", "dangerous", "violence",
+  // "sexually_suggestive".
   map<string, RaiFilterTypeResult> rai_filter_type_results = 4;
 }
 
@@ -944,6 +966,10 @@ message SdpFilterResult {
     // Sensitive Data Protection Deidentification result if deidentification is
     // performed.
     SdpDeidentifyResult deidentify_result = 2;
+
+    // Sensitive Data Protection Redaction result if redaction is performed.
+    // This is primarily used for image redaction.
+    SdpRedactResult redact_result = 3;
   }
 }
 
@@ -974,6 +1000,9 @@ message SdpInspectResult {
   // the server reached the maximum amount of resources allowed for a single API
   // call.
   bool findings_truncated = 5;
+
+  // Contains text extracted from the image, if applicable.
+  string extracted_image_text = 6;
 }
 
 // Represents Data item
@@ -1015,6 +1044,9 @@ message ByteDataItem {
 
     // CSV
     CSV = 7;
+
+    // IMAGE
+    IMAGE = 8;
   }
 
   // Required. The type of byte data
@@ -1051,6 +1083,46 @@ message SdpDeidentifyResult {
   repeated string info_types = 6;
 }
 
+// Location of the finding within an image.
+message SdpImageFindingLocation {
+  // Bounding box encompassing a finding within an image.
+  message SdpBoundingBox {
+    // Top coordinate of the bounding box. (0,0) is upper left.
+    int32 top = 1;
+
+    // Left coordinate of the bounding box. (0,0) is upper left.
+    int32 left = 2;
+
+    // Width of the bounding box in pixels.
+    int32 width = 3;
+
+    // Height of the bounding box in pixels.
+    int32 height = 4;
+  }
+
+  // Bounding boxes locating the pixels within the image containing the finding.
+  repeated SdpBoundingBox bounding_boxes = 1;
+}
+
+// Precise location of the finding within a document, record, image, or
+// metadata container.
+message SdpContentLocation {
+  // Type of the container within the file with location of the finding. This
+  // may be extended to include other container types like audio, video, etc in
+  // future.
+  oneof location {
+    // Location within an image's pixels.
+    SdpImageFindingLocation image_finding_location = 2;
+  }
+
+  // Name of the container where the finding is located.
+  // The top level name is the source file name or table name.
+  //
+  // Nested names could be absent if the embedded object has no string
+  // identifier (for example, an image contained within a document).
+  string container_name = 1;
+}
+
 // Finding corresponding to Sensitive Data Protection filter.
 message SdpFinding {
   // Location of this Sensitive Data Protection Finding within input content.
@@ -1059,12 +1131,24 @@ message SdpFinding {
     // These are relative to the finding's containing element.
     // Note that when the content is not textual, this references
     // the UTF-8 encoded textual representation of the content.
+    // Note: Omitted if content is an image.
     RangeInfo byte_range = 1;
 
     // Unicode character offsets delimiting the finding.
     // These are relative to the finding's containing element.
     // Provided when the content is text.
+    // Note: Omitted if content is an image.
     RangeInfo codepoint_range = 2;
+
+    // List of nested objects pointing to the precise location of the finding
+    // within an image, file or record.
+    //
+    // For example, a single finding might be detected in two
+    // separate bounding boxes within an image (e.g., if it wraps across
+    // a line or is partially obscured). In such cases, content_locations
+    // would contain two SdpContentLocation entries, each with an
+    // image_finding_location pointing to a different bounding box.
+    repeated SdpContentLocation content_locations = 3;
   }
 
   // Name of Sensitive Data Protection info type for this finding.
@@ -1075,6 +1159,36 @@ message SdpFinding {
 
   // Location for this finding.
   SdpFindingLocation location = 3;
+}
+
+// Sensitive Data Protection Redaction Result.
+message SdpRedactResult {
+  // Output only. Reports whether Sensitive Data Protection redaction was
+  // successfully executed or not.
+  FilterExecutionState execution_state = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Optional messages corresponding to the result.
+  // A message can provide warnings or error details.
+  // For example, if execution state is skipped then this field provides
+  // related reason/explanation.
+  repeated MessageItem message_items = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Match state for Sensitive Data Protection Redaction.
+  // Value is MATCH_FOUND if content is redacted.
+  FilterMatchState match_state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The redacted image. The type will be the same as the original
+  // image.
+  bytes redacted_image = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The findings. This field is populated in the response only
+  // when include_findings in the SDP template is set to true.
+  repeated SdpFinding findings = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The extracted text from the image.
+  string extracted_image_text = 6;
 }
 
 // Prompt injection and Jailbreak Filter Result.
