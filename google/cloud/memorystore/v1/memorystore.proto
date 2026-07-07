@@ -60,12 +60,18 @@ option (google.api.resource_definition) = {
   type: "privateca.googleapis.com/CaPool"
   pattern: "projects/{project}/locations/{location}/caPools/{ca_pool}"
 };
+option (google.api.resource_definition) = {
+  type: "compute.googleapis.com/NetworkAttachment"
+  pattern: "projects/{project}/regions/{region}/networkAttachments/{network_attachment}"
+};
 
 // Service describing handlers for resources
 service Memorystore {
   option (google.api.default_host) = "memorystore.googleapis.com";
   option (google.api.oauth_scopes) =
-      "https://www.googleapis.com/auth/cloud-platform";
+      "https://www.googleapis.com/auth/cloud-platform,"
+      "https://www.googleapis.com/auth/memorystore.read-only,"
+      "https://www.googleapis.com/auth/memorystore.read-write";
 
   // Lists Instances in a given project and location.
   rpc ListInstances(ListInstancesRequest) returns (ListInstancesResponse) {
@@ -244,6 +250,45 @@ service Memorystore {
       metadata_type: "OperationMetadata"
     };
   }
+
+  // Initiates the migration of a source instance to the target Memorystore
+  // instance.
+  //
+  // After the successful completion of this operation, the target instance
+  // will:
+  // 1. Set up replication with the source instance and replicate any writes to
+  // the source instance.
+  // 2. Only allow reads.
+  rpc StartMigration(StartMigrationRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/instances/*}:startMigration"
+      body: "*"
+    };
+    option (google.longrunning.operation_info) = {
+      response_type: "Instance"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
+  // Finalizes the migration process.
+  //
+  // After the successful completion of this operation, the target instance
+  // will:
+  // 1. Stop replicating from the source instance.
+  // 2. Allow both reads and writes.
+  rpc FinishMigration(FinishMigrationRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/instances/*}:finishMigration"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name,force";
+    option (google.longrunning.operation_info) = {
+      response_type: "Instance"
+      metadata_type: "OperationMetadata"
+    };
+  }
 }
 
 // Status of the PSC connection.
@@ -369,6 +414,9 @@ message Instance {
 
     // Instance is being deleted.
     DELETING = 4;
+
+    // Instance is being migrated.
+    MIGRATING = 6;
   }
 
   // Possible authorization modes of the instance.
@@ -426,7 +474,7 @@ message Instance {
     // Standard large.
     STANDARD_LARGE = 8;
 
-    // High memory 2x large.
+    // High memory 2xlarge.
     HIGHMEM_2XLARGE = 9;
 
     // Custom pico.
@@ -592,8 +640,11 @@ message Instance {
   repeated InstanceEndpoint endpoints = 25
       [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The mode config for the instance.
-  Mode mode = 26 [(google.api.field_behavior) = OPTIONAL];
+  // Optional. Immutable. The mode config for the instance.
+  Mode mode = 26 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
 
   // Optional. Input only. Simulate a maintenance event.
   optional bool simulate_maintenance_event = 27 [
@@ -711,6 +762,125 @@ message Instance {
     (google.api.field_behavior) = OPTIONAL,
     (google.api.field_behavior) = INPUT_ONLY
   ];
+
+  // Output only. Migration config for the instance.
+  MigrationConfig migration_config = 59
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Request for `StartMigration`.
+message StartMigrationRequest {
+  // Defines the source of the migration.
+  oneof source {
+    // Required. Configuration for migrating from a self-managed Valkey/Redis
+    // instance
+    SelfManagedSource self_managed_source = 2
+        [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Required. The resource name of the instance to start migration on.
+  // Format: projects/{project}/locations/{location}/instances/{instance}
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "memorystore.googleapis.com/Instance"
+    }
+  ];
+}
+
+// Request for `FinishMigration`.
+message FinishMigrationRequest {
+  // Required. The resource name of the instance to finalize migration on.
+  // Format: projects/{project}/locations/{location}/instances/{instance}
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "memorystore.googleapis.com/Instance"
+    }
+  ];
+
+  // Optional. By default, the `FinishMigration` operation ensures the target
+  // replication offset to catch up to the source offset as of the time of the
+  // call. Set this field to `true` to bypass this offset verification check.
+  bool force = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Details of the self-managed source instance.
+message SelfManagedSource {
+  // Required. The IP address of the source instance.
+  // This IP address should be a stable IP address that can be accessed by the
+  // Memorystore instance throughout the migration process.
+  string ip_address = 1 [
+    (google.api.field_info).format = IPV4,
+    (google.api.field_behavior) = REQUIRED
+  ];
+
+  // Required. The port of the source instance.
+  // This port should be a stable port that can be accessed by the Memorystore
+  // instance throughout the migration process.
+  int32 port = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The resource name of the Private Service Connect Network
+  // Attachment used to establish connectivity to the source instance. This
+  // network attachment has the following requirements:
+  // 1. It must be in the same project as the Memorystore instance.
+  // 2. It must be in the same region as the Memorystore instance.
+  // 3. The subnet attached to the network attachment must be in the same VPC
+  // network as the source instance nodes.
+  //
+  // Format:
+  // projects/{project}/regions/{region}/networkAttachments/{network_attachment}
+  string network_attachment = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "compute.googleapis.com/NetworkAttachment"
+    }
+  ];
+}
+
+// Configuration for the migration of an instance.
+message MigrationConfig {
+  // Migration state of the instance.
+  // New values may be added in the future.
+  enum State {
+    // Instance has no migration related activity. This is the initial state.
+    STATE_UNSPECIFIED = 0;
+
+    // Instance is not currently migrating. The instance underwent a migration
+    // attempt that failed, and the subsequent rollback was successful. The
+    // instance is now ready for a new migration attempt if desired.
+    ROLLED_BACK = 1;
+
+    // Indicates a previous migration attempt failed. The high-level instance
+    // state will be `MIGRATING`. The instance is not ready for a new migration
+    // attempt. Rollback is in progress to restore the instance to its original
+    // state. The instance will remain in this state until rollback is
+    // successful.
+    ROLLING_BACK = 5;
+
+    // Instance is in the process of migration. Instance has established
+    // successful replication and is ready for cutover.
+    REPLICATION_ESTABLISHED = 6;
+
+    // Instance is successfully migrated.
+    MIGRATED = 4;
+  }
+
+  // Details about the migration source.
+  oneof source {
+    // Output only. Configuration for migrating from a self-managed Valkey/Redis
+    // instance
+    SelfManagedSource self_managed_source = 2
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Output only. Migration state of the instance.
+  State state = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Represents a boolean flag to force migration finalization
+  // without offset catch up validation between source and target before
+  // stopping replication.
+  bool force_finish_migration = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // The automated backup config for an instance.
@@ -1109,7 +1279,7 @@ message PscAutoConnection {
   string project_id = 4 [(google.api.field_behavior) = REQUIRED];
 
   // Required. The network where the PSC endpoints are created, in the form of
-  // projects/{project_id}/global/networks/{network_id}.
+  // projects/{project_id}/global/networks/{network_name}.
   string network = 5 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = { type: "compute.googleapis.com/Network" }
@@ -1171,7 +1341,7 @@ message PscConnection {
   string project_id = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Required. The consumer network where the IP address resides, in the form of
-  // projects/{project_id}/global/networks/{network_id}.
+  // projects/{project_id}/global/networks/{network_name}.
   string network = 5 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = { type: "compute.googleapis.com/Network" }
@@ -1209,7 +1379,7 @@ message DiscoveryEndpoint {
 
   // Output only. The network where the IP address of the discovery endpoint
   // will be reserved, in the form of
-  // projects/{network_project}/global/networks/{network_id}.
+  // projects/{network_project}/global/networks/{network_name}.
   string network = 4 [
     (google.api.field_behavior) = OUTPUT_ONLY,
     (google.api.resource_reference) = { type: "compute.googleapis.com/Network" }
@@ -1386,7 +1556,7 @@ message ListInstancesRequest {
   string order_by = 5 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Response message for [ListInstances][].
+// Response message for `ListInstances`.
 message ListInstancesResponse {
   // If the {location} requested was "-" the response contains a list of
   // instances from all locations. Instances in unreachable locations will be
@@ -1517,7 +1687,7 @@ message DeleteInstanceRequest {
   ];
 }
 
-// Request for [ListBackupCollections]
+// Request for `ListBackupCollections`.
 message ListBackupCollectionsRequest {
   // Required. The resource name of the backupCollection location using the
   // form:
@@ -1535,16 +1705,16 @@ message ListBackupCollectionsRequest {
   // If not specified, a default value of 1000 will be used by the service.
   // Regardless of the page_size value, the response may include a partial list
   // and a caller should only rely on response's
-  // [`next_page_token`][google.cloud.memorystore.v1.ListBackupCollectionsResponse.next_page_token]
+  // `next_page_token`
   // to determine if there are more clusters left to be queried.
   int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The `next_page_token` value returned from a previous
-  // [ListBackupCollections] request, if any.
+  // `ListBackupCollections` request, if any.
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Response for [ListBackupCollections].
+// Response for `ListBackupCollections`.
 message ListBackupCollectionsResponse {
   // A list of backupCollections in the project.
   //
@@ -1566,7 +1736,7 @@ message ListBackupCollectionsResponse {
   repeated string unreachable = 3;
 }
 
-// Request for [GetBackupCollection].
+// Request for `GetBackupCollection`.
 message GetBackupCollectionRequest {
   // Required. Instance backupCollection resource name using the form:
   //     `projects/{project_id}/locations/{location_id}/backupCollections/{backup_collection_id}`
@@ -1579,7 +1749,7 @@ message GetBackupCollectionRequest {
   ];
 }
 
-// Request for [ListBackups].
+// Request for `ListBackups`.
 message ListBackupsRequest {
   // Required. The resource name of the backupCollection using the form:
   // `projects/{project_id}/locations/{location_id}/backupCollections/{backup_collection_id}`
@@ -1595,16 +1765,16 @@ message ListBackupsRequest {
   // If not specified, a default value of 1000 will be used by the service.
   // Regardless of the page_size value, the response may include a partial list
   // and a caller should only rely on response's
-  // [`next_page_token`][google.cloud.memorystore.v1.ListBackupsResponse.next_page_token]
+  // `next_page_token`
   // to determine if there are more clusters left to be queried.
   int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The `next_page_token` value returned from a previous
-  // [ListBackupCollections] request, if any.
+  // `ListBackupCollections` request, if any.
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Response for [ListBackups].
+// Response for `ListBackups`.
 message ListBackupsResponse {
   // A list of backups in the project.
   repeated Backup backups = 1;
@@ -1617,7 +1787,7 @@ message ListBackupsResponse {
   repeated string unreachable = 3;
 }
 
-// Request for [GetBackup].
+// Request for `GetBackup`.
 message GetBackupRequest {
   // Required. Instance backup resource name using the form:
   // `projects/{project_id}/locations/{location_id}/backupCollections/{backup_collection_id}/backups/{backup_id}`
@@ -1629,7 +1799,7 @@ message GetBackupRequest {
   ];
 }
 
-// Request for [DeleteBackup].
+// Request for `DeleteBackup`.
 message DeleteBackupRequest {
   // Required. Instance backup resource name using the form:
   // `projects/{project_id}/locations/{location_id}/backupCollections/{backup_collection_id}/backups/{backup_id}`
@@ -1647,7 +1817,7 @@ message DeleteBackupRequest {
   ];
 }
 
-// Request for [ExportBackup].
+// Request for `ExportBackup`.
 message ExportBackupRequest {
   // Required. Specify destination to export a backup.
   oneof destination {
@@ -1665,7 +1835,7 @@ message ExportBackupRequest {
   ];
 }
 
-// Request for [BackupInstance].
+// Request for `BackupInstance`.
 message BackupInstanceRequest {
   // Required. Instance resource name using the form:
   //  `projects/{project_id}/locations/{location_id}/instances/{instance_id}`
@@ -1686,7 +1856,7 @@ message BackupInstanceRequest {
   optional string backup_id = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Request message for [GetCertificateAuthority][].
+// Request message for `GetCertificateAuthority`.
 message GetCertificateAuthorityRequest {
   // Required. The name of the certificate authority.
   // Format:
@@ -1766,8 +1936,7 @@ message SharedRegionalCertificateAuthority {
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 }
 
-// Request for
-// [GetSharedRegionalCertificateAuthority][google.cloud.memorystore.v1.Memorystore.GetSharedRegionalCertificateAuthority].
+// Request for `GetSharedRegionalCertificateAuthority`.
 message GetSharedRegionalCertificateAuthorityRequest {
   // Required. Regional certificate authority resource name using the form:
   //     `projects/{project}/locations/{location}/sharedRegionalCertificateAuthority`
