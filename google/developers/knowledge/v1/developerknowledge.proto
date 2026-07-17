@@ -85,6 +85,14 @@ service DeveloperKnowledge {
       get: "/v1/documents:batchGet"
     };
   }
+
+  // Answers a query using grounded generation.
+  rpc AnswerQuery(AnswerQueryRequest) returns (AnswerQueryResponse) {
+    option (google.api.http) = {
+      post: "/v1:answerQuery"
+      body: "*"
+    };
+  }
 }
 
 // Specifies which fields of the
@@ -96,6 +104,7 @@ enum DocumentView {
   DOCUMENT_VIEW_UNSPECIFIED = 0;
 
   // Includes only the basic metadata fields:
+  //
   // - `name`
   // - `uri`
   // - `data_source`
@@ -103,6 +112,7 @@ enum DocumentView {
   // - `description`
   // - `update_time`
   // - `view`
+  // - `content_length_bytes`
   //
   // This is the default of view for
   // [DeveloperKnowledge.SearchDocumentChunks][google.developers.knowledge.v1.DeveloperKnowledge.SearchDocumentChunks].
@@ -160,6 +170,9 @@ message Document {
   // [DocumentView][google.developers.knowledge.v1.DocumentView] of the
   // document.
   DocumentView view = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The length of the `content` field in bytes.
+  int32 content_length_bytes = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Request message for
@@ -174,8 +187,7 @@ message SearchDocumentChunksRequest {
   //
   // If unspecified, at most 5 results will be returned.
   //
-  // The maximum value is 20; values above 20 will result in an INVALID_ARGUMENT
-  // error.
+  // The maximum value is 100; values above 100 will be coerced to 100.
   int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Contains a page token, received from a previous
@@ -191,6 +203,8 @@ message SearchDocumentChunksRequest {
   //
   // Supported fields for filtering:
   //
+  // * `content_length_bytes` (INTEGER): The length of the `Document.content`
+  //   field in bytes.
   // * `data_source` (STRING): The source of the document, e.g.
   //   `docs.cloud.google.com`. See
   //   https://developers.google.com/knowledge/reference/corpus-reference for
@@ -200,6 +214,8 @@ message SearchDocumentChunksRequest {
   //   markdown content or metadata.
   // * `uri` (STRING): The document URI, e.g.
   //   `https://docs.cloud.google.com/bigquery/docs/tables`.
+  //
+  // INTEGER fields support `=`, `<`, `<=`, `>`, and `>=` operators.
   //
   // STRING fields support `=` (equals) and `!=` (not equals) operators for
   // **exact match** on the whole string. Partial match, prefix match, and
@@ -214,12 +230,14 @@ message SearchDocumentChunksRequest {
   //
   // Examples:
   //
+  // * Filter by `Document.content_length_bytes`:
+  //   `content_length_bytes < 50000`
   // * `data_source = "docs.cloud.google.com" OR data_source =
-  // "firebase.google.com"`
+  //   "firebase.google.com"`
   // * `data_source != "firebase.google.com"`
   // * `update_time < "2024-01-01T00:00:00Z"`
   // * `update_time >= "2025-01-22T00:00:00Z" AND (data_source =
-  // "developer.chrome.com" OR data_source = "web.dev")`
+  //   "developer.chrome.com" OR data_source = "web.dev")`
   // * `uri = "https://docs.cloud.google.com/release-notes"`
   //
   // The `filter` string must not exceed 500 characters; values longer than 500
@@ -276,6 +294,7 @@ message BatchGetDocumentsRequest {
   //
   // Format: `documents/{uri_without_scheme}`
   // Example: `documents/docs.cloud.google.com/storage/docs/creating-buckets`
+  //
   repeated string names = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
@@ -296,6 +315,79 @@ message BatchGetDocumentsRequest {
 message BatchGetDocumentsResponse {
   // Contains the documents requested.
   repeated Document documents = 1;
+}
+
+// Request message for
+// [DeveloperKnowledge.AnswerQuery][google.developers.knowledge.v1.DeveloperKnowledge.AnswerQuery].
+message AnswerQueryRequest {
+  // Required. The query to answer.
+  string query = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response message for
+// [DeveloperKnowledge.AnswerQuery][google.developers.knowledge.v1.DeveloperKnowledge.AnswerQuery].
+message AnswerQueryResponse {
+  // The answer to the query.
+  Answer answer = 1;
+}
+
+// An answer to a query.
+message Answer {
+  // Citation info for a segment.
+  message AnswerCitation {
+    // Output only. Indicates the start of the segment, measured in bytes (UTF-8
+    // unicode), inclusive. If there are multi-byte characters, such as
+    // non-ASCII characters, the index measurement is longer than the string
+    // length.
+    int32 start_index = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Indicates the end of the segment, measured in bytes (UTF-8
+    // unicode), exclusive. If there are multi-byte characters, such as
+    // non-ASCII characters, the index measurement is longer than the string
+    // length.
+    int32 end_index = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Contains citation sources for the attributed segment.
+    repeated CitationSource sources = 3
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Citation source.
+  message CitationSource {
+    // Output only. Contains the index of the
+    // [Answer.AnswerReference][google.developers.knowledge.v1.Answer.AnswerReference]
+    // in the `references` repeated field.
+    int32 reference_index = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Represents a reference to a source.
+  message AnswerReference {
+    // Contains the content of the reference.
+    oneof content {
+      // Output only. The reference document.
+      DocumentReference document_reference = 1
+          [(google.api.field_behavior) = OUTPUT_ONLY];
+    }
+  }
+
+  // Represents a reference to a document.
+  message DocumentReference {
+    // Output only. Contains the document chunk. The `document_chunk.id` field
+    // is not set and will be empty.
+    DocumentChunk document_chunk = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Contains the text of the answer.
+  string answer_text = 1;
+
+  // Output only. Contains citations for the answer.
+  repeated AnswerCitation citations = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Contains references for the answer.
+  repeated AnswerReference references = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A DocumentChunk represents a piece of content from a
