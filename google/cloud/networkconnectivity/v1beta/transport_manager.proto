@@ -59,6 +59,15 @@ service TransportManager {
     option (google.api.method_signature) = "name";
   }
 
+  // Gets details of a single RemoteTransportProfile given an activation key.
+  rpc ParseFromActivationKey(ParseFromActivationKeyRequest)
+      returns (ParseFromActivationKeyResponse) {
+    option (google.api.http) = {
+      get: "/v1beta/{parent=projects/*/locations/*}/remoteTransportProfiles:fromActivationKey"
+    };
+    option (google.api.method_signature) = "parent,activation_key";
+  }
+
   // Lists Transports in a given project and location.
   rpc ListTransports(ListTransportsRequest) returns (ListTransportsResponse) {
     option (google.api.http) = {
@@ -224,6 +233,18 @@ message RemoteTransportProfile {
     OPEN = 2;
   }
 
+  // Provider type for this profile.
+  enum ProviderType {
+    // Unspecified provider type.
+    PROVIDER_TYPE_UNSPECIFIED = 0;
+
+    // Represents a Cloud service provider.
+    CLOUD = 1;
+
+    // Represents a Network service provider.
+    NETWORK = 2;
+  }
+
   // Identifier. Name of the resource in the format of $provider-$site.
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
@@ -261,6 +282,9 @@ message RemoteTransportProfile {
   // Output only. Human readable name of this profile, used to identify this
   // profile in the UI.
   string display_name = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Provider type for this profile.
+  ProviderType provider_type = 14 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Message for requesting list of RemoteTransportProfiles.
@@ -309,6 +333,27 @@ message GetRemoteTransportProfileRequest {
       type: "networkconnectivity.googleapis.com/RemoteTransportProfile"
     }
   ];
+}
+
+// Message for getting a RemoteTransportProfile from an activation key.
+message ParseFromActivationKeyRequest {
+  // Required. Parent value for ParseFromActivationKeyRequest.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "networkconnectivity.googleapis.com/RemoteTransportProfile"
+    }
+  ];
+
+  // Required. The activation key to get the RemoteTransportProfile for.
+  string activation_key = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Message for response to getting a RemoteTransportProfile from an activation
+// key.
+message ParseFromActivationKeyResponse {
+  // The RemoteTransportProfile that was parsed from the activation key.
+  RemoteTransportProfile remote_transport_profile = 1;
 }
 
 // Message describing Transport object.
@@ -429,19 +474,23 @@ message Transport {
   // Optional. Description of the Transport.
   string description = 6 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Name of the remoteTransportProfile that this Transport is
-  // connecting to.
+  // Optional. Immutable. Name of the remoteTransportProfile that this Transport
+  // is connecting to.
   string remote_profile = 7 [
     (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE,
     (google.api.resource_reference) = {
       type: "networkconnectivity.googleapis.com/RemoteTransportProfile"
     }
   ];
 
-  // Optional. Key used for establishing a connection with the remote transport.
-  // This key can only be provided if the profile supports an INPUT key flow and
-  // the resource is in the PENDING_KEY state.
-  string provided_activation_key = 8 [(google.api.field_behavior) = OPTIONAL];
+  // Optional. Immutable. Key used for establishing a connection with the remote
+  // transport. This key can only be provided if the profile supports an INPUT
+  // key flow and the resource is in the PENDING_KEY state.
+  string provided_activation_key = 8 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
 
   // Output only. Google-generated activation key. This is only output if the
   // selected profile supports an OUTPUT key flow. Inputting this to the
@@ -473,11 +522,12 @@ message Transport {
   // bandwidth associated with the connectivity.
   bool admin_enabled = 14 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Resource URI of the Network that will be peered with this
-  // Transport. This field must be provided during resource creation and cannot
-  // be changed.
+  // Optional. Immutable. Resource URI of the Network that will be peered with
+  // this Transport. This field must be provided during resource creation and
+  // cannot be changed.
   string network = 15 [
     (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE,
     (google.api.resource_reference) = { type: "compute.googleapis.com/Network" }
   ];
 
@@ -486,14 +536,48 @@ message Transport {
   repeated string advertised_routes = 16
       [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The user supplied account id for the CSP associated with the
-  // remote profile.
-  string remote_account_id = 17 [(google.api.field_behavior) = OPTIONAL];
+  // Optional. Immutable. The user supplied account id for the CSP associated
+  // with the remote profile.
+  string remote_account_id = 17 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
 
   // Output only. VPC Network URI that was created for the VPC Peering
   // connection to the provided `network`. If VPC Peering is disconnected, this
   // can be used to re-establish.
   string peering_network = 18 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Immutable. The NCC Hub that the Transport should attach to. The
+  // hub must be in the same project as the Transport. Format:
+  // `{hub}` or `projects/{project}/locations/global/hubs/{hub}`
+  string hub = 19 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/Hub"
+    }
+  ];
+
+  // Optional. Immutable. Controls whether a Routing VPC Spoke should be created
+  // and attached to the NCC Hub. This will provide Private Service Connect
+  // (PSC) connectivity through NCC. This can only be set when the Transport is
+  // first created.
+  bool psc_routing_enabled = 20 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // Optional. Immutable. Controls whether resources proposed by the Transport
+  // are automatically accepted on behalf of the user. List of actions that can
+  // be automatically accepted are:
+  // 1. VPC Peering creation
+  // 2. Routing VPC Spoke creation
+  // 3. Hybrid Spoke creation
+  bool auto_accept = 21 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
 }
 
 // Message for requesting list of Transports.
@@ -553,6 +637,10 @@ message GetStatusRequest {
       type: "networkconnectivity.googleapis.com/Transport"
     }
   ];
+
+  // Optional. If set to true, the response will bypass any caches and return
+  // the freshest possible data.
+  bool skip_cache = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Message for the response to getting a Transport's operational status.
