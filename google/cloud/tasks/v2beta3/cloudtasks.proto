@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,13 +19,18 @@ package google.cloud.tasks.v2beta3;
 import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
+import "google/api/field_info.proto";
 import "google/api/resource.proto";
+import "google/cloud/tasks/v2beta3/cmek_config.proto";
 import "google/cloud/tasks/v2beta3/queue.proto";
 import "google/cloud/tasks/v2beta3/task.proto";
 import "google/iam/v1/iam_policy.proto";
 import "google/iam/v1/policy.proto";
+import "google/longrunning/operations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
 
 option go_package = "cloud.google.com/go/cloudtasks/apiv2beta3/cloudtaskspb;cloudtaskspb";
 option java_multiple_files = true;
@@ -105,8 +110,15 @@ service CloudTasks {
   //
   // This command will delete the queue even if it has tasks in it.
   //
-  // Note: If you delete a queue, a queue with the same name can't be created
-  // for 7 days.
+  // Note : If you delete a queue, you may be prevented from creating a new
+  // queue with the same name as the deleted queue for a tombstone window of up
+  // to 3 days. During this window, the CreateQueue operation may appear to
+  // recreate the queue, but this can be misleading. If you attempt to create
+  // a queue with the same name as one that is in the tombstone window, run
+  // GetQueue to confirm that the queue creation was successful. If GetQueue
+  // returns 200 response code, your queue was successfully created with the
+  // name of the previously deleted queue. Otherwise, your queue did not
+  // successfully recreate.
   //
   // WARNING: Using this method may have unintended side effects if you are
   // using an App Engine `queue.yaml` or `queue.xml` file to manage your queues.
@@ -246,6 +258,10 @@ service CloudTasks {
   }
 
   // Gets a task.
+  //
+  // After a task is successfully executed or has exhausted its retry attempts,
+  // the task is deleted. A `GetTask` request for a deleted task returns a
+  // `NOT_FOUND` error.
   rpc GetTask(GetTaskRequest) returns (Task) {
     option (google.api.http) = {
       get: "/v2beta3/{name=projects/*/locations/*/queues/*/tasks/*}"
@@ -266,6 +282,24 @@ service CloudTasks {
     option (google.api.method_signature) = "parent,task";
   }
 
+  // Creates a batch of tasks and adds them to a queue.
+  // This call is not atomic.
+  //
+  // All tasks must be for the same queue.
+  // A maximum of 100 tasks can be created in a single batch.
+  rpc BatchCreateTasks(BatchCreateTasksRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v2beta3/{parent=projects/*/locations/*/queues/*}/tasks:batchCreate"
+      body: "*"
+    };
+    option (google.api.method_signature) = "parent,requests";
+    option (google.longrunning.operation_info) = {
+      response_type: "BatchCreateTasksResponse"
+      metadata_type: "BatchCreateTasksMetadata"
+    };
+  }
+
   // Deletes a task.
   //
   // A task can be deleted if it is scheduled or dispatched. A task
@@ -276,6 +310,24 @@ service CloudTasks {
       delete: "/v2beta3/{name=projects/*/locations/*/queues/*/tasks/*}"
     };
     option (google.api.method_signature) = "name";
+  }
+
+  // Deletes a batch of tasks.
+  // This is a non-atomic operation: if deletion fails for some tasks, it
+  // can still succeed for others. The metadata field of
+  // google.longrunning.Operation contains details of failed deletions.
+  // A maximum of 1000 tasks can be deleted in a batch.
+  rpc BatchDeleteTasks(BatchDeleteTasksRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v2beta3/{parent=projects/*/locations/*/queues/*}/tasks:batchDelete"
+      body: "*"
+    };
+    option (google.api.method_signature) = "parent,names";
+    option (google.longrunning.operation_info) = {
+      response_type: "google.protobuf.Empty"
+      metadata_type: "BatchDeleteTasksMetadata"
+    };
   }
 
   // Forces a task to run now.
@@ -291,8 +343,8 @@ service CloudTasks {
   // a task to be dispatched now.
   //
   // The dispatched task is returned. That is, the task that is returned
-  // contains the [status][Task.status] after the task is dispatched but
-  // before the task is received by its target.
+  // contains the [status][google.cloud.tasks.v2beta3.Task.first_attempt] after
+  // the task is dispatched but before the task is received by its target.
   //
   // If Cloud Tasks receives a successful response from the task's
   // target, then the task will be deleted; otherwise the task's
@@ -309,6 +361,31 @@ service CloudTasks {
     option (google.api.http) = {
       post: "/v2beta3/{name=projects/*/locations/*/queues/*/tasks/*}:run"
       body: "*"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Creates or Updates a CMEK config.
+  //
+  // Updates the Customer Managed Encryption Key associated with the Cloud Tasks
+  // location (Creates if the key does not already exist). All new tasks created
+  // in the location will be encrypted at-rest with the KMS-key provided in the
+  // config.
+  rpc UpdateCmekConfig(UpdateCmekConfigRequest) returns (CmekConfig) {
+    option (google.api.http) = {
+      patch: "/v2beta3/{cmek_config.name=projects/*/locations/*/cmekConfig}"
+      body: "cmek_config"
+    };
+    option (google.api.method_signature) = "cmek_config,update_mask";
+  }
+
+  // Gets the CMEK config.
+  //
+  // Gets the Customer Managed Encryption Key configured with the Cloud Tasks
+  // lcoation. By default there is no kms_key configured.
+  rpc GetCmekConfig(GetCmekConfigRequest) returns (CmekConfig) {
+    option (google.api.http) = {
+      get: "/v2beta3/{name=projects/*/locations/*/cmekConfig}"
     };
     option (google.api.method_signature) = "name";
   }
@@ -625,11 +702,10 @@ message CreateTaskRequest {
   // a task's ID is identical to that of an existing task or a task
   // that was deleted or executed recently then the call will fail
   // with [ALREADY_EXISTS][google.rpc.Code.ALREADY_EXISTS].
-  // If the task's queue was created using Cloud Tasks, then another task with
-  // the same name can't be created for ~1 hour after the original task was
-  // deleted or executed. If the task's queue was created using queue.yaml or
-  // queue.xml, then another task with the same name can't be created
-  // for ~9 days after the original task was deleted or executed.
+  // The IDs of deleted tasks are not immediately available for reuse.  It can
+  // take up to 24 hours (or 9 days if the task's queue was created using a
+  // queue.yaml or queue.xml) for the task ID to be released and made available
+  // again.
   //
   // Because there is an extra lookup cost to identify duplicate task
   // names, these [CreateTask][google.cloud.tasks.v2beta3.CloudTasks.CreateTask]
@@ -658,6 +734,38 @@ message CreateTaskRequest {
   Task.View response_view = 3;
 }
 
+// Request message for [BatchCreateTasks].
+message BatchCreateTasksRequest {
+  // Required. The queue name. For example:
+  // `projects/PROJECT_ID/locations/LOCATION_ID/queues/QUEUE_ID`
+  //
+  // The queue must already exist.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudtasks.googleapis.com/Queue"
+    }
+  ];
+
+  // Required. The list of requests to create tasks.
+  // The queue specified in parent field of each CreateTaskRequest will be
+  // the same. This validation happens on the client side as well as in the
+  // handler.
+  // BatchCreateTasksRequest.parent will also be the same value as the
+  // individual CreateTaskRequest.parent .
+  // The maximum number of requests is 100.
+  repeated CreateTaskRequest requests = 2
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. This field will be used to identify the long running operation,
+  // avoiding duplication when user retries. If not provided, then a UUID will
+  // be generated at server side.
+  string request_id = 3 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
 // Request message for deleting a task using
 // [DeleteTask][google.cloud.tasks.v2beta3.CloudTasks.DeleteTask].
 message DeleteTaskRequest {
@@ -667,6 +775,89 @@ message DeleteTaskRequest {
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = { type: "cloudtasks.googleapis.com/Task" }
   ];
+}
+
+// Request message for deleting a batch of tasks using
+// [BatchDeleteTasks][google.cloud.tasks.v2beta3.CloudTasks.BatchDeleteTasks].
+message BatchDeleteTasksRequest {
+  // Required. The queue name. For example:
+  // Format: `projects/PROJECT_ID/locations/LOCATION_ID/queues/QUEUE_ID`
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudtasks.googleapis.com/Queue"
+    }
+  ];
+
+  // Required. The names of the tasks to delete.
+  // A maximum of 1000 tasks can be deleted in a batch.
+  // For example:
+  // Format:
+  // `projects/PROJECT_ID/locations/LOCATION_ID/queues/QUEUE_ID/tasks/TASK_ID`
+  repeated string names = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "cloudtasks.googleapis.com/Task" }
+  ];
+
+  // Optional. This field will be used to identify the long running operation,
+  // avoiding duplication when user retries. If not provided, then a UUID will
+  // be generated at server side.
+  string request_id = 3 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
+// Metadata for the long-running operation returned by
+// [BatchDeleteTasks][google.cloud.tasks.v2beta3.CloudTasks.BatchDeleteTasks].
+// This message is used to hold metadata information about the
+// batch delete tasks operation; that is, it is put in
+// [google.longrunning.Operation.metadata][google.longrunning.Operation.metadata].
+message BatchDeleteTasksMetadata {
+  // The state of the batch delete operation.
+  // This enum is not frozen and new values may be added in the future.
+  enum State {
+    // The default value. This value is used if the state is omitted.
+    STATE_UNSPECIFIED = 0;
+
+    // The batch delete is running.
+    RUNNING = 1;
+
+    // The batch delete has finished and all tasks were successfully deleted.
+    SUCCEEDED = 2;
+
+    // The batch delete has finished with partial success.
+    // The tasks that failed to be deleted are reported in
+    // [failed_requests][google.cloud.tasks.v2beta3.BatchDeleteTasksMetadata.failed_requests].
+    // When all requests in the batch fail,
+    // [google.longrunning.Operation.error][google.longrunning.Operation.error]
+    // will be set with `code` = `google.rpc.Code.ABORTED` and `message` = "None
+    // of the requests succeeded, refer to
+    // BatchDeleteTasksMetadata.failed_requests for individual error details".
+    PARTIALLY_SUCCEEDED = 3;
+
+    // The batch delete has failed.
+    // This means the overall batch delete operation failed to complete.
+    // This can happen due to an internal error preventing the operation from
+    // finishing.
+    FAILED = 4;
+  }
+
+  // Output only. The time when the batch delete started.
+  google.protobuf.Timestamp start_time = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time when the batch delete finished.
+  google.protobuf.Timestamp end_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The state of the batch delete operation.
+  State state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. A map of failed requests, where the key is the index of the
+  // request in BatchDeleteTasksRequest.names and the value is the error status.
+  map<int32, google.rpc.Status> failed_requests = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Request message for forcing a task to run now using
@@ -693,4 +884,76 @@ message RunTaskRequest {
   // IAM](https://cloud.google.com/iam/) permission on the
   // [Task][google.cloud.tasks.v2beta3.Task] resource.
   Task.View response_view = 2;
+}
+
+// Response message for [BatchCreateTasks].
+message BatchCreateTasksResponse {
+  // The tasks that were successfully created.
+  repeated Task tasks = 1;
+}
+
+// Metadata message for [BatchCreateTasks].
+message BatchCreateTasksMetadata {
+  // The state of the batch create operation.
+  enum State {
+    // The default value. This value is used if the state is omitted.
+    STATE_UNSPECIFIED = 0;
+
+    // The batch create is running.
+    RUNNING = 1;
+
+    // The batch create has finished.
+    // All tasks in the request were successfully created.
+    SUCCEEDED = 2;
+
+    // The batch create has finished with partial success.
+    // The tasks that failed to be created are reported in
+    // [failed_requests][google.cloud.tasks.v2beta3.BatchCreateTasksMetadata.failed_requests].
+    PARTIALLY_SUCCEEDED = 5;
+
+    // The batch create has failed.
+    // This means the overall batch create operation failed to complete.
+    // This can happen due to an internal error preventing the operation from
+    // finishing.
+    FAILED = 3;
+
+    // The batch create was cancelled.
+    CANCELLED = 4;
+  }
+
+  // The time when the batch create started.
+  google.protobuf.Timestamp start_time = 1;
+
+  // The time when the batch create finished.
+  google.protobuf.Timestamp end_time = 2;
+
+  // Output only. The state of the batch create operation.
+  State state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // A map of failed requests, where the key is the index of the request in
+  // BatchCreateTasksRequest.requests and the value is the error status.
+  map<int32, google.rpc.Status> failed_requests = 4;
+}
+
+// Request message for
+// [UpdateCmekConfig][google.cloud.tasks.v2beta3.CloudTasks.UpdateCmekConfig].
+message UpdateCmekConfigRequest {
+  // Required. The config to update.  Its name attribute distinguishes it.
+  CmekConfig cmek_config = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // List of fields to be updated in this request.
+  google.protobuf.FieldMask update_mask = 2;
+}
+
+// Request message for
+// [GetCmekConfig][google.cloud.tasks.v2beta3.CloudTasks.GetCmekConfig].
+message GetCmekConfigRequest {
+  // Required. The config resource name. For example:
+  // projects/PROJECT_ID/locations/LOCATION_ID/cmekConfig`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudtasks.googleapis.com/CmekConfig"
+    }
+  ];
 }
