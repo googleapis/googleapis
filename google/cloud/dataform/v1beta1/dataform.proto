@@ -23,6 +23,7 @@ import "google/api/resource.proto";
 import "google/iam/v1/iam_policy.proto";
 import "google/iam/v1/policy.proto";
 import "google/longrunning/operations.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
@@ -2010,6 +2011,10 @@ message InstallNpmPackagesRequest {
       type: "dataform.googleapis.com/Workspace"
     }
   ];
+
+  // Optional. The pipeline options which defines the pipeline type and path
+  // within the Git repository.
+  PipelineConfig pipeline_config = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // `InstallNpmPackages` response message.
@@ -2066,9 +2071,9 @@ message ReleaseConfig {
   string cron_schedule = 4 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Specifies the time zone to be used when interpreting
-  // cron_schedule. Must be a time zone name from the time zone database
-  // (https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). If left
-  // unspecified, the default is UTC.
+  // cron_schedule. Must be a time zone name from the [time zone
+  // database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). If
+  // left unspecified, the default is `UTC`.
   string time_zone = 7 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. Records of the 10 most recent scheduled release attempts,
@@ -2284,6 +2289,91 @@ message CompilationResult {
   // from a workspace.
   PrivateResourceMetadata private_resource_metadata = 12
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Metadata about the repository snapshot used by scheduled
+  // notebooks.
+  GcsRepositorySnapshotMetadata gcs_repository_snapshot_metadata = 13
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Represents a trigger configuration for a workflow.
+message WorkflowTriggerConfig {
+  // The condition to use when triggering the workflow.
+  enum Condition {
+    // If CONDITION_UNSPECIFIED, the default value is ANY.
+    CONDITION_UNSPECIFIED = 0;
+
+    // If ALL, all the trigger config conditions must be met before a workflow
+    // is invoked.
+    ALL = 1;
+
+    // If ANY, at least one of the trigger config conditions must be met
+    // before a workflow is invoked.
+    ANY = 2;
+  }
+
+  // Optional. The condition to use when triggering the workflow.
+  Condition condition = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. The trigger definitions to invoke a workflow.
+  repeated WorkflowTrigger workflow_triggers = 2
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Minimum duration between two consecutive executions. If not
+  // specified, the workflow will be executed every time trigger conditions are
+  // met and there is no ongoing workflow execution.
+  google.protobuf.Duration min_execution_duration = 3
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The effective maximum wait time duration for the trigger
+  // condition to be met. If not specified, the workflow won't be triggered
+  // until conditions are met.
+  google.protobuf.Duration max_wait_duration = 4
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Records of the 10 most recent trigger evaluations, ordered
+  // in descending order of `evaluation_time`. Updated whenever the service
+  // evaluates the trigger conditions (via polling or upon receiving a push
+  // event).
+  repeated TriggerEvaluationRecord recent_trigger_evaluation_records = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The timestamp of the last successful trigger evaluation.
+  google.protobuf.Timestamp last_successful_evaluation_time = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A record of an attempt to evaluate trigger conditions.
+message TriggerEvaluationRecord {
+  // Output only. The timestamp of this trigger evaluation attempt.
+  google.protobuf.Timestamp evaluation_time = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The status of the trigger evaluation.
+  // Success is indicated by a code of 0 (OK). Message will only be present
+  // if the status code is non-zero.
+  google.rpc.Status status = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The trigger definition to invoke a workflow.
+message WorkflowTrigger {
+  // The trigger defining the conditions to invoke a workflow.
+  oneof trigger {
+    // The table update trigger configuration.
+    TableUpdateTrigger table_update_trigger = 1;
+  }
+}
+
+// Represents a table update trigger configuration.
+message TableUpdateTrigger {
+  // The target table to trigger the workflow.
+  Target table = 1;
+
+  // Output only. The modification time of this table that resulted
+  // in an invocation of the workflow. This would be updated by the triggering
+  // service after a successful workflow invocation.
+  google.protobuf.Timestamp trigger_update_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Configures various aspects of Dataform code compilation.
@@ -2324,6 +2414,32 @@ message CodeCompilationConfig {
   // Optional. The default notebook runtime options.
   NotebookRuntimeOptions default_notebook_runtime_options = 9
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The pipeline options which defines the pipeline type and path
+  // within the Git repository.
+  PipelineConfig pipeline_config = 12 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Metadata about a repository snapshot stored in Google Cloud Storage.
+message GcsRepositorySnapshotMetadata {
+  // Output only. The Google Cloud Storage URI of the repository snapshot.
+  string repository_snapshot_uri = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The crc32c checksum of the repository snapshot, big-endian
+  // base64 encoded.
+  string crc32c_checksum = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The generation number of the Cloud Storage object. See
+  // https://cloud.google.com/storage/docs/metadata#generation-number.
+  int64 generation = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Configures the destination for a repository snapshot.
+message GcsRepositorySnapshotDestination {
+  // Optional. The Google Cloud Storage destination to upload the repository
+  // snapshot to. Format: `gs://bucket-name/path/`.
+  string repository_snapshot_uri = 1 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Configures various aspects of Dataform notebook runtime.
@@ -2333,6 +2449,16 @@ message NotebookRuntimeOptions {
     // Optional. The Google Cloud Storage location to upload the result to.
     // Format: `gs://bucket-name`.
     string gcs_output_bucket = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // The destination of the snapshot of repository files to be available for
+  // read-only access inside a notebook runtime
+  oneof repository_snapshot_storage {
+    // Optional. The Google Cloud Storage destination to upload the snapshot to.
+    // For empty URI it defaults to the provided gcs_output_bucket.
+    // Format: `gs://bucket-name/path/`.
+    GcsRepositorySnapshotDestination gcs_repository_snapshot_destination = 3
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Optional. The resource name of the [Colab runtime template]
@@ -2345,6 +2471,33 @@ message NotebookRuntimeOptions {
       type: "aiplatform.googleapis.com/NotebookRuntimeTemplate"
     }
   ];
+}
+
+// Defines the pipeline type and path within the Git repository.
+message PipelineConfig {
+  // The type of the pipeline. This may be extended in the future.
+  // In case of UNSPECIFIED, the error will be thrown.
+  enum PipelineType {
+    // Default value. This value is unused.
+    PIPELINE_TYPE_UNSPECIFIED = 0;
+
+    // Regular Dataform pipeline.
+    DATAFORM = 1;
+
+    // SQL single file asset.
+    SQL = 3;
+
+    // Notebook single file asset.
+    NOTEBOOK = 4;
+  }
+
+  // Required. The type of the pipeline.
+  PipelineType pipeline_type = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The relative path within the Git repository where the pipeline is
+  // defined. For example, for a Dataform pipeline, it is a path to the folder
+  // where `workflow_settings.yaml` or `dataform.json` is located.
+  string path = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
 // `ListCompilationResults` request message.
@@ -2870,9 +3023,9 @@ message WorkflowConfig {
   string cron_schedule = 4 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Specifies the time zone to be used when interpreting
-  // cron_schedule. Must be a time zone name from the time zone database
-  // (https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). If left
-  // unspecified, the default is UTC.
+  // cron_schedule. Must be a time zone name from the [time zone
+  // database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). If
+  // left unspecified, the default is `UTC`.
   string time_zone = 7 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. Records of the 10 most recent scheduled execution attempts,
@@ -2897,6 +3050,11 @@ message WorkflowConfig {
   // format of this field is a JSON string.
   optional string internal_metadata = 11
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Trigger configuration for this workflow.
+  // If present, the workflow will be triggered based on the specified triggers.
+  WorkflowTriggerConfig workflow_trigger_config = 12
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Includes various configuration options for a workflow invocation.
@@ -3131,6 +3289,11 @@ message WorkflowInvocation {
   // from a compilation result and the compilation result is user-scoped.
   PrivateResourceMetadata private_resource_metadata = 10
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The pipeline options which defines the pipeline type and path
+  // within the Git repository.
+  PipelineConfig pipeline_config = 11
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // `ListWorkflowInvocations` request message.
@@ -3253,6 +3416,9 @@ message WorkflowInvocationAction {
     // created in Google Cloud Storage buckets. Only set once the job has
     // started to run.
     string job_id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The path to the notebook file in the repository.
+    string file_path = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
   // Represents a workflow action that will run a Data Preparation.
