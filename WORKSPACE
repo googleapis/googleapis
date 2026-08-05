@@ -201,7 +201,7 @@ grpc_deps()
 # We map it to com_google_absl which is the name used by gRPC.
 # Defining it before protobuf_deps() ensures that Protobuf won't try to download its own.
 
-load("@com_google_protobuf//:protobuf_deps.bzl", "PROTOBUF_MAVEN_ARTIFACTS", "protobuf_deps")
+load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
 
 # This is actually already done within grpc_deps but calling this for Bazel convention.
 protobuf_deps()
@@ -318,19 +318,52 @@ _gapic_generator_java_version = generator_versions["java"]["version"]
 
 _gapic_generator_java_sha256 = generator_versions["java"]["sha"]
 
+# For Java only, use a newer protobuf version to avoid generator version conficts
+_protobuf_java_version = "33.6"
+
+_protobuf_java_sha256 = "e825cac584256f88840ab6cf37add69ba0c6145811329d75642698a622d13498"
+
 http_archive(
-    name = "gapic_generator_java",
-    sha256 = _gapic_generator_java_sha256,
-    strip_prefix = "sdk-platform-java-%s" % _gapic_generator_java_version if _gapic_generator_java_version else "sdk-platform-java-%s" % _gapic_generator_java_commit,
-    urls = ["https://github.com/googleapis/sdk-platform-java/archive/v%s.zip" % _gapic_generator_java_version if _gapic_generator_java_version else "https://github.com/googleapis/sdk-platform-java/archive/%s.zip" % _gapic_generator_java_commit],
+    name = "com_google_protobuf_java_only",
+    repo_mapping = {
+        "@abseil-cpp": "@com_google_absl",
+        "@protobuf_maven": "@maven",
+    },
+    sha256 = _protobuf_java_sha256,
+    strip_prefix = "protobuf-%s" % _protobuf_java_version,
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/v%s.tar.gz" % _protobuf_java_version],
 )
 
-# gax-java is part of sdk-platform-java repository
+load("@com_google_protobuf_java_only//:protobuf_deps.bzl", "PROTOBUF_MAVEN_ARTIFACTS", protobuf_deps_java = "protobuf_deps")
+
+protobuf_deps_java()
+
+_gapic_generator_java_prefix = (
+    "google-cloud-java-%s" % _gapic_generator_java_commit if _gapic_generator_java_commit else "google-cloud-java-gapic-generator-java-v%s" % _gapic_generator_java_version
+)
+
+_gapic_generator_java_urls = [
+    "https://github.com/googleapis/google-cloud-java/archive/%s.zip" % _gapic_generator_java_commit if _gapic_generator_java_commit else "https://github.com/googleapis/google-cloud-java/archive/gapic-generator-java/v%s.zip" % _gapic_generator_java_version,
+]
+
+http_archive(
+    name = "gapic_generator_java",
+    repo_mapping = {
+        "@com_google_protobuf": "@com_google_protobuf_java_only",
+    },
+    sha256 = _gapic_generator_java_sha256,
+    strip_prefix = _gapic_generator_java_prefix,
+    urls = _gapic_generator_java_urls,
+)
+
 http_archive(
     name = "com_google_api_gax_java",
+    repo_mapping = {
+        "@com_google_protobuf": "@com_google_protobuf_java_only",
+    },
     sha256 = _gapic_generator_java_sha256,
-    strip_prefix = "sdk-platform-java-%s/gax-java" % _gapic_generator_java_version if _gapic_generator_java_version else "sdk-platform-java-%s/gax-java" % _gapic_generator_java_commit,
-    urls = ["https://github.com/googleapis/sdk-platform-java/archive/v%s.zip" % _gapic_generator_java_version if _gapic_generator_java_version else "https://github.com/googleapis/sdk-platform-java/archive/%s.zip" % _gapic_generator_java_commit],
+    strip_prefix = "%s/sdk-platform-java/gax-java" % _gapic_generator_java_prefix,
+    urls = _gapic_generator_java_urls,
 )
 
 load("@com_google_api_gax_java//:repository_rules.bzl", "com_google_api_gax_java_properties")
@@ -361,6 +394,10 @@ maven_install(
     #Update this False for local development
     fail_on_missing_checksum = True,
     generate_compat_repositories = True,
+    override_targets = {
+        "com.google.protobuf:protobuf-java": "@com_google_protobuf_java_only//:protobuf_java",
+        "com.google.protobuf:protobuf-java-util": "@com_google_protobuf_java_only//:protobuf_java_util",
+    },
     repositories = [
         "m2Local",
         "https://repo.maven.apache.org/maven2",
