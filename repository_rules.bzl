@@ -169,7 +169,7 @@ def switched_rules_by_language(
     )
     rules["py_test"] = _switch(
         python and grpc and gapic,
-        "native.py_test",
+        "@rules_python//python:defs.bzl",
     )
     rules["py_gapic_assembly_pkg"] = _switch(
         python and grpc and gapic,
