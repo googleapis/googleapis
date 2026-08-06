@@ -84,15 +84,15 @@ rules_jvm_external_setup()
 
 # Python rules should go early in the dependencies list, otherwise a wrong
 # version of the library will be selected as a transitive dependency of gRPC.
-_rules_python_version = "0.26.0"
+_rules_python_version = "1.6.0"
 
-_rules_python_sha256 = "9d04041ac92a0985e344235f5d946f71ac543f1b1565f2cdbc9a2aaee8adf55b"
+_rules_python_sha256 = "fa7dd2c6b7d63b3585028dd8a90a6cf9db83c33b250959c2ee7b583a6c130e12"
 
 http_archive(
     name = "rules_python",
     sha256 = _rules_python_sha256,
     strip_prefix = "rules_python-{}".format(_rules_python_version),
-    url = "https://github.com/bazelbuild/rules_python/archive/{}.tar.gz".format(_rules_python_version),
+    url = "https://github.com/bazelbuild/rules_python/releases/download/{0}/rules_python-{0}.tar.gz".format(_rules_python_version),
 )
 
 http_archive(
@@ -178,9 +178,9 @@ http_archive(
 
 # Explicitly declaring Protobuf version, while Protobuf dependency is already
 # instantiated in grpc_deps().
-_protobuf_version = "31.0"
+_protobuf_version = "33.2"
 
-_protobuf_sha256 = "2b695cb1eaef8e173f884235ee6d55f57186e95d89ebb31361ee55cb5fd1b996"
+_protobuf_sha256 = "eb671d900b05d8e17f4cd6ca61bfcc60770d209af1a289cb1a200815d6b621ae"
 
 http_archive(
     name = "com_google_protobuf",
