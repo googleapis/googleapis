@@ -72,7 +72,6 @@ on gRPC for better performance and provide idiomatic client surface for
 better developer experience.
 
 ## Discussions
-
 This repo contains copies of Google API definitions and related files.  For
 discussions or to raise issues about
 [Google API client libraries](https://github.com/googleapis),
@@ -95,7 +94,6 @@ for the [GAPIC toolkit](https://github.com/googleapis/toolkit).
 change to the API.
 
 ## Generate gRPC Source Code
-
 To generate gRPC source code for Google APIs in this repository, you
 first need to install both Protocol Buffers and gRPC on your local
 machine, then you can run `make LANGUAGE=xxx all` to generate the
