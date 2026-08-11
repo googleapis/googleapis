@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -169,6 +169,23 @@ service RecaptchaEnterpriseService {
       get: "/v1/{name=projects/*/keys/*/metrics}"
     };
     option (google.api.method_signature) = "name";
+  }
+
+  // Get the policy for a key.
+  rpc GetPolicy(GetPolicyRequest) returns (Policy) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/keys/*/policy}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Updates the policy for a key.
+  rpc UpdatePolicy(UpdatePolicyRequest) returns (Policy) {
+    option (google.api.http) = {
+      patch: "/v1/{policy.name=projects/*/keys/*/policy}"
+      body: "policy"
+    };
+    option (google.api.method_signature) = "policy,update_mask";
   }
 
   // Creates a new FirewallPolicy, specifying conditions at which reCAPTCHA
@@ -679,7 +696,7 @@ message Assessment {
   AccountVerificationInfo account_verification = 5
       [(google.api.field_behavior) = OPTIONAL];
 
-  // Output only. Assessment returned by account defender when an account
+  // Output only. Assessment returned by Account defense when an account
   // identifier is provided.
   AccountDefenderAssessment account_defender_assessment = 6
       [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -705,8 +722,7 @@ message Assessment {
   FraudSignals fraud_signals = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Assessment returned when a site key, a token, and a phone
-  // number as `user_id` are provided. Account defender and SMS toll fraud
-  // protection need to be enabled.
+  // number as `user_id` are provided. SMS defense needs to be enabled.
   PhoneFraudAssessment phone_fraud_assessment = 12
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
@@ -715,6 +731,11 @@ message Assessment {
   // your user.
   AssessmentEnvironment assessment_environment = 14
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Provides information about the policy evaluation for this
+  // assessment.
+  PolicyEvaluation policy_evaluation = 16
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // The event being assessed.
@@ -757,7 +778,7 @@ message Event {
 
   // Optional. The expected action for this type of event. This should be the
   // same action provided at token generation time on client-side platforms
-  // already integrated with recaptcha enterprise.
+  // already integrated with recaptcha enterprise. Required for Universal keys.
   string expected_action = 5 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Deprecated: use `user_info.account_id` instead.
@@ -840,8 +861,8 @@ message TransactionData {
 
   // Details about a user's account involved in the transaction.
   message User {
-    // Optional. Unique account identifier for this user. If using account
-    // defender, this should match the hashed_account_id field. Otherwise, a
+    // Optional. Unique account identifier for this user. If using Account
+    // defense, this should match the hashed_account_id field. Otherwise, a
     // unique and persistent identifier for this account.
     string account_id = 6 [(google.api.field_behavior) = OPTIONAL];
 
@@ -1013,15 +1034,24 @@ message RiskAnalysis {
     // quality risk analysis.
     LOW_CONFIDENCE_SCORE = 5;
 
-    // The request matches behavioral characteristics of a carding attack.
-    SUSPECTED_CARDING = 6;
+    // Deprecated: Use
+    // [FraudPreventionAssessment.transaction_risk][google.cloud.recaptchaenterprise.v1.FraudPreventionAssessment.transaction_risk]
+    // and
+    // [FraudPreventionAssessment.RiskReason.Reason.EXCESSIVE_ENUMERATION_PATTERN][google.cloud.recaptchaenterprise.v1.FraudPreventionAssessment.RiskReason.Reason.EXCESSIVE_ENUMERATION_PATTERN]
+    // instead.
+    SUSPECTED_CARDING = 6 [deprecated = true];
 
-    // The request matches behavioral characteristics of chargebacks for fraud.
-    SUSPECTED_CHARGEBACK = 7;
+    // Deprecated: Use
+    // [FraudPreventionAssessment.transaction_risk][google.cloud.recaptchaenterprise.v1.FraudPreventionAssessment.transaction_risk]
+    // and
+    // [FraudPreventionAssessment.RiskReason.Reason.ASSOCIATED_WITH_FRAUD_CLUSTER][google.cloud.recaptchaenterprise.v1.FraudPreventionAssessment.RiskReason.Reason.ASSOCIATED_WITH_FRAUD_CLUSTER]
+    // instead.
+    SUSPECTED_CHARGEBACK = 7 [deprecated = true];
   }
 
-  // Challenge information for POLICY_BASED_CHALLENGE and INVISIBLE keys.
-  // Ensure that applications can handle values not explicitly listed.
+  // Challenge information for Universal, `POLICY_BASED_CHALLENGE` and
+  // `INVISIBLE` keys. Ensure that applications can handle values not explicitly
+  // listed.
   enum Challenge {
     // Default unspecified type.
     CHALLENGE_UNSPECIFIED = 0;
@@ -1046,13 +1076,21 @@ message RiskAnalysis {
   repeated ClassificationReason reasons = 2
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. Extended verdict reasons to be used for experimentation only.
-  // The set of possible reasons is subject to change.
+  // Output only. Additional reasons contributing to the risk analysis verdict.
+  // These reasons are available to Enterprise tier projects only. Contact sales
+  // for more information.
+  // The set of reasons is subject to change.
   repeated string extended_verdict_reasons = 3
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. Challenge information for POLICY_BASED_CHALLENGE and INVISIBLE
-  // keys.
+  // Output only. Type of the last challenge presented to the user for
+  // Universal, `POLICY_BASED_CHALLENGE` and `INVISIBLE` keys. The field is only
+  // set when a challenge was presented to the user.
+  ChallengeType last_challenge_type = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Challenge information for Universal, `POLICY_BASED_CHALLENGE`
+  // and `INVISIBLE` keys.
   Challenge challenge = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Bots with identities that have been verified by reCAPTCHA and
@@ -1081,7 +1119,30 @@ message Bot {
   }
 
   // Optional. Enumerated string value that indicates the identity of the bot,
-  // formatted in kebab-case.
+  // formatted in kebab-case. Current example values include the following:
+  //
+  // * google-agent - AI_AGENT
+  // * browser-base - AI_AGENT
+  // * chat-gpt - AI_AGENT
+  // * aws-bedrock - AI_AGENT
+  // * cybaa-bot - AI_AGENT
+  // * cloudflare - AI_AGENT
+  // * payhawk - AI_AGENT
+  // * duck-duck-go - SEARCH_INDEXER
+  // * mediaboard - CONTENT_SCRAPER
+  // * marker-io - AI_AGENT
+  // * broadcom - AI_AGENT
+  // * anchor-browser - AI_AGENT
+  // * shopify - AI_AGENT
+  // * stackscope - CONTENT_SCRAPER
+  // * manus - AI_AGENT
+  // * kernel-sh - AI_AGENT
+  // * zvelo - SEARCH_INDEXER
+  //
+  // Ensure that your applications can handle identifier values not explicitly
+  // listed here. Deprecated values might take some time to stop showing
+  // up in responses. New values can be pushed so this list should be taken
+  // as non exhaustive.
   string name = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Enumerated field representing the type of bot.
@@ -1124,13 +1185,18 @@ message TokenProperties {
     //   - you set an action score threshold higher than 0.0
     //   - you provided a non-empty `expected_action`
     UNEXPECTED_ACTION = 7;
+
+    // The key used to generate the token does not match the `site_key`.
+    KEY_MISMATCH = 8;
+
+    // The domain of the page on which the token was generated does not match
+    // the `allowed_domains` configured in the `site_key`.
+    DOMAIN_MISMATCH = 9;
   }
 
-  // Output only. Whether the provided user response token is valid. When valid
-  // = false, the reason could be specified in invalid_reason or it could also
-  // be due to a user failing to solve a challenge or a sitekey mismatch (i.e
-  // the sitekey used to generate the token was different than the one specified
-  // in the assessment).
+  // Output only. Indicates whether the provided user response token is valid.
+  // If `false`, the token is invalid, either because the user failed the
+  // challenge or for a reason provided in the `invalid_reason` field.
   bool valid = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Reason associated with the response when valid = false.
@@ -1317,15 +1383,15 @@ message PhoneFraudAssessment {
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
-// Account defender risk assessment.
+// Account defense risk assessment.
 message AccountDefenderAssessment {
-  // Labels returned by account defender for this request.
+  // Labels returned by Account defense for this request.
   // Ensure that applications can handle values not explicitly listed.
   enum AccountDefenderLabel {
     // Default unspecified type.
     ACCOUNT_DEFENDER_LABEL_UNSPECIFIED = 0;
 
-    // The request matches a known good profile for the user.
+    // The request matches a trusted profile associated with this account.
     PROFILE_MATCH = 1;
 
     // The request is potentially a suspicious login event and must be further
@@ -1342,8 +1408,96 @@ message AccountDefenderAssessment {
     RELATED_ACCOUNTS_NUMBER_HIGH = 4;
   }
 
+  // Account takeover risk assessment.
+  message AccountTakeoverVerdict {
+    // Output only. Account takeover attempt probability.
+    // Values are from 0.0 (lowest risk) to 1.0 (highest risk).
+    float risk = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Unordered list. Reasons why the request appears risky. Risk
+    // reasons can be returned even if the risk is low, as trustworthy requests
+    // can still have some risk signals.
+    repeated AccountRiskReason risk_reasons = 4 [
+      (google.api.field_behavior) = OUTPUT_ONLY,
+      (google.api.field_behavior) = UNORDERED_LIST
+    ];
+
+    // Output only. Unordered list. Reasons why the request appears trustworthy.
+    // Trust reasons can be returned even if the risk is high, as risky requests
+    // can still have some trust signals.
+    repeated AccountTrustReason trust_reasons = 5 [
+      (google.api.field_behavior) = OUTPUT_ONLY,
+      (google.api.field_behavior) = UNORDERED_LIST
+    ];
+  }
+
+  // Risk explainability reasons for Account defense.
+  message AccountRiskReason {
+    // Risk explainability reasons for Account defense.
+    // Ensure that applications can handle values not explicitly listed.
+    enum RiskReason {
+      // Default unspecified type.
+      RISK_REASON_UNSPECIFIED = 0;
+
+      // The client has been observed sending bot-like traffic to this site in
+      // the past. This reason incorporates historical reputation and indicates
+      // that the client is known to use bots, even if the current request is
+      // being made by a human.
+      CLIENT_HISTORICAL_BOT_ACTIVITY = 1;
+
+      // The account is part of a large group of related accounts, indicating
+      // that it may be part of a fraudulent network. Related accounts are
+      // identified based on having similar traffic patterns and request
+      // characteristics.
+      ACCOUNT_IN_LARGE_RELATED_GROUP = 2;
+
+      // The client has been observed accessing many accounts on this site.
+      CLIENT_ACCESSED_MANY_ACCOUNTS = 3;
+
+      // This email domain is a suspected provider of disposable email
+      // addresses.
+      DISPOSABLE_EMAIL_DOMAIN = 4;
+    }
+
+    // Output only. A risk reason associated with this request.
+    RiskReason reason = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Trust explainability reasons for Account defense.
+  message AccountTrustReason {
+    // Trust explainability reasons for Account defense.
+    // Ensure that applications can handle values not explicitly listed.
+    enum TrustReason {
+      // Default unspecified type.
+      TRUST_REASON_UNSPECIFIED = 0;
+
+      // The request matches a trusted profile associated with this account.
+      // Equivalent to `AccountDefenderLabel.PROFILE_MATCH`.
+      PROFILE_MATCH = 1;
+
+      // The account's historical activity is reputable. It is unlikely that the
+      // account has been compromised in the past.
+      ACCOUNT_HISTORY_REPUTABLE = 2;
+
+      // The identity shows a global pattern of reputable activity based on
+      // `userInfo` and associated identifiers.
+      IDENTITY_GLOBAL_ACTIVITY_REPUTABLE = 3;
+
+      // The identity shows a long-standing history of reputable activity based
+      // on `userInfo` and associated identifiers.
+      IDENTITY_HISTORY_REPUTABLE = 4;
+    }
+
+    // Output only. A trust reason associated with this request.
+    TrustReason reason = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
   // Output only. Labels for this request.
   repeated AccountDefenderLabel labels = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Account takeover risk assessment for this request.
+  AccountTakeoverVerdict account_takeover_verdict = 4
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
@@ -1648,6 +1802,9 @@ message Key {
 
     // Settings for keys that can be used by reCAPTCHA Express.
     ExpressKeySettings express_settings = 11;
+
+    // Settings for keys that are configured through their Policy.
+    UniversalKeySettings universal_settings = 13;
   }
 
   // Optional. See [Creating and managing labels]
@@ -1844,6 +2001,9 @@ message IOSKeySettings {
 
 // Settings specific to keys that can be used for reCAPTCHA Express.
 message ExpressKeySettings {}
+
+// Settings for keys that are configured through their Policy.
+message UniversalKeySettings {}
 
 // Contains fields that are required to perform Apple-specific integrity checks.
 message AppleDeveloperId {
@@ -2327,6 +2487,18 @@ message AssessmentEnvironment {
   string version = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
+// Information about the policy evaluation.
+message PolicyEvaluation {
+  // Output only. Populated if one or more Challenge rules were matched.
+  // Its presence in the assessment indicates that at least one challenge rule
+  // was matched and determined whether a challenge was presented to the user.
+  ChallengeRuleEvaluation challenge_rule_evaluation = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Information about the evaluation of a `ChallengeRule`.
+message ChallengeRuleEvaluation {}
+
 // Information about the IP or IP range override.
 message IpOverrideData {
   // Enum that represents the type of IP override.
@@ -2354,4 +2526,184 @@ message IpOverrideData {
 
   // Required. Describes the type of IP override.
   OverrideType override_type = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The request message to get a policy.
+message GetPolicyRequest {
+  // Required. The name of the policy to get, in the format
+  // `projects/{project}/keys/{key}/policy`.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "recaptchaenterprise.googleapis.com/Policy"
+    }
+  ];
+}
+
+// The request message to update a policy.
+message UpdatePolicyRequest {
+  // Required. The Policy's name is used to identify the policy to update, in
+  // the format `projects/{project}/keys/{key}/policy`.
+  Policy policy = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The mask to control which fields of the policy get updated. If
+  // the mask is not present, all fields are updated.
+  google.protobuf.FieldMask update_mask = 2
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A complete configuration set containing multiple grouped rules defining the
+// behavior of reCAPTCHA for fraud detection and prevention.
+message Policy {
+  option (google.api.resource) = {
+    type: "recaptchaenterprise.googleapis.com/Policy"
+    pattern: "projects/{project}/keys/{key}/policy"
+    history: FUTURE_MULTI_PATTERN
+    plural: "policies"
+    singular: "policy"
+  };
+
+  // Identifier. Resource name for this policy.
+  // Format: "projects/{project}/keys/{key}/policy" for a policy under a key.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Required. Configuration for clients protected by this policy.
+  ClientSettings client_settings = 4 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Rules to configure the behavior of reCAPTCHA for showing a
+  // challenge. Rule groups are evaluated in order. Evaluation stops when the
+  // first matching rule group is found.
+  repeated ChallengeRuleGroup challenge_rule_groups = 2
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A collection of challenge rules that applies to one or more actions.
+message ChallengeRuleGroup {
+  // Required. Action name provided at token generation. The action name is not
+  // case-sensitive and can only contain alphanumeric characters, slashes, and
+  // underscores. If "*" is provided, the rule group applies to all actions. If
+  // multiple actions are provided, the rule group is applied to all of
+  // them. This field is required.
+  repeated string actions = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. A list of rules that configure when and how reCAPTCHA presents a
+  // challenge. reCAPTCHA evaluates these rules in order and applies the first
+  // one that matches.
+  repeated ChallengeRule challenge_rules = 2
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+// A rule to configure the behavior of reCAPTCHA for conditionally presenting a
+// challenge.
+message ChallengeRule {
+  // An outcome that indicates that no challenge should be presented to the
+  // user.
+  message NoChallengeOutcome {}
+
+  // An outcome that indicates that a challenge of a specified difficulty should
+  // be presented to the user.
+  message ChallengeOutcome {
+    // Optional. The difficulty of the challenge to present to the user.
+    // If unspecified, `BALANCE` is used.
+    WebKeySettings.ChallengeSecurityPreference difficulty = 1
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Optional. A CEL condition that must be met for this rule to apply.
+  // If unspecified, the rule applies unconditionally.
+  // The following fields can be referenced in the condition:
+  // * `score`
+  // * `user_ip_address`
+  // * `user_asn`
+  // * `user_agent`
+  // * `verified_bots.name`
+  // * `verified_bots.bot_type`
+  //
+  // Examples:
+  // * `score < 0.5`
+  // * `user_ip_address == "123.45.67.89"`
+  // * `user_agent.contains("Chrome")`
+  // * `score < 0.5 && user_ip_address == "123.45.67.89"`
+  string condition = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. The outcome to apply when this challenge rule matches.
+  oneof outcome {
+    // Do not present a challenge to the user.
+    NoChallengeOutcome no_challenge = 2;
+
+    // Present a challenge to the user.
+    ChallengeOutcome challenge = 3;
+  }
+}
+
+// Configuration for clients to protect with reCAPTCHA.
+message ClientSettings {
+  // Optional. Domains or subdomains of websites allowed to use the policy. All
+  // subdomains of an allowed domain are automatically allowed. A valid domain
+  // requires a host and must not include any path, port, query or fragment.
+  // Examples: 'example.com' or 'subdomain.example.com'
+  // Each policy supports a maximum of 250 domains. To use a policy on more
+  // domains, set `allow_all_domains` to true. When this is set, you are
+  // responsible for validating the hostname by checking the
+  // `token_properties.hostname` field in each assessment response against your
+  // list of allowed domains.
+  repeated string allowed_domains = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If set to true, it means allowed_domains are not enforced.
+  bool allow_all_domains = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Configuration for all API endpoints to protect with reCAPTCHA. If
+  // this field is not set, reCAPTCHA will not automatically request tokens on
+  // any API endpoints.
+  ProtectedEndpointGroup protected_endpoint_group = 3
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Configuration for API endpoints to protect with reCAPTCHA.
+message ProtectedEndpointGroup {
+  // Optional. List of API endpoints to automatically protect with reCAPTCHA. If
+  // any of these endpoints is invoked from a page where a key bound to this
+  // policy is installed, a reCAPTCHA token is automatically generated and
+  // attached to the request. If multiple protected endpoints match a given API
+  // endpoint, the first one in the list is used.
+  repeated ProtectedEndpoint protected_endpoints = 1
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Configuration for an API endpoint to protect with reCAPTCHA.
+message ProtectedEndpoint {
+  // Required. URI path of the API endpoint to protect. Must start with '/'.
+  // Supports glob characters '*' to match a single path segment and '**' to
+  // match multiple path segments. Standalone root catch-alls ('/*' and '/**')
+  // are invalid because it can negatively impact performance to trigger
+  // reCAPTCHA on every single request to your backend.
+  //
+  // Matching is evaluated against the URL path only (domain, scheme, and query
+  // parameters are ignored).
+  //
+  // Examples:
+  // - `/login` matches `/login`, `https://example.com/login`, and
+  // `/login?query=1`, but not `/login/step1`.
+  // - `/products/*` matches `/products/123`, but not `/products/123/456`.
+  // - `/content/**` matches `/content/articles/2024/01/01`.
+  string path = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Action name to be used for token generation for this endpoint.
+  // The action name can only contain alphanumeric characters, slashes, and
+  // underscores.
+  string action = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Enum of challenge types for Universal, `POLICY_BASED_CHALLENGE` and
+// `INVISIBLE` keys. Ensure that applications can handle values not explicitly
+// listed.
+enum ChallengeType {
+  // Default unspecified type.
+  CHALLENGE_TYPE_UNSPECIFIED = 0;
+
+  // A visual challenge.
+  CHALLENGE_TYPE_VISUAL = 1;
+
+  // An audio challenge.
+  CHALLENGE_TYPE_AUDIO = 2;
 }
