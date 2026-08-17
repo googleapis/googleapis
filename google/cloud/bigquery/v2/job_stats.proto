@@ -20,6 +20,7 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/bigquery/v2/dataset_reference.proto";
 import "google/cloud/bigquery/v2/gen_ai_stats.proto";
+import "google/cloud/bigquery/v2/job_reference.proto";
 import "google/cloud/bigquery/v2/model.proto";
 import "google/cloud/bigquery/v2/property_graph_reference.proto";
 import "google/cloud/bigquery/v2/query_parameter.proto";
@@ -518,7 +519,10 @@ message StoredColumnsUsage {
 // Statistics for a search query.
 // Populated as part of JobStatistics2.
 message SearchStatistics {
-  // Indicates the type of search index usage in the entire search query.
+  // Indicates the type of search index usage in the entire search query. In
+  // this context, "usage" means that an index lookup is attempted to prune
+  // base table data, with effectiveness depending on the selectivity of the
+  // search term.
   enum IndexUsageMode {
     // Index usage mode not specified.
     INDEX_USAGE_MODE_UNSPECIFIED = 0;
@@ -989,8 +993,11 @@ message JobStatistics2 {
   SparkStatistics spark_statistics = 40
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // Output only. Total bytes transferred for cross-cloud queries such as Cross
-  // Cloud Transfer and CREATE TABLE AS SELECT (CTAS).
+  // Output only. Total bytes transferred for BigQuery Omni queries from the
+  // remote cloud back to Google Cloud. This tracks data movement over
+  // Google-managed connections (like query results). It doesn't include input
+  // data read from the external data lake (for example, S3) because that data
+  // stays within the remote cloud.
   google.protobuf.Int64Value transferred_bytes = 41
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
@@ -1010,6 +1017,39 @@ message JobStatistics2 {
 
   // Output only. Statistics related to GenAI usage in the query.
   GenAiStats gen_ai_stats = 54 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Storage and caching statistics per cloud provider for queries
+  // over object storage.
+  repeated ObjectStorageStats object_storage_stats = 58
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Storage and caching statistics for object storage.
+message ObjectStorageStats {
+  // The cloud provider hosting the object storage.
+  enum CloudProvider {
+    // Unspecified cloud provider.
+    CLOUD_PROVIDER_UNSPECIFIED = 0;
+
+    // Google Cloud Platform.
+    GCP = 1;
+
+    // Amazon Web Services.
+    AWS = 2;
+
+    // Microsoft Azure.
+    AZURE = 3;
+  }
+
+  // The cloud provider for this block of statistics.
+  optional CloudProvider cloud_provider = 1;
+
+  // Total bytes read directly from the cloud provider's storage.
+  optional int64 object_storage_bytes_read = 2;
+
+  // Total bytes read from the GCP Lakehouse-internal cache, avoiding an
+  // object storage read.
+  optional int64 cache_bytes_read = 3;
 }
 
 // Statistics for a load job.
@@ -1073,6 +1113,11 @@ message CopyJobStatistics {
 
   // Output only. Number of logical bytes copied to the destination table.
   google.protobuf.Int64Value copied_logical_bytes = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Destination region for a cross-region copy job. Not set for
+  // in-region copy jobs.
+  string remote_destination_region = 3
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
@@ -1291,6 +1336,14 @@ message JobStatistics {
   // the leaf or lowest level reservation group.
   repeated string reservation_group_path = 26
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Regions where the global query accesses data.
+  repeated string global_query_remote_regions = 27
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The global query that created this job.
+  JobReference parent_global_query_job = 28
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Detailed statistics for DML statements
@@ -1437,6 +1490,16 @@ message PartitionSkew {
   message SkewSource {
     // Output only. Stage id of the skew source stage.
     int64 stage_id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Median partition output size (in bytes) for this stage.
+    int64 output_bytes_median = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. 95-th percentile of partition output size (in bytes) for
+    // this stage.
+    int64 output_bytes_p95 = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Max partition output size (in bytes) for this stage.
+    int64 output_bytes_max = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
   // Output only. Source stages which produce skewed data.

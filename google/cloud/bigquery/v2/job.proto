@@ -20,6 +20,7 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/cloud/bigquery/v2/arrow.proto";
 import "google/cloud/bigquery/v2/data_format_options.proto";
 import "google/cloud/bigquery/v2/dataset_reference.proto";
 import "google/cloud/bigquery/v2/encryption_config.proto";
@@ -53,6 +54,12 @@ service JobService {
   // Requests that a job be cancelled. This call will return immediately, and
   // the client will need to poll for the job status to see if the cancel
   // completed successfully. Cancelled jobs may still incur costs.
+  //
+  // # IAM Permissions
+  //
+  // Requires the `bigquery.jobs.update` permission on the job resource.
+  // If the user matches the creator of the job, the `bigquery.jobs.create`
+  // permission on the project is required instead.
   rpc CancelJob(CancelJobRequest) returns (JobCancelResponse) {
     option (google.api.http) = {
       post: "/bigquery/v2/projects/{project_id=*}/jobs/{job_id=*}/cancel"
@@ -62,6 +69,12 @@ service JobService {
   // Returns information about a specific job. Job information is available for
   // a six month period after creation. Requires that you're the person who ran
   // the job, or have the Is Owner project role.
+  //
+  // # IAM Permissions
+  //
+  // Requires the `bigquery.jobs.get` permission on the job resource.
+  // If the user matches the creator of the job, the `bigquery.jobs.create`
+  // permission on the project is required instead.
   rpc GetJob(GetJobRequest) returns (Job) {
     option (google.api.http) = {
       get: "/bigquery/v2/projects/{project_id=*}/jobs/{job_id=*}"
@@ -79,6 +92,20 @@ service JobService {
   //   configuration and a data stream together.  In this case, the Upload URI
   //   accepts the job configuration and the data as two distinct multipart MIME
   //   parts.
+  //
+  //
+  // # IAM Permissions
+  //
+  // Requires the `bigquery.jobs.create` permission on the project resource.
+  //
+  // Additional permissions are required depending on the job type:
+  //
+  // - **Load, Export, and Copy jobs**: Generally require data-level
+  //   permissions such as `bigquery.tables.export` or access to external
+  //   storage.
+  // - **Query jobs**: Permissions are dependent on the SQL statement.
+  //   Complex queries (DDL, DCL) may require additional permissions to
+  //   create reservations, modify IAM policies, or update project settings.
   rpc InsertJob(InsertJobRequest) returns (Job) {
     option (google.api.http) = {
       post: "/bigquery/v2/projects/{project_id=*}/jobs"
@@ -88,6 +115,10 @@ service JobService {
 
   // Requests the deletion of the metadata of a job. This call returns when the
   // job's metadata is deleted.
+  //
+  // # IAM Permissions
+  //
+  // Requires the `bigquery.jobs.delete` permission on the job resource.
   rpc DeleteJob(DeleteJobRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
       delete: "/bigquery/v2/projects/{project_id=*}/jobs/{job_id=*}/delete"
@@ -99,6 +130,18 @@ service JobService {
   // in reverse chronological order, by job creation time. Requires the Can View
   // project role, or the Is Owner project role if you set the allUsers
   // property.
+  //
+  // # IAM Permissions
+  //
+  // Requires no specific IAM permission(s) to use this method. Users are able
+  // to list the jobs they created.
+  //
+  // Additional access is granted based on the following permissions:
+  //
+  // - Users with the `bigquery.jobs.listAll` permission can list all jobs with
+  //   all metadata.
+  // - Users with the `bigquery.jobs.list` permission can list all jobs, but
+  //   with redacted information for jobs they did not create.
   rpc ListJobs(ListJobsRequest) returns (JobList) {
     option (google.api.http) = {
       get: "/bigquery/v2/projects/{project_id=*}/jobs"
@@ -106,6 +149,19 @@ service JobService {
   }
 
   // RPC to get the results of a query job.
+  //
+  // # IAM Permissions
+  //
+  // Requires the following IAM permission(s) to use this method:
+  //
+  //  - `bigquery.jobs.get` on the job.
+  //  - `bigquery.tables.getData` on the destination table.
+  //
+  // If the user matches the creator of the job, the following IAM permission(s)
+  // are required instead:
+  //
+  //  - `bigquery.jobs.create` on the project.
+  //  - `bigquery.tables.getData` on the destination table.
   rpc GetQueryResults(GetQueryResultsRequest)
       returns (GetQueryResultsResponse) {
     option (google.api.http) = {
@@ -115,6 +171,15 @@ service JobService {
 
   // Runs a BigQuery SQL query synchronously and returns query results if the
   // query completes within a specified timeout.
+  //
+  // # IAM Permissions
+  //
+  // Requires the `bigquery.jobs.create` permission on the project resource.
+  //
+  // Data-level permissions are highly dependent on the SQL statement being
+  // executed. While standard queries require data access (such as
+  // `bigquery.tables.getData`), complex operations like DDL or DCL may require
+  // permissions to manage reservations, IAM policies, or project settings.
   rpc Query(PostQueryRequest) returns (QueryResponse) {
     option (google.api.http) = {
       post: "/bigquery/v2/projects/{project_id=*}/queries"
@@ -519,6 +584,22 @@ message QueryRequest {
     JOB_CREATION_OPTIONAL = 2;
   }
 
+  // The format of the query results.
+  //
+  // This feature is not yet available.
+  enum QueryResultsFormat {
+    // If unspecified it will default to struct `QueryResponse.rows`
+    // (`STRUCT_ENCODING`)
+    QUERY_RESULTS_FORMAT_UNSPECIFIED = 0;
+
+    // Default encoding of results as struct in `QueryResponse.rows`
+    STRUCT_ENCODING = 1;
+
+    // Arrow is a standard open source column-based message format.
+    // See https://arrow.apache.org/ for more details.
+    ARROW = 2;
+  }
+
   // The resource type of the request.
   string kind = 2;
 
@@ -683,6 +764,9 @@ message QueryRequest {
   // Optional. The reservation that jobs.query request would use. User can
   // specify a reservation to execute the job.query. The expected format is
   // `projects/{project}/locations/{location}/reservations/{reservation}`.
+  // Forces the query to use on-demand billing when set to `none`.
+  // This requires the project or organization to have
+  // `reservation_override_mode` set to `ALLOW_ANY_OVERRIDE`.
   optional string reservation = 24 [
     (google.api.field_behavior) = OPTIONAL,
     (google.api.resource_reference) = {
@@ -695,6 +779,31 @@ message QueryRequest {
   // may incur a performance penalty. This option cannot be used with Legacy
   // SQL. This feature is not yet available.
   bool write_incremental_results = 25 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The query results format.
+  // If the value is anything other than `STRUCT_ENCODING` or unspecified:
+  //
+  //  * The schema of the results will be provided in
+  //    `QueryResponse.results_schema` field.
+  //  * The results of the first page will be provided in
+  //    `QueryResponse.results` field.
+  //  * The `QueryResponse.rows` will not be populated.
+  //  * The `QueryResponse.schema` for `QueryResponse.rows` will also not be
+  //    populated since it is the schema of the `QueryResponse.rows`.
+  //
+  // This feature is not yet available.
+  QueryResultsFormat query_results_format = 29
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Results serialization options for `query_results_format` other than
+  // `STRUCT_ENCODING`.
+  //
+  // This feature is not yet available.
+  oneof results_format_serialization_options {
+    // Optional. Options specific to the Apache Arrow output format.
+    ArrowSerializationOptions arrow_serialization_options = 30
+        [(google.api.field_behavior) = OPTIONAL];
+  }
 }
 
 message QueryResponse {
@@ -803,4 +912,156 @@ message QueryResponse {
   // Output only. End time of this query, in milliseconds since the epoch. This
   // field will be present whenever a query job is in the DONE state.
   optional int64 end_time = 21 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The schema if `query_results_format` has been specified with value other
+  // than default `STRUCT_ENCODING`.
+  //
+  // This feature is not yet available.
+  oneof results_schema {
+    // Output only. Arrow schema
+    ArrowSchema arrow_schema = 23 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Row data is returned in format when `query_results_format` has been
+  // specified with value other than default `STRUCT_ENCODING`.
+  //
+  // This feature is not yet available.
+  oneof results {
+    // Output only. Serialized row data in Arrow RecordBatch format.
+    ArrowRecordBatch arrow_record_batch = 24
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Output only. The number of rows out of `total_rows` returned in this
+  // response.
+  //
+  // This feature is not yet available.
+  int64 page_row_count = 25 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The type of query statement, if valid.
+  // Possible values:
+  //
+  // * `SELECT`:
+  // [`SELECT`](https://cloud.google.com/bigquery/docs/reference/standard-sql/query-syntax#select_list)
+  // statement.
+  // * `ASSERT`:
+  // [`ASSERT`](https://cloud.google.com/bigquery/docs/reference/standard-sql/debugging-statements#assert)
+  // statement.
+  // * `INSERT`:
+  // [`INSERT`](https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#insert_statement)
+  // statement.
+  // * `UPDATE`:
+  // [`UPDATE`](https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#update_statement)
+  // statement.
+  // * `DELETE`:
+  // [`DELETE`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-manipulation-language)
+  // statement.
+  // * `MERGE`:
+  // [`MERGE`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-manipulation-language)
+  // statement.
+  // * `CREATE_TABLE`: [`CREATE
+  // TABLE`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_table_statement)
+  // statement, without `AS SELECT`.
+  // * `CREATE_TABLE_AS_SELECT`: [`CREATE TABLE AS
+  // SELECT`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_table_statement)
+  // statement.
+  // * `CREATE_VIEW`: [`CREATE
+  // VIEW`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_view_statement)
+  // statement.
+  // * `CREATE_MODEL`: [`CREATE
+  // MODEL`](https://cloud.google.com/bigquery-ml/docs/reference/standard-sql/bigqueryml-syntax-create#create_model_statement)
+  // statement.
+  // * `CREATE_MATERIALIZED_VIEW`: [`CREATE MATERIALIZED
+  // VIEW`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_materialized_view_statement)
+  // statement.
+  // * `CREATE_FUNCTION`: [`CREATE
+  // FUNCTION`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_function_statement)
+  // statement.
+  // * `CREATE_TABLE_FUNCTION`: [`CREATE TABLE
+  // FUNCTION`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_table_function_statement)
+  // statement.
+  // * `CREATE_PROCEDURE`: [`CREATE
+  // PROCEDURE`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_procedure)
+  // statement.
+  // * `CREATE_ROW_ACCESS_POLICY`: [`CREATE ROW ACCESS
+  // POLICY`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_row_access_policy_statement)
+  // statement.
+  // * `CREATE_SCHEMA`: [`CREATE
+  // SCHEMA`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_schema_statement)
+  // statement.
+  // * `CREATE_SNAPSHOT_TABLE`: [`CREATE SNAPSHOT
+  // TABLE`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_snapshot_table_statement)
+  // statement.
+  // * `CREATE_SEARCH_INDEX`: [`CREATE SEARCH
+  // INDEX`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_search_index_statement)
+  // statement.
+  // * `DROP_TABLE`: [`DROP
+  // TABLE`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#drop_table_statement)
+  // statement.
+  // * `DROP_EXTERNAL_TABLE`: [`DROP EXTERNAL
+  // TABLE`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#drop_external_table_statement)
+  // statement.
+  // * `DROP_VIEW`: [`DROP
+  // VIEW`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#drop_view_statement)
+  // statement.
+  // * `DROP_MODEL`: [`DROP
+  // MODEL`](https://cloud.google.com/bigquery-ml/docs/reference/standard-sql/bigqueryml-syntax-drop-model)
+  // statement.
+  // * `DROP_MATERIALIZED_VIEW`: [`DROP MATERIALIZED
+  //  VIEW`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#drop_materialized_view_statement)
+  // statement.
+  // * `DROP_FUNCTION` : [`DROP
+  // FUNCTION`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#drop_function_statement)
+  // statement.
+  // * `DROP_TABLE_FUNCTION` : [`DROP TABLE
+  // FUNCTION`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#drop_table_function)
+  // statement.
+  // * `DROP_PROCEDURE`: [`DROP
+  // PROCEDURE`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#drop_procedure_statement)
+  // statement.
+  // * `DROP_SEARCH_INDEX`: [`DROP SEARCH
+  // INDEX`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#drop_search_index)
+  // statement.
+  // * `DROP_SCHEMA`: [`DROP
+  // SCHEMA`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#drop_schema_statement)
+  // statement.
+  // * `DROP_SNAPSHOT_TABLE`: [`DROP SNAPSHOT
+  // TABLE`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#drop_snapshot_table_statement)
+  // statement.
+  // * `DROP_ROW_ACCESS_POLICY`: [`DROP [ALL] ROW ACCESS
+  // POLICY|POLICIES`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#drop_row_access_policy_statement)
+  // statement.
+  // * `ALTER_TABLE`: [`ALTER
+  // TABLE`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#alter_table_set_options_statement)
+  // statement.
+  // * `ALTER_VIEW`: [`ALTER
+  // VIEW`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#alter_view_set_options_statement)
+  // statement.
+  // * `ALTER_MATERIALIZED_VIEW`: [`ALTER MATERIALIZED
+  // VIEW`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#alter_materialized_view_set_options_statement)
+  // statement.
+  // * `ALTER_SCHEMA`: [`ALTER
+  // SCHEMA`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#alter_schema_set_options_statement)
+  // statement.
+  // * `SCRIPT`:
+  // [`SCRIPT`](https://cloud.google.com/bigquery/docs/reference/standard-sql/procedural-language).
+  // * `TRUNCATE_TABLE`: [`TRUNCATE
+  // TABLE`](https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#truncate_table_statement)
+  // statement.
+  // * `CREATE_EXTERNAL_TABLE`: [`CREATE EXTERNAL
+  // TABLE`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_external_table_statement)
+  // statement.
+  // * `EXPORT_DATA`: [`EXPORT
+  // DATA`](https://cloud.google.com/bigquery/docs/reference/standard-sql/other-statements#export_data_statement)
+  // statement.
+  // * `EXPORT_MODEL`: [`EXPORT
+  // MODEL`](https://cloud.google.com/bigquery-ml/docs/reference/standard-sql/bigqueryml-syntax-export-model)
+  // statement.
+  // * `LOAD_DATA`: [`LOAD
+  // DATA`](https://cloud.google.com/bigquery/docs/reference/standard-sql/other-statements#load_data_statement)
+  // statement.
+  // * `CALL`:
+  // [`CALL`](https://cloud.google.com/bigquery/docs/reference/standard-sql/procedural-language#call)
+  // statement.
+  string statement_type = 26 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
