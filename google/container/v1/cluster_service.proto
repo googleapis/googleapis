@@ -554,6 +554,20 @@ service ClusterManager {
     };
     option (google.api.method_signature) = "name";
   }
+
+  // CompleteControlPlaneUpgrade completes the rollback-safe upgrade by
+  // performing the step two upgrade for a specific cluster.
+  rpc CompleteControlPlaneUpgrade(CompleteControlPlaneUpgradeRequest)
+      returns (Operation) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/clusters/*}:completeControlPlaneUpgrade"
+      body: "*"
+      additional_bindings {
+        post: "/v1/{name=projects/*/zones/*/clusters/*}:completeControlPlaneUpgrade"
+        body: "*"
+      }
+    };
+  }
 }
 
 // Parameters that can be configured on Linux nodes.
@@ -769,6 +783,21 @@ message LinuxNodeConfig {
     optional bool enable_ptp_kvm_time_sync = 1;
   }
 
+  // Configuration settings for VFIO (Virtual Function I/O) on a node.
+  // VFIO allows safe, unprivileged, userspace drivers to access I/O devices.
+  message NodeVfioConfig {
+    // Optional. Specifies the maximum number of DMA entries (pages) that can be
+    // mapped by the VFIO IOMMU type 1 driver for a container. This limit
+    // affects the total amount of host memory that can be pinned for direct
+    // device access, which is often critical for high-performance devices like
+    // TPUs and GPUs. This setting corresponds to the kernel parameter at:
+    // `/sys/module/vfio_iommu_type1/parameters/dma_entry_limit`.
+    // The default value in the kernel is `65535`. Higher values may be
+    // needed for workloads mapping large memory regions.
+    // Supported values are integers between `65535` and `4194304`.
+    optional int32 dma_entry_limit = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
   // The Linux kernel parameters to be applied to the nodes and all pods running
   // on the nodes.
   //
@@ -806,6 +835,7 @@ message LinuxNodeConfig {
   // kernel.shmmni
   // kernel.shmmax
   // kernel.shmall
+  // kernel.core_pattern
   // kernel.perf_event_paranoid
   // kernel.sched_rt_runtime_us
   // kernel.softlockup_panic
@@ -876,6 +906,13 @@ message LinuxNodeConfig {
 
   // Optional. The accurate time configuration for the node pool.
   optional AccurateTimeConfig accurate_time_config = 14
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Contains VFIO-related configurations for this node.
+  NodeVfioConfig node_vfio_config = 15 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Controls the configuration for the disk IO scheduler.
+  DiskIoScheduler disk_io_scheduler = 16
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -1126,9 +1163,13 @@ message NodeKubeletConfig {
       [(google.api.field_behavior) = OPTIONAL];
 }
 
-// TopologyManager defines the configuration options for Topology Manager
-// feature. See
-// https://kubernetes.io/docs/tasks/administer-cluster/topology-manager/
+// TopologyManager defines the configuration options for the
+// [`kubelet` Topology Manager
+// component](https://kubernetes.io/docs/tasks/administer-cluster/topology-manager/).
+// For more information about the supported machine types and versions for the
+// Topology Manager in GKE, see
+// [Customizing node system
+// configuration](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/node-system-config#kubelet-resource-managers).
 message TopologyManager {
   // Configures the strategy for resource alignment.
   // Allowed values are:
@@ -1885,6 +1926,10 @@ message ReservationAffinity {
     // Must consume from a specific reservation. Must specify key value fields
     // for specifying the reservations.
     SPECIFIC_RESERVATION = 3;
+
+    // Consume any reservation available. If no reservation is available, fail
+    // the node creation.
+    ANY_RESERVATION_THEN_FAIL = 4;
   }
 
   // Corresponds to the type of reservation consumption.
@@ -3111,6 +3156,17 @@ message Cluster {
   string current_master_version = 104
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  // Output only. The current emulated version of the master endpoint.
+  // The version is in minor version format, e.g. 1.30.
+  // No value or empty string means the cluster has no emulated version.
+  string current_emulated_version = 167
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The rollback safe upgrade information of the cluster.
+  // This field is used when user manually triggers a rollback safe upgrade.
+  RollbackSafeUpgrade rollback_safe_upgrade = 170
+      [(google.api.field_behavior) = OPTIONAL];
+
   // Output only. Deprecated, use
   // [NodePools.version](https://cloud.google.com/kubernetes-engine/docs/reference/rest/v1/projects.locations.clusters.nodePools)
   // instead. The current version of the node software components. If they are
@@ -3899,6 +3955,10 @@ message ClusterUpdate {
   // The desired control plane egress control config for the cluster.
   ControlPlaneEgress desired_control_plane_egress = 160;
 
+  // Optional. The desired rollback safe upgrade configuration.
+  RollbackSafeUpgrade desired_rollback_safe_upgrade = 161
+      [(google.api.field_behavior) = OPTIONAL];
+
   // The desired managed open telemetry configuration.
   ManagedOpenTelemetryConfig desired_managed_opentelemetry_config = 163;
 
@@ -3911,6 +3971,10 @@ message ClusterUpdate {
 
   // Optional. The desired NodeCreationConfig for the cluster.
   NodeCreationConfig desired_node_creation_config = 171
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The desired emulated version for the cluster.
+  optional string desired_emulated_version = 182
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -4516,6 +4580,11 @@ message UpdateNodePoolRequest {
 
   // The taint configuration for the node pool.
   TaintConfig taint_config = 51;
+
+  // Optional. Specifies the maintenance policy for the node pool, including
+  // maintenance exclusion options.
+  NodePool.NodePoolMaintenancePolicy maintenance_policy = 52
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // SetNodePoolAutoscalingRequest sets the autoscaler settings of a node pool.
@@ -5308,6 +5377,17 @@ message NodePool {
         [(google.api.field_behavior) = OPTIONAL];
   }
 
+  // Contains expiry information about the kubelet certificate.
+  message KubeletCertInfo {
+    // Output only.
+    google.protobuf.Timestamp tpm_bootstrap_cert_expire_time = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only.
+    google.protobuf.Timestamp non_tpm_bootstrap_cert_expire_time = 2
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
   // The name of the node pool.
   string name = 1;
 
@@ -5373,8 +5453,9 @@ message NodePool {
   // simultaneously on a node in the node pool.
   MaxPodsConstraint max_pods_constraint = 6;
 
-  // Which conditions caused the current node pool state.
-  repeated StatusCondition conditions = 105;
+  // Output only. Which conditions caused the current node pool state.
+  repeated StatusCondition conditions = 105
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The pod CIDR block size per node in this node pool.
   int32 pod_ipv4_cidr_size = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -5389,10 +5470,10 @@ message NodePool {
   // pool update.
   UpdateInfo update_info = 109 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // This checksum is computed by the server based on the value of node pool
-  // fields, and may be sent on update requests to ensure the client has an
-  // up-to-date value before proceeding.
-  string etag = 110;
+  // Output only. This checksum is computed by the server based on the value of
+  // node pool fields, and may be sent on update requests to ensure the client
+  // has an up-to-date value before proceeding.
+  string etag = 110 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Specifies the configuration of queued provisioning.
   QueuedProvisioning queued_provisioning = 112;
@@ -5406,6 +5487,10 @@ message NodePool {
   // Optional. Specifies the maintenance policy for the node pool.
   NodePoolMaintenancePolicy maintenance_policy = 118
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Contains expiry information about the kubelet certificate.
+  KubeletCertInfo kubelet_cert_info = 119
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // NodeManagement defines the set of node management services turned on for the
@@ -6521,8 +6606,9 @@ message CheckAutopilotCompatibilityResponse {
 message ReleaseChannel {
   // Possible values for 'channel'.
   enum Channel {
-    // No channel specified.
-    UNSPECIFIED = 0;
+    // Deprecated: No channel specified. it will be removed in the future, use
+    // RAPID, REGULAR, STABLE or EXTENDED instead.
+    UNSPECIFIED = 0 [deprecated = true];
 
     // RAPID channel is offered on an early access basis for customers who want
     // to test new releases.
@@ -7036,6 +7122,14 @@ message UpgradeEvent {
   // The target version for the upgrade.
   string target_version = 5;
 
+  // Output only. The current emulated version before the upgrade.
+  string current_emulated_version = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The target emulated version for the upgrade.
+  string target_emulated_version = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
   // Optional relative path to the resource. For example in node pool upgrades,
   // the relative path of the node pool.
   string resource = 6;
@@ -7103,6 +7197,14 @@ message UpgradeInfoEvent {
 
   // The target version for the upgrade.
   string target_version = 6;
+
+  // Output only. The current emulated version before the upgrade.
+  string current_emulated_version = 15
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The target emulated version for the upgrade.
+  string target_emulated_version = 16
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Optional relative path to the resource. For example in node pool upgrades,
   // the relative path of the node pool.
@@ -7332,6 +7434,9 @@ message LoggingComponentConfig {
 
     // horizontal pod autoscaler decision logs
     KCP_HPA = 9;
+
+    // vertical pod autoscaler decision logs
+    KCP_VPA = 10;
   }
 
   // Select components to collect logs. An empty set would disable all logging.
@@ -7722,6 +7827,19 @@ message LocalNvmeSsdBlockConfig {
   int32 local_ssd_count = 1;
 }
 
+// DiskIoScheduler contains the configuration for the disk IO scheduler.
+message DiskIoScheduler {
+  // Optional. Configures the IO scheduler for the boot disk or ephemeral lssd
+  // that runs node system workloads. Supported values are `mq-deadline`, `bfq`,
+  // `kyber`, `none`.
+  string node_system_io_scheduler = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Configures the IO scheduler for the attached disks.
+  // Supported values are `mq-deadline`, `bfq`, `kyber`, `none`.
+  string node_attached_disk_io_scheduler = 2
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
 // EphemeralStorageLocalSsdConfig contains configuration for the node ephemeral
 // storage using Local SSDs.
 message EphemeralStorageLocalSsdConfig {
@@ -7867,6 +7985,14 @@ enum InTransitEncryptionConfig {
 // in the future to define different options for updating secondary boot disks.
 message SecondaryBootDiskUpdateStrategy {}
 
+// RollbackSafeUpgrade is the configuration for the rollback safe upgrade.
+message RollbackSafeUpgrade {
+  // Optional. A user-defined period for the cluster remains in the rollbackable
+  // state. ex: {seconds: 21600}.
+  google.protobuf.Duration control_plane_soak_duration = 1
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
 // FetchClusterUpgradeInfoRequest fetches the upgrade information of a cluster.
 message FetchClusterUpgradeInfoRequest {
   // Required. The name (project, location, cluster) of the cluster to get.
@@ -7946,6 +8072,35 @@ message ClusterUpgradeInfo {
 
   // The cluster's current minor version's end of extended support timestamp.
   optional string end_of_extended_support_timestamp = 6;
+
+  // Output only. The cluster's rollback-safe upgrade status.
+  RollbackSafeUpgradeStatus rollback_safe_upgrade_status = 9
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// RollbackSafeUpgradeStatus contains the rollback-safe upgrade status of a
+// cluster.
+message RollbackSafeUpgradeStatus {
+  // Mode indicates the mode of the rollback-safe upgrade.
+  enum Mode {
+    // MODE_UNSPECIFIED means it's in regular upgrade mode.
+    MODE_UNSPECIFIED = 0;
+
+    // KCP_MINOR_UPGRADE_ROLLBACK_SAFE_MODE means it's in rollback-safe mode
+    // after a KCP minor version step-one upgrade.
+    KCP_MINOR_UPGRADE_ROLLBACK_SAFE_MODE = 1;
+  }
+
+  // Output only. The mode of the rollback-safe upgrade.
+  Mode mode = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The rollback-safe mode expiration time.
+  google.protobuf.Timestamp control_plane_upgrade_rollback_end_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The GKE version that the cluster previously used before
+  // step-one upgrade.
+  string previous_version = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // UpgradeDetails contains detailed information of each individual upgrade
@@ -7998,6 +8153,14 @@ message UpgradeDetails {
 
   // The start type of the upgrade.
   StartType start_type = 6;
+
+  // Output only. The emulated version before the upgrade.
+  string initial_emulated_version = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The emulated version after the upgrade.
+  string target_emulated_version = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // FetchNodePoolUpgradeInfoRequest fetches the upgrade information of a
@@ -8073,6 +8236,28 @@ message NodePoolUpgradeInfo {
 
   // The node pool's current minor version's end of extended support timestamp.
   optional string end_of_extended_support_timestamp = 7;
+
+  // Output only. Upgrade info for the node pool specific to the usage of custom
+  // images.
+  CustomImageInfo custom_image_info = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Contains the custom image info for a node pool.
+message CustomImageInfo {
+  // Output only. The human-readable upgrade message for the custom image.
+  string upgrade_message = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// CompleteControlPlaneUpgradeRequest sets the name of target cluster to
+// complete upgrade.
+message CompleteControlPlaneUpgradeRequest {
+  // Required. The name (project, location, cluster) of the cluster to complete
+  // upgrade. Specified in the format `projects/*/locations/*/clusters/*`.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. API request version that initiates this operation.
+  string version = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Configuration for scheduled upgrades on the cluster.
