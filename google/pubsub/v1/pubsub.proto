@@ -220,6 +220,12 @@ message IngestionDataSourceSettings {
 
       // The Kinesis consumer does not exist.
       CONSUMER_NOT_FOUND = 5;
+
+      // Indicates an error state where the ingestion source cannot be
+      // processed because the selected ingestion region is not permitted
+      // by the Regional Access Boundary (RAB) restrictions on the project's
+      // service account.
+      CONFLICTING_REGION_CONSTRAINTS = 6;
     }
 
     // Output only. An output-only field that indicates the state of the Kinesis
@@ -275,6 +281,12 @@ message IngestionDataSourceSettings {
       // The Cloud Storage bucket has too many objects, ingestion will be
       // paused.
       TOO_MANY_OBJECTS = 5;
+
+      // Indicates an error state where the ingestion source cannot be
+      // processed because the selected ingestion region is not permitted
+      // by the Regional Access Boundary (RAB) restrictions on the project's
+      // service account.
+      CONFLICTING_REGION_CONSTRAINTS = 8;
     }
 
     // Configuration for reading Cloud Storage data in text format. Each line of
@@ -360,6 +372,12 @@ message IngestionDataSourceSettings {
 
       // The provided Event Hubs resource group couldn't be found.
       RESOURCE_GROUP_NOT_FOUND = 7;
+
+      // Indicates an error state where the ingestion source cannot be
+      // processed because the selected ingestion region is not permitted
+      // by the Regional Access Boundary (RAB) restrictions on the project's
+      // service account.
+      CONFLICTING_REGION_CONSTRAINTS = 8;
     }
 
     // Output only. An output-only field that indicates the state of the Event
@@ -412,6 +430,12 @@ message IngestionDataSourceSettings {
 
       // The provided topic wasn't found.
       TOPIC_NOT_FOUND = 5;
+
+      // Indicates an error state where the ingestion source cannot be
+      // processed because the selected ingestion region is not permitted
+      // by the Regional Access Boundary (RAB) restrictions on the project's
+      // service account.
+      CONFLICTING_REGION_CONSTRAINTS = 6;
     }
 
     // Output only. An output-only field that indicates the state of the Amazon
@@ -466,6 +490,12 @@ message IngestionDataSourceSettings {
 
       // The provided topic wasn't found.
       TOPIC_NOT_FOUND = 6;
+
+      // Indicates an error state where the ingestion source cannot be
+      // processed because the selected ingestion region is not permitted
+      // by the Regional Access Boundary (RAB) restrictions on the project's
+      // service account.
+      CONFLICTING_REGION_CONSTRAINTS = 7;
     }
 
     // Output only. An output-only field that indicates the state of the
@@ -806,6 +836,38 @@ message JavaScriptUDF {
   string code = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
+// Configuration for compressing/decompressing message data using a
+// user-specified compression algorithm.
+message Compression {
+  // The compression algorithm to use.
+  enum CompressionAlgorithm {
+    // Unspecified algorithm.
+    COMPRESSION_ALGORITHM_UNSPECIFIED = 0;
+
+    // ZLIB compression.
+    ZLIB = 1;
+  }
+
+  // The mode of the compression SMT.
+  enum CompressionMode {
+    // Unspecified mode.
+    COMPRESSION_MODE_UNSPECIFIED = 0;
+
+    // Compress.
+    COMPRESS = 1;
+
+    // Decompress.
+    DECOMPRESS = 2;
+  }
+
+  // Required. Specifies the compression algorithm to use.
+  CompressionAlgorithm compression_algorithm = 1
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Specifies whether to compress or decompress the message.
+  CompressionMode compression_mode = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
 // Configuration for making inference requests against Vertex AI models.
 message AIInference {
   // Configuration for making inferences using arbitrary JSON payloads.
@@ -846,6 +908,9 @@ message MessageTransform {
     // Optional. JavaScript User Defined Function. If multiple JavaScriptUDF's
     // are specified on a resource, each must have a unique `function_name`.
     JavaScriptUDF javascript_udf = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Compression/Decompression.
+    Compression compression = 7 [(google.api.field_behavior) = OPTIONAL];
 
     // Optional. AI Inference. Specifies the Vertex AI endpoint that inference
     // requests built from the Pub/Sub message data and provided parameters will
@@ -953,8 +1018,9 @@ message Topic {
   // resource. For example:
   //   "123/environment": "production",
   //   "123/costCenter": "marketing"
-  // See https://docs.cloud.google.com/pubsub/docs/tags for more information on
-  // using tags with Pub/Sub resources.
+  // See
+  // https://{$universe.dns_names.final_documentation_domain}/pubsub/docs/tags
+  // for more information on using tags with Pub/Sub resources.
   map<string, string> tags = 14 [
     (google.api.field_behavior) = INPUT_ONLY,
     (google.api.field_behavior) = IMMUTABLE,
@@ -1399,9 +1465,10 @@ service Subscriber {
   }
 }
 
-// A subscription resource. If none of `push_config`, `bigquery_config`, or
-// `cloud_storage_config` is set, then the subscriber will pull and ack messages
-// using API methods. At most one of these fields may be set.
+// A subscription resource. If none of `push_config`, `bigquery_config`,
+// `cloud_storage_config`, or `bigtable_config` is set, then the subscriber will
+// pull and ack messages using API methods. At most one of these fields may be
+// set.
 message Subscription {
   option (google.api.resource) = {
     type: "pubsub.googleapis.com/Subscription"
@@ -1613,8 +1680,9 @@ message Subscription {
   // resource. For example:
   //   "123/environment": "production",
   //   "123/costCenter": "marketing"
-  // See https://docs.cloud.google.com/pubsub/docs/tags for more information on
-  // using tags with Pub/Sub resources.
+  // See
+  // https://{$universe.dns_names.final_documentation_domain}/pubsub/docs/tags
+  // for more information on using tags with Pub/Sub resources.
   map<string, string> tags = 26 [
     (google.api.field_behavior) = INPUT_ONLY,
     (google.api.field_behavior) = IMMUTABLE,
@@ -1832,11 +1900,13 @@ message BigQueryConfig {
   // a JSON object in the attributes column.
   bool write_metadata = 3 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. When true and use_topic_schema is true, any fields that are a
-  // part of the topic schema that are not part of the BigQuery table schema are
-  // dropped when writing to BigQuery. Otherwise, the schemas must be kept in
-  // sync and any messages with extra fields are not written and remain in the
-  // subscription's backlog.
+  // Optional. If true and `use_topic_schema` is true, drops any fields that are
+  // part of the topic schema that are not part of the BigQuery table schema
+  // when writing to BigQuery. Otherwise, the schemas must be kept in sync and
+  // any messages with extra fields are not written and remain in the
+  // subscription's backlog. If true and `use_table_schema` is true, drops any
+  // fields in the message that are not part of the BigQuery table schema when
+  // writing to BigQuery. Otherwise, the write to BigQuery will fail.
   bool drop_unknown_fields = 4 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. An output-only field that indicates whether or not the
@@ -1859,8 +1929,9 @@ message BigQueryConfig {
 
 // Configuration for a Bigtable subscription. The Pub/Sub message will be
 // written to a Bigtable row as follows:
-// - row key: subscription name and message ID delimited by #.
-// - columns: message bytes written to a single column family "data" with an
+// - row key: subscription name, message ID hash, and message ID delimited by
+//   `#`.
+// - columns: message bytes written to a single column family `data` with an
 //   empty-string column qualifier.
 // - cell timestamp: the message publish timestamp.
 message BigtableConfig {
@@ -1873,16 +1944,15 @@ message BigtableConfig {
     // The subscription can actively send messages to Bigtable.
     ACTIVE = 1;
 
-    // Cannot write to Bigtable because the instance, table, or app profile
-    // does not exist.
+    // Unused in the current implementation. Placeholder for future use.
     NOT_FOUND = 2;
 
-    // Cannot write to Bigtable because the app profile is not configured for
-    // single-cluster routing.
+    // Unused in the current implementation. Placeholder for future use.
     APP_PROFILE_MISCONFIGURED = 3;
 
     // Cannot write to Bigtable because of permission denied errors.
     // This can happen if:
+    // - The Bigtable instance, table, or app profile does not exist.
     // - The Pub/Sub service agent has not been granted the
     //   [appropriate Bigtable IAM permission
     //   bigtable.tables.mutateRows]({$universe.dns_names.final_documentation_domain}/bigtable/docs/access-control#permissions)
@@ -1890,8 +1960,9 @@ message BigtableConfig {
     //   ([instructions]({$universe.dns_names.final_documentation_domain}/service-usage/docs/enable-disable))
     PERMISSION_DENIED = 4;
 
-    // Cannot write to Bigtable because of a missing column family ("data") or
-    // if there is no structured row key for the subscription name + message ID.
+    // Cannot write to Bigtable because of a missing column family (`data`), or
+    // if there is no structured row key for the subscription name + message ID,
+    // if because the app profile is not configured for single-cluster routing.
     SCHEMA_MISMATCH = 5;
 
     // Cannot write to the destination because enforce_in_transit is set to true
@@ -2436,8 +2507,9 @@ message CreateSnapshotRequest {
   // resource. For example:
   //   "123/environment": "production",
   //   "123/costCenter": "marketing"
-  // See https://docs.cloud.google.com/pubsub/docs/tags for more information on
-  // using tags with Pub/Sub resources.
+  // See
+  // https://{$universe.dns_names.final_documentation_domain}/pubsub/docs/tags
+  // for more information on using tags with Pub/Sub resources.
   map<string, string> tags = 4 [
     (google.api.field_behavior) = INPUT_ONLY,
     (google.api.field_behavior) = IMMUTABLE,
