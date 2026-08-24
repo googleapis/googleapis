@@ -510,6 +510,16 @@ service ReservationService {
     };
     option (google.api.method_signature) = "parent";
   }
+
+  // Updates an existing reservation group resource.
+  rpc UpdateReservationGroup(UpdateReservationGroupRequest)
+      returns (ReservationGroup) {
+    option (google.api.http) = {
+      patch: "/v1/{reservation_group.name=projects/*/locations/*/reservationGroups/*}"
+      body: "reservation_group"
+    };
+    option (google.api.method_signature) = "reservation_group,update_mask";
+  }
 }
 
 // A reservation is a mechanism used to guarantee slots to users.
@@ -796,6 +806,14 @@ message Reservation {
   // This feature is not yet generally available.
   SchedulingPolicy scheduling_policy = 27
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The reservation group path of the reservation from root to
+  // leaf. The order of elements matters: the first element is the top level
+  // group and the last element is the direct parent reservation group. For
+  // example, if a reservation is under group-1 -> group-2 -> group-3, then the
+  // reservation group path is ["group-1", "group-2", "group-3"].
+  repeated string reservation_group_path = 28
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // The scheduling policy controls how a reservation's resources are distributed.
@@ -830,6 +848,28 @@ message ReservationGroup {
   // characters or dashes. It must start with a letter and must not end with a
   // dash. Its maximum length is 64 characters.
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Optional. The parent reservation group of the reservation group.
+  // Format: `projects/*/locations/*/reservationGroups/team1-prod` for non-root
+  // reservation groups, or `projects/*/locations/*` for root reservation
+  // groups.
+  string parent_group = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      child_type: "bigqueryreservation.googleapis.com/ReservationGroup"
+    }
+  ];
+
+  // Output only. Creation time of the reservation group.
+  google.protobuf.Timestamp creation_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Last update time of the reservation group via a user
+  // operation. This timestamp is updated only when an update operation
+  // explicitly targets this reservation group directly. It is not updated when
+  // parent or child groups are created, updated, or deleted.
+  google.protobuf.Timestamp update_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Capacity commitment is a way to purchase compute capacity for BigQuery jobs
@@ -855,10 +895,12 @@ message CapacityCommitment {
     // error code `google.rpc.Code.INVALID_ARGUMENT`.
     COMMITMENT_PLAN_UNSPECIFIED = 0;
 
+    // Deprecated: Flex commitments are deprecated. Please use Edition-based
+    // capacity commitments.
     // Flex commitments have committed period of 1 minute after becoming ACTIVE.
     // After that, they are not in a committed period anymore and can be removed
     // any time.
-    FLEX = 3;
+    FLEX = 3 [deprecated = true];
 
     // Same as FLEX, should only be used if flat-rate commitments are still
     // available.
@@ -1163,6 +1205,18 @@ message DeleteReservationGroupRequest {
 }
 
 // The request for
+// [ReservationService.UpdateReservationGroup][google.cloud.bigquery.reservation.v1.ReservationService.UpdateReservationGroup].
+message UpdateReservationGroupRequest {
+  // Required. Content of the reservation group to update.
+  ReservationGroup reservation_group = 1
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Standard field mask for the set of fields to be updated.
+  google.protobuf.FieldMask update_mask = 2
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The request for
 // [ReservationService.CreateCapacityCommitment][google.cloud.bigquery.reservation.v1.ReservationService.CreateCapacityCommitment].
 message CreateCapacityCommitmentRequest {
   // Required. Resource name of the parent reservation. E.g.,
@@ -1358,6 +1412,11 @@ message Assignment {
     // take priority over a default BACKGROUND reservation assignment (if it
     // exists).
     BACKGROUND_SEARCH_INDEX_REFRESH = 9;
+
+    // Automated materialized view refresh jobs will use the reservation.
+    // Reservations with this job type will take priority over a default QUERY
+    // reservation assignment (if it exists).
+    AUTOMATIC_MATERIALIZED_VIEW_REFRESH = 10;
   }
 
   // Assignment will remain in PENDING state if no active capacity commitment is
