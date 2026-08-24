@@ -1,0 +1,218 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.apptopology.v1;
+
+import "google/api/field_behavior.proto";
+
+option csharp_namespace = "Google.Cloud.AppTopology.V1";
+option go_package = "cloud.google.com/go/apptopology/apiv1/apptopologypb;apptopologypb";
+option java_multiple_files = true;
+option java_outer_classname = "QueryProto";
+option java_package = "com.google.cloud.apptopology.v1";
+option php_namespace = "Google\\Cloud\\AppTopology\\V1";
+option ruby_package = "Google::Cloud::AppTopology::V1";
+
+// Recursive graph pattern matcher to select and constrain the returned
+// topology.
+// AppTopology API allows cycle in the graph traversal and will return unique
+// node and edge results in the response.
+// SLO is guaranteed for at most 5 hops in the graph traversal.
+message GraphPattern {
+  // Required. Pattern matcher to select the starting nodes in the graph.
+  NodePattern starting_node = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Pattern matcher to match the connected subgraphs; all of these
+  // are ANDed.
+  repeated ConnectedNodePattern neighbors = 2
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Node pattern matcher to match the node id, labels and properties.
+message NodePattern {
+  // Optional. Represents an identifier to be referenced in
+  // `property_matcher_expr`. For example, an alias for `app` can be referenced
+  // as `app.Base/location="us-central1"`. `alias` must be unique within the
+  // query, otherwise an error will be returned.
+  string alias = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Matcher for labels/properties.
+  LabelPropertiesPattern label_properties_pattern = 3
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Edge pattern matcher to match the edge direction, labels and properties.
+message EdgePattern {
+  // The direction of the edge to match.
+  enum Direction {
+    // Defaults to DIRECTION_UNSPECIFIED.
+    DIRECTION_UNSPECIFIED = 0;
+
+    // Match any edge direction.
+    ANY = 1;
+
+    // Match the edge direction from source to destination.
+    TO = 2;
+
+    // Match the edge direction from destination to source.
+    FROM = 3;
+  }
+
+  // Required. The direction of the edge to match.
+  Direction direction = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Matcher for labels/properties.
+  LabelPropertiesPattern label_properties_pattern = 2
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Represents an identifier to be referenced in
+  // `property_matcher_expr`. For example, an alias for `edge` can be referenced
+  // as `edge.description = "value_1"`. `alias` must be unique within the query,
+  // otherwise an error will be returned.
+  string alias = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Edge pattern matcher to match the edge direction, labels and properties.
+message ConnectedNodePattern {
+  // Required. To match the edge connected the neighbor subgraph.
+  EdgePattern edge = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Recursive matcher to match the neighbor subgraph.
+  GraphPattern graph = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Matcher for label and property. The matcher accepts both exact match and
+// expression.
+message LabelPropertiesPattern {
+  // Required. Matcher expression for labels. Allow OR / AND operators;
+  // The syntax is defined by the following grammar:
+  //  - The label expression can use either `OR` or `AND` operator, but not a
+  //    combination of both.
+  // Example: `AppHub/Application`, `AppHub/Workload OR AppHub/Service`
+  string label_matcher_expr = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The syntax of the filter is defined by the following grammar:
+  // https://google.aip.dev/160.
+  //
+  // Referencing properties of graph elements using traversal operator `.`.
+  // Repeated properties cannot be traversed.
+  // e.g. `e.NodeName`, where `e` is a node or edge alias.
+  //
+  // The following properties are supported for all node and edge types:
+  //
+  // - `Labels`: repeated string property. Can be used to combine conditions
+  // between labels and properties.
+  //    e.g. `e.Labels : "label_1"` to match a node/edge with label
+  //    `label_1`.
+  // - `NodeName/EdgeName`: string property. Support for filtering by node or
+  // edge names.
+  //    e.g. `app.NodeName = "apphub.io/Application"`
+  //
+  // Other properties types can be found at
+  // https://apptopology.googleapis.com/v1/GetSchema
+  //
+  // The following operators are supported on properties:
+  // 1. Checking if a non-repeated property of a graph element is equal to a
+  // scalar value using the equality operator `=`.
+  //  - LHS must be a node/edge property.
+  //  - RHS must be a scalar literal.
+  //  - Supported value types: string (enclosed in double quotes), int, double,
+  //    and boolean.
+  // e.g. `e.project = "project_1"`
+  //
+  // 2. Checking if a non-repeated property of a graph element satisfies a
+  // condition using the comparison operators `>`, `<`, `>=`, `<=`.
+  //  - LHS must be a node/edge property.
+  //  - RHS must be a scalar literal.
+  //  - Supported value types: string (enclosed in double quotes), int, double.
+  // e.g. `e.NumericProperty < 0.1`
+  //
+  // 3. Checking if a scalar value is present in a repeated property
+  // HAS operator `:`.
+  //  - LHS must be a repeated property.
+  //  - RHS must be a scalar literal.
+  //  - Supported value types: string (enclosed in double quotes), int, double.
+  // e.g. `e.Labels : "label_1"`, where `e.Labels` is a repeated string
+  // property.
+  //
+  // 4. Checking if a property is present using HAS_PROPERTY operator `:`.
+  //  - LHS must be a node or edge alias.
+  //  - RHS must be a property name.
+  // e.g. `e : Base/Location`, where `e` is a node or edge alias.
+  //
+  // 5. Combining multiple filters using logical operators : `AND`, and `OR`.
+  //  - Parentheses must be used to resolve ambiguity.
+  // e.g. `e.Base/Location = "us-central1" AND e.project = "project_1"`
+  //
+  // 6. The following custom functions are supported:
+  //    - **EQUALS_ANY(arg1, arg2, arg3, ...)**
+  //      * Checks if `arg1` (a non-repeated property) equals any of the
+  //        subsequent scalar literal arguments.
+  //      * arg1: non-repeated property. Supported value types: string
+  //        (enclosed in double quotes), int, double.
+  //      * arg2, arg3, ...: The remaining arguments are literal values to
+  //        compare against. All the arguments must be of the same type.
+  //      * e.g. `EQUALS_ANY(e.project, "project_1", "project_2")`
+  //
+  //    - **CONTAINS_ANY(arg1, arg2, arg3, ...)**
+  //      * Checks if a repeated property has any of the given scalar literals.
+  //        arg1: repeated_property. Supported element types: string
+  //        (enclosed in double quotes), int, double.
+  //      * arg2, arg3, ...: The remaining arguments are literal values to
+  //        compare against. All the arguments must be of the same type.
+  //      * e.g. `CONTAINS_ANY(e.folders, "folder_1", "folder_2")`
+  //
+  //    - **CONTAINS_ANY_LESS_THAN(arg1, arg2)**
+  //      * Checks if a repeated property has any element less than the given
+  //        scalar literal.
+  //      * arg1: repeated_property. Supported element types are: int,
+  //        double.
+  //      * arg2: scalar literal
+  //      * e.g. `CONTAINS_ANY_LESS_THAN(e.NumericProperty, 0.1)`
+  //
+  //    - **CONTAINS_ANY_GREATER_THAN(arg1, arg2)**
+  //      * Checks if a repeated property has any element greater than the given
+  //        scalar literal.
+  //      * arg1: repeated_property. Supported element types are: int,
+  //        double.
+  //      * arg2: scalar literal
+  //      * e.g. `CONTAINS_ANY_GREATER_THAN(e.NumericProperty, 0.1)`
+  //
+  //    - **CONTAINS_ANY_LESS_OR_EQUAL(arg1, arg2)**
+  //      * Checks if a repeated property has any element less than or equal to
+  //        the given scalar literal.
+  //      * arg1: repeated_property. Supported element types are: int,
+  //        double.
+  //      * arg2: scalar literal
+  //      * e.g. `CONTAINS_ANY_LESS_OR_EQUAL(e.NumericProperty, 0.1)`
+  //
+  //    - **CONTAINS_ANY_GREATER_OR_EQUAL(arg1, arg2)**
+  //      * Checks if a repeated property has any element greater than or equal
+  //        to the given scalar literal.
+  //      * arg1: repeated_property. Supported element types are: int,
+  //        double.
+  //      * arg2: scalar literal
+  //      * e.g. `CONTAINS_ANY_GREATER_OR_EQUAL(e.NumericProperty, 0.1)`
+  //
+  // NOTE:
+  //  - For Alert nodes, only the equality operator `=` is supported.
+  //    The expression cannot be a composite boolean expression (i.e., combining
+  //    multiple conditions with AND/OR is not supported; it must be simple).
+  //    e.g. `a.NodeName = "alert-1"` is supported, but
+  //    `a.NodeName = "alert-1" OR a.NodeName = "alert-2"` is not supported.
+  //  - For traffic edges, filters cannot be added.
+  string property_matcher_expr = 2 [(google.api.field_behavior) = OPTIONAL];
+}
