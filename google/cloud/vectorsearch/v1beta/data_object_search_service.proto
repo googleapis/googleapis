@@ -210,15 +210,21 @@ message VectorSearch {
 
 // Defines a semantic search operation.
 message SemanticSearch {
-  // Required. The query text, which is used to generate an embedding according
+  // Optional. The query text, which is used to generate an embedding according
   // to the embedding model specified in the collection config.
-  string search_text = 1 [(google.api.field_behavior) = REQUIRED];
+  //
+  // Required when using the text search mode.
+  string search_text = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. The vector field to search.
   string search_field = 2 [(google.api.field_behavior) = REQUIRED];
 
-  // Required. The task type of the query embedding.
-  EmbeddingTaskType task_type = 5 [(google.api.field_behavior) = REQUIRED];
+  // Optional. The task type of the query embedding. Must be specified for
+  // text-only embedding models, see
+  // <https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/embeddings/task-types>
+  // Not needed for multi modal embedding models, see
+  // <https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/embeddings/get-multimodal-embeddings#specify-task-instructions>
+  EmbeddingTaskType task_type = 5 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The fields to return in the search results.
   OutputFields output_fields = 3 [(google.api.field_behavior) = OPTIONAL];
@@ -254,6 +260,123 @@ message TextSearch {
   // Optional. A JSON filter expression, e.g. `{"genre": {"$eq": "sci-fi"}}`,
   // represented as a `google.protobuf.Struct`.
   google.protobuf.Struct filter = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Structured query definition. When set, `search_text` and
+  // `data_field_names` must be left empty; otherwise the request will be
+  // rejected with an `INVALID_ARGUMENT` error. Conversely, when
+  // `structured_query` is unset, both `search_text` and `data_field_names`
+  // are required.
+  StructuredQuery structured_query = 6 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A structured query for text search. Allows expressing field-targeted text
+// queries combined via boolean operators, with optional per-node boosting.
+message StructuredQuery {
+  // The type of query to execute.
+  oneof query_type {
+    // Optional. A leaf-level text query.
+    TextQuery text = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. A query that applies a unary operator to a sub-query.
+    UnaryQuery unary = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. A query that combines multiple sub-queries with a boolean
+    // operator.
+    CombinedQuery combine = 3 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Optional. Optional multiplier applied to this query node's contribution to
+  // the final relevance score. Must be non-negative; if unset or 0, defaults
+  // to 1.0. Values greater than 1.0 increase its influence on ranking, values
+  // between 0.0 and 1.0 decrease it.
+  float boost = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A leaf-level text query targeting one or more data fields. When multiple
+// fields are specified, this is equivalent to combining per-field matches with
+// an OR operator (i.e. the query matches if the text is found in any of the
+// listed fields).
+message TextQuery {
+  // The matching strategy to apply when comparing `text` against the content
+  // of `fields`.
+  enum MatchType {
+    // Defaults to `STANDARD`.
+    MATCH_TYPE_UNSPECIFIED = 0;
+
+    // Treats `text` as individual search terms combined with an implicit
+    // AND: every term must appear in the field, in any order and any
+    // position. Case-insensitive.
+    TEXT = 1;
+
+    // Matches only when the entire field value is exactly equal to `text`.
+    EXACT = 2;
+  }
+
+  // Required. The text to search for.
+  string text = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The data fields to search against.
+  repeated string fields = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The matching strategy to apply for this query. If unset, defaults
+  // to `STANDARD`.
+  MatchType match_type = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The query enhancement settings to apply for this query.
+  QueryEnhancement query_enhancement = 4
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Query enhancement settings. When enabled, expands the search terms with
+// stemming, synonyms, and spelling corrections, and removes stop words.
+message QueryEnhancement {
+  // Optional. Whether query enhancement is enabled.
+  bool enabled = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The IETF BCP 47 language tag, such as "en-US", for query
+  // enhancement. If unset, the language is detected automatically. See
+  // <https://en.wikipedia.org/wiki/IETF_language_tag>.
+  string language_code = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A query that applies a unary operator to a sub-query.
+message UnaryQuery {
+  // Unary operators applicable to a sub-query.
+  enum Operator {
+    // Default value. This value is unused.
+    OPERATOR_UNSPECIFIED = 0;
+
+    // Negates the sub-query.
+    NOT = 1;
+  }
+
+  // Required. The unary operator to apply.
+  Operator op = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The sub-query the operator is applied to.
+  StructuredQuery sub_query = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A query that combines multiple sub-queries with a boolean operator.
+message CombinedQuery {
+  // Boolean operators used to combine sub-queries.
+  enum Operator {
+    // Default value. This value is unused.
+    OPERATOR_UNSPECIFIED = 0;
+
+    // All sub-queries must match.
+    AND = 1;
+
+    // At least one sub-query must match.
+    OR = 2;
+  }
+
+  // Required. The boolean operator used to combine the sub-queries.
+  Operator op = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The sub-queries to be combined.
+  repeated StructuredQuery sub_queries = 2
+      [(google.api.field_behavior) = REQUIRED];
 }
 
 // Request for performing a single search.
@@ -475,7 +598,7 @@ message ReciprocalRankFusion {
 }
 
 // Defines a ranker using the Vertex AI ranking service.
-// See https://cloud.google.com/generative-ai-app-builder/docs/ranking for
+// See <https://cloud.google.com/generative-ai-app-builder/docs/ranking> for
 // details.
 message VertexRanker {
   // The record spec for text search.
@@ -499,7 +622,7 @@ message VertexRanker {
 
   // Required. The model used for ranking documents. The list of available
   // models is described in
-  // https://docs.cloud.google.com/generative-ai-app-builder/docs/ranking#models.
+  // <https://docs.cloud.google.com/generative-ai-app-builder/docs/ranking#models>.
   // Currently, only `semantic-ranker-fast@latest` is supported.
   string model = 4 [(google.api.field_behavior) = REQUIRED];
 
