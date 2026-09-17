@@ -7,39 +7,14 @@ Google APIs and help you to utilize them more efficiently. You can also
 use these definitions with open source tools to generate client
 libraries, documentation, and other artifacts.
 
-## Building
-### Bazel
+## Client Libraries
 
-The recommended way to build the API client libraries is through
-[Bazel](https://bazel.build/) >= 4.2.2.
+The client libraries for these APIs are generated into language specific
+repositories. Please visit the `googleapis/google-cloud-<lang>` repo for 
+the language of interest.
 
-First, [install bazel](https://docs.bazel.build/versions/master/install.html).
-
-To build all libraries:
-
-```
-bazel build //...
-```
-
-To test all libraries:
-
-```
-bazel test //...
-```
-
-To build one library in all languages:
-
-```
-bazel build //google/example/library/v1/...
-```
-
-To build the Java package for one library:
-
-```
-bazel build //google/example/library/v1:google-cloud-example-library-v1-java
-```
-
-Bazel packages exist in all the libraries for Java, Go, Python, Ruby, Node.js, PHP and C#.
+Building these directly via Bazel, or consuming in any other way is 
+no longer supported.
 
 ## Overview
 
@@ -93,21 +68,3 @@ for the [GAPIC toolkit](https://github.com/googleapis/toolkit).
 
 **NOTE:** The major version of an API is used to indicate breaking
 change to the API.
-
-## Generate gRPC Source Code
-
-To generate gRPC source code for Google APIs in this repository, you
-first need to install both Protocol Buffers and gRPC on your local
-machine, then you can run `make LANGUAGE=xxx all` to generate the
-source code. You need to integrate the generated source code into
-your application build system.
-
-**NOTE:** The Makefile is only intended to generate source code for the
-entire repository. It is not for generating linkable client library
-for a specific API. Please see other repositories under
-https://github.com/googleapis for generating linkable client libraries.
-
-### Go gRPC Source Code
-It is difficult to generate Go gRPC source code from this repository,
-since Go has different directory structure.
-Please use [this repository](https://github.com/google/go-genproto) instead.
