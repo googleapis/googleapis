@@ -106,11 +106,20 @@ message SearchHint {
     message DenseScannParams {
       // Optional. Dense ANN param overrides to control recall and latency.
       // The percentage of leaves to search, in the range [0, 100].
+      // Not supported for `STORAGE_OPTIMIZED` indexes.
+      // Cannot be set together with `target_recall`.
       int32 search_leaves_pct = 1 [(google.api.field_behavior) = OPTIONAL];
 
       // Optional. The number of initial candidates. Must be a positive integer
-      // (> 0).
+      // (> 0). Not supported for `STORAGE_OPTIMIZED` indexes. Cannot be set
+      // together with `target_recall`.
       int32 initial_candidate_count = 2
+          [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. The target recall for the search. Must be a double in the
+      // range [0, 1]. While the search aims to achieve this level of recall, it
+      // is not guaranteed.
+      optional double target_recall = 3
           [(google.api.field_behavior) = OPTIONAL];
     }
 
@@ -418,12 +427,75 @@ message SearchDataObjectsRequest {
 
 // A single search result.
 message SearchResult {
+  // Quality signals describing how this result was retrieved, combined and
+  // re-ranked. Only populated when
+  // [BatchSearchDataObjectsRequest.BatchSearchMetadataOptions.search_signals_enabled][google.cloud.vectorsearch.v1beta.BatchSearchDataObjectsRequest.BatchSearchMetadataOptions.search_signals_enabled]
+  // is `true`.
+  message SearchResultMetadata {
+    // The rank and distance of this data object within a single search of the
+    // batch.
+    message SearchDistance {
+      // Output only. The index of the search in the
+      // [BatchSearchDataObjectsRequest.searches][google.cloud.vectorsearch.v1beta.BatchSearchDataObjectsRequest.searches]
+      // this distance corresponds to.
+      int32 search_index = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+      // Output only. The order of this data object in the search's result list,
+      // starting at 1 for the top (best-ranked) result.
+      int32 rank = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+      // Output only. The similarity distance of this data object for the
+      // search.
+      double distance = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+    }
+
+    // The rank and score assigned by the Reciprocal Rank Fusion ranker when
+    // combining the results of the batch searches.
+    message RrfRankerResult {
+      // Output only. The rank of this data object after RRF combination.
+      int32 rank = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+      // Output only. The score of this data object after RRF combination.
+      double score = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+    }
+
+    // The rank and score assigned by the Vertex re-ranker.
+    message VertexRankerResult {
+      // Output only. The rank of this data object after Vertex re-ranking.
+      int32 rank = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+      // Output only. The score of this data object after Vertex re-ranking.
+      double score = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+    }
+
+    // Output only. The per-search distances for this data object, one entry per
+    // batch search that returned it.
+    repeated SearchDistance search_distances = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The RRF combination signals for this data object. Only set
+    // when the request combines results using RRF.
+    RrfRankerResult rrf_ranker_result = 2
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The Vertex re-ranking signals for this data object. Only set
+    // when the request re-ranks results using the Vertex ranker.
+    VertexRankerResult vertex_ranker_result = 3
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
   // Output only. The matching data object.
   DataObject data_object = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. Similarity distance or ranker score returned by
   // BatchSearchDataObjects.
   optional double distance = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Quality signals for this result. Only populated when
+  // [BatchSearchDataObjectsRequest.BatchSearchMetadataOptions.search_signals_enabled][google.cloud.vectorsearch.v1beta.BatchSearchDataObjectsRequest.BatchSearchMetadataOptions.search_signals_enabled]
+  // is `true`.
+  SearchResultMetadata search_result_metadata = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Metadata about the search execution.
@@ -559,6 +631,13 @@ message BatchSearchDataObjectsRequest {
     int32 top_k = 3 [(google.api.field_behavior) = OPTIONAL];
   }
 
+  // Options controlling which metadata is included in the search results.
+  message BatchSearchMetadataOptions {
+    // Optional. If `true`, per-result quality signals are returned in
+    // [SearchResult.search_result_metadata][google.cloud.vectorsearch.v1beta.SearchResult.search_result_metadata].
+    bool search_signals_enabled = 1 [(google.api.field_behavior) = OPTIONAL];
+  }
+
   // Required. The resource name of the Collection for which to search.
   // Format: `projects/{project}/locations/{location}/collections/{collection}`
   string parent = 1 [
@@ -573,6 +652,11 @@ message BatchSearchDataObjectsRequest {
 
   // Optional. Options for combining the results of the batch search operations.
   CombineResultsOptions combine = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Options controlling which metadata is included in the search
+  // results.
+  BatchSearchMetadataOptions metadata_options = 4
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Defines a ranker to combine results from multiple searches.
