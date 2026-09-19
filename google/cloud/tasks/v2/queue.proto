@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ syntax = "proto3";
 
 package google.cloud.tasks.v2;
 
+import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/cloud/tasks/v2/target.proto";
 import "google/protobuf/duration.proto";
@@ -107,6 +108,9 @@ message Queue {
   // app_engine_routing][google.cloud.tasks.v2.AppEngineHttpRequest.app_engine_routing].
   AppEngineRouting app_engine_routing_override = 2;
 
+  // Modifies HTTP target for HTTP tasks.
+  HttpTarget http_target = 10;
+
   // Rate limits for task dispatches.
   //
   // [rate_limits][google.cloud.tasks.v2.Queue.rate_limits] and
@@ -120,8 +124,8 @@ message Queue {
   //   queue, regardless of whether the dispatch is from a first
   //   attempt or a retry).
   // * [retry_config][google.cloud.tasks.v2.Queue.retry_config] controls what
-  // happens to
-  //   particular a task after its first attempt fails. That is,
+  // happens to a
+  //   particular task after its first attempt fails. That is,
   //   [retry_config][google.cloud.tasks.v2.Queue.retry_config] controls task
   //   retries (the second attempt, third attempt, etc).
   //
@@ -193,7 +197,7 @@ message RateLimits {
   // If unspecified when the queue is created, Cloud Tasks will pick the
   // default.
   //
-  // * The maximum allowed value is 500.
+  // The maximum allowed value is 500.
   //
   //
   // This field has the same meaning as
@@ -216,11 +220,13 @@ message RateLimits {
   // token is removed from the bucket. Tasks will be dispatched until
   // the queue's bucket runs out of tokens. The bucket will be
   // continuously refilled with new tokens based on
-  // [max_dispatches_per_second][google.cloud.tasks.v2.RateLimits.max_dispatches_per_second].
+  // `max_dispatches_per_second`.
   //
-  // Cloud Tasks will pick the value of `max_burst_size` based on the
-  // value of
-  // [max_dispatches_per_second][google.cloud.tasks.v2.RateLimits.max_dispatches_per_second].
+  // Cloud Tasks automatically sets an appropriate `max_burst_size` based
+  // on the value of `max_dispatches_per_second`. The value is dynamically
+  // optimized to ensure queue stability and throughput. It is generally at
+  // least equal to `max_dispatches_per_second` but might be higher to
+  // accommodate bursts of traffic.
   //
   // For queues that were created or updated using
   // `queue.yaml/xml`, `max_burst_size` is equal to
@@ -228,11 +234,8 @@ message RateLimits {
   // Since `max_burst_size` is output only, if
   // [UpdateQueue][google.cloud.tasks.v2.CloudTasks.UpdateQueue] is called on a
   // queue created by `queue.yaml/xml`, `max_burst_size` will be reset based on
-  // the value of
-  // [max_dispatches_per_second][google.cloud.tasks.v2.RateLimits.max_dispatches_per_second],
-  // regardless of whether
-  // [max_dispatches_per_second][google.cloud.tasks.v2.RateLimits.max_dispatches_per_second]
-  // is updated.
+  // the value of `max_dispatches_per_second`, regardless of whether
+  // `max_dispatches_per_second` is updated.
   //
   int32 max_burst_size = 2;
 
@@ -258,16 +261,24 @@ message RateLimits {
 //
 // These settings determine when a failed task attempt is retried.
 message RetryConfig {
-  // Number of attempts per task.
+  // Number of attempts per task, including the first attempt. (If the
+  // first attempt fails, there will be `max_attempts - 1` retries.)
   //
-  // Cloud Tasks will attempt the task `max_attempts` times (that is, if the
-  // first attempt fails, then there will be `max_attempts - 1` retries). Must
-  // be >= -1.
+  // Must be greater than or equal to -1, which indicates unlimited attempts.
+  //
+  //
+  // Cloud Tasks stops retrying only when `max_attempts` and
+  // `max_retry_duration` are both satisfied, or when the task is successfully
+  // executed. When the task has been attempted
+  // `max_attempts` times and when the `max_retry_duration` time has passed, no
+  // further attempts are made, and the task is deleted. If `max_attempts` is
+  // set to -1 and `max_retry_duration` is set to 0, the task is retried
+  // until the [maximum task
+  // retention](https://docs.cloud.google.com/tasks/docs/quotas#limits) limit is
+  // reached.
   //
   // If unspecified when the queue is created, Cloud Tasks will pick the
   // default.
-  //
-  // -1 indicates unlimited attempts.
   //
   // This field has the same meaning as
   // [task_retry_limit in
@@ -279,15 +290,21 @@ message RetryConfig {
   // attempted. Once `max_retry_duration` time has passed *and* the
   // task has been attempted
   // [max_attempts][google.cloud.tasks.v2.RetryConfig.max_attempts] times, no
-  // further attempts will be made and the task will be deleted.
+  // further attempts are made and the task is deleted.
   //
-  // If zero, then the task age is unlimited.
+  // A zero (0) indicates an unlimited duration, up to the
+  // [maximum task
+  // retention](https://docs.cloud.google.com/tasks/docs/quotas#limits) limit.
+  //
+  //
+  // The value must be given as a string that indicates the length of time
+  // (in seconds) followed by `s` (for "seconds"). For the maximum possible
+  // value or the format, see the documentation for
+  // [Duration](https://protobuf.dev/reference/protobuf/google.protobuf/#duration).
+  // `max_retry_duration` will be truncated to the nearest second.
   //
   // If unspecified when the queue is created, Cloud Tasks will pick the
   // default.
-  //
-  //
-  // `max_retry_duration` will be truncated to the nearest second.
   //
   // This field has the same meaning as
   // [task_age_limit in
@@ -301,11 +318,15 @@ message RetryConfig {
   // [RetryConfig][google.cloud.tasks.v2.RetryConfig] specifies that the task
   // should be retried.
   //
+  //
+  // The value must be given as a string that indicates the length of time
+  // (in seconds) followed by `s` (for "seconds"). For more information on the
+  // format, see the documentation for
+  // [Duration](https://protobuf.dev/reference/protobuf/google.protobuf/#duration).
+  // `min_backoff` will be truncated to the nearest second.
+  //
   // If unspecified when the queue is created, Cloud Tasks will pick the
   // default.
-  //
-  //
-  // `min_backoff` will be truncated to the nearest second.
   //
   // This field has the same meaning as
   // [min_backoff_seconds in
@@ -319,11 +340,15 @@ message RetryConfig {
   // [RetryConfig][google.cloud.tasks.v2.RetryConfig] specifies that the task
   // should be retried.
   //
+  //
+  // The value must be given as a string that indicates the length of time
+  // (in seconds) followed by `s` (for "seconds"). For more information on the
+  // format, see the documentation for
+  // [Duration](https://protobuf.dev/reference/protobuf/google.protobuf/#duration).
+  // `max_backoff` will be truncated to the nearest second.
+  //
   // If unspecified when the queue is created, Cloud Tasks will pick the
   // default.
-  //
-  //
-  // `max_backoff` will be truncated to the nearest second.
   //
   // This field has the same meaning as
   // [max_backoff_seconds in
