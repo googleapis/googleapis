@@ -1,0 +1,705 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.geminidataanalytics.v1alpha;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Google.Cloud.GeminiDataAnalytics.V1Alpha";
+option go_package = "cloud.google.com/go/geminidataanalytics/apiv1alpha/geminidataanalyticspb;geminidataanalyticspb";
+option java_multiple_files = true;
+option java_outer_classname = "DataA2AServiceProto";
+option java_package = "com.google.cloud.geminidataanalytics.v1alpha";
+option php_namespace = "Google\\Cloud\\GeminiDataAnalytics\\V1alpha";
+option ruby_package = "Google::Cloud::GeminiDataAnalytics::V1alpha";
+
+// DataA2AService defines the Agent-to-Agent (A2A) protocol service for Gemini
+// Data Analytics.
+service DataA2AService {
+  option (google.api.default_host) = "geminidataanalytics.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform";
+
+  // Send a message to the agent. This is a blocking call that will return the
+  // task once it is completed.
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse) {
+    option (google.api.http) = {
+      post: "/v1alpha/a2a/{tenant=projects/*/locations/*/agents/*}/v1/message:send"
+      body: "*"
+      additional_bindings {
+        post: "/v1alpha/a2a/{tenant=projects/*/locations/*/dataAgents/*}/v1/message:send"
+        body: "*"
+      }
+    };
+    option (google.api.method_signature) = "tenant,message";
+  }
+
+  // SendStreamingMessage is a streaming call that will return a stream of
+  // task update events until the Task is in an interrupted or terminal state.
+  rpc SendStreamingMessage(SendMessageRequest) returns (stream StreamResponse) {
+    option (google.api.http) = {
+      post: "/v1alpha/a2a/{tenant=projects/*/locations/*/agents/*}/v1/message:stream"
+      body: "*"
+      additional_bindings {
+        post: "/v1alpha/a2a/{tenant=projects/*/locations/*/dataAgents/*}/v1/message:stream"
+        body: "*"
+      }
+    };
+    option (google.api.method_signature) = "tenant,message";
+  }
+
+  // GetAgentCard returns the agent card for the agent.
+  rpc GetAgentCard(GetAgentCardRequest) returns (AgentCard) {
+    option (google.api.http) = {
+      get: "/v1alpha/a2a/{tenant=projects/*/locations/*/agents/*}/v1/card"
+      additional_bindings {
+        get: "/v1alpha/a2a/{tenant=projects/*/locations/*/dataAgents/*}/v1/card"
+      }
+    };
+    option (google.api.method_signature) = "tenant";
+  }
+}
+
+// The set of states a Task can be in.
+enum TaskState {
+  // Default unspecified task state.
+  TASK_STATE_UNSPECIFIED = 0;
+
+  // Represents the status that acknowledges a task is created.
+  TASK_STATE_SUBMITTED = 1;
+
+  // Represents the status that a task is currently in progress.
+  TASK_STATE_WORKING = 2;
+
+  // Represents the status that a task is completed. This is a terminal state.
+  TASK_STATE_COMPLETED = 3;
+
+  // Represents the status that a task has failed. This is a terminal state.
+  TASK_STATE_FAILED = 4;
+
+  // Represents the status that a task was cancelled before it finished.
+  // This is a terminal state.
+  TASK_STATE_CANCELLED = 5;
+
+  // Represents the status that the task requires information to complete.
+  // This is an interrupted state.
+  TASK_STATE_INPUT_REQUIRED = 6;
+
+  // Represents the status that a task has been rejected by the agent.
+  // This is a terminal state.
+  TASK_STATE_REJECTED = 7;
+
+  // Represents the state that some authentication is needed from the upstream
+  // client.
+  TASK_STATE_AUTH_REQUIRED = 8;
+}
+
+// Role indicates the sender of a message.
+enum Role {
+  // Default unspecified role.
+  ROLE_UNSPECIFIED = 0;
+
+  // USER role refers to communication from the client to the server.
+  ROLE_USER = 1;
+
+  // AGENT role refers to communication from the server to the client.
+  ROLE_AGENT = 2;
+}
+
+// Configuration of a send message request.
+message SendMessageConfiguration {
+  // Optional. The output modes that the agent is expected to respond with.
+  repeated string accepted_output_modes = 1
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A configuration of a webhook that can be used to receive updates.
+  PushNotificationConfig push_notification = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The maximum number of messages to include in the history. If 0,
+  // the history will be unlimited.
+  int32 history_length = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If true, the message will be blocking until the task is
+  // completed. If false, the task will be returned immediately.
+  bool blocking = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A2ATask is the core unit of action for A2A. It has a current status
+// and when results are created for the task they are stored in the
+// artifact. If there are multiple turns for a task, these are stored in
+// history.
+message A2ATask {
+  // Optional. Unique identifier (e.g. UUID) for the task, generated by the
+  // server for a new task.
+  string id = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Unique identifier (e.g. UUID) for the contextual collection of
+  // interactions (tasks and messages). Created by the A2A server.
+  string context_id = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The current status of a Task, including state and a message.
+  TaskStatus status = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A set of output artifacts for a Task.
+  repeated A2AArtifact artifacts = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The history of interactions from a task.
+  repeated A2AMessage history = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A key/value object to store custom metadata about a task.
+  google.protobuf.Struct metadata = 6 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A container for the status of a task.
+message TaskStatus {
+  // Output only. The current state of this task.
+  TaskState state = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. A message associated with the status.
+  A2AMessage update = 2
+      [json_name = "message", (google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Timestamp when the status was recorded.
+  google.protobuf.Timestamp timestamp = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Part represents a container for a section of communication content.
+// Parts can be purely textual, some sort of file (image, video, etc) or
+// a structured data blob (i.e. JSON).
+message Part {
+  // The content payload of the part.
+  oneof part {
+    // Plain text content.
+    string text = 1;
+
+    // File content payload.
+    FilePart file = 2;
+
+    // Structured data content payload.
+    DataPart data = 3;
+  }
+
+  // Optional. Metadata associated with the part.
+  google.protobuf.Struct metadata = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// FilePart represents the different ways files can be provided.
+message FilePart {
+  // The file representation payload.
+  oneof file {
+    // The URI pointing to the file.
+    string file_with_uri = 1;
+
+    // The raw bytes of the file.
+    bytes file_with_bytes = 2;
+  }
+
+  // Optional. The MIME type of the file.
+  string mime_type = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The name of the file.
+  string name = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// DataPart represents a structured blob. This is most commonly a JSON payload.
+message DataPart {
+  // Optional. The structured data payload.
+  google.protobuf.Struct data = 1 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A2AMessage is one unit of communication between client and server.
+message A2AMessage {
+  // Optional. The unique identifier (e.g. UUID) of the message.
+  string message_id = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The context id of the message.
+  string context_id = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The task id of the message.
+  string task_id = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A role for the message.
+  Role role = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Content is the container of the message content.
+  repeated Part content = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Any optional metadata to provide along with the message.
+  google.protobuf.Struct metadata = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The URIs of extensions that are present or contributed to this
+  // Message.
+  repeated string extensions = 7 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A2AArtifact is the container for task completed results.
+message A2AArtifact {
+  // Optional. Unique identifier (e.g. UUID) for the artifact.
+  string artifact_id = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A human readable name for the artifact.
+  string name = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A human readable description of the artifact, optional.
+  string description = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The content of the artifact.
+  repeated Part parts = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional metadata included with the artifact.
+  google.protobuf.Struct metadata = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The URIs of extensions that are present or contributed to this
+  // Artifact.
+  repeated string extensions = 7 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// TaskStatusUpdateEvent is a delta event on a task indicating that a task
+// has changed.
+message TaskStatusUpdateEvent {
+  // Optional. The id of the task that is changed.
+  string task_id = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The id of the context that the task belongs to.
+  string context_id = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The new status of the task.
+  TaskStatus status = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether this is the last status update expected for this task.
+  bool final = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional metadata to associate with the task update.
+  google.protobuf.Struct metadata = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// TaskArtifactUpdateEvent represents a task delta where an artifact has
+// been generated.
+message TaskArtifactUpdateEvent {
+  // Optional. The id of the task for this artifact.
+  string task_id = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The id of the context that this task belongs to.
+  string context_id = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The artifact itself.
+  A2AArtifact artifact = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether this should be appended to a prior one produced.
+  bool append = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether this represents the last part of an artifact.
+  bool last_chunk = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional metadata associated with the artifact update.
+  google.protobuf.Struct metadata = 6 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Configuration for setting up push notifications for task updates.
+message PushNotificationConfig {
+  // Optional. A unique identifier (e.g. UUID) for this push notification.
+  string id = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Url to send the notification to.
+  string url = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Token unique for this task/session.
+  string token = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Information about the authentication to send with the
+  // notification.
+  AuthenticationInfo authentication = 4
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Defines authentication details, used for push notifications.
+message AuthenticationInfo {
+  // Optional. Supported authentication schemes - e.g. Basic, Bearer, etc.
+  repeated string schemes = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional credentials.
+  string credentials = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Defines additional transport information for the agent.
+message AgentInterface {
+  // Optional. The url this interface is found at.
+  string url = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The transport supported at this url.
+  string transport = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Tenant to be set in the request when calling the agent.
+  string tenant = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// AgentCard conveys key information about an agent.
+message AgentCard {
+  // Optional. The version of the A2A protocol this agent supports.
+  string protocol_version = 16 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A human readable name for the agent.
+  string name = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A description of the agent's domain of action/solution space.
+  string description = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A URL to the address the agent is hosted at.
+  string url = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The transport of the preferred endpoint. If empty, defaults to
+  // JSONRPC.
+  string preferred_transport = 14 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Announcement of additional supported transports.
+  repeated AgentInterface additional_interfaces = 15
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The service provider of the agent.
+  AgentProvider provider = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The version of the agent.
+  string version = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A url to provide additional documentation about the agent.
+  string documentation_url = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A2A Capability set supported by the agent.
+  AgentCapabilities capabilities = 7 [(google.api.field_behavior) = OPTIONAL];
+
+  // The security scheme details used for authenticating with this agent.
+  map<string, SecurityScheme> security_schemes = 8;
+
+  // Security requirements for contacting the agent.
+  repeated Security security = 9;
+
+  // Optional. The set of interaction modes that the agent supports across all
+  // skills.
+  repeated string default_input_modes = 10
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The mime types supported as outputs from this agent.
+  repeated string default_output_modes = 11
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Skills represent a unit of ability an agent can perform.
+  repeated AgentSkill skills = 12 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether the agent supports providing an extended agent card when
+  // the user is authenticated.
+  bool supports_authenticated_extended_card = 13
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. JSON Web Signatures computed for this AgentCard.
+  repeated AgentCardSignature signatures = 17
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. An optional URL to an icon for the agent.
+  string icon_url = 18 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Represents information about the service provider of an agent.
+message AgentProvider {
+  // Optional. The provider's reference url.
+  string url = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The provider's organization name.
+  string organization = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Defines the A2A feature set supported by the agent.
+message AgentCapabilities {
+  // Optional. If the agent will support streaming responses.
+  bool streaming = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If the agent can send push notifications to the client's webhook.
+  bool push_notifications = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Extensions supported by this agent.
+  repeated AgentExtension extensions = 3
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A declaration of an extension supported by an Agent.
+message AgentExtension {
+  // Optional. The URI of the extension.
+  string uri = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A description of how this agent uses this extension.
+  string description = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether the client must follow specific requirements of the
+  // extension.
+  bool required = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional configuration for the extension.
+  google.protobuf.Struct params = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// AgentSkill represents a unit of action/solution that the agent can perform.
+message AgentSkill {
+  // Optional. Unique identifier of the skill within this agent.
+  string id = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A human readable name for the skill.
+  string name = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A human readable description of the skill details and behaviors.
+  string description = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A set of tags for the skill to enhance
+  // categorization/utilization.
+  repeated string tags = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A set of example queries that this skill is designed to address.
+  repeated string examples = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Possible input modalities supported.
+  repeated string input_modes = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Possible output modalities produced.
+  repeated string output_modes = 7 [(google.api.field_behavior) = OPTIONAL];
+
+  // Security schemes necessary for the agent to leverage this skill.
+  repeated Security security = 8;
+}
+
+// AgentCardSignature represents a JWS signature of an AgentCard.
+message AgentCardSignature {
+  // Required. The protected JWS header for the signature. Base64url-encoded.
+  string protected = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The computed signature, base64url-encoded.
+  string signature = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The unprotected JWS header values.
+  google.protobuf.Struct header = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// StringList is a wrapper for a repeated list of strings.
+message StringList {
+  // The list of strings.
+  repeated string list = 1;
+}
+
+// Security requirements for contacting the agent.
+message Security {
+  // Map of scheme names to lists of scopes or configurations.
+  map<string, StringList> schemes = 1;
+}
+
+// SecurityScheme defines a security scheme for contacting the agent.
+message SecurityScheme {
+  // The security scheme definition.
+  oneof scheme {
+    // API key security scheme.
+    APIKeySecurityScheme api_key_security_scheme = 1;
+
+    // HTTP authentication security scheme.
+    HTTPAuthSecurityScheme http_auth_security_scheme = 2;
+
+    // OAuth2 security scheme.
+    OAuth2SecurityScheme oauth2_security_scheme = 3;
+
+    // OpenID Connect security scheme.
+    OpenIdConnectSecurityScheme open_id_connect_security_scheme = 4;
+
+    // Mutual TLS security scheme.
+    MutualTlsSecurityScheme mtls_security_scheme = 5;
+  }
+}
+
+// APIKeySecurityScheme defines an API key security scheme.
+message APIKeySecurityScheme {
+  // Optional. Description of this security scheme.
+  string description = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Location of the API key, valid values are "query", "header", or
+  // "cookie".
+  string location = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Name of the header, query or cookie parameter to be used.
+  string name = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// HTTPAuthSecurityScheme defines an HTTP authentication security scheme.
+message HTTPAuthSecurityScheme {
+  // Optional. Description of this security scheme.
+  string description = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The name of the HTTP Authentication scheme to be used in the
+  // Authorization header.
+  string scheme = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A hint to the client to identify how the bearer token is
+  // formatted.
+  string bearer_format = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// OAuth2SecurityScheme defines an OAuth2 security scheme.
+message OAuth2SecurityScheme {
+  // Optional. Description of this security scheme.
+  string description = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. An object containing configuration information for the flow types
+  // supported.
+  OAuthFlows flows = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. URL to the oauth2 authorization server metadata.
+  string oauth2_metadata_url = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// OpenIdConnectSecurityScheme defines an OpenID Connect security scheme.
+message OpenIdConnectSecurityScheme {
+  // Optional. Description of this security scheme.
+  string description = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Well-known URL to discover the OpenID Connect provider metadata.
+  string open_id_connect_url = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// MutualTlsSecurityScheme defines a Mutual TLS security scheme.
+message MutualTlsSecurityScheme {
+  // Optional. Description of this security scheme.
+  string description = 1 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// OAuthFlows contains configuration information for supported OAuth flows.
+message OAuthFlows {
+  // The supported OAuth flow configuration.
+  oneof flow {
+    // Authorization code flow.
+    AuthorizationCodeOAuthFlow authorization_code = 1;
+
+    // Client credentials flow.
+    ClientCredentialsOAuthFlow client_credentials = 2;
+
+    // Implicit flow.
+    ImplicitOAuthFlow implicit = 3;
+
+    // Resource owner password credentials flow.
+    PasswordOAuthFlow password = 4;
+  }
+}
+
+// AuthorizationCodeOAuthFlow defines an authorization code OAuth flow.
+message AuthorizationCodeOAuthFlow {
+  // Optional. The authorization URL to be used for this flow.
+  string authorization_url = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The token URL to be used for this flow.
+  string token_url = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The URL to be used for obtaining refresh tokens.
+  string refresh_url = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // The available scopes for the OAuth2 security scheme.
+  map<string, string> scopes = 4;
+}
+
+// ClientCredentialsOAuthFlow defines a client credentials OAuth flow.
+message ClientCredentialsOAuthFlow {
+  // Optional. The token URL to be used for this flow.
+  string token_url = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The URL to be used for obtaining refresh tokens.
+  string refresh_url = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // The available scopes for the OAuth2 security scheme.
+  map<string, string> scopes = 3;
+}
+
+// ImplicitOAuthFlow defines an implicit OAuth flow.
+message ImplicitOAuthFlow {
+  // Optional. The authorization URL to be used for this flow.
+  string authorization_url = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The URL to be used for obtaining refresh tokens.
+  string refresh_url = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // The available scopes for the OAuth2 security scheme.
+  map<string, string> scopes = 3;
+}
+
+// PasswordOAuthFlow defines a password OAuth flow.
+message PasswordOAuthFlow {
+  // Optional. The token URL to be used for this flow.
+  string token_url = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The URL to be used for obtaining refresh tokens.
+  string refresh_url = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // The available scopes for the OAuth2 security scheme.
+  map<string, string> scopes = 3;
+}
+
+// Request message for SendMessage and SendStreamingMessage.
+message SendMessageRequest {
+  // Required. The message to send to the agent.
+  A2AMessage message = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Configuration for the send request.
+  SendMessageConfiguration configuration = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional metadata for the request.
+  google.protobuf.Struct metadata = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional tenant, provided as a path parameter.
+  string tenant = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request message for GetAgentCard.
+message GetAgentCardRequest {
+  // Optional. Optional tenant, provided as a path parameter.
+  string tenant = 1 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message for SendMessage.
+message SendMessageResponse {
+  // The response payload.
+  oneof payload {
+    // Completed task.
+    A2ATask task = 1;
+
+    // Single message response.
+    A2AMessage msg = 2 [json_name = "message"];
+  }
+}
+
+// The stream response for a message.
+message StreamResponse {
+  // The stream response payload.
+  oneof payload {
+    // Completed task event.
+    A2ATask task = 1;
+
+    // Message event.
+    A2AMessage msg = 2 [json_name = "message"];
+
+    // Task status update event.
+    TaskStatusUpdateEvent status_update = 3;
+
+    // Task artifact update event.
+    TaskArtifactUpdateEvent artifact_update = 4;
+  }
+}
