@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,6 +21,9 @@ import "google/api/field_info.proto";
 import "google/api/resource.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
+import "google/type/date.proto";
+import "google/type/dayofweek.proto";
+import "google/type/timeofday.proto";
 
 option go_package = "cloud.google.com/go/lustre/apiv1/lustrepb;lustrepb";
 option java_multiple_files = true;
@@ -60,7 +63,12 @@ message Instance {
     STOPPED = 6;
 
     // The instance is being updated.
-    UPDATING = 7;
+    UPDATING = 7 [deprecated = true];
+
+    // The instance is suspended due to an issue related to Cloud KMS. The
+    // details are available in
+    // [state_reason][google.cloud.lustre.v1.Instance.state_reason].
+    SUSPENDED = 8;
   }
 
   // Identifier. The name of the instance.
@@ -75,7 +83,9 @@ message Instance {
   ];
 
   // Required. The storage capacity of the instance in gibibytes (GiB). Allowed
-  // values are from `18000` to `954000`, in increments of 9000.
+  // values depend on the `perUnitStorageThroughput`. See [Performance
+  // tiers](https://docs.cloud.google.com/managed-lustre/docs/performance-tiers)
+  // for specific minimums, maximums, and step sizes for each performance tier.
   int64 capacity_gib = 2 [(google.api.field_behavior) = REQUIRED];
 
   // Required. Immutable. The full name of the VPC network to which the instance
@@ -108,16 +118,196 @@ message Instance {
   // Optional. Labels as key value pairs.
   map<string, string> labels = 9 [(google.api.field_behavior) = OPTIONAL];
 
-  // Required. The throughput of the instance in MB/s/TiB.
-  // Valid values are 125, 250, 500, 1000.
+  // Optional. The throughput of the instance in MBps per TiB. Valid values are
+  // 0, 125, 250, 500, 1000. See [Performance
+  // tiers](https://docs.cloud.google.com/managed-lustre/docs/performance-tiers)
+  // for more information.
+  //
+  // If the instance is using the Dynamic tier, this field must not be set or
+  // must be set to zero.
   int64 per_unit_storage_throughput = 11
-      [(google.api.field_behavior) = REQUIRED];
+      [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Indicates whether you want to enable support for GKE clients. By
-  // default, GKE clients are not supported. Deprecated. No longer required for
-  // GKE instance creation.
+  // Optional. Deprecated: No longer required for GKE instance creation.
+  // Indicates whether you want to enable support for GKE clients. By default,
+  // GKE clients are not supported.
   bool gke_support_enabled = 12
       [deprecated = true, (google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Immutable. The Cloud KMS key name to use for data encryption.
+  // If not set, the instance will use Google-managed encryption keys.
+  // If set, the instance will use customer-managed encryption keys.
+  // The key must be in the same region as the instance.
+  // The key format is:
+  // projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{key}
+  string kms_key = 13 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.resource_reference) = {
+      type: "cloudkms.googleapis.com/CryptoKey"
+    }
+  ];
+
+  // Output only. The reason why the instance is in a certain state (e.g.
+  // SUSPENDED).
+  string state_reason = 14 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The placement policy name for the instance in the format of
+  // projects/{project}/locations/{location}/resourcePolicies/{resource_policy}
+  string placement_policy = 17 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "compute.googleapis.com/ResourcePolicy"
+    }
+  ];
+
+  // Optional. The access rules options for the instance.
+  AccessRulesOptions access_rules_options = 18
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Unique ID of the resource.
+  // This is unrelated to the access rules which allow specifying the root
+  // squash uid.
+  string uid = 19 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OUTPUT_ONLY
+  ];
+
+  // Optional. The maintenance policy for the instance to determine when to
+  // allow or exclude the instance from maintenance updates.
+  MaintenancePolicy maintenance_policy = 20
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. Date and time of upcoming maintenance for the instance, if a
+  // maintenance policy is set.
+  MaintenanceSchedule upcoming_maintenance_schedule = 21
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Immutable. Specifies whether the instance is on the Dynamic tier.
+  // See [Performance
+  // tiers](https://docs.cloud.google.com/managed-lustre/docs/performance-tiers)
+  // for more information.
+  DynamicTierOptions dynamic_tier_options = 24 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+
+  // Output only. The available version that this instance can be upgraded to.
+  // Format: `Lustre_YYYYMMDD.NN_pXX`
+  optional string available_version = 33
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The target version of the instance. Setting this field triggers a
+  // self-service update to the specified version.
+  // Format: `Lustre_YYYYMMDD.NN_pXX` or `latest`
+  optional string target_version = 34 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The effective version of the instance.
+  // Format: `Lustre_YYYYMMDD.NN_pXX`
+  optional string effective_version = 35
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Dynamic tier options for a Managed Lustre instance.
+message DynamicTierOptions {
+  // Specifies the Dynamic performance tier for the instance.
+  //
+  // If this field is set to `DEFAULT_CACHE`, `per_unit_storage_throughput`
+  // must not be set or must be set to zero.
+  enum Mode {
+    // Unspecified dynamic tier mode.
+    MODE_UNSPECIFIED = 0;
+
+    // The dynamic tier is explicitly disabled.
+    DISABLED = 1;
+
+    // The dynamic tier is enabled.
+    DEFAULT_CACHE = 2;
+  }
+
+  // Required. Immutable. The dynamic tier mode of the instance.
+  Mode mode = 1 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = REQUIRED
+  ];
+}
+
+// IP-based access rules for the Managed Lustre instance. These options
+// define the root user squash configuration.
+message AccessRulesOptions {
+  // A single policy group with IP-based access rules for the Managed
+  // Lustre instance.
+  message AccessRule {
+    // Required. The name of the access rule policy group.
+    // Must be 16 characters or less and include only alphanumeric characters
+    // or '_'.
+    string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The IP address ranges to which to apply this access rule.
+    // Accepts non-overlapping CIDR ranges (e.g., `192.168.1.0/24`) and IP
+    // addresses (e.g., `192.168.1.0`).
+    repeated string ip_address_ranges = 2
+        [(google.api.field_behavior) = REQUIRED];
+
+    // Required. Squash mode for the access rule.
+    SquashMode squash_mode = 6 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Squash mode for an access rule.
+  enum SquashMode {
+    // Unspecified squash mode.
+    SQUASH_MODE_UNSPECIFIED = 0;
+
+    // Squash is disabled.
+    //
+    // If set inside an
+    // [AccessRule][google.cloud.lustre.v1.AccessRulesOptions.AccessRule], root
+    // users matching the [ip_ranges][AccessRule.ip_ranges] are not squashed.
+    //
+    // If set as the
+    // [default_squash_mode][google.cloud.lustre.v1.AccessRulesOptions.default_squash_mode],
+    // root squash is disabled for this instance.
+    //
+    // If the default squash mode is `NO_SQUASH`, do not set the
+    // [default_squash_uid][google.cloud.lustre.v1.AccessRulesOptions.default_squash_uid]
+    // or
+    // [default_squash_gid][google.cloud.lustre.v1.AccessRulesOptions.default_squash_gid],
+    // or an `invalid argument` error is returned.
+    NO_SQUASH = 1;
+
+    // Root user squash is enabled.
+    //
+    // Not supported inside an
+    // [AccessRule][google.cloud.lustre.v1.AccessRulesOptions.AccessRule].
+    //
+    // If set as the
+    // [default_squash_mode][google.cloud.lustre.v1.AccessRulesOptions.default_squash_mode],
+    // root users not matching any of the
+    // [access_rules][google.cloud.lustre.v1.AccessRulesOptions.access_rules]
+    // are squashed to the
+    // [default_squash_uid][google.cloud.lustre.v1.AccessRulesOptions.default_squash_uid]
+    // and
+    // [default_squash_gid][google.cloud.lustre.v1.AccessRulesOptions.default_squash_gid].
+    ROOT_SQUASH = 2;
+  }
+
+  // Optional. The access rules for the instance.
+  repeated AccessRule access_rules = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. The squash mode for the default access rule.
+  SquashMode default_squash_mode = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The user squash UID for the default access rule.
+  // This user squash UID applies to all root users connecting from clients
+  // that are not matched by any of the access rules. If not set, the default
+  // is 0 (no UID squash).
+  int32 default_squash_uid = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The user squash GID for the default access rule.
+  // This user squash GID applies to all root users connecting from clients
+  // that are not matched by any of the access rules. If not set, the default
+  // is 0 (no GID squash).
+  int32 default_squash_gid = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Message for requesting list of Instances
@@ -274,6 +464,11 @@ message DeleteInstanceRequest {
     (google.api.field_info).format = UUID4,
     (google.api.field_behavior) = OPTIONAL
   ];
+
+  // Optional. If set to true, any sub-resources from this instance will also be
+  // deleted. Otherwise, the request will only work if the instance has no
+  // sub-resources.
+  bool force = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Represents the metadata of a long-running operation.
@@ -304,4 +499,111 @@ message OperationMetadata {
 
   // Output only. API version used to start the operation.
   string api_version = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Defines a maintenance policy for a resource.
+message MaintenancePolicy {
+  // Weekly time window in which maintenance updates may occur.
+  // Duration of the window is currently fixed at 1 hour.
+  // Time zone is UTC.
+  message WeeklyMaintenanceWindow {
+    // Required. Day of the week for the maintenance window.
+    google.type.DayOfWeek day_of_week = 1
+        [(google.api.field_behavior) = REQUIRED];
+
+    // Required. Start time of the maintenance window in UTC time zone.
+    google.type.TimeOfDay start_time = 2
+        [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Exclusion period when maintenance updates should not occur.
+  // An exclusion window can be in either of the following two formats:
+  // * Non-recurring : A full date, with non-zero year, month and day values.
+  // * Recurring : A month and day value, with a zero year.
+  // Time zone is UTC.
+  message MaintenanceExclusionWindow {
+    // Required. Start date of the exclusion period in UTC time zone. This date
+    // is inclusive.
+    google.type.Date start_date = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. End date of the exclusion period in UTC time zone. This date is
+    // inclusive.
+    google.type.Date end_date = 2 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. Time in UTC when the exclusion window starts on start_date and
+    // ends on end_date. This can be:
+    // * Full time OR
+    // * All zeros for 00:00:00 UTC
+    google.type.TimeOfDay time = 3 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Required. The weekly maintenance windows for the instance. Currently
+  // limited to 1 window.
+  repeated WeeklyMaintenanceWindow weekly_maintenance_windows = 3
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The exclusion windows for the instance. Currently limited to 1
+  // window.
+  repeated MaintenanceExclusionWindow maintenance_exclusion_window = 4
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Represents a scheduled maintenance event.
+message MaintenanceSchedule {
+  // Output only. The scheduled start time for the maintenance.
+  google.protobuf.Timestamp start_time = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The scheduled end time for the maintenance.
+  google.protobuf.Timestamp end_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Message for requesting to reschedule a maintenance event for a specific
+// instance.
+message RescheduleMaintenanceRequest {
+  // The desired reschedule settings.
+  message Reschedule {
+    // Required. The type of rescheduling.
+    RescheduleType reschedule_type = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. Required if reschedule_type is BY_TIME. Timestamp when the
+    // maintenance shall be rescheduled to. This time must be within
+    // 28 days of the original scheduled maintenance start time.
+    google.protobuf.Timestamp schedule_time = 2
+        [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // The type of rescheduling event. More reschedule types may be added in the
+  // future.
+  enum RescheduleType {
+    // Unspecified schedule type.
+    RESCHEDULE_TYPE_UNSPECIFIED = 0;
+
+    // Apply update immediately
+    IMMEDIATE = 1;
+
+    // Reschedule to the next available window.
+    NEXT_AVAILABLE_WINDOW = 2;
+
+    // Reschedule to a specific time.
+    BY_TIME = 3;
+  }
+
+  // Required. Format:
+  // projects/{project}/locations/{location}/instances/{instance}
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "lustre.googleapis.com/Instance" }
+  ];
+
+  // Required. The desired reschedule settings.
+  Reschedule reschedule = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. A unique identifier for this request. A random UUID is
+  // recommended. This request is only idempotent if a `request_id` is provided.
+  string request_id = 3 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OPTIONAL
+  ];
 }
