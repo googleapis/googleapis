@@ -1,46 +1,5 @@
 # Google APIs
 
-This repository contains the original interface definitions of public
-Google APIs that support both REST and gRPC protocols. Reading the
-original interface definitions can provide a better understanding of
-Google APIs and help you to utilize them more efficiently. You can also
-use these definitions with open source tools to generate client
-libraries, documentation, and other artifacts.
-
-## Building
-### Bazel
-
-The recommended way to build the API client libraries is through
-[Bazel](https://bazel.build/) >= 4.2.2.
-
-First, [install bazel](https://docs.bazel.build/versions/master/install.html).
-
-To build all libraries:
-
-```
-bazel build //...
-```
-
-To test all libraries:
-
-```
-bazel test //...
-```
-
-To build one library in all languages:
-
-```
-bazel build //google/example/library/v1/...
-```
-
-To build the Java package for one library:
-
-```
-bazel build //google/example/library/v1:google-cloud-example-library-v1-java
-```
-
-Bazel packages exist in all the libraries for Java, Go, Python, Ruby, Node.js, PHP and C#.
-
 ## Overview
 
 Google APIs are typically deployed as API services that are hosted
@@ -71,15 +30,6 @@ You can use these libraries to access Google Cloud APIs. They are based
 on gRPC for better performance and provide idiomatic client surface for
 better developer experience.
 
-## Discussions
-
-This repo contains copies of Google API definitions and related files.  For
-discussions or to raise issues about
-[Google API client libraries](https://github.com/googleapis),
-[GRPC](https://github.com/grpc) or
-[Google Cloud Client Libraries](https://github.com/googlecloudplatform) please
-refer to the repos associated with each area.
-
 ## Repository Structure
 
 This repository uses a directory hierarchy that reflects the Google
@@ -89,25 +39,12 @@ The proto package names exactly match the directory: this makes it
 easy to locate the proto definitions and ensures that the generated
 client libraries have idiomatic namespaces in most programming
 languages. Alongside the API directories live the configuration files
-for the [GAPIC toolkit](https://github.com/googleapis/toolkit).
+for GAPIC generators.
+
+The `preview/` subdirectory is a nested API root dedicated to API surfaces that
+are explicitly in preview. This is a subset of APIs found in the root of the
+repository. These **must not** be consumed alongside API protos found in the
+root of the repository. Generally, do not depend on these protos directly.
 
 **NOTE:** The major version of an API is used to indicate breaking
 change to the API.
-
-## Generate gRPC Source Code
-
-To generate gRPC source code for Google APIs in this repository, you
-first need to install both Protocol Buffers and gRPC on your local
-machine, then you can run `make LANGUAGE=xxx all` to generate the
-source code. You need to integrate the generated source code into
-your application build system.
-
-**NOTE:** The Makefile is only intended to generate source code for the
-entire repository. It is not for generating linkable client library
-for a specific API. Please see other repositories under
-https://github.com/googleapis for generating linkable client libraries.
-
-### Go gRPC Source Code
-It is difficult to generate Go gRPC source code from this repository,
-since Go has different directory structure.
-Please use [this repository](https://github.com/google/go-genproto) instead.
