@@ -121,6 +121,34 @@ message LoadBalancingOptions {
   }
 }
 
+// Configuration for how a given slice of traffic is diverted to sessions.
+// Internal usage only.
+message SessionScopeDiversionConfiguration {
+  // What share of in-scope requests should operate on a session, [0, 1].
+  // The remaining requests within this scope should operate on the classic API.
+  float session_load = 1;
+}
+
+// Configuration for how to divert load to sessions. Internal usage only.
+message SessionDiversionConfiguration {
+  // Configuration for how to balance sessions per method. Internal usage only.
+  message PerScopeDiversion {
+    // Keys: Attributes of the request scope that can impact the diversion.
+    // Valid format is:
+    //   "method:<service>.<method>" - All requests with this scope will have
+    //   the specified diversion config applied.
+    map<string, SessionScopeDiversionConfiguration> scope_diversions = 1;
+  }
+
+  oneof diversion_strategy {
+    // If provided, all scopes should use this diversion config.
+    SessionScopeDiversionConfiguration global_diversion = 1;
+
+    // Diversion happens per-scope.
+    PerScopeDiversion per_scope_diversion = 2;
+  }
+}
+
 // Configuration for the Session API. Internal usage only.
 message SessionClientConfiguration {
   // Configuration for the channel pool.
@@ -202,6 +230,12 @@ message SessionClientConfiguration {
     // attempt.
     google.protobuf.Duration new_session_creation_penalty = 6;
 
+    // How many concurrent session closures are allowed. The client will hold
+    // onto a count against this budget whenever it is closing a session, and
+    // release that count once the session is successfully established or failed
+    // to establish.
+    int32 soft_session_close_budget = 7;
+
     // A threshold for cancelling all pending vRPCs based on how many
     // consecutive session establishment errors have been observed. The client
     // will eagerly cancel queued vRPCs after this threshold is met to avoid
@@ -210,13 +244,26 @@ message SessionClientConfiguration {
     int32 consecutive_session_failure_threshold = 8;
 
     // How to balance vRPC load over connections to AFEs.
-    // Set only if session_load > 0.
+    //
+    // Set only if session_load or session_diversion_configuration indicates
+    // that there will be some session traffic.
     LoadBalancingOptions load_balancing_options = 9;
   }
 
-  // What share of requests should operate on a session, [0, 1]. The rest
-  // should operate on the old-style API.
-  float session_load = 1;
+  // Deprecated: Prefer session_diversion_configuration. If both are provided,
+  // the client should apply this session_load to Bigtable.ReadRow &
+  // Bigtable.MutateRow, then process the session_diversion_configuration,
+  // overwriting any behavior established by this value.
+  //
+  // What share of the following methods should operate on a session, [0, 1]:
+  //   * Bigtable.ReadRow
+  //   * Bigtable.MutateRow
+  //
+  // The rest should operate on the classic API, e.g. have session_load = 0.
+  float session_load = 1 [deprecated = true];
+
+  // How load should be divered to sessions.
+  SessionDiversionConfiguration session_diversion_configuration = 5;
 
   LoadBalancingOptions load_balancing_options = 2 [deprecated = true];
 
@@ -304,6 +351,10 @@ message SessionRequest {
     CloseSessionRequest close_session = 2;
 
     VirtualRpcRequest virtual_rpc = 3;
+
+    ContinueVirtualRpcRequest continue_virtual_rpc = 4;
+
+    CancelVirtualRpcRequest cancel_virtual_rpc = 5;
   }
 }
 
@@ -503,6 +554,9 @@ message VirtualRpcRequest {
     //
     // Note, this may not be needed for V1, TBD.
     string traceparent = 3;
+
+    // How long to delay the operation for on the server-side, for testing.
+    google.protobuf.Duration delay = 4;
   }
 
   // Client chosen, monotonically increasing identifier for the request.
@@ -520,6 +574,16 @@ message VirtualRpcRequest {
 
   // Could be TableRequest (or in post-V1, SqlRequest)
   bytes payload = 4;
+}
+
+// Internal usage only.
+message ContinueVirtualRpcRequest {
+  int64 rpc_id = 1;
+}
+
+// Internal usage only.
+message CancelVirtualRpcRequest {
+  int64 rpc_id = 1;
 }
 
 // Information on which Cluster served a vRPC, e.g. for Client-Side metrics.
@@ -547,6 +611,9 @@ message VirtualRpcResponse {
 
   // Could be TableResponse (or in post-V1, SqlResponse)
   bytes payload = 3;
+
+  // If there are more responses for this rpc_id coming.
+  bool has_more = 5;
 }
 
 // Internal usage only.
@@ -572,7 +639,13 @@ message TableRequest {
 
     SessionMutateRowRequest mutate_row = 2;
 
+    SessionReadRowsRequest read_rows = 3;
+
     SessionCheckAndMutateRowRequest check_and_mutate_row = 4;
+
+    SessionReadModifyWriteRowRequest read_modify_write_row = 5;
+
+    SessionMutateRowsRequest mutate_rows = 6;
   }
 }
 
@@ -585,7 +658,13 @@ message TableResponse {
 
     SessionMutateRowResponse mutate_row = 2;
 
+    SessionReadRowsResponse read_rows = 3;
+
     SessionCheckAndMutateRowResponse check_and_mutate_row = 4;
+
+    SessionReadModifyWriteRowResponse read_modify_write_row = 5;
+
+    SessionMutateRowsResponse mutate_rows = 6;
   }
 }
 
@@ -599,7 +678,13 @@ message AuthorizedViewRequest {
 
     SessionMutateRowRequest mutate_row = 2;
 
+    SessionReadRowsRequest read_rows = 3;
+
     SessionCheckAndMutateRowRequest check_and_mutate_row = 4;
+
+    SessionReadModifyWriteRowRequest read_modify_write_row = 5;
+
+    SessionMutateRowsRequest mutate_rows = 6;
   }
 }
 
@@ -613,7 +698,13 @@ message AuthorizedViewResponse {
 
     SessionMutateRowResponse mutate_row = 2;
 
+    SessionReadRowsResponse read_rows = 3;
+
     SessionCheckAndMutateRowResponse check_and_mutate_row = 4;
+
+    SessionReadModifyWriteRowResponse read_modify_write_row = 5;
+
+    SessionMutateRowsResponse mutate_rows = 6;
   }
 }
 
@@ -625,6 +716,8 @@ message MaterializedViewRequest {
   // Note in V1 we target only pure point operations.
   oneof payload {
     SessionReadRowRequest read_row = 1;
+
+    SessionReadRowsRequest read_rows = 2;
   }
 }
 
@@ -637,6 +730,8 @@ message MaterializedViewResponse {
   // Note in V1 we target only pure point operations.
   oneof payload {
     SessionReadRowResponse read_row = 1;
+
+    SessionReadRowsResponse read_rows = 2;
   }
 }
 
@@ -650,6 +745,24 @@ message SessionReadRowRequest {
 // Internal usage only.
 message SessionReadRowResponse {
   Row row = 1;
+
+  RequestStats stats = 2;
+}
+
+// Internal usage only.
+message SessionReadRowsRequest {
+  RowSet rows = 1;
+
+  RowFilter filter = 2;
+
+  int64 rows_limit = 3;
+
+  bool reversed = 4;
+}
+
+// Internal usage only.
+message SessionReadRowsResponse {
+  repeated Row row = 1;
 
   RequestStats stats = 2;
 }
@@ -681,6 +794,64 @@ message SessionCheckAndMutateRowResponse {
 }
 
 // Internal usage only.
+message SessionReadModifyWriteRowRequest {
+  bytes key = 1;
+
+  repeated ReadModifyWriteRule rules = 2;
+}
+
+// Internal usage only.
+message SessionReadModifyWriteRowResponse {
+  Row row = 1;
+}
+
+// Internal usage only.
+message SessionMutateRowsRequest {
+  // A mutation for a given row.
+  message Entry {
+    // The key of the row to which the `mutations` should be applied.
+    bytes key = 1;
+
+    // Changes to be atomically applied to the specified row.
+    repeated Mutation mutations = 2;
+
+    // The idempotency of the mutation.
+    Idempotency idempotency = 3;
+  }
+
+  // The row keys and corresponding mutations to be applied in bulk.
+  repeated Entry entries = 1;
+}
+
+// Internal usage only.
+message SessionMutateRowsResponse {
+  // The result of applying a passed mutation in the original request.
+  message Entry {
+    // The index into the original request's `entries` list of the Entry
+    // for which a result is being reported.
+    int64 index = 1;
+
+    // The result of the request Entry identified by `index`.
+    google.rpc.Status status = 2;
+  }
+
+  // Rate limiting information for batched mutations.
+  message RateLimitInfo {
+    // Time that must pass before the client should adjust its rate again.
+    google.protobuf.Duration period = 1;
+
+    // Multiplier that the client should apply to its current request rate.
+    double factor = 2;
+  }
+
+  // One or more results for Entries from the batch request.
+  repeated Entry entries = 1;
+
+  // Information about how the client should adjust its rate of requests.
+  optional RateLimitInfo rate_limit_info = 2;
+}
+
+// Internal usage only.
 message SessionParametersResponse {
   // Maximum time between messages that the AFE will send to the client. The
   // client may use this information to determine its control-flow in relation
@@ -689,6 +860,11 @@ message SessionParametersResponse {
   //
   // See also Heartbeats.
   google.protobuf.Duration keep_alive = 1;
+
+  // Client will pull this many bytes at most to make messages for steamed
+  // responses. If the last byte is mid-message, it will continue until a full
+  // message comes.
+  int32 softmax_streaming_prefetch_buffer_bytes = 2;
 }
 
 // Internal usage only.
