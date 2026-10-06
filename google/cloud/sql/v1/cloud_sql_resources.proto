@@ -31,6 +31,26 @@ option (google.api.resource_definition) = {
   type: "cloudsql.googleapis.com/Instance"
   pattern: "projects/{project}/instances/{instance}"
 };
+option (google.api.resource_definition) = {
+  type: "cloudsql.googleapis.com/CustomerManagedCertificate"
+  pattern: "projects/{project}/instances/{instance}/customerManagedCertificates/{certificate_bundle}"
+};
+option (google.api.resource_definition) = {
+  type: "cloudkms.googleapis.com/CryptoKey"
+  pattern: "projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}"
+};
+option (google.api.resource_definition) = {
+  type: "cloudkms.googleapis.com/CryptoKeyVersion"
+  pattern: "projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}/cryptoKeyVersions/{crypto_key_version}"
+};
+option (google.api.resource_definition) = {
+  type: "compute.googleapis.com/NetworkAttachment"
+  pattern: "projects/{project}/regions/{region}/networkAttachments/{network_attachment}"
+};
+option (google.api.resource_definition) = {
+  type: "sqladmin.googleapis.com/Instance"
+  pattern: "projects/{project}/instances/{instance}"
+};
 
 // An entry for an Access Control list.
 message AclEntry {
@@ -237,6 +257,10 @@ message PreCheckMajorVersionUpgradeContext {
 
   // Optional. This is always `sql#preCheckMajorVersionUpgradeContext`.
   string kind = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The maximum allowed runtime for the precheck operation.
+  optional google.protobuf.Duration max_runtime = 4
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Backup context.
@@ -934,9 +958,14 @@ message PscConfig {
 
   // Optional. The network attachment of the consumer network that the
   // Private Service Connect enabled Cloud SQL instance is
-  // authorized to connect via PSC interface.
+  // authorized to connect using the PSC interface.
   // format: projects/PROJECT/regions/REGION/networkAttachments/ID
-  string network_attachment_uri = 4 [(google.api.field_behavior) = OPTIONAL];
+  string network_attachment_uri = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "compute.googleapis.com/NetworkAttachment"
+    }
+  ];
 
   // Optional. Indicates whether Private Service Connect DNS automation is
   // enabled for this instance. When enabled, Cloud SQL provisions a universal
@@ -1152,17 +1181,31 @@ message MySqlReplicaConfiguration {
 
 // Disk encryption configuration for an instance.
 message DiskEncryptionConfiguration {
-  // Resource name of KMS key for disk encryption
-  string kms_key_name = 1;
+  // Resource name of KMS key for disk encryption.
+  string kms_key_name = 1 [(google.api.resource_reference) = {
+    type: "cloudkms.googleapis.com/CryptoKey"
+  }];
 
   // This is always `sql#diskEncryptionConfiguration`.
   string kind = 2;
+
+  // Optional. If true, enables Confidential Mode for the instance's Hyperdisk
+  // Balanced volumes. Only supported for zonal C4A instances currently.
+  optional bool confidential_mode = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether to enforce CMEK log encryption at source. When enforced,
+  // transaction logs are encrypted prior to being uploaded to Cloud Storage. If
+  // not enforced, then CMEK logs are encrypted by the Cloud Storage service.
+  optional bool cmek_source_log_encryption_enforced = 4
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Disk encryption status for an instance.
 message DiskEncryptionStatus {
   // KMS key version used to encrypt the Cloud SQL instance resource
-  string kms_key_version_name = 1;
+  string kms_key_version_name = 1 [(google.api.resource_reference) = {
+    type: "cloudkms.googleapis.com/CryptoKeyVersion"
+  }];
 
   // This is always `sql#diskEncryptionStatus`.
   string kind = 2;
@@ -1404,6 +1447,15 @@ message Operation {
     // migration workflow: including configuration, replication,
     // switchover/back, and data reseeding, as defined by operation's intent.
     SETUP_MIGRATION = 55;
+
+    // Creates a new Blue-Green deployment.
+    CREATE_BLUE_GREEN_DEPLOYMENT = 56;
+
+    // Switches over a Blue-Green deployment.
+    SWITCHOVER_BLUE_GREEN_DEPLOYMENT = 57;
+
+    // Deletes a Blue-Green deployment.
+    DELETE_BLUE_GREEN_DEPLOYMENT = 58;
   }
 
   // The status of an operation.
@@ -1485,6 +1537,27 @@ message Operation {
   // and the results of the check (including any warnings or errors found).
   PreCheckMajorVersionUpgradeContext pre_check_major_version_upgrade_context =
       50;
+
+  // The context for the `StartWorkloadCapture` operation, which contains
+  // details to start recording the workload (SQL queries) on a Cloud SQL
+  // instance.
+  StartWorkloadCaptureContext start_workload_capture_context = 59;
+
+  // The context for the `StopWorkloadCapture` operation, which contains
+  // details to stop recording the workload (SQL queries) on a Cloud SQL
+  // instance.
+  StopWorkloadCaptureContext stop_workload_capture_context = 60;
+
+  // The context for the `StartWorkloadReplay` operation, which contains details
+  // about starting the execution of a captured workload (recorded read and
+  // write SQL queries) on a replay instance (the Cloud SQL
+  // instance where the recorded SQL queries are executed).
+  StartWorkloadReplayContext start_workload_replay_context = 61;
+
+  // The context for the `StopWorkloadReplay` operation, which contains details
+  // about stopping the execution of a captured workload (recorded read and
+  // write SQL queries) on a replay instance.
+  StopWorkloadReplayContext stop_workload_replay_context = 62;
 
   // An identifier that uniquely identifies the operation. You can use this
   // identifier to retrieve the Operations resource that has information about
@@ -1755,7 +1828,8 @@ message Settings {
   // Insights configuration, for now relevant only for Postgres.
   InsightsConfig insights_config = 25;
 
-  // The local user password validation policy of the instance.
+  // The local user password validation policy of the instance for PostgreSQL
+  // and MySQL.
   PasswordValidationPolicy password_validation_policy = 27;
 
   // SQL Server specific audit configuration.
@@ -2519,3 +2593,61 @@ enum AutoDnsStatus {
   // DNS provisioning status is not recognized by Cloud SQL.
   AUTO_DNS_UNKNOWN = 3;
 }
+
+// The context for the `StartWorkloadCapture` operation, which contains
+// details to start recording the workload (SQL queries) on a Cloud SQL
+// instance.
+message StartWorkloadCaptureContext {
+  // Optional. If true, the captured workload is simultaneously executed on a
+  // separate, ephemeral Cloud SQL instance. This "live replay" instance
+  // is automatically provisioned and is cloned from the source instance. If
+  // false (the default), the workload is only stored and no live replay occurs.
+  // It can be replayed later using a separate `StartWorkloadReplayRequest`.
+  // Note: The workload capture runs continuously until an explicit
+  // `StopWorkloadCaptureRequest` is issued.
+  bool enable_live_replay = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Required if `enable_live_replay` is true.
+  // The name of the Cloud SQL instance where the captured workload
+  // (SQL queries) is being executed, excluding the project ID (for example,
+  // `my-replay-instance`). The instance name must start with a lowercase letter
+  // and contain only lowercase letters, numbers, and hyphens. The combined
+  // length of `project-ID:instance-name` must be 98 characters or less.
+  optional string replay_instance = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The context for the `StopWorkloadCapture` operation, which contains
+// details to stop recording the workload (SQL queries) on a Cloud SQL
+// instance.
+message StopWorkloadCaptureContext {
+  // Optional. If true, immediately aborts the concurrent live replay and
+  // discards any un-replayed traffic alongside stopping the capture. If false
+  // (the default), the capture stops recording new traffic, but the live replay
+  // will continue executing until the entire backlog of captured traffic has
+  // been replayed.
+  bool abort_live_replay = 1 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The context for the `StartWorkloadReplay` operation, which contains details
+// about starting the execution of a captured workload (recorded read and
+// write SQL queries) on a replay instance (the Cloud SQL
+// instance where the recorded SQL queries are executed).
+message StartWorkloadReplayContext {
+  // Required. The name of the Cloud SQL instance where the captured workload
+  // (SQL queries) is being executed, excluding the project ID (for example,
+  // `my-replay-instance`). The instance name must start with a lowercase letter
+  // and contain only lowercase letters, numbers, and hyphens. The combined
+  // length of `project-ID:instance-name` must be 98 characters or less.
+  string replay_instance = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Output only. The ID of the workload to start executing on the replay
+  // instance. Each workload capture generates a unique ID in the format
+  // `workload-<epoch_timestamp>` (for example, `workload-1786046400`). Use this
+  // ID to start executing the recorded SQL queries.
+  string workload_id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The context for the `StopWorkloadReplay` operation, which represents an
+// operation that stops an active workload replay on a target Cloud SQL replay
+// instance.
+message StopWorkloadReplayContext {}

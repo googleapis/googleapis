@@ -1298,6 +1298,11 @@ message InstancesRestoreBackupRequest {
   // With the difference that these fields are cleared in the settings.
   repeated string restore_instance_clear_overrides_field_names = 5
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If true, the restore operation proceeds even if the target
+  // instance's maintenance version is older than the source instance's
+  // maintenance version.
+  bool ignore_maintenance_version = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Rotate server CA request.
@@ -1485,7 +1490,10 @@ message PointInTimeRestoreContext {
   // Optional. The resource link for the VPC network from which the Cloud SQL
   // instance is accessible for private IP. For example,
   // `/projects/myProject/global/networks/default`.
-  optional string private_network = 4 [(google.api.field_behavior) = OPTIONAL];
+  optional string private_network = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = { type: "compute.googleapis.com/Network" }
+  ];
 
   // Optional. The name of the allocated IP range for the internal IP Cloud SQL
   // instance. For example: "google-managed-services-default". If you set this,
@@ -1890,6 +1898,13 @@ message DatabaseInstance {
       include_replicas_for_major_version_upgrade = 59
       [(google.api.field_behavior) = INPUT_ONLY];
 
+  // Optional. Input only. Determines whether the precheck step is skipped
+  // during a major version upgrade.
+  optional google.protobuf.BoolValue skip_precheck = 77 [
+    (google.api.field_behavior) = INPUT_ONLY,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+
   // Optional. Input only. Immutable. Tag keys and tag values that are bound to
   // this instance. You must represent each item in the map as:
   // `"<tag-key-namespaced-name>" : "<tag-value-short-name>"`.
@@ -1920,6 +1935,11 @@ message DatabaseInstance {
   repeated DnsNameMapping dns_names = 67
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  // Output only. Deployment info for the instance. This is set if the instance
+  // is currently part of any blue-green setup.
+  optional BlueGreenDeploymentInfo deployment_info = 73
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
   // Optional. If true, instance metadata is sent to the Database Center. If
   // false, instance metadata is not sent to the Database Center.
   google.protobuf.BoolValue database_center_integration_enabled = 72
@@ -1929,6 +1949,54 @@ message DatabaseInstance {
   // When unspecified, Database Center integration is enabled by default.
   optional DatabaseCenterIntegration database_center_integration = 76
       [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Blue-green deployment metadata for a database instance. In a blue-green
+// deployment, we maintain two environments, one of which is live.
+// This message contains details about the blue-green deployment.
+message BlueGreenDeploymentInfo {
+  // The source instance for the Blue-Green deployment.
+  message SourceRole {
+    // Output only. The target instance paired with this source instance in a
+    // blue-green deployment.
+    optional InstanceReference target_id = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // The target instance for the Blue-Green deployment.
+  message TargetRole {
+    // Output only. The source instance paired with this target instance in a
+    // blue-green deployment.
+    optional InstanceReference source_id = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // The state of blue-green-deployment for UI tags
+  enum State {
+    // The state of the deployment is unknown.
+    STATE_UNSPECIFIED = 0;
+
+    // The deployment is pre-switchover.
+    PRE_SWITCHOVER = 1;
+
+    // The deployment is post-switchover.
+    POST_SWITCHOVER = 2;
+  }
+
+  // Output only. The resource ID of the blue-green deployment.
+  optional string deployment_id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The role of the instance in the blue-green deployment.
+  oneof role_details {
+    // Output only. The source instance for the Blue-Green deployment.
+    SourceRole source = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The target instance for the Blue-Green deployment.
+    TargetRole target = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Output only. The current state of blue-green-deployment for UI tags
+  optional State state = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Gemini instance configuration.
@@ -2345,6 +2413,15 @@ message SqlExternalSyncSettingError {
     // The replication user is missing specific privileges to setup DDL
     // replication. (e.g. CREATE EVENT TRIGGER, CREATE SCHEMA) for PostgreSQL.
     PG_DDL_REPLICATION_INSUFFICIENT_PRIVILEGE = 58;
+
+    // Read replicas of the Writable Destination instance will be recreated
+    // after external synchronization is complete, causing downtime on read
+    // replicas.
+    WRITABLE_DESTINATION_REPLICA_RECREATION_DOWNTIME = 59;
+
+    // A warning that disk storage auto increase is disabled on the destination
+    // instance for a Writable Destination migration.
+    WRITABLE_DESTINATION_STORAGE_AUTO_INCREASE_DISABLED = 60;
   }
 
   // Can be `sql#externalSyncSettingError` or
@@ -2451,7 +2528,6 @@ message ReplicaConfiguration {
       [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Execute SQL statements request.
 message SqlInstancesExecuteSqlRequest {
   // Required. Database instance ID. This does not include the project ID.
   string instance = 1 [(google.api.field_behavior) = REQUIRED];
@@ -2494,6 +2570,7 @@ message ExecuteSqlPayload {
   string sql_statement = 2 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. Name of the database on which the statement will be executed.
+  // For Postgres and SQL Server it's required, for MySQL it's optional.
   string database = 3 [(google.api.field_behavior) = OPTIONAL];
 
   // Credentials for the database connection.
@@ -2534,7 +2611,6 @@ message ExecuteSqlPayload {
   string application = 16 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Execute SQL statements response.
 message SqlInstancesExecuteSqlResponse {
   // Represents a notice or warning message from the database.
   message Message {
@@ -2695,6 +2771,10 @@ enum SqlInstanceType {
 
   // A Cloud SQL read pool.
   READ_POOL_INSTANCE = 5;
+
+  // A Cloud SQL instance acting as a Blue-Green deployment target primary.
+  // (MySQL only)
+  GREEN_INSTANCE = 7;
 }
 
 // The suspension reason of the database instance if the state is SUSPENDED.
