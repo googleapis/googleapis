@@ -96,10 +96,35 @@ service CloudRedisCluster {
     option (google.api.method_signature) = "parent";
   }
 
+  // Lists all ACL policies owned by a project in either the specified
+  // location (region) or all locations.
+  //
+  // The location should have the following format:
+  //
+  // * `projects/{project_id}/locations/{location_id}`
+  //
+  // If `location_id` is specified as `-` (wildcard), then all regions
+  // available to the project are queried, and the results are aggregated.
+  rpc ListAclPolicies(ListAclPoliciesRequest)
+      returns (ListAclPoliciesResponse) {
+    option (google.api.http) = {
+      get: "/v1beta1/{parent=projects/*/locations/*}/aclPolicies"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
   // Gets the details of a specific Redis cluster.
   rpc GetCluster(GetClusterRequest) returns (Cluster) {
     option (google.api.http) = {
       get: "/v1beta1/{name=projects/*/locations/*/clusters/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Gets the details of a specific Redis Cluster ACL policy.
+  rpc GetAclPolicy(GetAclPolicyRequest) returns (AclPolicy) {
+    option (google.api.http) = {
+      get: "/v1beta1/{name=projects/*/locations/*/aclPolicies/*}"
     };
     option (google.api.method_signature) = "name";
   }
@@ -122,6 +147,29 @@ service CloudRedisCluster {
     };
   }
 
+  // Updates the ACL policy.
+  //
+  // The operation applies the updated ACL policy to all of the linked clusters.
+  // If Memorystore can apply the policy to all clusters, then the operation
+  // returns a SUCCESS status. If Memorystore can't apply the policy to all
+  // clusters, then to ensure eventual consistency, Memorystore uses
+  // reconciliation to apply the policy to the failed clusters.
+  //
+  // Completed longrunning.Operation will contain the new ACL policy object in
+  // the response field.
+  rpc UpdateAclPolicy(UpdateAclPolicyRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      patch: "/v1beta1/{acl_policy.name=projects/*/locations/*/aclPolicies/*}"
+      body: "acl_policy"
+    };
+    option (google.api.method_signature) = "acl_policy,update_mask";
+    option (google.longrunning.operation_info) = {
+      response_type: "AclPolicy"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
   // Deletes a specific Redis cluster. Cluster stops serving and data is
   // deleted.
   rpc DeleteCluster(DeleteClusterRequest)
@@ -134,6 +182,39 @@ service CloudRedisCluster {
       response_type: "google.protobuf.Empty"
       metadata_type: "google.protobuf.Any"
     };
+  }
+
+  // Deletes a specific ACL policy. This action will delete the ACL policy and
+  // all the rules associated with it. An ACL policy cannot be deleted if it is
+  // attached to a cluster.
+  rpc DeleteAclPolicy(DeleteAclPolicyRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      delete: "/v1beta1/{name=projects/*/locations/*/aclPolicies/*}"
+    };
+    option (google.api.method_signature) = "name";
+    option (google.longrunning.operation_info) = {
+      response_type: "google.protobuf.Empty"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
+  // Gets details of a specific ACL policy revision.
+  rpc GetAclPolicyRevision(GetAclPolicyRevisionRequest)
+      returns (AclPolicyRevision) {
+    option (google.api.http) = {
+      get: "/v1beta1/{name=projects/*/locations/*/aclPolicies/*/revisions/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Lists all ACL policy revisions in a given ACL policy.
+  rpc ListAclPolicyRevisions(ListAclPolicyRevisionsRequest)
+      returns (ListAclPolicyRevisionsResponse) {
+    option (google.api.http) = {
+      get: "/v1beta1/{parent=projects/*/locations/*/aclPolicies/*}/revisions"
+    };
+    option (google.api.method_signature) = "parent";
   }
 
   // Creates a Redis cluster based on the specified properties.
@@ -155,6 +236,17 @@ service CloudRedisCluster {
       response_type: "Cluster"
       metadata_type: "google.protobuf.Any"
     };
+  }
+
+  // Creates an ACL policy.
+  // The creation is executed synchronously and the policy is available for use
+  // immediately after the RPC returns.
+  rpc CreateAclPolicy(CreateAclPolicyRequest) returns (AclPolicy) {
+    option (google.api.http) = {
+      post: "/v1beta1/{parent=projects/*/locations/*}/aclPolicies"
+      body: "acl_policy"
+    };
+    option (google.api.method_signature) = "parent,acl_policy,acl_policy_id";
   }
 
   // Gets the details of certificate authority information for Redis cluster.
@@ -401,6 +493,39 @@ message CreateClusterRequest {
   string request_id = 4;
 }
 
+// Request for `CreateAclPolicy`.
+message CreateAclPolicyRequest {
+  // Required. The resource name of the cluster location using the form:
+  //     `projects/{project_id}/locations/{location_id}`
+  // where `location_id` refers to a Google Cloud region.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "redis.googleapis.com/AclPolicy"
+    }
+  ];
+
+  // Required. The logical name of the ACL policy in the customer project
+  // with the following restrictions:
+  //
+  // * Must contain only lowercase letters, numbers, and hyphens.
+  // * Must start with a letter.
+  // * Must be between 1-63 characters.
+  // * Must end with a number or a letter.
+  // * Must be unique within the customer project / location
+  string acl_policy_id = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The ACL policy that is to be created.
+  AclPolicy acl_policy = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Idempotent request UUID.
+  // .
+  string request_id = 4 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
 // Request for [ListClusters][CloudRedis.ListClusters].
 message ListClustersRequest {
   // Required. The resource name of the cluster location using the form:
@@ -450,6 +575,86 @@ message ListClustersResponse {
   repeated string unreachable = 3;
 }
 
+// Request for `ListAclPolicies`.
+message ListAclPoliciesRequest {
+  // Required. The resource name of the ACL policy location using the form:
+  //     `projects/{project_id}/locations/{location_id}`
+  // where `location_id` refers to a Google Cloud region.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "redis.googleapis.com/AclPolicy"
+    }
+  ];
+
+  // Optional. The maximum number of items to return.
+  //
+  // If not specified, a default value of 1000 will be used by the service.
+  // Regardless of the page_size value, the response may include a partial list
+  // and a caller should only rely on response's
+  // [`next_page_token`][google.cloud.redis.cluster.v1beta1.ListAclPoliciesResponse.next_page_token]
+  // to determine if there are more ACL policies left to be queried.
+  //
+  // The maximum value is 1000; values above 1000 will be coerced to 1000.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The `next_page_token` value returned from a previous
+  // `ListAclPolicies` request, if any.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response for `ListAclPolicies`.
+message ListAclPoliciesResponse {
+  // A list of ACL policies in the project in the specified location,
+  // or across all locations.
+  //
+  // If the `location_id` in the parent field of the request is "-", all regions
+  // available to the project are queried, and the results aggregated.
+  repeated AclPolicy acl_policies = 1;
+
+  // Token to retrieve the next page of results, or empty if there are no more
+  // results in the list.
+  string next_page_token = 2;
+
+  // Unordered list. Locations that could not be reached.
+  repeated string unreachable = 3
+      [(google.api.field_behavior) = UNORDERED_LIST];
+}
+
+// Request for `ListAclPolicyRevisions`.
+message ListAclPolicyRevisionsRequest {
+  // Required. The name of the ACL policy to list revisions for.
+  // Format:
+  // "projects/{project_id}/locations/{location_id}/aclPolicies/{acl_policy_id}"
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      child_type: "redis.googleapis.com/AclPolicyRevision"
+    }
+  ];
+
+  // Optional. The maximum number of items to return.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The `next_page_token` value returned from a previous
+  // `ListAclPolicyRevisions` request, if any.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response for `ListAclPolicyRevisions`.
+message ListAclPolicyRevisionsResponse {
+  // A list of ACL policy revisions.
+  repeated AclPolicyRevision acl_policy_revisions = 1;
+
+  // Token to retrieve the next page of results, or empty if there are no more
+  // results in the list.
+  string next_page_token = 2;
+
+  // Unordered list. Locations that could not be reached.
+  repeated string unreachable = 3
+      [(google.api.field_behavior) = UNORDERED_LIST];
+}
+
 // Request for [UpdateCluster][CloudRedis.UpdateCluster].
 message UpdateClusterRequest {
   // Required. Mask of fields to update. At least one path must be supplied in
@@ -469,6 +674,26 @@ message UpdateClusterRequest {
   string request_id = 3;
 }
 
+// Request for `UpdateAclPolicy`.
+message UpdateAclPolicyRequest {
+  // Required. The ACL policy to be updated.
+  AclPolicy acl_policy = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Mask of fields to be updated. At least one path must be supplied
+  // in this field. The elements of the repeated paths field may only include
+  // these fields from `AclPolicy`:
+  //
+  //  *   `rules`
+  google.protobuf.FieldMask update_mask = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Idempotent request UUID.
+  string request_id = 3 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
 // Request for [GetCluster][CloudRedis.GetCluster].
 message GetClusterRequest {
   // Required. Redis cluster resource name using the form:
@@ -477,6 +702,30 @@ message GetClusterRequest {
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = { type: "redis.googleapis.com/Cluster" }
+  ];
+}
+
+// Request for `GetAclPolicy`.
+message GetAclPolicyRequest {
+  // Required. Redis ACL policy resource name using the form:
+  //     `projects/{project_id}/locations/{location_id}/aclPolicies/{acl_policy_id}`
+  // where `location_id` refers to a Google Cloud region.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "redis.googleapis.com/AclPolicy" }
+  ];
+}
+
+// Request for `GetAclPolicyRevision`.
+message GetAclPolicyRevisionRequest {
+  // Required. Redis ACL policy revision resource name using the form:
+  //     `projects/{project_id}/locations/{location_id}/aclPolicies/{acl_policy_id}/revisions/{revision_id}`
+  // where `location_id` refers to a Google Cloud region.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "redis.googleapis.com/AclPolicyRevision"
+    }
   ];
 }
 
@@ -492,6 +741,27 @@ message DeleteClusterRequest {
 
   // Idempotent request UUID.
   string request_id = 2;
+}
+
+// Request for `DeleteAclPolicy`.
+message DeleteAclPolicyRequest {
+  // Required. Redis ACL policy resource name using the form:
+  //     `projects/{project_id}/locations/{location_id}/aclPolicies/{acl_policy_id}`
+  // where `location_id` refers to a Google Cloud region.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "redis.googleapis.com/AclPolicy" }
+  ];
+
+  // Optional. Idempotent request UUID.
+  string request_id = 2 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+
+  // Optional. Etag of the ACL policy. If this is different from the server's
+  // etag, the request will fail with an ABORTED error.
+  string etag = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request for
@@ -902,6 +1172,198 @@ message Cluster {
     (google.api.field_behavior) = OPTIONAL,
     (google.api.field_behavior) = INPUT_ONLY
   ];
+
+  // Optional. The ACL policy to be applied to the cluster.
+  string acl_policy = 56 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = { type: "redis.googleapis.com/AclPolicy" }
+  ];
+
+  // Output only. Details of the applied ACL policy.
+  AclPolicyInfo acl_policy_info = 58
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Details of the applied ACL policy.
+message AclPolicyInfo {
+  // Output only. The resource name of the applied ACL policy.
+  // Format: "projects/{project}/locations/{location}/aclPolicies/{acl_policy}"
+  string applied_acl_policy = 1 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = { type: "redis.googleapis.com/AclPolicy" }
+  ];
+
+  // Output only. The resource name of the applied ACL policy revision.
+  // Format:
+  // "projects/{project}/locations/{location}/aclPolicies/{acl_policy}/revisions/{revision}"
+  string applied_acl_policy_revision = 2 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "redis.googleapis.com/AclPolicyRevision"
+    }
+  ];
+
+  // Output only. The revision number of the applied ACL policy revision.
+  int64 applied_acl_policy_revision_number = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. A list of status for various revisions of this ACL policy on
+  // the cluster.
+  repeated AclPolicyRevisionStatus acl_policy_revision_statuses = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The ACL policy resource.
+message AclPolicy {
+  option (google.api.resource) = {
+    type: "redis.googleapis.com/AclPolicy"
+    pattern: "projects/{project}/locations/{location}/aclPolicies/{acl_policy}"
+    plural: "aclPolicies"
+    singular: "aclPolicy"
+  };
+
+  // Represents the different states of an ACL policy.
+  enum State {
+    // Not set.
+    STATE_UNSPECIFIED = 0;
+
+    // ACL policy has been created and is fully usable. Since ACL policy
+    // creation is synchronous and not an LRO, there is no CREATING state.
+    ACTIVE = 1;
+
+    // ACL policy is being updated.
+    UPDATING = 2;
+
+    // ACL policy is being deleted.
+    DELETING = 3;
+  }
+
+  // Identifier. Full resource path of the ACL policy.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Required. The ACL rules within the ACL policy.
+  repeated AclRule rules = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Output only. The state of the ACL policy.
+  State state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Etag for the ACL policy.
+  optional string etag = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The ACL policy attachment status for each attached cluster.
+  repeated ClusterAclPolicyAttachment cluster_acl_policy_attachments = 6
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The timestamp that the ACL policy was created.
+  google.protobuf.Timestamp create_time = 7
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The timestamp that the ACL policy was last updated.
+  google.protobuf.Timestamp update_time = 8
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// AclPolicyRevisionStatus stores the per-revision status for an attached
+// cluster.
+message AclPolicyRevisionStatus {
+  // Enum indicating the status of this ACL policy revision on the cluster.
+  enum State {
+    // Not set.
+    STATE_UNSPECIFIED = 0;
+
+    // The cluster is attempting to apply this revision.
+    APPLYING = 1;
+
+    // The cluster has successfully applied this revision.
+    APPLIED = 2;
+
+    // The cluster failed to apply this revision.
+    FAILED = 3;
+  }
+
+  // Output only. The resource name of the ACL policy revision this status
+  // refers to. Format:
+  // "projects/{project}/locations/{location}/aclPolicies/{acl_policy}/revisions/{revision}"
+  string acl_policy_revision = 1 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "redis.googleapis.com/AclPolicyRevision"
+    }
+  ];
+
+  // Output only. The revision number of the ACL policy revision this status
+  // refers to.
+  int64 acl_policy_revision_number = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. AclPolicyRevision state.
+  State state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Human-readable error message providing more details for FAILED
+  // states.
+  string error_message = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// ClusterAclPolicyAttachment stores the ACL policy status for an attached
+// cluster for the revisions successfully applied, under application or failed.
+message ClusterAclPolicyAttachment {
+  // Output only. The resource name of the attached Cluster.
+  // Format:
+  // "projects/{project}/locations/{location}/clusters/{cluster}"
+  string cluster = 1 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = { type: "redis.googleapis.com/Cluster" }
+  ];
+
+  // Output only. A list of status for various revisions of this ACL policy on
+  // the cluster.
+  repeated AclPolicyRevisionStatus acl_policy_revision_statuses = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The ACL policy revision resource.
+message AclPolicyRevision {
+  option (google.api.resource) = {
+    type: "redis.googleapis.com/AclPolicyRevision"
+    pattern: "projects/{project}/locations/{location}/aclPolicies/{acl_policy}/revisions/{revision}"
+    plural: "aclPolicyRevisions"
+    singular: "aclPolicyRevision"
+  };
+
+  // Identifier. The name of the ACL policy revision.
+  // Format:
+  // "projects/{project}/locations/{location}/aclPolicies/{acl_policy}/revisions/{revision}"
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Output only. The revision number of the ACL policy revision.
+  int64 revision_number = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The snapshot of the ACL policy at the time of revision
+  // creation.
+  AclPolicy snapshot = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The timestamp that the revision was created.
+  google.protobuf.Timestamp create_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. A list of clusters that are attached to this ACL policy
+  // revision.
+  repeated string attached_clusters = 5 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = { type: "redis.googleapis.com/Cluster" }
+  ];
+}
+
+// A single ACL rule which defines the policy for a user.
+message AclRule {
+  // Required. Specifies the IAM user or service account to be added to the ACL
+  // policy. This username will be directly set on the Redis OSS.
+  string username = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The rule to be applied to the username. Ex: "on >password123 ~*
+  // +@all" The format of the rule is defined by Redis OSS:
+  // https://redis.io/docs/latest/operate/oss_and_stack/management/security/acl/
+  string rule = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
 // The automated backup config for a cluster.
