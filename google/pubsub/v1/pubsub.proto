@@ -1927,14 +1927,72 @@ message BigQueryConfig {
   string service_account_email = 7 [(google.api.field_behavior) = OPTIONAL];
 }
 
-// Configuration for a Bigtable subscription. The Pub/Sub message will be
-// written to a Bigtable row as follows:
-// - row key: subscription name, message ID hash, and message ID delimited by
-//   `#`.
-// - columns: message bytes written to a single column family `data` with an
-//   empty-string column qualifier.
-// - cell timestamp: the message publish timestamp.
+// Configuration for a Bigtable subscription, which will write a Pub/Sub message
+// to a Bigtable row. See the ColumnFamilyMapping documentation below for
+// details on how the row keys and columns will be written.
 message BigtableConfig {
+  // Configuration for writing a Pub/Sub message to a Bigtable row with a
+  // user-defined key and writing to column families.
+  //
+  // If this field is set:
+  //
+  // - The subscription messages must be formatted as JSON.
+  // - The row key mapping is configured in the `key_definition` section.
+  // - The top-level fields will be written either:
+  //    - By default, they will be written to the `data` column family with the
+  //      field name as the column qualifier.
+  //    - But if the field name matches an existing column family (except for
+  //      the default `data` column), then that field will be written to that
+  //      column family, either as a scalar or its next level nested fields if
+  //      it's a JSON object.
+  // - The cell timestamp will be the message publish timestamp.
+  //
+  // If the field is not set, the default behavior is to write:
+  //
+  // - row key: subscription name, message ID hash, and message ID delimited by
+  //   `#`.
+  // - columns: message bytes written to a single column family `data` with an
+  //   empty-string column qualifier.
+  // - cell timestamp: the message publish timestamp.
+  message ColumnFamilyMapping {
+    // Row key definition that reads the input message fields based on the field
+    // names of the table's structured row key
+    // ({$universe.dns_names.final_documentation_domain}/bigtable/docs/manage-row-key-schemas).
+    // Note that if the field is nullable in the structured row key, then it
+    // need not be present in the message; null will be used instead.
+    message RowKeySchema {}
+
+    // Row key definition based on fields from the message.
+    message DelimitedKey {
+      // Required. The key fields to construct from the row key. The fields must
+      // be present in the message as a top-level field, i.e. JSON path
+      // expressions will not traverse into nested objects.
+      repeated string key_fields = 1 [(google.api.field_behavior) = REQUIRED];
+
+      // Optional. Byte sequence used to delimit concatenated fields. Must be
+      // specified if multiple key fields are used. The delimiter must contain
+      // at least 1 character and at most 50 characters.
+      bytes delimiter = 2 [(google.api.field_behavior) = OPTIONAL];
+    }
+
+    // How to construct the row key from the Pub/Sub message.
+    // If not specified, the default behavior is to construct the row key from
+    // the subscription name, message ID hash, and message ID delimited by `#`.
+    oneof key_definition {
+      // Optional. If set, the row key is constructed from the field names of
+      // the table's structured row key
+      // ({$universe.dns_names.final_documentation_domain}/bigtable/docs/manage-row-key-schemas).
+      // Note that if the field is nullable in the structured row key, then it
+      // need not be present in the message; null will be used instead.
+      RowKeySchema row_key_schema = 1 [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. If set, the row key is constructed from the given key fields
+      // and delimiter. All key fields must be present in the message;
+      // otherwise, the message remains in the subscription backlog.
+      DelimitedKey delimited_key = 2 [(google.api.field_behavior) = OPTIONAL];
+    }
+  }
+
   // Possible states for a Bigtable subscription.
   // Note: more states could be added in the future. Please code accordingly.
   enum State {
@@ -2000,6 +2058,24 @@ message BigtableConfig {
   // properties (other than data) are written to a JSON object in the attributes
   // column.
   bool write_metadata = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // How to write a Pub/Sub message to a Bigtable row, notably for defining keys
+  // and columns.
+  //
+  // If not specified, the default is the following:
+  //
+  // - row key: subscription name, message ID hash, and message ID delimited by
+  //   `#`.
+  // - columns: message bytes written to a single column family `data` with an
+  //   empty-string column qualifier.
+  // - cell timestamp: the message publish timestamp.
+  oneof message_mapping {
+    // Optional. Configuration that allows writing row keys and/or columns based
+    // on fields in the input message. The input message format must be JSON if
+    // this field is set.
+    ColumnFamilyMapping column_family_mapping = 6
+        [(google.api.field_behavior) = OPTIONAL];
+  }
 
   // Output only. An output-only field that indicates whether or not the
   // subscription can receive messages.
