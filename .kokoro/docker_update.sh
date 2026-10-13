@@ -51,7 +51,7 @@ echo "Updating PHP prebuilt binaries..."
 pushd gapic-generator-php
 git checkout -b "${BRANCH}"
 rm -rf rules_php_gapic/resources/php-*.tar.gz
-gsutil cp 'gs://gapic-images/prebuild/php-*.tar.gz' rules_php_gapic/resources
+gcloud storage cp 'gs://gapic-images/prebuild/php-*.tar.gz' rules_php_gapic/resources
 git add rules_php_gapic/resources/
 git commit -m "fix: update PHP prebuilt binary"
 echo "Pushing PHP branch to GitHub..."
