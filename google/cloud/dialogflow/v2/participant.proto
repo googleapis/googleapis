@@ -353,6 +353,10 @@ message Message {
   // Only one of `content` and `companion_query` should be set - not both.
   string content = 2 [(google.api.field_behavior) = OPTIONAL];
 
+  // Optional. Automated agent responses.
+  repeated ResponseMessage response_messages = 11
+      [(google.api.field_behavior) = OPTIONAL];
+
   // Optional. The message language.
   // This should be a [BCP-47](https://www.rfc-editor.org/rfc/bcp/bcp47.txt)
   // language tag. Example: "en-US".
@@ -1150,6 +1154,32 @@ message AutomatedAgentReply {
   // call.
   DetectIntentResponse detect_intent_response = 1;
 
+  // Response messages from the automated agent.
+  repeated ResponseMessage response_messages = 3;
+
+  // Name of the intent if an intent is matched for the query.
+  // For a V2 query, the value format is `projects/<Project ID>/locations/
+  // <Location ID>/agent/intents/<Intent ID>`.
+  // For a V3 query, the value format is `projects/<Project ID>/locations/
+  // <Location ID>/agents/<Agent ID>/intents/<Intent ID>`.
+  string intent = 4 [(google.api.resource_reference) = {
+    type: "dialogflow.googleapis.com/Intent"
+  }];
+
+  // Event name if an event is triggered for the query.
+  string event = 5;
+
+  // The confidence of the match. Values range from 0.0 (completely uncertain)
+  // to 1.0 (completely certain).
+  // This value is for informational purpose only and is only used to help match
+  // the best intent within the classification threshold. This value may change
+  // for the same end-user expression at any time due to a model retraining or
+  // change in implementation.
+  float match_confidence = 9;
+
+  // The collection of current parameters at the time of this response.
+  google.protobuf.Struct parameters = 10;
+
   // AutomatedAgentReply type.
   AutomatedAgentReplyType automated_agent_reply_type = 7;
 
@@ -1162,6 +1192,9 @@ message AutomatedAgentReply {
   // Format: `projects/<Project ID>/locations/<Location ID>/agents/<Agent
   // ID>/flows/<Flow ID>/pages/<Page ID>`.
   string cx_current_page = 11;
+
+  // The auth code for accessing Call Companion UI.
+  bytes call_companion_auth_code = 12;
 }
 
 // Represents article answer.
@@ -1415,6 +1448,102 @@ message AssistQueryParameters {
   // }
   // ```
   map<string, string> documents_metadata_filters = 1;
+}
+
+// Response messages from an automated agent.
+message ResponseMessage {
+  // The text response message.
+  message Text {
+    // A collection of text response variants. If multiple variants are
+    // defined, only one text response variant is returned at runtime.
+    repeated string text = 1;
+  }
+
+  // Indicates that the conversation should be handed off to a human agent.
+  //
+  // Dialogflow only uses this to determine which conversations were handed off
+  // to a human agent for measurement purposes. What else to do with this signal
+  // is up to you and your handoff procedures.
+  //
+  // You may set this, for example:
+  //
+  // * In the entry fulfillment of a CX Page if entering the page indicates
+  //   something went extremely wrong in the conversation.
+  // * In a webhook response when you determine that the customer issue can only
+  //   be handled by a human.
+  message LiveAgentHandoff {
+    // Custom metadata for your handoff procedure. Dialogflow doesn't impose
+    // any structure on this.
+    google.protobuf.Struct metadata = 1;
+  }
+
+  // Indicates that interaction with the Dialogflow agent has ended.
+  message EndInteraction {}
+
+  // Represents an audio message that is composed of both segments
+  // synthesized from the Dialogflow agent prompts and ones hosted externally
+  // at the specified URIs.
+  message MixedAudio {
+    // Represents one segment of audio.
+    message Segment {
+      // Content of the segment.
+      oneof content {
+        // Raw audio synthesized from the Dialogflow agent's response using
+        // the output config specified in the request.
+        bytes audio = 1;
+
+        // Client-specific URI that points to an audio clip accessible to the
+        // client.
+        string uri = 2;
+      }
+
+      // Whether the playback of this segment can be interrupted by the end
+      // user's speech and the client should then start the next Dialogflow
+      // request.
+      bool allow_playback_interruption = 3;
+    }
+
+    // Segments this audio response is composed of.
+    repeated Segment segments = 1;
+  }
+
+  // Represents the signal that telles the client to transfer the phone call
+  // connected to the agent to a third-party endpoint.
+  message TelephonyTransferCall {
+    // Endpoint to transfer the call to.
+    oneof endpoint {
+      // Transfer the call to a phone number
+      // in [E.164 format](https://en.wikipedia.org/wiki/E.164).
+      string phone_number = 1;
+
+      // Transfer the call to a SIP endpoint.
+      string sip_uri = 2;
+    }
+  }
+
+  // Required. The rich response message.
+  oneof message {
+    // Returns a text response.
+    Text text = 1;
+
+    // Returns a response containing a custom, platform-specific payload.
+    google.protobuf.Struct payload = 2;
+
+    // Hands off conversation to a live agent.
+    LiveAgentHandoff live_agent_handoff = 3;
+
+    // A signal that indicates the interaction with the Dialogflow agent has
+    // ended.
+    EndInteraction end_interaction = 4;
+
+    // An audio response message composed of both the synthesized Dialogflow
+    // agent responses and the audios hosted in places known to the client.
+    MixedAudio mixed_audio = 5;
+
+    // A signal that the client should transfer the phone call connected to
+    // this agent to a third-party endpoint.
+    TelephonyTransferCall telephony_transfer_call = 6;
+  }
 }
 
 // The request message for
@@ -2027,6 +2156,11 @@ message BidiStreamingAnalyzeContentRequest {
       // Cloud Speech-to-Text. If false, Cloud Speech-to-Text will be used.
       // If unset, this setting is inherited from the ConversationProfile.
       optional bool use_gemini_asr = 25
+          [(google.api.field_behavior) = OPTIONAL];
+
+      // Optional. Disables emission of interim input transcriptions when set to
+      // `true`.
+      optional bool disable_interim_input_transcripts = 26
           [(google.api.field_behavior) = OPTIONAL];
     }
 
