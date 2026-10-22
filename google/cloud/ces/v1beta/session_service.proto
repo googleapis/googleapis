@@ -19,6 +19,7 @@ package google.cloud.ces.v1beta;
 import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
+import "google/api/field_info.proto";
 import "google/api/resource.proto";
 import "google/api/routing.proto";
 import "google/cloud/ces/v1beta/common.proto";
@@ -27,6 +28,8 @@ import "google/cloud/ces/v1beta/mocks.proto";
 import "google/cloud/ces/v1beta/search_suggestions.proto";
 import "google/protobuf/any.proto";
 import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
 
 option go_package = "cloud.google.com/go/ces/apiv1beta/cespb;cespb";
 option java_multiple_files = true;
@@ -139,6 +142,41 @@ service SessionService {
         field: "config.session"
         path_template: "{session=projects/*/locations/*/apps/*/sessions/*}"
       }
+    };
+  }
+
+  // Runs Arc, the AI assistant, for the specified assistant session in a
+  // streaming fashion.
+  rpc StreamChatAiAssistant(StreamChatAiAssistantRequest)
+      returns (stream StreamChatAiAssistantResponse) {
+    option (google.api.http) = {
+      post: "/v1beta/{name=projects/*/locations/*/apps/*/assistantSessions/*}:streamChatAiAssistant"
+      body: "*"
+    };
+  }
+
+  // Cancels the assistant session's in-flight turn, if any: the explicit user
+  // stop for a turn running detached from any stream. A cancel landing on a
+  // task that does not host the turn preempts it through the session turn
+  // epoch instead, ending it within one lease renewal.
+  rpc CancelAssistantTurn(CancelAssistantTurnRequest)
+      returns (CancelAssistantTurnResponse) {
+    option (google.api.http) = {
+      post: "/v1beta/{name=projects/*/locations/*/apps/*/assistantSessions/*}:cancelAssistantTurn"
+      body: "*"
+    };
+  }
+
+  // Generates personalized onboarding suggestions for the Arc
+  // zero state: classifies the requesting user (new / exploring / returning)
+  // from their assistant-session history in the app and returns suggestion
+  // chips (resume a session, continue work, or start something new) to render
+  // before any message is sent.
+  rpc GenerateOnboardingSuggestions(GenerateOnboardingSuggestionsRequest)
+      returns (GenerateOnboardingSuggestionsResponse) {
+    option (google.api.http) = {
+      post: "/v1beta/{name=projects/*/locations/*/apps/*}:generateOnboardingSuggestions"
+      body: "*"
     };
   }
 }
@@ -288,13 +326,32 @@ message SessionConfig {
   RemoteDialogflowQueryParameters remote_dialogflow_query_parameters = 15
       [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Whether to enable streaming text outputs from the model.
-  // By default, text outputs from the model are collected before sending to the
-  // client.
-  // NOTE: This is only supported for text (non-voice) sessions via
+  // Optional. Whether to stream text output from the model to the client
+  // incrementally as it is generated. Defaults to `false`.
+  //
+  // * When disabled, the model's text output is buffered, and each text output
+  //   sent to the client is a complete sentence. Clients can render each text
+  //   output on a new line.
+  // * When enabled, each text output may contain only part of a sentence.
+  //   Clients should concatenate consecutive text outputs to render the
+  //   complete response.
+  //
+  // NOTE: This is only supported for text (non-voice) sessions using
   // [StreamRunSession][google.cloud.ces.v1beta.SessionService.StreamRunSession]
   // or [BidiRunSession][google.cloud.ces.v1beta.SessionService.BidiRunSession].
   bool enable_text_streaming = 18 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether to include LLM thought summaries in the session outputs.
+  bool include_llm_thought_summary = 21
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether to exclude diagnostic info from the session output.
+  bool exclude_diagnostic_info = 24 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether to include intermediate processing update to the client.
+  // If enabled, the update will be sent back in
+  // [SessionOutput.progress][google.cloud.ces.v1beta.SessionOutput.progress].
+  bool include_progress_update = 28 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request for the client to execute the tools and return the execution results
@@ -328,18 +385,53 @@ message Citations {
     bool requires_attribution = 4;
   }
 
+  // An inline citation in the response text.
+  message InlineCitation {
+    // The starting index (in bytes) of the text segment in the agent response.
+    int32 start_index = 1;
+
+    // The ending index (in bytes) of the text segment in the agent response.
+    int32 end_index = 2;
+
+    // The indices of the cited chunks that back this text segment.
+    // Indices refer to the elements in `cited_chunks`.
+    repeated int32 cited_chunk_indices = 3;
+  }
+
   // List of cited pieces of information.
   repeated CitedChunk cited_chunks = 1;
+
+  // Optional. List of inline citations in the agent response.
+  repeated InlineCitation inline_citations = 2
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Event input.
 message Event {
   // Required. The name of the event.
   string event = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Additional variables associated with the event.
+  google.protobuf.Struct variables = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Input for the session.
 message SessionInput {
+  // What the app has decided may be recorded and logged.
+  //
+  // This enum is extensible; new values may be added in the future.
+  enum RecordingControl {
+    // The app is not controlling recording. The app's logging settings decide,
+    // as they do for every session that never sets this field.
+    RECORDING_CONTROL_UNSPECIFIED = 0;
+
+    // The conversation may be recorded and logged from here on.
+    RECORDING_ENABLED = 1;
+
+    // The conversation may not be recorded or logged from here on.
+    RECORDING_DISABLED = 2;
+  }
+
   // The type of the input.
   oneof input_type {
     // Optional. Text data from the end user.
@@ -382,6 +474,27 @@ message SessionInput {
   // NOTE: This field does not apply to audio and DTMF inputs, as they are
   // always processed automatically based on the endpointing signal.
   bool will_continue = 8 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether the conversation may be recorded and logged from here on.
+  //
+  // Use this when the app, rather than the agent, decides what may be kept:
+  // for example when the end user has to consent to being recorded before
+  // anything about the call can be stored.
+  //
+  // The value stays in effect until the client sends a different one, so it
+  // only needs to be sent when the answer changes. Whatever is in effect when
+  // a turn completes decides that turn, both whether its audio reaches the
+  // recording bucket and whether its transcript reaches conversation history,
+  // BigQuery and Cloud Logging. It covers the agent's side of the turn as well
+  // as the end user's.
+  //
+  // Turns that complete before the client first sends this are recorded
+  // according to the app's logging settings, as though the field did not
+  // exist.
+  //
+  // If more than one input in the same request sets it, the last one wins.
+  RecordingControl recording_control = 10
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Output for the session.
@@ -420,6 +533,12 @@ message SessionOutput {
 
     // Custom payload with structured output from the CES agent.
     google.protobuf.Struct payload = 11;
+
+    // Output image from the CES agent.
+    Image image = 13;
+
+    // Intermediate progress update from the CES agent.
+    string progress = 14;
   }
 
   // Indicates the sequential order of conversation turn to which this output
@@ -525,4 +644,588 @@ message BidiSessionServerMessage {
     // should half-close and restart the connection.
     GoAway go_away = 6 [(google.api.field_behavior) = OPTIONAL];
   }
+}
+
+// Request message for
+// [SessionService.StreamChatAiAssistant][google.cloud.ces.v1beta.SessionService.StreamChatAiAssistant].
+message StreamChatAiAssistantRequest {
+  // Response features a client can declare.
+  enum ClientCapability {
+    // Unspecified capability; ignored.
+    CLIENT_CAPABILITY_UNSPECIFIED = 0;
+
+    // The client renders
+    // [AssistantConfirmationRequest][google.cloud.ces.v1beta.AssistantConfirmationRequest]
+    // cards and answers them via `confirmation_response`.
+    CONFIRMATION_CARDS = 1;
+
+    // The client manages long-running operations out-of-band by polling the
+    // operation and sending `operation_completed_event` to resume the turn.
+    // If not declared, the server manages LRO polling and completes the turn
+    // inline.
+    CLIENT_MANAGED_LRO = 2;
+  }
+
+  // Required. The assistant session to be used to run the assistant.
+  // Format:
+  // `projects/{project}/locations/{location}/apps/{app}/assistantSessions/{assistant_session}`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "ces.googleapis.com/AssistantSession"
+    }
+  ];
+
+  // Optional. The message to send to the assistant agent. May be empty when
+  // `confirmation_response` is set (answering a pending confirmation without
+  // adding a new message); at least one of the two must be provided.
+  string message = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Cloud Storage URIs for files uploaded by the user during this
+  // turn. Example: "gs://cxas-transient-uploads/uuid/prd.pdf"
+  repeated string attached_gcs_uris = 5
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Opaque onboarding context token returned by
+  // [SessionService.GenerateOnboardingSuggestions][google.cloud.ces.v1beta.SessionService.GenerateOnboardingSuggestions].
+  // When set and still fresh, the server reuses the onboarding snapshot
+  // computed for the zero state instead of recomputing it for the first
+  // conversation turn.
+  string context_token = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The user's answer to a pending
+  // [AssistantConfirmationRequest][google.cloud.ces.v1beta.AssistantConfirmationRequest].
+  // When set, the server resumes the paused agent with this answer instead of
+  // (or in addition to) starting a new prompt turn.
+  AssistantConfirmationResponse confirmation_response = 7
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Response features this client can render. The server only emits
+  // events that need a capability (e.g. `confirmation_request`) when the
+  // capability is declared, so older clients never receive events they would
+  // silently drop.
+  repeated ClientCapability client_capabilities = 8
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Resumes an assistant session paused waiting for a client-managed
+  // long-running operation to complete.
+  OperationCompletedEvent operation_completed_event = 9
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional cursor to resume and replay events from an in-flight or
+  // completed turn.
+  int64 resume_from_sequence_number = 11
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional flag to attach to an existing in-flight turn without
+  // submitting a new message.
+  bool attach_only = 12 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A single personalized onboarding suggestion chip for Arc's
+// zero state.
+message AssistantSuggestion {
+  // Parameters for the load_session action.
+  message LoadSession {
+    // Identifier of the assistant session to open (the final segment of the
+    // AssistantSession resource name).
+    string assistant_session_id = 1;
+  }
+
+  // Icon hint for the chip.
+  enum Icon {
+    // Unspecified icon.
+    ICON_UNSPECIFIED = 0;
+
+    // Resume a previous session.
+    RESUME = 1;
+
+    // Build something new.
+    BUILD = 2;
+
+    // Evaluation-related suggestion.
+    EVALUATE = 3;
+
+    // Deployment-related suggestion.
+    DEPLOY = 4;
+
+    // Exploration / discovery suggestion.
+    EXPLORE = 5;
+
+    // Fix an error or failing state.
+    FIX = 6;
+  }
+
+  // How this suggestion was produced.
+  enum Source {
+    // Unspecified source.
+    SOURCE_UNSPECIFIED = 0;
+
+    // Deterministic rule-table candidate with template phrasing.
+    RULE = 1;
+
+    // Rule-table candidate re-ranked and phrased by the LLM phrasing step.
+    LLM_RANKED = 2;
+  }
+
+  // What activating the chip does.
+  oneof action {
+    // Prefill the composer with this text; the user reviews and sends.
+    string seed_prompt = 5;
+
+    // Open an existing assistant session.
+    LoadSession load_session = 6;
+
+    // Prefill the composer with this text and submit immediately. Only used
+    // for quick-reply chips inside an active onboarding conversation.
+    string send_message = 7;
+  }
+
+  // Stable identifier for this suggestion, round-tripped by clients in
+  // interaction logging.
+  string suggestion_id = 1;
+
+  // Chip label shown to the user (at most 60 characters).
+  string label = 2;
+
+  // Optional short explanation of why this suggestion is shown (tooltip /
+  // rationale popover).
+  string rationale = 3;
+
+  // Icon hint for the chip.
+  Icon icon = 4;
+
+  // How this suggestion was produced.
+  Source source = 8;
+
+  // Rule-table candidate type in kebab-case (e.g. "resume-pending-review"),
+  // for metrics.
+  string candidate_type = 9;
+}
+
+// Request message for
+// [SessionService.GenerateOnboardingSuggestions][google.cloud.ces.v1beta.SessionService.GenerateOnboardingSuggestions].
+message GenerateOnboardingSuggestionsRequest {
+  // Required. The app whose zero state is being rendered.
+  // Format: `projects/{project}/locations/{location}/apps/{app}`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ces.googleapis.com/App" }
+  ];
+
+  // Optional. Maximum number of suggestions to return. Defaults to 4 when
+  // unset.
+  int32 max_suggestions = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response message for
+// [SessionService.GenerateOnboardingSuggestions][google.cloud.ces.v1beta.SessionService.GenerateOnboardingSuggestions].
+message GenerateOnboardingSuggestionsResponse {
+  // Classification of the requesting user's history with the assistant in
+  // this app.
+  enum UserProfile {
+    // Unspecified profile.
+    USER_PROFILE_UNSPECIFIED = 0;
+
+    // No assistant sessions containing messages.
+    NEW = 1;
+
+    // One or two assistant sessions containing messages.
+    EXPLORING = 2;
+
+    // More than two assistant sessions containing messages.
+    RETURNING = 3;
+  }
+
+  // Classification of the requesting user's history.
+  UserProfile user_profile = 1;
+
+  // Personalized suggestions, ranked most relevant first.
+  repeated AssistantSuggestion suggestions = 2;
+
+  // Opaque token capturing the onboarding snapshot used to generate these
+  // suggestions. Clients echo it on the first
+  // [StreamChatAiAssistantRequest][google.cloud.ces.v1beta.StreamChatAiAssistantRequest]
+  // so the server can reuse the snapshot.
+  string context_token = 3;
+}
+
+// A streamed fragment of a document artifact (e.g. a markdown TDD) that the
+// assistant is generating. Content deltas stream while the document is being
+// written so clients can render a live preview; the FINALIZED chunk carries
+// the GCS URI once the file has been persisted.
+message ArtifactChunk {
+  // Lifecycle position of this chunk within the artifact's stream.
+  enum State {
+    // Unused default.
+    STATE_UNSPECIFIED = 0;
+
+    // The assistant started generating the artifact.
+    STARTED = 1;
+
+    // A content increment; content_delta is set.
+    DELTA = 2;
+
+    // The artifact was persisted; gcs_uri is set.
+    FINALIZED = 3;
+
+    // Generation or persistence failed; the artifact was not saved.
+    FAILED = 4;
+
+    // The document finished streaming: its content was fully delivered via
+    // content_delta chunks. Persistence may still follow; a FINALIZED chunk
+    // with a gcs_uri is sent if and when the artifact is saved.
+    CLOSED = 5;
+  }
+
+  // Identifier of the artifact, stable across all chunks of one artifact
+  // within the stream.
+  string artifact_id = 1;
+
+  // The file name shown to the user, e.g. "hotel_booking_tdd.md". Set on
+  // STARTED (and repeated on FINALIZED).
+  string display_name = 2;
+
+  // The IANA media type of the artifact content, e.g. "text/markdown".
+  string mime_type = 3;
+
+  // Incremental artifact content. Set on DELTA chunks.
+  string content_delta = 4;
+
+  // The GCS object the artifact was persisted to. Set on FINALIZED chunks.
+  string gcs_uri = 5;
+
+  // Lifecycle position of this chunk.
+  State state = 6;
+}
+
+// Structured clarification options the assistant asks the user to choose
+// among, transduced server-side out of the model's turn (the option block is
+// stripped from the streamed and persisted text). The console renders a
+// keyboard-navigable option list docked above the composer.
+message OptionQuestionsChunk {
+  // A single selectable option.
+  message Option {
+    // Short plain-text option title (no markdown, no numbering).
+    string title = 1;
+
+    // Optional trade-off details shown as secondary text.
+    string details = 2;
+
+    // Optional message text to send when the option is chosen; defaults to
+    // `title` when empty.
+    string submit_text = 3;
+  }
+
+  // One question with its options.
+  message Question {
+    // The question header text.
+    string question = 1;
+
+    // The selectable options, in presentation order.
+    repeated Option options = 2;
+  }
+
+  // The questions asked this turn. More than one entry drives the console's
+  // "1 of N" pager.
+  repeated Question questions = 1;
+}
+
+// A blocking question or confirmation the assistant needs answered before an
+// agent action can proceed. The requesting agent is paused and resumes only
+// when the answer arrives on a later
+// [StreamChatAiAssistantRequest.confirmation_response][google.cloud.ces.v1beta.StreamChatAiAssistantRequest.confirmation_response].
+message AssistantConfirmationRequest {
+  // Identifier correlating this request with its response. Opaque to
+  // clients; must be echoed verbatim on the answering request.
+  string confirmation_id = 1;
+
+  // Context describing what is being confirmed (e.g. the action the agent
+  // wants to take, or the question it needs answered). Rendered as plain
+  // text, not Markdown.
+  string context = 2;
+
+  // Label for the approving action of a binary confirmation (e.g. "Publish").
+  // Unset when `questions` is populated.
+  string positive_label = 3;
+
+  // Label for the declining action of a binary confirmation (e.g. "Not yet").
+  // Unset when `questions` is populated.
+  string negative_label = 4;
+
+  // Multi-choice form of the confirmation. When populated, the card renders
+  // a selectable option list and the chosen option's submit_text (or
+  // free-form user text) is returned as
+  // [AssistantConfirmationResponse.answer_text][google.cloud.ces.v1beta.AssistantConfirmationResponse.answer_text].
+  repeated OptionQuestionsChunk.Question questions = 5;
+
+  // Name of the tool call the agent paused on (e.g. "update_app"), for the
+  // card header. Unset for pure questions.
+  string tool = 6;
+
+  // Display label of the agent that raised the confirmation (e.g.
+  // `"Contract Architect"`), for the card header.
+  string agent_name = 7;
+
+  // Time after which this confirmation can no longer be answered. An expired
+  // card renders as inactive, and the server declines the confirmation on the
+  // next turn so the paused agent does not wait indefinitely.
+  google.protobuf.Timestamp expire_time = 8;
+}
+
+// The user's answer to an
+// [AssistantConfirmationRequest][google.cloud.ces.v1beta.AssistantConfirmationRequest],
+// sent on the next
+// [SessionService.StreamChatAiAssistant][google.cloud.ces.v1beta.SessionService.StreamChatAiAssistant]
+// call to resume the paused agent.
+message AssistantConfirmationResponse {
+  // The user's answer.
+  oneof response {
+    // Binary answer: true approves the paused action, false declines it.
+    bool confirmed = 2;
+
+    // The chosen option's submit_text, or free-form user text. The paused
+    // action is cancelled and the text is handed to the agent to act on.
+    string answer_text = 3;
+  }
+
+  // The
+  // [AssistantConfirmationRequest.confirmation_id][google.cloud.ces.v1beta.AssistantConfirmationRequest.confirmation_id]
+  // being answered.
+  string confirmation_id = 1;
+}
+
+// Event sent by the client or background worker to resume an assistant session
+// after an asynchronous Long-Running Operation (LRO) completes.
+message OperationCompletedEvent {
+  // The operation resource name (e.g. `operations/{op}`).
+  string operation_name = 1;
+
+  // The primary resource targeted or produced by the operation
+  // (e.g. evaluation run ID, app ID, dataset ID).
+  string target_resource_name = 2;
+
+  // The operation type or tool name (e.g. "run_evaluation", "copy_app",
+  // "export_app").
+  string operation_type = 3;
+
+  // Status of the operation run (e.g. "SUCCEEDED", "FAILED", "CANCELLED").
+  string status = 4;
+
+  // Optional deduplication token (e.g. UUID) to prevent duplicate turn
+  // execution from concurrent browser tabs.
+  string deduplication_token = 5;
+
+  // Optional canonical error status if the operation failed.
+  google.rpc.Status error = 6;
+
+  // Optional structured result metadata (e.g. pass_rate, total_examples,
+  // export_uri).
+  google.protobuf.Struct metadata = 7;
+}
+
+// Turn-level metadata and intent categorization.
+message TurnMetadata {
+  // Streaming phase of the contract progress payload.
+  enum ContractStreamingPhase {
+    // The payload is authoritative (computed from a complete contract
+    // document, a persisted snapshot, or the pre-draft state). Clients must
+    // replace any previously received progress with it.
+    CONTRACT_STREAMING_PHASE_UNSPECIFIED = 0;
+
+    // An initial contract draft is streaming. contract_progress is an
+    // in-flight estimate: non-decreasing within one artifact fence, capped
+    // below the authoritative range, with pillar_breakdowns carrying
+    // total_item_count == 0 to mark estimated pillar states.
+    DRAFTING = 1;
+
+    // A revision of an existing contract is streaming (for example after an
+    // annotation submission). Same estimate semantics as DRAFTING.
+    REVISING = 2;
+  }
+
+  // Indicates whether this assistant turn was contract-related (e.g. contract
+  // drafting, alignment, extraction, or revision).
+  bool contract_related = 1;
+
+  // Set on the final artifact event of a turn whose contract draft was
+  // published (a revision was activated). Terminal for the clarification
+  // flow of this draft: contract_progress is authoritative and complete.
+  bool contract_finalized = 3;
+
+  // Set only on in-flight progress estimates emitted while a contract
+  // artifact fence is streaming, and on the revision-turn-start event.
+  // Unset on authoritative payloads.
+  ContractStreamingPhase contract_streaming_phase = 4;
+
+  // Set on the terminal event of a contract draft whose every placeholder is
+  // resolved (contract_progress is 100%), whether or not the draft was
+  // published. Clients complete and dismiss the contract progress display on
+  // it; publication is reported separately by contract_finalized.
+  bool contract_draft_complete = 5;
+}
+
+// Response message for
+// [SessionService.StreamChatAiAssistant][google.cloud.ces.v1beta.SessionService.StreamChatAiAssistant].
+message StreamChatAiAssistantResponse {
+  // The event payload.
+  oneof event {
+    // Text Token (for streaming Gemini responses word-by-word).
+    string text_chunk = 3;
+
+    // Simple status update.
+    google.rpc.Status status = 4;
+
+    // Thought text chunk (agent's reasoning before generating response).
+    string thought_chunk = 6;
+
+    // Tool call execution event.
+    ToolCall tool_call = 7;
+
+    // Tool call response event.
+    ToolResponse tool_response = 8;
+
+    // Generated-document artifact event (live preview deltas + final GCS
+    // pointer).
+    ArtifactChunk artifact_chunk = 9;
+
+    // Structured clarification options parsed out of the model turn. The
+    // console renders these as a selectable option list instead of raw text.
+    OptionQuestionsChunk option_questions_chunk = 10;
+
+    // A blocking confirmation the agent paused on. The agent resumes when the
+    // answer arrives on a later request's `confirmation_response`. Only sent
+    // to clients that declared the CONFIRMATION_CARDS capability on the
+    // request.
+    AssistantConfirmationRequest confirmation_request = 12;
+
+    // Session checkpoint/compaction recap event containing user intent and
+    // rolling summary.
+    SessionCheckpoint session_checkpoint = 13;
+
+    // A compacted replay of an in-flight turn, sent as the first event of
+    // every attach or resume before any live event. The client replaces any
+    // locally rendered state for this turn with the snapshot's contents.
+    TurnResumeSnapshot resume_snapshot = 17;
+
+    // Tells the client to silently reconnect with
+    // resume_from_sequence_number: the task serving this stream is going
+    // away and the turn will continue elsewhere. Not an error; the stream
+    // completes normally after this event.
+    TurnHandoffEvent handoff = 18;
+
+    // The turn has ended. Sent as the last event of every turn, on the original
+    // stream and on every attached or resumed stream, so clients can end the
+    // turn on an explicit signal instead of inferring it from stream closure.
+    TurnCompletedEvent turn_completed = 19;
+  }
+
+  // Unique identifier for the event.
+  string event_id = 1;
+
+  // Timestamp when the event occurred.
+  google.protobuf.Timestamp event_time = 2;
+
+  // Optional. UI event payload.
+  UiEvent ui_event = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Turn-level metadata and intent categorization.
+  TurnMetadata turn_metadata = 11 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Monotonically increasing sequence number for this session turn.
+  int64 sequence_number = 15 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Indicates whether the turn is still actively running in the
+  // background.
+  bool turn_in_progress = 16 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request to cancel an assistant session's in-flight turn.
+message CancelAssistantTurnRequest {
+  // Required. The assistant session whose in-flight turn to cancel.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The turn to cancel; empty cancels whichever turn is running. A
+  // cancel naming a turn that is no longer the running one is a no-op.
+  string turn_id = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response for CancelAssistantTurn.
+message CancelAssistantTurnResponse {
+  // Whether an in-flight turn was found and asked to stop (directly on this
+  // task, or through an epoch preemption for a turn hosted elsewhere).
+  bool cancelled = 1;
+}
+
+// A compacted replay of an in-flight turn: everything needed to render the
+// turn's visible output so far, plus the position live events continue from.
+message TurnResumeSnapshot {
+  // Identifies the turn being attached to.
+  string turn_id = 1;
+
+  // The position this snapshot represents. Live events follow with
+  // sequence_number strictly greater than this. When lower than the
+  // resume_from_sequence_number the client requested, flushed progress lags
+  // what the client already rendered: the client must discard its rendered
+  // content of this turn beyond this position before applying the snapshot.
+  int64 resolved_sequence_number = 2;
+
+  // Compacted events reconstructing the turn's visible output, in render
+  // order, using the same event shapes as live streaming.
+  repeated StreamChatAiAssistantResponse events = 3;
+
+  // When the turn will be wound down if no client remains attached.
+  google.protobuf.Timestamp orphan_deadline_time = 4;
+}
+
+// Emitted before this task stops serving the stream mid-turn (e.g. a server
+// restart). The turn's state is persisted; a reconnect carrying
+// resume_from_sequence_number continues it on another task.
+message TurnHandoffEvent {
+  // Why the stream is handing off.
+  enum Reason {
+    // Unspecified.
+    REASON_UNSPECIFIED = 0;
+
+    // The serving task is shutting down (release push or rescheduling).
+    SERVER_RESTART = 1;
+  }
+
+  // Identifies the turn to resume.
+  string turn_id = 1;
+
+  // Why the stream is handing off.
+  Reason reason = 2;
+}
+
+// Terminal event of a turn (see StreamChatAiAssistantResponse.turn_completed).
+message TurnCompletedEvent {
+  // Why the turn ended, so a client that attached late can word the outcome
+  // instead of guessing from an empty stream.
+  enum Reason {
+    // Unspecified.
+    REASON_UNSPECIFIED = 0;
+
+    // The turn ran to completion; the session holds its committed output.
+    COMPLETED = 1;
+
+    // No task was driving the turn any more; it was sealed to a committed
+    // partial and cannot be continued.
+    ABANDONED = 2;
+
+    // This server does not serve attach or resume for the session, so nothing
+    // was tailed; the client should reload the session instead.
+    RESUME_UNAVAILABLE = 3;
+  }
+
+  // Identifier of the turn that ended; matches
+  // TurnResumeSnapshot.turn_id and ActiveTurnInfo.turn_id.
+  string turn_id = 1;
+
+  // Why the turn ended.
+  Reason reason = 2;
+
+  // Sequence number of the last event the turn produced. A client whose cursor
+  // is lower missed content and should reload the session to see it.
+  int64 final_sequence_number = 3;
 }
