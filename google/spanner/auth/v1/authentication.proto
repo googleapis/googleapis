@@ -1,0 +1,231 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.spanner.auth.v1;
+
+import "google/api/field_behavior.proto";
+
+option csharp_namespace = "Google.Cloud.Spanner.Auth.V1";
+option go_package = "cloud.google.com/go/spanner/auth/apiv1/authpb;authpb";
+option java_multiple_files = true;
+option java_outer_classname = "AuthenticationProto";
+option java_package = "com.google.spanner.auth.v1";
+option php_namespace = "Google\\Cloud\\Spanner\\Auth\\V1";
+option ruby_package = "Google::Cloud::Spanner::Auth::V1";
+
+// HashParameters contains the parameters used to hash the password.
+message HashParameters {
+  // The Argon2 parameters used to hash the password.
+  message Argon2IdParameters {
+    // The number of iterations to use when hashing the password.
+    int32 iteration_count = 1;
+
+    // The memory usage (in KiB) to use when hashing the password.
+    int32 memory_usage_kib = 2;
+
+    // The parallelism (number of threads) to use when hashing the password.
+    int32 parallelism = 3;
+
+    // The size of the hash (in bytes) to use when hashing the password.
+    int32 hash_size_bytes = 4;
+  }
+
+  // The parameters used to hash the password.
+  oneof parameters {
+    // The Argon2 parameters used to hash the password.
+    Argon2IdParameters argon2_id_parameters = 1;
+  }
+}
+
+// PasswordAuthenticationHandshakeRequest is used to initiate the authentication
+// process by requesting the server to determine how the client should
+// authenticate.
+message PasswordAuthenticationHandshakeRequest {}
+
+// PasswordAuthenticationHandshakeResponse is returned by the server to
+// determine which protocol should be used to authenticate.
+message PasswordAuthenticationHandshakeResponse {
+  // The authentication method the client should use to authenticate.
+  PasswordAuthenticationProtocol password_authentication_protocol = 1;
+
+  // The hash parameters used to hash the password, this is used to ensure the
+  // client and server are using the same parameters.
+  HashParameters hash_parameters = 2;
+}
+
+// The password credential for a user that is sent from the client to the
+// server during authentication.
+message PasswordCredential {
+  // Scram is the SCRAM credentials.
+  message Scram {
+    // Required. The server key derived from the salted password.  The server
+    // key is used to generate the server signature, which is sent to the client
+    // so the client can verify the server.
+    bytes server_key = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The stored key derived from the salted password.  The stored
+    // key is used to verify that the client's proof in the credential is valid.
+    // The stored key is derived from the client proof and compared to the
+    // stored key the server has.
+    bytes stored_key = 2 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // Opaque contains the OPAQUE credentials that are used to authenticate a
+  // user.
+  message Opaque {
+    // Required. The client's public key.
+    bytes client_public_key = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The masking key is used to prevent client enumeration attacks,
+    // where unauthorized clients try to gain information such as the existence
+    // of a user, their email address, or the roles a user has.
+    bytes masking_key = 2 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. Random value used to protect the envelope contents.
+    bytes envelope_nonce = 3 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The auth_tag is used to protect the public keys and the
+    // envelope nonce.
+    bytes auth_tag = 4 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // The credential for the user.
+  oneof credential {
+    // The SCRAM credential contains the server and stored keys.
+    Scram scram = 1;
+
+    // The OPAQUE credential contains the client public key, masking key,
+    // envelope nonce, and auth tag.
+    Opaque opaque = 2;
+  }
+}
+
+// InitialScramResponse is returned by the server so that the client can
+// generate the credential using the SCRAM protocol.
+message InitialScramResponse {
+  // The salt to use when hashing the password.
+  bytes salt = 1;
+
+  // Nonce provided by the server.
+  bytes server_nonce = 2;
+}
+
+// A request to create a new SCRAM credentials.
+message ScramNewCredentialRequest {
+  // The initial request to start the SCRAM handshake, this must be set on the
+  // first request, even though it is an empty message, to distinguish it from
+  // the final request.
+  message InitialRequest {}
+
+  // The final request to complete the SCRAM handshake.
+  message FinalRequest {
+    // Required. The credential provided by the client.
+    PasswordCredential credential = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // The request for SCRAM user creation.
+  oneof request {
+    // The initial request to start the SCRAM handshake.
+    InitialRequest initial_request = 1;
+
+    // The final request to complete the SCRAM handshake.
+    FinalRequest final_request = 2;
+  }
+}
+
+// The response to create a new user using SCRAM credentials.
+message ScramNewCredentialResponse {
+  // The final response from the server.
+  message FinalResponse {}
+
+  // The response for SCRAM user creation.
+  oneof response {
+    // The initial response from the server.
+    InitialScramResponse initial_response = 1;
+
+    // The final response from the server.
+    FinalResponse final_response = 2;
+  }
+}
+
+// A request to create new OPAQUE credentials.
+message OpaqueNewCredentialRequest {
+  // The initial request for OPAQUE user creation.
+  message InitialRequest {
+    // Required. The blinded message that the client has generated.
+    bytes blinded_message = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // The final request for OPAQUE user creation.
+  message FinalRequest {
+    // Required. The credential provided by the client.
+    PasswordCredential credential = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // The request for OPAQUE user creation.
+  oneof request {
+    // The initial request for OPAQUE user creation.
+    InitialRequest initial_request = 1;
+
+    // The final request for OPAQUE user creation.
+    FinalRequest final_request = 2;
+  }
+}
+
+// The response from the server when creating a new user using OPAQUE
+// credentials.
+message OpaqueNewCredentialResponse {
+  // The initial response for OPAQUE user creation.
+  message InitialResponse {
+    // The evaluated message contains the OPRF output which is created using
+    // the server's private key and the client's blinded message.
+    bytes evaluated_message = 1;
+
+    // The server's public key used to generate the client data the server
+    // stores to authenticate the user.
+    bytes server_public_key = 2;
+  }
+
+  // The final response for OPAQUE user creation.
+  message FinalResponse {}
+
+  // The response for OPAQUE user creation.
+  oneof response {
+    // The initial response for OPAQUE user creation.
+    InitialResponse initial_response = 1;
+
+    // The final response for OPAQUE user creation.
+    FinalResponse final_response = 2;
+  }
+}
+
+// PasswordAuthenticationProtocol is the protocol used to authenticate the
+// using a username and password.
+enum PasswordAuthenticationProtocol {
+  option allow_alias = true;
+
+  // The password authentication protocol is unspecified.
+  PASSWORD_AUTHENTICATION_PROTOCOL_UNSPECIFIED = 0;
+
+  // The password authentication protocol is unspecified.
+  UNSPECIFIED = 0;
+
+  // The authentication method is OPAQUE.
+  PASSWORD_AUTHENTICATION_PROTOCOL_OPAQUE = 2;
+
+  // The authentication method is OPAQUE.
+  OPAQUE = 2;
+}
