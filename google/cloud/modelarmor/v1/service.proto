@@ -249,8 +249,8 @@ enum StreamingMode {
   STREAMING_MODE_REALTIME = 2;
 }
 
-// This enum is used in the TemplateMetadata message to indicate the modality
-// supported for sanitize API calls.
+// This enum is used in the TemplateMetadata and FloorSettingMetadata messages
+// to indicate the modality supported for sanitize API calls.
 enum Modality {
   // Unspecified modality. If specified, all modalities will be sanitized.
   MODALITY_UNSPECIFIED = 0;
@@ -273,26 +273,60 @@ enum FilterVersionAlias {
   // The default value. If used, it will resolve to the `STABLE` alias.
   FILTER_VERSION_ALIAS_UNSPECIFIED = 0;
 
-  // The `STABLE` alias points to the most recent stable model version.
+  // `STABLE` alias points to the most recent stable model version.
   // Using this alias means no code changes are required when a new model
   // becomes the stable version.
   FILTER_VERSION_ALIAS_STABLE = 1;
 
-  // The `LATEST` alias points to the newest model version available.
+  // `LATEST` alias points to the newest model version available.
   // This version is subject to frequent revisions and offers SLO guarantees
   // but does not assure stability, providing the most current security
   // protections.
   FILTER_VERSION_ALIAS_LATEST = 2;
 
-  // The `LEGACY` alias could be used for sanitization operations for a
+  // `LEGACY` alias could be used for sanitization operations for a
   // transition period. New templates cannot be created with this version.
   FILTER_VERSION_ALIAS_LEGACY = 3;
 
-  // The `RETIRED` alias could be used for versions that are no longer available
+  // `RETIRED` alias could be used for versions that are no longer available
   // to be used. While new templates cannot be created with this alias, any
   // existing template or request using `RETIRED` version will fall back to
   // the current `STABLE` version for sanitization operations.
   FILTER_VERSION_ALIAS_RETIRED = 4;
+}
+
+// Defines the scope of the match for a rule.
+//
+// Additional values may be added to this enum in the future.
+enum MatchingScope {
+  // Unspecified matching scope.
+  MATCHING_SCOPE_UNSPECIFIED = 0;
+
+  // Full match.
+  //
+  // - Dictionary: the dictionary match covers the entire input content
+  // - Regular expression: the regular expression pattern matches the entire
+  // input content
+  MATCHING_SCOPE_FULL_MATCH = 1;
+
+  // Partial match.
+  //
+  // - Dictionary: at least one of the tokens in the input content matches
+  // - Regular expression: substring of the input content matches the regular
+  // expression pattern
+  MATCHING_SCOPE_PARTIAL_MATCH = 2;
+}
+
+// Model Armor Filter types supported for rules.
+enum RuleFilterType {
+  // Unspecified filter type.
+  RULE_FILTER_TYPE_UNSPECIFIED = 0;
+
+  // Prompt injection and jailbreak filter.
+  PROMPT_INJECTION_AND_JAILBREAK = 1;
+
+  // Responsible AI filter.
+  RESPONSIBLE_AI = 2;
 }
 
 // Represents the configuration for selecting a Filter Version.
@@ -395,7 +429,7 @@ message Template {
         [(google.api.field_behavior) = OPTIONAL];
 
     // Optional. Specifies the modalities to scan.
-    // If empty, only text modality will be scanned.
+    // If not specified or empty, only text modality will be scanned.
     repeated Modality modalities = 11 [(google.api.field_behavior) = OPTIONAL];
 
     // Optional. Indicates whether the template is subject to data residency
@@ -503,7 +537,7 @@ message FloorSetting {
 
 // Message describing MCP Server Floor Setting.
 message McpServerFloorSetting {
-  // Enforcement type for Model Armor filters.
+  // enforcement type for Model Armor filters.
   oneof enforcement_type {
     // Optional. If true, Model Armor filters will be run in inspect only mode.
     // No action will be taken on the request.
@@ -720,6 +754,12 @@ message FilterConfig {
 
   // Optional. Malicious URI filter settings.
   MaliciousUriFilterSettings malicious_uri_filter_settings = 4
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Settings for customizing filter rules.
+  // Note: This field is not supported in FloorSetting and Streaming
+  // Sanitization APIs.
+  FilterRuleSettings filter_rule_settings = 7
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -1078,9 +1118,9 @@ message RaiFilterResult {
   // equal to or higher than the confidence level defined in configuration.
   FilterMatchState match_state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // The map of RAI filter results where key is RAI filter type - either of
-  // "sexually_explicit", "hate_speech", "harassment", "dangerous", "violence",
-  // "sexually_suggestive".
+  // The map of RAI filter results where the key is the RAI filter type and the
+  // value is the RAI filter's result. Allowed keys are "sexually_explicit",
+  // "hate_speech", "harassment", and "dangerous".
   map<string, RaiFilterTypeResult> rai_filter_type_results = 4;
 }
 
@@ -1321,6 +1361,92 @@ message SdpRedactResult {
 
   // The extracted text from the image.
   string extracted_image_text = 6;
+}
+
+// Message defining a list of words or phrases.
+message WordList {
+  // Required. Words or phrases defining the dictionary. The dictionary must
+  // contain at least one phrase and every phrase must contain at least two
+  // characters that are letters or digits.
+  repeated string words = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Message defining a custom dictionary of words or phrases for syntactic match.
+//
+// Dictionary words are case-insensitive and all characters other than letters
+// and digits in the unicode [Basic Multilingual
+// Plane](https://en.wikipedia.org/wiki/Plane_%28Unicode%29#Basic_Multilingual_Plane)
+// will be replaced with whitespace when scanning for matches. For example, the
+// dictionary phrase `Sam Johnson` will match all three phrases `sam johnson`,
+// `Sam, Johnson`, and `Sam (Johnson)`. Additionally, the characters
+// surrounding any match must be of a different type than the adjacent
+// characters within the word, so letters must be next to non-letters and
+// digits must be next to non-digits. For example, the dictionary word `jen`
+// will match the first three letters of the text `jen123` but will return no
+// matches for `jennifer`.
+//
+// Dictionary words containing a large number of characters that are not
+// letters or digits may result in unexpected matches because such characters
+// are treated as whitespace. For details about the size limits of dictionaries,
+// see [Quotas and
+// limits](https://docs.cloud.google.com/model-armor/quotas).
+message Dictionary {
+  // Source of the dictionary.
+  oneof source {
+    // Message defining a list of words or phrases.
+    WordList word_list = 1;
+  }
+}
+
+// Message defining a custom regular expression.
+message Regex {
+  // Required. The regular expression pattern.
+  string pattern = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The rule that specifies conditions when filter detections are excluded from
+// results.
+message ExclusionRule {
+  // Exclusion rule types.
+  oneof type {
+    // Dictionary which defines the rule.
+    Dictionary dictionary = 1;
+
+    // Regular expression which defines the rule.
+    Regex regex = 2;
+  }
+
+  // Optional. Specifies the scope of the input that should be matched against
+  // the exclusion rule. If unspecified, defaults to
+  // MATCHING_SCOPE_PARTIAL_MATCH.
+  optional MatchingScope matching_scope = 3
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A single rule to be applied to filters, specified in `FilterRuleSet`.
+message FilterRule {
+  // Rule types.
+  oneof type {
+    // Exclusion rule.
+    ExclusionRule exclusion_rule = 1;
+  }
+}
+
+// A set of rules that modifies the behavior of specific filters based on the
+// rules defined within the set.
+message FilterRuleSet {
+  // Required. List of filters this rule set is applied to.
+  repeated RuleFilterType filter_types = 1
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Set of rules to be applied to filterTypes.
+  repeated FilterRule rules = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Settings for customizing filter rules.
+message FilterRuleSettings {
+  // Optional. List of rule sets to be applied to filters.
+  repeated FilterRuleSet rule_sets = 1 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Prompt injection and Jailbreak Filter Result.
