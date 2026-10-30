@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,6 +18,10 @@ package google.cloud.discoveryengine.v1;
 
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/cloud/discoveryengine/v1/grounded_generation_service.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
 
 option csharp_namespace = "Google.Cloud.DiscoveryEngine.V1";
 option go_package = "cloud.google.com/go/discoveryengine/apiv1/discoveryenginepb;discoveryenginepb";
@@ -43,6 +47,87 @@ message AssistAnswer {
       // Possibly grounded response text or media from the assistant.
       AssistantGroundedContent grounded_content = 1;
     }
+
+    // The time when the reply was created.
+    google.protobuf.Timestamp create_time = 14;
+  }
+
+  // Customer policy enforcement results. Contains the results of the various
+  // policy checks, like the banned phrases or the Model Armor checks.
+  message CustomerPolicyEnforcementResult {
+    // Customer policy enforcement result for the banned phrase policy.
+    message BannedPhraseEnforcementResult {
+      // The banned phrases that were found in the query or the answer.
+      repeated string banned_phrases = 1;
+    }
+
+    // Customer policy enforcement result for the Model Armor policy.
+    message ModelArmorEnforcementResult {
+      // The Model Armor policy result.
+      oneof result {
+        // The Model Armor violation that was found.
+        string model_armor_violation = 1;
+
+        // The error returned by Model Armor if the policy enforcement failed
+        // for some reason.
+        google.rpc.Status error = 2;
+      }
+    }
+
+    // Customer policy enforcement result for a single policy type.
+    message PolicyEnforcementResult {
+      // The policy type specific result. It can be either an error or a
+      // detailed information about the policy enforcement result.
+      oneof enforcement_result {
+        // The policy enforcement result for the banned phrase policy.
+        BannedPhraseEnforcementResult banned_phrase_enforcement_result = 3;
+
+        // The policy enforcement result for the Model Armor policy.
+        ModelArmorEnforcementResult model_armor_enforcement_result = 4;
+      }
+    }
+
+    // The verdict of the customer policy enforcement.
+    enum Verdict {
+      // Unknown value.
+      UNSPECIFIED = 0;
+
+      // There was no policy violation.
+      ALLOW = 1;
+
+      // Processing was blocked by the customer policy.
+      BLOCK = 2;
+    }
+
+    // If the assist call was skipped due to a policy violation, this contains
+    // the source of the violation.
+    enum ViolationSource {
+      // Unknown value.
+      VIOLATION_SOURCE_UNSPECIFIED = 0;
+
+      // Violation found in the system response.
+      SYSTEM = 1;
+
+      // Violation found in the user prompt.
+      PROMPT = 2;
+
+      // Violation found in the user attachment.
+      ATTACHMENT = 3;
+    }
+
+    // Final verdict of the customer policy enforcement. If only one policy
+    // blocked the processing, the verdict is BLOCK.
+    Verdict verdict = 1;
+
+    // Customer policy enforcement results.
+    // Populated only if the assist call was skipped due to a policy
+    // violation. It contains results from those filters that blocked the
+    // processing of the query.
+    repeated PolicyEnforcementResult policy_results = 3;
+
+    // Output only. The source of the violation.
+    ViolationSource violation_source = 4
+        [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
   // State of the answer generation.
@@ -61,6 +146,10 @@ message AssistAnswer {
 
     // Assist operation has been skipped.
     SKIPPED = 4;
+
+    // Assist operation has been cancelled (e.g. client closed the stream).
+    // May contain a partial response.
+    CANCELLED = 5;
   }
 
   // Possible reasons for not answering an assist call.
@@ -78,22 +167,40 @@ message AssistAnswer {
     CUSTOMER_POLICY_VIOLATION = 2;
   }
 
-  // Immutable. Resource name of the `AssistAnswer`.
+  // Immutable. Identifier. Resource name of the `AssistAnswer`.
   // Format:
   // `projects/{project}/locations/{location}/collections/{collection}/engines/{engine}/sessions/{session}/assistAnswers/{assist_answer}`
   //
   // This field must be a UTF-8 encoded string with a length limit of 1024
   // characters.
-  string name = 1 [(google.api.field_behavior) = IMMUTABLE];
+  string name = 1 [
+    (google.api.field_behavior) = IMMUTABLE,
+    (google.api.field_behavior) = IDENTIFIER
+  ];
 
   // State of the answer generation.
   State state = 2;
+
+  // Output only. Maps an internal connector agent name (the machine identifier
+  // embedded in tool names, e.g. `custom_mcp_<fingerprint>_agent`) to the
+  // connector's human-readable display name. Populated at serving time for
+  // custom MCP / agent gateway connectors so user-facing surfaces (e.g. the
+  // tool-call chip) can show the connector name instead of its internal
+  // identifier. Empty when there are no such connectors.
+  map<string, string> connector_display_names = 14
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Replies of the assistant.
   repeated Reply replies = 3;
 
   // Reasons for not answering the assist call.
   repeated AssistSkippedReason assist_skipped_reasons = 5;
+
+  // Optional. The field contains information about the various policy checks'
+  // results like the banned phrases or the Model Armor checks. This field is
+  // populated only if the assist call was skipped due to a policy violation.
+  CustomerPolicyEnforcementResult customer_policy_enforcement_result = 8
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Multi-modal content.
@@ -201,10 +308,33 @@ message AssistantGroundedContent {
       string text = 6;
     }
 
+    // Grounding information for a visual segment.
+    message VisualSegment {
+      // References for the visual segment.
+      repeated int32 reference_indices = 1;
+
+      // The content id of the visual segment. In order to display the citation
+      // of the visual element, this content_id needs to match with the
+      // `grounded_content.content_metadata.content_id` field.
+      string content_id = 2;
+    }
+
     // Referenced content and related document metadata.
     message Reference {
       // Document metadata.
       message DocumentMetadata {
+        // Language of the referenced content. For now, it is only used for
+        // code.
+        enum Language {
+          LANGUAGE_UNSPECIFIED = 0;
+
+          PYTHON = 1;
+
+          SQL = 2;
+        }
+
+        Language language = 8;
+
         // Document resource name.
         optional string document = 1 [(google.api.resource_reference) = {
           type: "discoveryengine.googleapis.com/Document"
@@ -224,17 +354,32 @@ message AssistantGroundedContent {
         // contain a URL that redirects to the actual website, in which case
         // this will contain the domain name of the target site.
         optional string domain = 5;
+
+        // The mime type of the document.
+        // https://www.iana.org/assignments/media-types/media-types.xhtml.
+        optional string mime_type = 7;
       }
 
       // Referenced text content.
       string content = 1;
 
+      // Chunk of code snippet from the referenced document.
+      string code_snippet = 4;
+
       // Document metadata.
       DocumentMetadata document_metadata = 2;
+
+      // Output only. Generic structured chunk metadata from upstream data
+      // source connectors.
+      google.protobuf.Struct chunk_metadata = 5
+          [(google.api.field_behavior) = OUTPUT_ONLY];
     }
 
     // Grounding information for parts of the text.
     repeated Segment segments = 4;
+
+    // Grounding information for parts of the visual content.
+    repeated VisualSegment visual_segments = 6;
 
     // References for the grounded text.
     repeated Reference references = 2;
@@ -248,4 +393,8 @@ message AssistantGroundedContent {
 
   // The content.
   AssistantContent content = 1;
+
+  // Source attribution of the generated content. See also
+  // https://cloud.google.com/vertex-ai/generative-ai/docs/learn/overview#citation_check
+  CitationMetadata citation_metadata = 5;
 }
