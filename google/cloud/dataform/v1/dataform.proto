@@ -19,6 +19,7 @@ package google.cloud.dataform.v1;
 import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
+import "google/api/field_info.proto";
 import "google/api/resource.proto";
 import "google/iam/v1/iam_policy.proto";
 import "google/iam/v1/policy.proto";
@@ -59,6 +60,10 @@ option (google.api.resource_definition) = {
 option (google.api.resource_definition) = {
   type: "developerconnect.googleapis.com/GitRepositoryLink"
   pattern: "projects/{project}/locations/{location}/connections/{connection}/gitRepositoryLinks/{git_repository_link}"
+};
+option (google.api.resource_definition) = {
+  type: "developerconnect.googleapis.com/AccountConnector"
+  pattern: "projects/{project}/locations/{location}/accountConnectors/{account_connector}"
 };
 
 // Dataform is a service to develop, create, document, test, and update curated
@@ -586,6 +591,21 @@ service Dataform {
       body: "compilation_result"
     };
     option (google.api.method_signature) = "parent,compilation_result";
+  }
+
+  // Creates a new CompilationResult in a given project and location
+  // asynchronously.
+  rpc CreateCompilationResultLongRunning(CreateCompilationResultRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/locations/*/repositories/*}/compilationResults:createLongRunning"
+      body: "compilation_result"
+    };
+    option (google.api.method_signature) = "parent,compilation_result";
+    option (google.longrunning.operation_info) = {
+      response_type: "CompilationResult"
+      metadata_type: "CreateCompilationResultMetadata"
+    };
   }
 
   // Returns CompilationResultActions in a given CompilationResult.
@@ -1820,7 +1840,7 @@ message SearchResult {
 
 // Client-facing representation of a file entry in search results.
 message FileSearchResult {
-  // File system path relative to the workspace root.
+  // File system path relative to the file tree root.
   string path = 1;
 }
 
@@ -2470,6 +2490,44 @@ message CreateCompilationResultRequest {
       [(google.api.field_behavior) = REQUIRED];
 }
 
+// Represents the metadata of the `CreateCompilationResultLongRunning`
+// operation.
+message CreateCompilationResultMetadata {
+  // State of the LRO.
+  enum State {
+    // The state is unspecified.
+    STATE_UNSPECIFIED = 0;
+
+    // The LRO has been created.
+    CREATED = 1;
+
+    // The LRO is in progress.
+    RUNNING = 2;
+
+    // The RPC call has finished.
+    FINISHED = 3;
+
+    // The LRO has succeeded.
+    SUCCEEDED = 4;
+
+    // The LRO has failed.
+    FAILED = 5;
+  }
+
+  // Output only. The ID of the LRO.
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Server-defined resource path for the target of the operation.
+  string target = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The state of the LRO.
+  State state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The CreateCompilationResult requested.
+  CreateCompilationResultRequest create_compilation_result_request = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
 // Represents an action identifier. If the action writes output, the output
 // will be written to the referenced database object.
 message Target {
@@ -2760,6 +2818,27 @@ message CompilationResultAction {
     repeated string tags = 4;
   }
 
+  // Represents a BigQuery unit test.
+  message BigQueryUnitTest {
+    // A list of actions that this action depends on.
+    repeated Target dependency_targets = 1;
+
+    // Whether this action is disabled (i.e. should not be run).
+    bool disabled = 2;
+
+    // Arbitrary, user-defined tags on this action.
+    repeated string tags = 3;
+
+    // The name of the unit test.
+    string display_name = 4;
+
+    // Test query to execute.
+    string test_query = 5;
+
+    // Expected output query to compare against the test query.
+    string expected_output_query = 6;
+  }
+
   // Simplified load configuration for actions
   message LoadConfig {
     // Load mode
@@ -2808,6 +2887,9 @@ message CompilationResultAction {
 
     // The data preparation executed by this action.
     DataPreparation data_preparation = 9;
+
+    // The unit test executed by this action.
+    BigQueryUnitTest bigquery_unit_test = 11;
   }
 
   // This action's identifier. Unique within the compilation result.
@@ -2978,6 +3060,23 @@ message InvocationConfig {
     BATCH = 2;
   }
 
+  // Execution mode for the workflow invocation.
+  // Determines whether to run actions or unit tests.
+  enum ExecutionMode {
+    // Default value.
+    EXECUTION_MODE_UNSPECIFIED = 0;
+
+    // Default execution mode, which runs all actions except unit tests.
+    // Same as ALL_EXCEPT_UNIT_TESTS.
+    DEFAULT = 1;
+
+    // Run all actions except unit tests.
+    ALL_EXCEPT_UNIT_TESTS = 2;
+
+    // Run unit tests only.
+    UNIT_TESTS_ONLY = 3;
+  }
+
   // Optional. The set of action identifiers to include.
   repeated Target included_targets = 1 [(google.api.field_behavior) = OPTIONAL];
 
@@ -3002,7 +3101,7 @@ message InvocationConfig {
   string service_account = 6 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Configuration for end user authentication.
-  // Note that this should not be set when `service_account` is used.
+  // Do not set if `service_account` is used.
   EndUserAuthenticationConfig end_user_auth_config = 7
       [(google.api.field_behavior) = OPTIONAL];
 
@@ -3011,6 +3110,13 @@ message InvocationConfig {
   // https://cloud.google.com/bigquery/docs/running-queries#queries.
   optional QueryPriority query_priority = 9
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Maximum number of actions that can be executed concurrently.
+  optional int32 concurrent_actions_limit = 10
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Specifies the execution mode for the workflow invocation.
+  ExecutionMode execution_mode = 16 [(google.api.field_behavior) = OPTIONAL];
 
   reserved 11;
 }
@@ -3404,6 +3510,33 @@ message WorkflowInvocationAction {
     string job_id = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
+  // Represents a workflow action that will run a BigQuery unit test.
+  message BigQueryUnitTestAction {
+    // Output only. Job ID for the actual results.
+    string actual_results_job_id = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. SQL script for the actual results.
+    string actual_results_sql_script = 2
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Job ID for the expected results.
+    string expected_results_job_id = 3
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. SQL script for the expected results.
+    string expected_results_sql_script = 4
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Total bytes processed for this action. Combined total for
+    // actual and expected jobs.
+    int64 total_processed_bytes = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. Total bytes billed for this action. Combined total for
+    // actual and expected jobs.
+    int64 total_billed_bytes = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
   // Represents the current state of a workflow invocation action.
   enum State {
     // The action has not yet been considered for invocation.
@@ -3428,6 +3561,10 @@ message WorkflowInvocationAction {
 
     // The action failed. A terminal state.
     FAILED = 6;
+
+    // Execution of the action was queued waiting for an available concurrency
+    // slot.
+    QUEUED = 7;
   }
 
   // The action's details.
@@ -3442,6 +3579,10 @@ message WorkflowInvocationAction {
 
     // Output only. The workflow action's data preparation action details.
     DataPreparationAction data_preparation_action = 9
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The workflow action's unit test details.
+    BigQueryUnitTestAction bigquery_unit_test_action = 12
         [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
