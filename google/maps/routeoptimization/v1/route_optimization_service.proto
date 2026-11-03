@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -135,10 +135,6 @@ service RouteOptimization {
   // [OptimizeToursResponse][google.maps.routeoptimization.v1.OptimizeToursResponse],
   // if successful.
   //
-  // Experimental: See
-  // https://developers.google.com/maps/tt/route-optimization/experimental/otlr/make-request
-  // for more details.
-  //
   rpc OptimizeToursLongRunning(OptimizeToursRequest)
       returns (google.longrunning.Operation) {
     option (google.api.http) = {
@@ -174,14 +170,10 @@ service RouteOptimization {
   // `<parent>/operations/<operation_id>` and can be used to track
   // progress of the computation. The
   // [metadata][google.longrunning.Operation.metadata] field type is
-  // [OptimizeToursLongRunningMetadata][google.maps.routeoptimization.v1.OptimizeToursUriMetadata].
+  // [OptimizeToursUriMetadata][google.maps.routeoptimization.v1.OptimizeToursUriMetadata].
   // The [response][google.longrunning.Operation.response] field type is
   // [OptimizeToursUriResponse][google.maps.routeoptimization.v1.OptimizeToursUriResponse],
   // if successful.
-  //
-  // Experimental: See
-  // https://developers.google.com/maps/tt/route-optimization/experimental/otlr/make-request
-  // for more details.
   rpc OptimizeToursUri(OptimizeToursUriRequest)
       returns (google.longrunning.Operation) {
     option (google.api.http) = {
@@ -218,10 +210,11 @@ message OptimizeToursUriRequest {
   // Required. Target project or location to make a call.
   //
   // Format:
-  // * `projects/{project-id}`
-  // * `projects/{project-id}/locations/{location-id}`
   //
-  // If no location is specified, a region will be chosen automatically.
+  // * `projects/{project-id}`
+  // * `projects/{project-id}/locations/-`
+  //
+  // Regional `{location-id}` values are not supported.
   string parent = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. The URI of the Cloud Storage object containing the
@@ -271,10 +264,11 @@ message BatchOptimizeToursRequest {
   // Required. Target project and location to make a call.
   //
   // Format:
-  // * `projects/{project-id}`
-  // * `projects/{project-id}/locations/{location-id}`
   //
-  // If no location is specified, a region will be chosen automatically.
+  // * `projects/{project-id}`
+  // * `projects/{project-id}/locations/-`
+  //
+  // Regional `{location-id}` values are not supported.
   string parent = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. Input/Output information each purchase model, such as file paths
@@ -356,10 +350,11 @@ message OptimizeToursRequest {
   // Required. Target project or location to make a call.
   //
   // Format:
-  // * `projects/{project-id}`
-  // * `projects/{project-id}/locations/{location-id}`
   //
-  // If no location is specified, a region will be chosen automatically.
+  // * `projects/{project-id}`
+  // * `projects/{project-id}/locations/-`
+  //
+  // Regional `{location-id}` values are not supported.
   string parent = 1 [(google.api.field_behavior) = REQUIRED];
 
   // If this timeout is set, the server returns a response before the timeout
@@ -565,7 +560,10 @@ message OptimizeToursResponse {
     // fields of the same name.
     AggregatedMetrics aggregated_route_metrics = 1;
 
-    // Number of mandatory shipments skipped.
+    // Number of high priority shipments skipped.
+    // High priority shipments are those with an unset
+    // [Shipment.penalty_cost][google.maps.routeoptimization.v1.Shipment.penalty_cost]
+    // field.
     int32 skipped_mandatory_shipment_count = 2;
 
     // Number of vehicles used. Note: if a vehicle route is empty and
@@ -1053,15 +1051,15 @@ message Shipment {
   // considered as null.
   map<string, Load> load_demands = 14;
 
-  // If the shipment is not completed, this penalty is added to the overall
-  // cost of the routes. A shipment is considered completed if one of its pickup
-  // and delivery alternatives is visited. The cost may be expressed in the
-  // same unit used for all other cost-related fields in the model and must be
-  // positive.
+  // Optional. If the shipment is not completed, this penalty is added to the
+  // overall cost of the routes. A shipment is considered completed if one of
+  // its pickup and delivery alternatives is visited. The cost may be expressed
+  // in the same unit used for all other cost-related fields in the model and
+  // must be non-negative.
   //
-  // *IMPORTANT*: If this penalty is not specified, it is considered infinite,
-  // i.e. the shipment must be completed.
-  optional double penalty_cost = 4;
+  // *IMPORTANT*: If this penalty is not specified, it is considered higher
+  // priority than shipments with a specified `penalty cost`.
+  optional double penalty_cost = 4 [(google.api.field_behavior) = OPTIONAL];
 
   // The set of vehicles that may perform this shipment. If empty, all vehicles
   // may perform it. Vehicles are given by their index in the `ShipmentModel`'s
@@ -1176,6 +1174,7 @@ message ShipmentTypeIncompatibility {
 
     // In this mode, two shipments with incompatible types can never be on the
     // same vehicle at the same time:
+    //
     // * They can share the same vehicle only if one is delivered before the
     //   other is picked up.
     // * When both shipments are pickups-only (no deliveries) or deliveries-only
@@ -1284,6 +1283,13 @@ message Vehicle {
 
     // Travel mode corresponding to walking directions.
     WALKING = 2;
+
+    // Two-wheeled, motorized vehicle. For example, motorcycle. Note that this
+    // differs from the BICYCLING travel mode which covers human-powered mode.
+    // This travel mode is supported only in the countries listed at
+    // [Countries and regions supported for two-wheeled
+    // vehicles](https://developers.google.com/maps/documentation/routes/coverage-two-wheeled).
+    TWO_WHEELER = 5;
   }
 
   // Policy on how a vehicle can be unloaded. Applies only to shipments having
@@ -1488,12 +1494,14 @@ message Vehicle {
     // makes the route incur a cost, quadratic in the duration. This cost adds
     // up to other costs defined in the model, with the same unit.
     //
-    // If defined, `quadratic_soft_max_duration` must be nonnegative. If
-    // `max_duration` is also defined, `quadratic_soft_max_duration` must be
-    // less than `max_duration`, and the difference must be no larger than one
-    // day:
+    // If `quadratic_soft_max_duration` is set, the following conditions must be
+    // met:
     //
-    //    `max_duration - quadratic_soft_max_duration <= 86400 seconds`
+    // *   It must be non-negative.
+    // *   `max_duration` must be defined.
+    // *   `quadratic_soft_max_duration` must be less than `max_duration`.
+    // *   The difference must be no more than one day:
+    //     `max_duration - quadratic_soft_max_duration <= 86400 seconds`
     google.protobuf.Duration quadratic_soft_max_duration = 4;
 
     // Cost per square hour incurred if the
@@ -2081,6 +2089,20 @@ message ShipmentRoute {
   // A visit performed during a route. This visit corresponds to a pickup or a
   // delivery of a `Shipment`.
   message Visit {
+    // Indicates whether the visit is a pickup, a delivery, or a visit to a
+    // [Stop][google.maps.routeoptimization.v1.Stop]. Visits to a stop are used
+    // only when multimodal optimization is enabled.
+    enum VisitType {
+      // Unspecified visit type.
+      VISIT_TYPE_UNSPECIFIED = 0;
+
+      // Visit corresponds to a shipment pickup.
+      PICKUP_SHIPMENT = 1;
+
+      // Visit corresponds to a shipment delivery.
+      DELIVER_SHIPMENT = 2;
+    }
+
     // Index of the `shipments` field in the source
     // [ShipmentModel][google.maps.routeoptimization.v1.ShipmentModel].
     int32 shipment_index = 1;
@@ -2144,6 +2166,12 @@ message ShipmentRoute {
     // https://developers.google.com/maps/tt/route-optimization/experimental/u-turn-avoidance/make-request
     // for more details.
     optional int32 injected_solution_location_token = 13;
+
+    // Optional. Specifies the type of the visit.
+    // Overrides the
+    // [Visit.is_pickup][google.maps.routeoptimization.v1.ShipmentRoute.Visit.is_pickup]
+    // field.
+    VisitType visit_type = 14 [(google.api.field_behavior) = OPTIONAL];
   }
 
   // Transition between two events on the route. See the description of
@@ -2497,7 +2525,7 @@ message SkippedShipment {
 
 // Aggregated metrics for
 // [ShipmentRoute][google.maps.routeoptimization.v1.ShipmentRoute] (resp. for
-// [OptimizeToursResponse][google.maps.routeoptimization.v1.OptimizeToursResponse]
+// [OptimizeToursResponse][google.maps.routeoptimization.v1.OptimizeToursResponse])
 // over all
 // [Transition][google.maps.routeoptimization.v1.ShipmentRoute.Transition]
 // and/or [Visit][google.maps.routeoptimization.v1.ShipmentRoute.Visit] (resp.
@@ -2508,7 +2536,10 @@ message AggregatedMetrics {
   // counts once.
   int32 performed_shipment_count = 1;
 
-  // Number of mandatory shipments performed.
+  // Number of high priority shipments performed. High priority shipments are
+  // those with an unset
+  // [Shipment.penalty_cost][google.maps.routeoptimization.v1.Shipment.penalty_cost]
+  // field.
   //
   // Experimental: This field's behavior or existence may change in future.
   optional int32 performed_mandatory_shipment_count = 12;
