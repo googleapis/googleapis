@@ -23,6 +23,7 @@ import "google/api/field_info.proto";
 import "google/api/resource.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 import "google/type/latlng.proto";
 
@@ -138,7 +139,7 @@ message Trip {
 
 // Configuration for the trip.
 message TripConfig {
-  // Optional. Whether to enable high frequency trip updates.
+  // Optional. Whether to enable high-frequency trip updates.
   //
   // NOTE: Enabling this feature logs the trip under Enterprise Tier usage, and
   // is subject to Enterprise Tier rates.
@@ -163,6 +164,20 @@ message TripConfig {
   //
   // NOTE: This field is ignored if `enable_pubsub` is false.
   google.protobuf.FieldMask pubsub_field_mask = 3
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether to enable remaining route reporting for the trip.
+  //
+  // NOTE: Enabling this feature logs the trip under Enterprise Tier usage, and
+  // is subject to Enterprise Tier rates.
+  bool enable_remaining_route_reporting = 4
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Whether to enable route deviation reporting for the trip.
+  //
+  // NOTE: Enabling this feature logs the trip under Enterprise Tier usage, and
+  // is subject to Enterprise Tier rates.
+  bool enable_route_deviation_reporting = 5
       [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -191,6 +206,14 @@ message TripExecution {
   // the transporter. This will be the road snapped location if available.
   Location location = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 
+  // Output only. Provides the polyline for the remaining portion of the route.
+  Route remaining_route = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The most recent route deviation event captured during the
+  // trip.
+  RouteDeviation last_route_deviation = 10
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
   // Output only. Time traveled thus far.
   google.protobuf.Duration traveled_duration = 4
       [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -212,6 +235,27 @@ message TripExecution {
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
+// Route deviation information.
+message RouteDeviation {
+  // The source that triggered the route deviation.
+  enum TriggerSource {
+    // The trigger source is unspecified.
+    TRIGGER_SOURCE_UNSPECIFIED = 0;
+
+    // The route deviation was triggered by the driver (e.g. wrong turn).
+    DRIVER_INITIATED_REROUTE = 1;
+
+    // The route deviation was triggered by the system (e.g. traffic closure).
+    SYSTEM_INITIATED_REROUTE = 2;
+  }
+
+  // Output only. Location where the deviation occurred.
+  Location location = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Source for the deviation trigger.
+  TriggerSource source = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
 // A stop in the trip where some task is to be performed.
 message Stop {
   // Required. The location of the stop as a lat/lng.
@@ -230,6 +274,84 @@ message Location {
 
   // Output only. The time at which the server received this location update.
   google.protobuf.Timestamp server_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Represents a polyline using a simple list of points.
+message SimplePolyline {
+  // Output only. Ordered list of points representing the polyline.
+  repeated google.type.LatLng points = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Traffic density indicator on a contiguous segment of a path. Given a path
+// with points P_0, P_1, ... , P_N (zero-based index), the SpeedReadingInterval
+// defines an interval and describes its traffic using the `Speed` categories.
+message SpeedReadingInterval {
+  // The classification of polyline speed based on traffic data.
+  enum Speed {
+    // The speed is unspecified.
+    SPEED_UNSPECIFIED = 0;
+
+    // Normal speed, no traffic delays.
+    NORMAL = 1;
+
+    // Slowdown detected, light to medium amount of traffic.
+    SLOW = 2;
+
+    // Traffic delays, including standstill traffic.
+    TRAFFIC_JAM = 3;
+  }
+
+  // Output only. The starting index of this interval in the path.
+  optional int32 start_polyline_point_index = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The ending index of this interval in the path.
+  optional int32 end_polyline_point_index = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. Traffic speed in this interval.
+  Speed speed = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A route polyline.
+message Route {
+  // The route format.
+  //
+  // The format populated is controlled by the `route_polyline_format`
+  // parameter. If not set, it defaults to a simple polyline.
+  oneof format {
+    // Output only. The route as a simple list of latlngs.
+    SimplePolyline simple_polyline = 1
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The route as an encoded polyline.
+    // See
+    // https://developers.google.com/maps/documentation/utilities/polylinealgorithm.
+    string encoded_polyline = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The route as an encoded S2Polyline.
+    // See https://s2geometry.io/devguide/basic_types.html.
+    bytes s2_polyline = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The route as a GeoJSON LineString.
+    // See https://tools.ietf.org/html/rfc7946#section-3.1.4.
+    google.protobuf.Struct geo_json = 3
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+  }
+
+  // Output only. Traffic information on the polyline described as speed reading
+  // intervals.
+  //
+  // NOTES:
+  //
+  // * The intervals are non-overlapping.
+  // * The intervals are contiguous.
+  // * The intervals cover the entire polyline.
+  // * The intervals are sorted by increasing index.
+  // * Speed is specified for each interval.
+  repeated SpeedReadingInterval traffic_information = 4
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
@@ -254,10 +376,38 @@ message CreateTripRequest {
 
 // Request message for NavConnectService.GetTrip.
 message GetTripRequest {
+  // Specifies the format of the route polyline.
+  enum RoutePolylineFormat {
+    // The route polyline format is unspecified.
+    ROUTE_POLYLINE_FORMAT_UNSPECIFIED = 0;
+
+    // The route polyline is returned as a simple array of points represented as
+    // `google.type.LatLng`.
+    SIMPLE = 1;
+
+    // The route polyline is returned as an encoded string.
+    // See
+    // https://developers.google.com/maps/documentation/utilities/polylinealgorithm.
+    ENCODED = 4;
+
+    // The route polyline is encoded as a S2Polyline.
+    // See https://s2geometry.io/devguide/basic_types.html.
+    S2ENCODED = 2;
+
+    // The route polyline is returned as a GeoJSON LineString.
+    // See https://tools.ietf.org/html/rfc7946#section-3.1.4.
+    GEO_JSON = 3;
+  }
+
   // Required. The resource name of the trip to get.
   // Format: projects/{project}/trips/{trip_id}
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = { type: "navconnect.googleapis.com/Trip" }
   ];
+
+  // Optional. The format of the route polyline to return.
+  // If not set, `SIMPLE` route polyline will be returned.
+  RoutePolylineFormat route_polyline_format = 2
+      [(google.api.field_behavior) = OPTIONAL];
 }
