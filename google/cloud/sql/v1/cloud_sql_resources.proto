@@ -1452,6 +1452,10 @@ message Operation {
 
     // Deletes a Blue-Green deployment.
     DELETE_BLUE_GREEN_DEPLOYMENT = 58;
+
+    // Reconciles network infrastructure (e.g. Private Service Connect,
+    // Automated DNS Records).
+    RECONCILE_NETWORKING = 64;
   }
 
   // The status of an operation.
@@ -1674,6 +1678,30 @@ message Settings {
     ON_DEMAND = 3 [deprecated = true];
   }
 
+  // RPC authentication modes for Microsoft Distributed Transaction Coordinator
+  // (MSDTC).
+  enum MsdtcRpcAuthMode {
+    // Unspecified RPC authentication mode.
+    MSDTC_RPC_AUTH_MODE_UNSPECIFIED = 0;
+
+    // Allow only secure RPC calls. Both servers (caller and receiver) must
+    // successfully verify each other's identities, typically using Active
+    // Directory machine accounts and Kerberos Service Principal Names (SPNs).
+    // This is equivalent to Mutual Authentication in Microsoft SQL Server on
+    // Windows.
+    ALLOW_ONLY_SECURE_RPC_CALLS = 1;
+
+    // Similar to Incoming authentication mode in Microsoft SQL Server on
+    // Windows, the caller authenticates to the receiver.
+    // The receiver verifies the caller's identity, but the Receiver does not
+    // authenticate itself back to the caller.
+    FALLBACK_TO_UNSECURE_RPC_IF_NECESSARY = 2;
+
+    // No authentication. Highly insecure and thus should only be used on
+    // already secure networks and never over public IP.
+    TURN_OFF_RPC_SECURITY = 3;
+  }
+
   // The list of Cloud SQL editions available to users.
   enum Edition {
     // The instance did not specify the edition.
@@ -1824,6 +1852,15 @@ message Settings {
   // Insights configuration, for now relevant only for Postgres.
   InsightsConfig insights_config = 25;
 
+  // Optional. Enables Microsoft Distributed Transaction Coordinator (MSDTC) for
+  // SQL Server.
+  optional bool msdtc_enabled = 58 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. RPC authentication mode for Microsoft Distributed Transaction
+  // Coordinator (MSDTC).
+  optional MsdtcRpcAuthMode msdtc_rpc_auth_mode = 60
+      [(google.api.field_behavior) = OPTIONAL];
+
   // The local user password validation policy of the instance for PostgreSQL
   // and MySQL.
   PasswordValidationPolicy password_validation_policy = 27;
@@ -1929,6 +1966,13 @@ message Settings {
   // metrics during high load situations.
   PerformanceCaptureConfig performance_capture_config = 54
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Input only. Users to be created on the instance during instance
+  // creation.
+  InitialUsersConfig initial_users_config = 55 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = INPUT_ONLY
+  ];
 }
 
 // Performance capture configuration.
@@ -2140,6 +2184,87 @@ message SslCertDetail {
   string cert_private_key = 2;
 }
 
+// Certificate type for customer managed certificates.
+enum CertificateType {
+  // Unspecified certificate type.
+  CERTIFICATE_TYPE_UNSPECIFIED = 0;
+
+  // The x509 PEM-encoded certificate of the CA that signed the source database
+  // server's certificate.
+  CERTIFICATE_TYPE_PEER_SERVER_CA = 1;
+
+  // The unencrypted PKCS#1 or PKCS#8 PEM-encoded private key associated with
+  // the Client Certificate.
+  CERTIFICATE_TYPE_PEER_CLIENT_KEY = 2;
+
+  // The x509 PEM-encoded certificate used by the client to authenticate
+  // against the source database server.
+  CERTIFICATE_TYPE_PEER_CLIENT_CERTIFICATE = 3;
+}
+
+// Intent for the customer managed certificate configuration.
+enum Intent {
+  // Unspecified intent.
+  INTENT_UNSPECIFIED = 0;
+
+  // Configures customer-managed certificates for pg_logical extension to
+  // achieve mTLS authentication.
+  PG_LOGICAL = 1;
+
+  // Configures customer-managed certificates for built-in PostgreSQL native
+  // replication to achieve mTLS authentication. Supported for Cloud SQL for
+  // PostgreSQL 10 and later.
+  NATIVE_REPLICATION = 2;
+}
+
+// DNS Entry for the primary instance in a replication topology.
+message DNSEntry {
+  // Required. The DNS name.
+  string dns = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The IP address.
+  string ipv4_address = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A single certificate or key in a customer managed certificate bundle.
+message CustomerManagedCertificate {
+  // Required. The certificate type.
+  CertificateType certificate_type = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Input only. The PEM-encoded certificate or key content in base64
+  // format.
+  bytes content = 2 [
+    (google.api.field_behavior) = INPUT_ONLY,
+    (google.api.field_behavior) = REQUIRED
+  ];
+
+  // Output only. File path of the PEM-encoded certificate or key content on the
+  // database virtual machine. This path can be used by database extensions or
+  // plugins (for example, to configure `pglogical` in PostgreSQL) that need to
+  // reference the certificate or key file directly on the VM's filesystem, ex:
+  // certs/c1/server-ca.pem
+  string file_path = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Customer managed certificate SSL configuration.
+message CustomerManagedCertificateConfig {
+  // Output only. The name of the customer managed certificate configuration.
+  // This name will be used to identify a certificate bundle.
+  string bundle = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Required. The intent for this customer managed certificate configuration.
+  Intent intent = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // DNS name associated with the primary instance in a replication topology.
+  // This is needed to insert a DNS entry in a replica VM.
+  optional DNSEntry primary_dns_record = 3;
+
+  // Required. The server CA certificate, client key and client certificate. You
+  // can specify up to 3 certificates in a bundle.
+  repeated CustomerManagedCertificate customer_managed_certificates = 4
+      [(google.api.field_behavior) = REQUIRED];
+}
+
 // Active Directory configuration, relevant only for Cloud SQL for SQL Server.
 message SqlActiveDirectoryConfig {
   // The modes of Active Directory configuration.
@@ -2209,6 +2334,63 @@ message SqlServerEntraIdConfig {
 
   // Optional. The application ID for the Entra ID configuration.
   string application_id = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Configuration for users created during instance creation.
+message InitialUsersConfig {
+  // Configuration for an IAM user created during instance creation.
+  message InitialUser {
+    // The user type.
+    enum SqlUserType {
+      // The database's built-in user type. Not supported for initial user
+      // creation.
+      BUILT_IN = 0;
+
+      // Cloud IAM user.
+      // MySQL will truncate the @ and domain when it stores the user.
+      CLOUD_IAM_USER = 1;
+
+      // Cloud IAM service account.
+      // For PostgreSQL, omit the .gserviceaccount.com suffix.
+      // MySQL will truncate the @ and domain when it stores the user.
+      CLOUD_IAM_SERVICE_ACCOUNT = 2;
+
+      // Cloud IAM group.
+      CLOUD_IAM_GROUP = 3;
+
+      // Login for a user that belongs to the Cloud IAM group. Not supported for
+      // initial user creation.
+      CLOUD_IAM_GROUP_USER = 4;
+
+      // Login for a service account that belongs to the
+      // Cloud IAM group. Not supported for initial user creation.
+      CLOUD_IAM_GROUP_SERVICE_ACCOUNT = 5;
+
+      // Cloud IAM workforce identity.
+      CLOUD_IAM_WORKFORCE_IDENTITY = 6;
+
+      // Microsoft Entra ID user. Not supported for initial user creation.
+      ENTRAID_USER = 7;
+
+      // Active Directory user. Not supported for initial user creation.
+      ACTIVE_DIRECTORY_USER = 8;
+    }
+
+    // Required. The name of the user in the Cloud SQL instance.
+    string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+    // Required. The user type. Cannot be BUILT_IN.
+    SqlUserType type = 2 [(google.api.field_behavior) = REQUIRED];
+
+    // Optional. The database roles to be assigned to the user. If empty, will
+    // grant role `cloudsqlsuperuser`.
+    repeated string roles = 3 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Optional. List of IAM users to be created during instance creation.
+  // A maximum of 5 users are allowed.
+  repeated InitialUser initial_users = 1
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 enum SqlBackendType {
@@ -2641,6 +2823,10 @@ message StartWorkloadReplayContext {
   // `workload-<epoch_timestamp>` (for example, `workload-1786046400`). Use this
   // ID to start executing the recorded SQL queries.
   string workload_id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The name of the source Cloud SQL instance where the workload
+  // was captured, excluding the project ID (for example, `my-source-instance`).
+  string source_instance = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // The context for the `StopWorkloadReplay` operation, which represents an
