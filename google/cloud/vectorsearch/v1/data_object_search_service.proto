@@ -37,7 +37,9 @@ option ruby_package = "Google::Cloud::VectorSearch::V1";
 service DataObjectSearchService {
   option (google.api.default_host) = "vectorsearch.googleapis.com";
   option (google.api.oauth_scopes) =
-      "https://www.googleapis.com/auth/cloud-platform";
+      "https://www.googleapis.com/auth/cloud-platform,"
+      "https://www.googleapis.com/auth/vectorsearch,"
+      "https://www.googleapis.com/auth/vectorsearch.readonly";
 
   // Searches data objects.
   rpc SearchDataObjects(SearchDataObjectsRequest)
@@ -85,15 +87,27 @@ enum AggregationMethod {
   COUNT = 1;
 }
 
-// Defines a output fields struct for data in DataObject.
+// Defines an output fields struct for data in DataObject.
+//
+// Output fields are opt-in. A search or query result contains only the data
+// object name and ID, plus the fields listed here. If this message is unset or
+// a list is empty, the corresponding part of the data object (`data`,
+// `vectors` or metadata) is omitted from the result; it is not an indication
+// that the stored data object is empty. Use `"*"` in a list to return all
+// fields of that kind.
 message OutputFields {
-  // Optional. The fields from the data fields to include in the output.
+  // Optional. The fields from the data fields to include in the output. Use
+  // `"*"` to include all data fields. If empty, `data` is omitted from results.
   repeated string data_fields = 1 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The fields from the vector fields to include in the output.
+  // Optional. The fields from the vector fields to include in the output. Use
+  // `"*"` to include all vector fields. If empty, `vectors` is omitted from
+  // results.
   repeated string vector_fields = 2 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The fields from the DataObject metadata to include in the output.
+  // Optional. The DataObject metadata fields to include in the output:
+  // `create_time`, `update_time` and `etag`. Use `"*"` to include all metadata
+  // fields. If empty, these fields are omitted from results.
   repeated string metadata_fields = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -173,8 +187,34 @@ message VectorSearch {
   // Required. The vector field to search.
   string search_field = 8 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. A JSON filter expression, e.g. {"genre": {"$eq": "sci-fi"}},
-  // represented as a google.protobuf.Struct.
+  // Optional. A JSON filter expression, e.g. `{"genre": {"$eq": "sci-fi"}}`,
+  // represented as a `google.protobuf.Struct`.
+  //
+  // An empty filter (`{}`) matches all data objects. Otherwise, each JSON
+  // object in the filter must have exactly one key: either a field name mapped
+  // to one operator (`{"price": {"$lt": 100}}`), or a logical operator: `$and`
+  // or `$or` with a list of filters, or `$not` with one filter. Field
+  // operators and their values: `$eq` and `$ne` take a string, number or bool;
+  // `$lt`, `$lte`, `$gt` and `$gte` take a number; `$in`, `$nin` and `$all`
+  // take a list of strings; `$exists` takes a bool. Several keys in one object
+  // (implicit AND) and implicit equality (`{"genre": "sci-fi"}`) are rejected;
+  // use `$and` and `$eq` instead.
+  //
+  // Logical operators can be nested at most 2 levels deep, e.g.
+  // `{"$and": [{"$or": [{"a": {"$eq": 1}}, {"b": {"$eq": 2}}]}]}`. Deeper
+  // filters are rejected with `INVALID_ARGUMENT`.
+  //
+  // Which filters are accepted depends on how the search is served. If it is
+  // served by an approximate nearest neighbor (ANN) index (by default when a
+  // ready index exists on `search_field`, or when one is selected via
+  // `search_hint.index_hint`), every filtered field must be listed in
+  // `Index.filter_fields` at index creation, `$or` and `$all` are accepted
+  // only at the top level of the filter, and `$not` and `$exists` are not
+  // supported. Not every unsupported filter is rejected: most produce
+  // `INVALID_ARGUMENT`, but some are silently ignored, so do not rely on the
+  // error. If no ready index exists on `search_field`, or if
+  // `search_hint.knn_hint` is set, the search is served by K-Nearest Neighbor
+  // (KNN) search, which has none of these filter restrictions.
   google.protobuf.Struct filter = 4 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The number of nearest neighbors to return.
@@ -214,8 +254,34 @@ message SemanticSearch {
   // Optional. The fields to return in the search results.
   OutputFields output_fields = 3 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. A JSON filter expression, e.g. {"genre": {"$eq": "sci-fi"}},
-  // represented as a google.protobuf.Struct.
+  // Optional. A JSON filter expression, e.g. `{"genre": {"$eq": "sci-fi"}}`,
+  // represented as a `google.protobuf.Struct`.
+  //
+  // An empty filter (`{}`) matches all data objects. Otherwise, each JSON
+  // object in the filter must have exactly one key: either a field name mapped
+  // to one operator (`{"price": {"$lt": 100}}`), or a logical operator: `$and`
+  // or `$or` with a list of filters, or `$not` with one filter. Field
+  // operators and their values: `$eq` and `$ne` take a string, number or bool;
+  // `$lt`, `$lte`, `$gt` and `$gte` take a number; `$in`, `$nin` and `$all`
+  // take a list of strings; `$exists` takes a bool. Several keys in one object
+  // (implicit AND) and implicit equality (`{"genre": "sci-fi"}`) are rejected;
+  // use `$and` and `$eq` instead.
+  //
+  // Logical operators can be nested at most 2 levels deep, e.g.
+  // `{"$and": [{"$or": [{"a": {"$eq": 1}}, {"b": {"$eq": 2}}]}]}`. Deeper
+  // filters are rejected with `INVALID_ARGUMENT`.
+  //
+  // Which filters are accepted depends on how the search is served. If it is
+  // served by an approximate nearest neighbor (ANN) index (by default when a
+  // ready index exists on `search_field`, or when one is selected via
+  // `search_hint.index_hint`), every filtered field must be listed in
+  // `Index.filter_fields` at index creation, `$or` and `$all` are accepted
+  // only at the top level of the filter, and `$not` and `$exists` are not
+  // supported. Not every unsupported filter is rejected: most produce
+  // `INVALID_ARGUMENT`, but some are silently ignored, so do not rely on the
+  // error. If no ready index exists on `search_field`, or if
+  // `search_hint.knn_hint` is set, the search is served by K-Nearest Neighbor
+  // (KNN) search, which has none of these filter restrictions.
   google.protobuf.Struct filter = 6 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The number of data objects to return.
@@ -244,7 +310,138 @@ message TextSearch {
 
   // Optional. A JSON filter expression, e.g. `{"genre": {"$eq": "sci-fi"}}`,
   // represented as a `google.protobuf.Struct`.
+  //
+  // An empty filter (`{}`) matches all data objects. Otherwise, each JSON
+  // object in the filter must have exactly one key: either a field name mapped
+  // to one operator (`{"price": {"$lt": 100}}`), or a logical operator: `$and`
+  // or `$or` with a list of filters, or `$not` with one filter. Field
+  // operators and their values: `$eq` and `$ne` take a string, number or bool;
+  // `$lt`, `$lte`, `$gt` and `$gte` take a number; `$in`, `$nin` and `$all`
+  // take a list of strings; `$exists` takes a bool. Several keys in one object
+  // (implicit AND) and implicit equality (`{"genre": "sci-fi"}`) are rejected;
+  // use `$and` and `$eq` instead.
+  //
+  // Logical operators can be nested at most 2 levels deep, e.g.
+  // `{"$and": [{"$or": [{"a": {"$eq": 1}}, {"b": {"$eq": 2}}]}]}`. Deeper
+  // filters are rejected with `INVALID_ARGUMENT`.
   google.protobuf.Struct filter = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Structured query definition. When set, `search_text` and
+  // `data_field_names` must be left empty; otherwise the request will be
+  // rejected with an `INVALID_ARGUMENT` error. Conversely, when
+  // `structured_query` is unset, both `search_text` and `data_field_names`
+  // are required.
+  StructuredQuery structured_query = 6 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A structured query for text search. Allows expressing field-targeted text
+// queries combined via boolean operators, with optional per-node boosting.
+message StructuredQuery {
+  // The type of query to execute.
+  oneof query_type {
+    // Optional. A leaf-level text query.
+    TextQuery text = 1 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. A query that applies a unary operator to a sub-query.
+    UnaryQuery unary = 2 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. A query that combines multiple sub-queries with a boolean
+    // operator.
+    CombinedQuery combine = 3 [(google.api.field_behavior) = OPTIONAL];
+  }
+
+  // Optional. Optional multiplier applied to this query node's contribution to
+  // the final relevance score. Must be non-negative; if unset or 0, defaults
+  // to 1.0. Values greater than 1.0 increase its influence on ranking, values
+  // between 0.0 and 1.0 decrease it.
+  float boost = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A leaf-level text query targeting one or more data fields. When multiple
+// fields are specified, this is equivalent to combining per-field matches with
+// an OR operator (i.e. the query matches if the text is found in any of the
+// listed fields).
+message TextQuery {
+  // The matching strategy to apply when comparing `text` against the content
+  // of `fields`.
+  enum MatchType {
+    // Defaults to `TEXT`.
+    MATCH_TYPE_UNSPECIFIED = 0;
+
+    // Treats `text` as individual search terms combined with an implicit
+    // AND: every term must appear in the field, in any order and any
+    // position. Case-insensitive.
+    TEXT = 1;
+
+    // Matches only when the entire field value is exactly equal to `text`.
+    EXACT = 2;
+  }
+
+  // Required. The text to search for.
+  string text = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The data fields to search against.
+  repeated string fields = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The matching strategy to apply for this query. If unset, defaults
+  // to `TEXT`.
+  MatchType match_type = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The query enhancement settings to apply for this query.
+  QueryEnhancement query_enhancement = 4
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Query enhancement settings. When enabled, expands the search terms with
+// stemming, synonyms, and spelling corrections, and removes stop words.
+message QueryEnhancement {
+  // Optional. Whether query enhancement is enabled.
+  bool enabled = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The IETF BCP 47 language tag, such as "en-US", for query
+  // enhancement. If unset, the language is detected automatically. See
+  // <https://en.wikipedia.org/wiki/IETF_language_tag>.
+  string language_code = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A query that applies a unary operator to a sub-query.
+message UnaryQuery {
+  // Unary operators applicable to a sub-query.
+  enum Operator {
+    // Default value. This value is unused.
+    OPERATOR_UNSPECIFIED = 0;
+
+    // Negates the sub-query.
+    NOT = 1;
+  }
+
+  // Required. The unary operator to apply.
+  Operator op = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The sub-query the operator is applied to.
+  StructuredQuery sub_query = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A query that combines multiple sub-queries with a boolean operator.
+message CombinedQuery {
+  // Boolean operators used to combine sub-queries.
+  enum Operator {
+    // Default value. This value is unused.
+    OPERATOR_UNSPECIFIED = 0;
+
+    // All sub-queries must match.
+    AND = 1;
+
+    // At least one sub-query must match.
+    OR = 2;
+  }
+
+  // Required. The boolean operator used to combine the sub-queries.
+  Operator op = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. The sub-queries to be combined.
+  repeated StructuredQuery sub_queries = 2
+      [(google.api.field_behavior) = REQUIRED];
 }
 
 // Request for performing a single search.
@@ -317,8 +514,22 @@ message AggregateDataObjectsRequest {
     }
   ];
 
-  // Optional. A JSON filter expression, e.g. {"genre": {"$eq": "sci-fi"}},
-  // represented as a google.protobuf.Struct.
+  // Optional. A JSON filter expression, e.g. `{"genre": {"$eq": "sci-fi"}}`,
+  // represented as a `google.protobuf.Struct`.
+  //
+  // An empty filter (`{}`) matches all data objects. Otherwise, each JSON
+  // object in the filter must have exactly one key: either a field name mapped
+  // to one operator (`{"price": {"$lt": 100}}`), or a logical operator: `$and`
+  // or `$or` with a list of filters, or `$not` with one filter. Field
+  // operators and their values: `$eq` and `$ne` take a string, number or bool;
+  // `$lt`, `$lte`, `$gt` and `$gte` take a number; `$in`, `$nin` and `$all`
+  // take a list of strings; `$exists` takes a bool. Several keys in one object
+  // (implicit AND) and implicit equality (`{"genre": "sci-fi"}`) are rejected;
+  // use `$and` and `$eq` instead.
+  //
+  // Logical operators can be nested at most 2 levels deep, e.g.
+  // `{"$and": [{"$or": [{"a": {"$eq": 1}}, {"b": {"$eq": 2}}]}]}`. Deeper
+  // filters are rejected with `INVALID_ARGUMENT`.
   google.protobuf.Struct filter = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Required. The aggregation method to apply to the query.
@@ -345,8 +556,22 @@ message QueryDataObjectsRequest {
     }
   ];
 
-  // Optional. A JSON filter expression, e.g. {"genre": {"$eq": "sci-fi"}},
-  // represented as a google.protobuf.Struct.
+  // Optional. A JSON filter expression, e.g. `{"genre": {"$eq": "sci-fi"}}`,
+  // represented as a `google.protobuf.Struct`.
+  //
+  // An empty filter (`{}`) matches all data objects. Otherwise, each JSON
+  // object in the filter must have exactly one key: either a field name mapped
+  // to one operator (`{"price": {"$lt": 100}}`), or a logical operator: `$and`
+  // or `$or` with a list of filters, or `$not` with one filter. Field
+  // operators and their values: `$eq` and `$ne` take a string, number or bool;
+  // `$lt`, `$lte`, `$gt` and `$gte` take a number; `$in`, `$nin` and `$all`
+  // take a list of strings; `$exists` takes a bool. Several keys in one object
+  // (implicit AND) and implicit equality (`{"genre": "sci-fi"}`) are rejected;
+  // use `$and` and `$eq` instead.
+  //
+  // Logical operators can be nested at most 2 levels deep, e.g.
+  // `{"$and": [{"$or": [{"a": {"$eq": 1}}, {"b": {"$eq": 2}}]}]}`. Deeper
+  // filters are rejected with `INVALID_ARGUMENT`.
   google.protobuf.Struct filter = 2 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. Mask specifying which fields to return.
