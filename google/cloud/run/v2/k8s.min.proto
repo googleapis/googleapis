@@ -54,7 +54,8 @@ message Container {
   // Dockerhub is assumed.
   string image = 2 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. Location of the source.
+  // Optional. Location of the source. This field is only supported in Cloud Run
+  // Service.
   SourceCode source_code = 17 [(google.api.field_behavior) = OPTIONAL];
 
   // Entrypoint array. Not executed within a shell.
@@ -109,6 +110,10 @@ message Container {
 
   // Output only. The build info of the container image.
   BuildInfo build_info = 15 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Indicates that this container can act as a sandbox supervisor and
+  // launch sandboxes.
+  optional bool sandbox_launcher = 22 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // ResourceRequirements describes the compute resource requirements.
@@ -204,6 +209,8 @@ message VolumeMount {
 
   // Optional. Path within the volume from which the container's volume should
   // be mounted. Defaults to "" (volume's root).
+  //
+  // This field is currently rejected in Secret volume mounts.
   string sub_path = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -302,11 +309,23 @@ message VersionToPath {
 // https://cloud.google.com/sql/docs/mysql/connect-run for more information on
 // how to connect Cloud SQL and Cloud Run.
 message CloudSqlInstance {
-  // The Cloud SQL instance connection names, as can be found in
-  // https://console.cloud.google.com/sql/instances. Visit
-  // https://cloud.google.com/sql/docs/mysql/connect-run for more information on
-  // how to connect Cloud SQL and Cloud Run. Format:
-  // {project}:{location}:{instance}
+  // A list of Cloud SQL instance connection names. Cloud Run uses these
+  // to establish connections to the specified Cloud SQL instances.
+  // While the SQL instance name itself is unique within a project,
+  // the full connection name requires the location for proper routing.
+  // Format: `{project}:{location}:{instance}`
+  // Example: `my-project:us-central1:my-instance`
+  //
+  // You can find this value on the instance's **Overview** page in the
+  // Google Cloud console or by using the following `gcloud` command:
+  //
+  // ```sh
+  // gcloud sql instances describe INSTANCE_NAME \
+  //   --format='value(connectionName)'
+  // ```
+  //
+  // Visit https://cloud.google.com/sql/docs/mysql/connect-run for more
+  // information on how to connect Cloud SQL and Cloud Run.
   repeated string instances = 1;
 }
 
@@ -357,8 +376,8 @@ message NFSVolumeSource {
   bool read_only = 3;
 }
 
-// Represents a volume backed by a Cloud Storage bucket using Cloud Storage
-// FUSE.
+// Represents a volume backed by a Cloud Storage bucket (mounted via Cloud
+// Storage FUSE or as a block device disk).
 message GCSVolumeSource {
   // Cloud Storage Bucket name.
   string bucket = 1;
@@ -479,9 +498,50 @@ message SourceCode {
     int64 generation = 3 [(google.api.field_behavior) = OPTIONAL];
   }
 
+  // Source file.
+  message SourceFile {
+    // Required. Input only. The file name for the source code. e.g.,
+    // `"index.js"` or
+    // `"node_modules/dependency.js"`. The filename must be less than 255
+    // characters and cannot contain `..`, `./`, `//`, or end with a `/`.
+    // Cloud Run will place the files in the container subdirectories, please
+    // use relative path to access the file.
+    string filename = 1 [
+      (google.api.field_behavior) = REQUIRED,
+      (google.api.field_behavior) = INPUT_ONLY
+    ];
+
+    // Required. Input only. Represents the exact, literal, and complete source
+    // code of the file. Placeholders like `...` or comments such as `# [rest of
+    // code]` should NEVER be used as omission. Every character in this field
+    // will be built into the final container. Any omission will result in a
+    // broken application.
+    string content = 2 [
+      (google.api.field_behavior) = REQUIRED,
+      (google.api.field_behavior) = INPUT_ONLY
+    ];
+  }
+
+  // Inlined source.
+  message InlinedSource {
+    // Required. Input only. The source code.
+    repeated SourceFile sources = 1 [
+      (google.api.field_behavior) = REQUIRED,
+      (google.api.field_behavior) = INPUT_ONLY
+    ];
+  }
+
   // The source type.
   oneof source_type {
     // The source is a Cloud Storage bucket.
     CloudStorageSource cloud_storage_source = 1;
+
+    // Optional. Input only. Source code inlined in the request. Cloud Run will
+    // store the inlined_source to Cloud Storage and replace the field with
+    // cloud_storage_source. This field is only supported in Cloud Run Service.
+    InlinedSource inlined_source = 2 [
+      (google.api.field_behavior) = OPTIONAL,
+      (google.api.field_behavior) = INPUT_ONLY
+    ];
   }
 }
