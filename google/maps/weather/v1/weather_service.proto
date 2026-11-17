@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,8 @@ package google.maps.weather.v1;
 import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
+import "google/api/httpbody.proto";
+import "google/api/resource.proto";
 import "google/maps/weather/v1/air_pressure.proto";
 import "google/maps/weather/v1/forecast_day.proto";
 import "google/maps/weather/v1/forecast_hour.proto";
@@ -44,6 +46,10 @@ option java_outer_classname = "WeatherServiceProto";
 option java_package = "com.google.maps.weather.v1";
 option objc_class_prefix = "GMWV1";
 option php_namespace = "Google\\Geo\\Weather\\V1";
+option (google.api.resource_definition) = {
+  type: "weather.googleapis.com/MapTile"
+  pattern: "mapTypes/{map_type}/mapTiles/{zoom}/{x}/{y}"
+};
 
 // Service definition for the Weather API.
 service Weather {
@@ -61,6 +67,9 @@ service Weather {
 
   // Returns up to 240 hours of hourly forecasts at a given location, starting
   // from the current hour.
+  //
+  // **Note:** For locations in Japan and South Korea, the maximum available
+  // hourly forecast horizon is 72 hours (3 days).
   rpc LookupForecastHours(LookupForecastHoursRequest)
       returns (LookupForecastHoursResponse) {
     option (google.api.http) = {
@@ -101,6 +110,13 @@ service Weather {
       get: "/v1/forecast/minutes:lookup"
     };
   }
+
+  // Returns weather maps for a given location.
+  rpc LookupMapTile(LookupMapTileRequest) returns (google.api.HttpBody) {
+    option (google.api.http) = {
+      get: "/v1/mapTypes/{map_type}/mapTiles/{zoom}/{x}/{y}"
+    };
+  }
 }
 
 // Request for the LookupCurrentConditions RPC.
@@ -134,16 +150,17 @@ message LookupCurrentConditionsResponse {
     // The minimum (low) temperature in the past 24 hours.
     Temperature min_temperature = 3;
 
-    // The amount of snow, measured as liquid water equivalent,
-    // that has accumulated over the last 24 hours.
-    // Note: QPF is an abbreviation for Quantitative Precipitation Forecast
+    // The amount of snow that is predicted to fall over a period of time,
+    // assuming no melting or compaction.
+    // Note: This is the actual snow amount, not its liquid water equivalent.
+    // QPF is an abbreviation for Quantitative Precipitation Forecast
     // (please see the QuantitativePrecipitationForecast definition for more
     // details).
     QuantitativePrecipitationForecast snow_qpf = 5;
 
-    // The amount of rain, measured as liquid water equivalent, that has
-    // accumulated over the last 24 hours. Note: QPF is an abbreviation for
-    // Quantitative Precipitation Forecast (please see the
+    // The total liquid water equivalent of all precipitation (rain, snow,
+    // ice, etc.) that is predicted to fall over a period of time. Note: QPF is
+    // an abbreviation for Quantitative Precipitation Forecast (please see the
     // QuantitativePrecipitationForecast definition for more details).
     QuantitativePrecipitationForecast qpf = 6;
   }
@@ -173,9 +190,15 @@ message LookupCurrentConditionsResponse {
   Temperature dew_point = 7;
 
   // The current heat index temperature.
+  //
+  // **Note:** For locations in Japan and South Korea, `heatIndex` is
+  // returned for high temperatures and omitted otherwise.
   Temperature heat_index = 8;
 
   // The current wind chill, air temperature exposed on the skin.
+  //
+  // **Note:** For locations in Japan and South Korea, `windChill` is
+  // returned for very low temperatures and omitted otherwise.
   Temperature wind_chill = 9;
 
   // The current percent of relative humidity (values from 0 to 100).
@@ -189,6 +212,9 @@ message LookupCurrentConditionsResponse {
   Precipitation precipitation = 12;
 
   // The current thunderstorm probability (values from 0 to 100).
+  //
+  // **Note:** This field is omitted from the response for locations in Japan
+  // and South Korea.
   optional int32 thunderstorm_probability = 13;
 
   // The current air pressure conditions.
@@ -198,9 +224,15 @@ message LookupCurrentConditionsResponse {
   Wind wind = 15;
 
   // The current visibility.
+  //
+  // **Note:** This field returns an empty object for locations in Japan and
+  // South Korea.
   Visibility visibility = 16;
 
   // The current percentage of the sky covered by clouds (values from 0 to 100).
+  //
+  // **Note:** This field is omitted from the response for locations in Japan
+  // and South Korea.
   optional int32 cloud_cover = 17;
 
   // The changes in the current conditions over the last 24 hours.
@@ -247,6 +279,9 @@ message LookupForecastHoursResponse {
   google.type.TimeZone time_zone = 2;
 
   // The token to retrieve the next page.
+  //
+  // **Note:** For locations in Japan and South Korea, pagination terminates
+  // after 72 hours of forecast data have been returned.
   string next_page_token = 3;
 }
 
@@ -376,16 +411,13 @@ message LookupPublicAlertsResponse {
 
 // Request for the LookupForecastMinutes RPC.
 message LookupForecastMinutesRequest {
-  // The location to get the minutely forecast for.
+  // Required. The location to get the minutely forecast for.
   google.type.LatLng location = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Optional. The units system to use for the returned weather conditions. If
   // not provided, the returned weather conditions will be in the metric system
   // (default = METRIC).
   UnitsSystem units_system = 2 [(google.api.field_behavior) = OPTIONAL];
-
-  reserved 3;
-  reserved "language_code";
 
   // Optional. The maximum number of forecast records to return per page.
   int32 page_size = 4 [(google.api.field_behavior) = OPTIONAL];
@@ -397,9 +429,6 @@ message LookupForecastMinutesRequest {
 
 // Response for the LookupForecastMinutes RPC.
 message LookupForecastMinutesResponse {
-  reserved 1;
-  reserved "events";
-
   // The overall timeframe for the predictions.
   google.type.Interval overall_prediction_timeframe = 2;
 
@@ -413,19 +442,21 @@ message LookupForecastMinutesResponse {
   repeated PrecipitationSegment segments = 5;
 }
 
-// (-- Request for the LookupMapTile RPC. --)
+// Request for the LookupMapTile RPC.
 message LookupMapTileRequest {
-  reserved 1;
-
-  // The type of the weather map. Defines the weather event that the
+  // Required. The type of the weather map. Defines the weather event that the
   // map will graphically represent.
   //
   //    Allowed values:
-  //    - US_PRECIPITATION_CURRENT - US precipitation current map.
-  //    - EU_PRECIPITATION_CURRENT - EU precipitation current map.
+  //    - `US_PRECIPITATION` - US precipitation map.
+  //    - `EU_PRECIPITATION` - EU precipitation map.
+  //    - `US_PRECIPITATION_CURRENT` - Deprecated: Use `US_PRECIPITATION`
+  //    instead.
+  //    - `EU_PRECIPITATION_CURRENT` - Deprecated: Use `EU_PRECIPITATION`
+  //    instead.
   MapType map_type = 2 [(google.api.field_behavior) = REQUIRED];
 
-  // The map's zoom level. Defines how large or small the contents
+  // Required. The map's zoom level. Defines how large or small the contents
   // of a map appear in a map view.
   //
   // Zoom level 0 is the entire world in a single tile.
@@ -434,23 +465,21 @@ message LookupMapTileRequest {
   // Zoom level 16 is the entire world in 65,536 tiles.
   //
   // Allowed values: 0-16
-  // (-- api-linter: core::0203::required-and-optional=disabled
-  //     aip.dev/not-precedent: this field needs to keep presence. --)
   int32 zoom = 3 [(google.api.field_behavior) = REQUIRED];
 
-  // Defines the east-west point in the requested tile.
-  // (-- api-linter: core::0203::required-and-optional=disabled
-  //     aip.dev/not-precedent: this field needs to keep presence. --)
+  // Required. Defines the east-west point in the requested tile.
+  //
+  // Must be non-negative.
   int32 x = 4 [(google.api.field_behavior) = REQUIRED];
 
-  // Defines the north-south point in the requested tile.
-  // (-- api-linter: core::0203::required-and-optional=disabled
-  //     aip.dev/not-precedent: this field needs to keep presence. --)
+  // Required. Defines the north-south point in the requested tile.
+  //
+  // Must be non-negative.
   int32 y = 5 [(google.api.field_behavior) = REQUIRED];
 
-  // The UTC timestamp of the weather map tile to retrieve. If not provided,
-  // defaults to the current time. Must be within the [now, now + 6h] forecast
-  // window; values outside this range return `INVALID_ARGUMENT`.
+  // Optional. The UTC timestamp of the weather map tile to retrieve. If not
+  // provided, defaults to the current time. Must be within the [now, now + 6h]
+  // forecast window; values outside this range return `INVALID_ARGUMENT`.
   google.protobuf.Timestamp forecast_time = 6
       [(google.api.field_behavior) = OPTIONAL];
 }
