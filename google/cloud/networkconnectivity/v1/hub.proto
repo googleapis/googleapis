@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -41,6 +41,10 @@ option (google.api.resource_definition) = {
 option (google.api.resource_definition) = {
   type: "compute.googleapis.com/Instance"
   pattern: "projects/{project}/zones/{zone}/instances/{instance}"
+};
+option (google.api.resource_definition) = {
+  type: "networksecurity.googleapis.com/SACAttachment"
+  pattern: "projects/{project}/locations/{location}/sacAttachments/{sac_attachment}"
 };
 
 // Network Connectivity Center is a hub-and-spoke abstraction for network
@@ -301,18 +305,67 @@ service HubService {
       metadata_type: "OperationMetadata"
     };
   }
-}
 
-// Supported features for a location
-enum LocationFeature {
-  // No publicly supported feature in this location
-  LOCATION_FEATURE_UNSPECIFIED = 0;
+  // Create a GatewayAdvertisedRoute
+  rpc CreateGatewayAdvertisedRoute(CreateGatewayAdvertisedRouteRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      post: "/v1/{parent=projects/*/locations/*/spokes/*}/gatewayAdvertisedRoutes"
+      body: "gateway_advertised_route"
+    };
+    option (google.api.method_signature) =
+        "parent,gateway_advertised_route,gateway_advertised_route_id";
+    option (google.longrunning.operation_info) = {
+      response_type: "GatewayAdvertisedRoute"
+      metadata_type: "OperationMetadata"
+    };
+  }
 
-  // Site-to-cloud spokes are supported in this location
-  SITE_TO_CLOUD_SPOKES = 1;
+  // Get a GatewayAdvertisedRoute
+  rpc GetGatewayAdvertisedRoute(GetGatewayAdvertisedRouteRequest)
+      returns (GatewayAdvertisedRoute) {
+    option (google.api.http) = {
+      get: "/v1/{name=projects/*/locations/*/spokes/*/gatewayAdvertisedRoutes/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
 
-  // Site-to-site spokes are supported in this location
-  SITE_TO_SITE_SPOKES = 2;
+  // List GatewayAdvertisedRoutes
+  rpc ListGatewayAdvertisedRoutes(ListGatewayAdvertisedRoutesRequest)
+      returns (ListGatewayAdvertisedRoutesResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=projects/*/locations/*/spokes/*}/gatewayAdvertisedRoutes"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Update a GatewayAdvertisedRoute
+  rpc UpdateGatewayAdvertisedRoute(UpdateGatewayAdvertisedRouteRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      patch: "/v1/{gateway_advertised_route.name=projects/*/locations/*/spokes/*/gatewayAdvertisedRoutes/*}"
+      body: "gateway_advertised_route"
+    };
+    option (google.api.method_signature) =
+        "gateway_advertised_route,update_mask";
+    option (google.longrunning.operation_info) = {
+      response_type: "GatewayAdvertisedRoute"
+      metadata_type: "OperationMetadata"
+    };
+  }
+
+  // Delete a GatewayAdvertisedRoute
+  rpc DeleteGatewayAdvertisedRoute(DeleteGatewayAdvertisedRouteRequest)
+      returns (google.longrunning.Operation) {
+    option (google.api.http) = {
+      delete: "/v1/{name=projects/*/locations/*/spokes/*/gatewayAdvertisedRoutes/*}"
+    };
+    option (google.api.method_signature) = "name";
+    option (google.longrunning.operation_info) = {
+      response_type: "google.protobuf.Empty"
+      metadata_type: "OperationMetadata"
+    };
+  }
 }
 
 // The route's type
@@ -332,6 +385,10 @@ enum RouteType {
   // derived from Border Gateway Protocol (BGP) advertisements received from an
   // NCC hybrid spoke.
   DYNAMIC_ROUTE = 3;
+
+  // The route leads to a destination within the Private Service Connect
+  // Global Google API range of the VPC network.
+  PSC_GLOBAL_GAPI = 4;
 }
 
 // The State enum represents the lifecycle stage of a Network Connectivity
@@ -389,6 +446,9 @@ enum SpokeType {
   // Spokes associated with VPC networks.
   VPC_NETWORK = 4;
 
+  // Spokes that are NCC gateways.
+  GATEWAY = 5;
+
   // Spokes that are backed by a producer VPC network.
   PRODUCER_VPC_NETWORK = 7;
 }
@@ -417,6 +477,28 @@ enum PresetTopology {
   // automatically created along with hub creation. Spokes have to join one of
   // the groups during creation.
   STAR = 3;
+
+  // Hybrid inspection has 4 groups ('non-prod', 'prod', 'services', and
+  // 'untrusted') that are automatically created along with hub creation.
+  HYBRID_INSPECTION = 4;
+}
+
+// Supported features for a location
+enum LocationFeature {
+  // No publicly supported feature in this location
+  LOCATION_FEATURE_UNSPECIFIED = 0;
+
+  // Site-to-cloud spokes are supported in this location
+  SITE_TO_CLOUD_SPOKES = 1;
+
+  // Site-to-site spokes are supported in this location
+  SITE_TO_SITE_SPOKES = 2;
+
+  // Gateway spokes are supported in this location.
+  GATEWAY_SPOKES = 3;
+
+  // Supports transports in this location.
+  TRANSPORTS = 4;
 }
 
 // A Network Connectivity Center hub is a global management resource to which
@@ -430,6 +512,23 @@ message Hub {
     type: "networkconnectivity.googleapis.com/Hub"
     pattern: "projects/{project}/locations/global/hubs/{hub}"
   };
+
+  // Configuration for more granular control of Private Service Connect
+  // connection propagation.
+  // This allows enabling or disabling connection propagation for specific types
+  // of Private Service Connect endpoints.
+  message ExportPscConfig {
+    // Optional. Controls whether Private Service Connect endpoints for regional
+    // ILBs and regional Google APIs should be propagated. Default value is true
+    // if export_psc is true. Otherwise, the default value is false.
+    optional bool published_services_and_regional_google_apis = 1
+        [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. Controls whether Private Service Connect endpoints for global
+    // Google APIs should be propagated. The default value is false.
+    optional bool global_google_apis = 2
+        [(google.api.field_behavior) = OPTIONAL];
+  }
 
   // Immutable. The name of the hub. Hub names must be unique. They use the
   // following form:
@@ -460,11 +559,12 @@ message Hub {
   // Output only. The current lifecycle state of this hub.
   State state = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
 
-  // The VPC networks associated with this hub's spokes.
+  // Output only. The VPC networks associated with this hub's spokes.
   //
   // This field is read-only. Network Connectivity Center automatically
   // populates it based on the set of spokes attached to the hub.
-  repeated RoutingVPC routing_vpcs = 10;
+  repeated RoutingVPC routing_vpcs = 10
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The route tables that belong to this hub. They use the
   // following form:
@@ -498,6 +598,11 @@ message Hub {
   // attached to the hub are made accessible to other VPC spokes attached to the
   // hub. The default value is false.
   optional bool export_psc = 15 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Config for more granular control of Private Service Connect
+  // transitivity.
+  ExportPscConfig export_psc_config = 17
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // RoutingVPC contains information about the VPC networks associated
@@ -533,9 +638,9 @@ message Spoke {
     pattern: "projects/{project}/locations/{location}/spokes/{spoke}"
   };
 
-  // The reason a spoke is inactive.
+  // The reason for the current state of the spoke.
   message StateReason {
-    // The Code enum represents the various reasons a state can be `INACTIVE`.
+    // The Code enum represents the various reasons for the state of the spoke.
     enum Code {
       // No information available.
       CODE_UNSPECIFIED = 0;
@@ -627,6 +732,10 @@ message Spoke {
   LinkedVpcNetwork linked_vpc_network = 20
       [(google.api.field_behavior) = OPTIONAL];
 
+  // Optional. This is a gateway that can apply specialized processing to
+  // traffic going through it.
+  Gateway gateway = 24 [(google.api.field_behavior) = OPTIONAL];
+
   // Optional. The linked producer VPC that is associated with the spoke.
   LinkedProducerVpcNetwork linked_producer_vpc_network = 26
       [(google.api.field_behavior) = OPTIONAL];
@@ -650,9 +759,9 @@ message Spoke {
   // client has an up-to-date value before proceeding.
   string etag = 27 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The list of fields waiting for hub administration's approval.
+  // Output only. The list of fields waiting for hub administrator's approval.
   repeated string field_paths_pending_update = 28
-      [(google.api.field_behavior) = OPTIONAL];
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 message RouteTable {
@@ -772,6 +881,9 @@ message Route {
   // Immutable. The next-hop VLAN attachment for packets on this route.
   NextHopInterconnectAttachment next_hop_interconnect_attachment = 16
       [(google.api.field_behavior) = IMMUTABLE];
+
+  // Immutable. The next-hop spoke for packets on this route.
+  NextHopSpoke next_hop_spoke = 18 [(google.api.field_behavior) = IMMUTABLE];
 }
 
 // A group represents a subset of spokes attached to a hub.
@@ -817,7 +929,12 @@ message Group {
   // Output only. The name of the route table that corresponds to this group.
   // They use the following form:
   // `projects/{project_number}/locations/global/hubs/{hub_id}/routeTables/{route_table_id}`
-  string route_table = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string route_table = 9 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/RouteTable"
+    }
+  ];
 }
 
 // The auto-accept setting for a group controls whether
@@ -1700,11 +1817,45 @@ message LinkedVpnTunnels {
     (google.api.resource_reference) = { type: "compute.googleapis.com/Network" }
   ];
 
-  // Optional. IP ranges allowed to be included during import from hub (does not
-  // control transit connectivity). The only allowed value for now is
-  // "ALL_IPV4_RANGES".
+  // Optional. Hub routes fully encompassed by include import ranges are
+  // included during import from hub.
   repeated string include_import_ranges = 5
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The proposed include import IP ranges waiting for hub
+  // administrator's approval.
+  repeated string proposed_include_import_ranges = 11
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Hub routes overlapped/encompassed by exclude import ranges are
+  // excluded during import from hub.
+  repeated string exclude_import_ranges = 6
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The proposed exclude import IP ranges waiting for hub
+  // administrator's approval.
+  repeated string proposed_exclude_import_ranges = 12
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Dynamic routes fully encompassed by include export ranges are
+  // included during export to hub.
+  repeated string include_export_ranges = 7
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The proposed include export IP ranges waiting for hub
+  // administrator's approval.
+  repeated string proposed_include_export_ranges = 9
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Dynamic routes overlapped/encompassed by exclude export ranges
+  // are excluded during export to hub.
+  repeated string exclude_export_ranges = 8
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The proposed exclude export IP ranges waiting for hub
+  // administrator's approval.
+  repeated string proposed_exclude_export_ranges = 10
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A collection of VLAN attachment resources. These resources should
@@ -1728,11 +1879,45 @@ message LinkedInterconnectAttachments {
     (google.api.resource_reference) = { type: "compute.googleapis.com/Network" }
   ];
 
-  // Optional. IP ranges allowed to be included during import from hub (does not
-  // control transit connectivity). The only allowed value for now is
-  // "ALL_IPV4_RANGES".
+  // Optional. Hub routes fully encompassed by include import ranges are
+  // included during import from hub.
   repeated string include_import_ranges = 5
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The proposed include import IP ranges waiting for hub
+  // administrator's approval.
+  repeated string proposed_include_import_ranges = 11
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Hub routes overlapped/encompassed by exclude import ranges are
+  // excluded during import from hub.
+  repeated string exclude_import_ranges = 6
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The proposed exclude import IP ranges waiting for hub
+  // administrator's approval.
+  repeated string proposed_exclude_import_ranges = 12
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Dynamic routes fully encompassed by include export ranges are
+  // included during export to hub.
+  repeated string include_export_ranges = 7
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The proposed include export IP ranges waiting for hub
+  // administrator's approval.
+  repeated string proposed_include_export_ranges = 9
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Dynamic routes overlapped/encompassed by exclude export ranges
+  // are excluded during export to hub.
+  repeated string exclude_export_ranges = 8
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The proposed exclude export IP ranges waiting for hub
+  // administrator's approval.
+  repeated string proposed_exclude_export_ranges = 10
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A collection of router appliance instances. If you configure multiple router
@@ -1755,11 +1940,45 @@ message LinkedRouterApplianceInstances {
     (google.api.resource_reference) = { type: "compute.googleapis.com/Network" }
   ];
 
-  // Optional. IP ranges allowed to be included during import from hub (does not
-  // control transit connectivity). The only allowed value for now is
-  // "ALL_IPV4_RANGES".
+  // Optional. Hub routes fully encompassed by include import ranges are
+  // included during import from hub.
   repeated string include_import_ranges = 5
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The proposed include import IP ranges waiting for hub
+  // administrator's approval.
+  repeated string proposed_include_import_ranges = 11
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Hub routes overlapped/encompassed by exclude import ranges are
+  // excluded during import from hub.
+  repeated string exclude_import_ranges = 6
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The proposed exclude import IP ranges waiting for hub
+  // administrator's approval.
+  repeated string proposed_exclude_import_ranges = 12
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Dynamic routes fully encompassed by include export ranges are
+  // included during export to hub.
+  repeated string include_export_ranges = 7
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The proposed include export IP ranges waiting for hub
+  // administrator's approval.
+  repeated string proposed_include_export_ranges = 9
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. Dynamic routes overlapped/encompassed by exclude export ranges
+  // are excluded during export to hub.
+  repeated string exclude_export_ranges = 8
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The proposed exclude export IP ranges waiting for hub
+  // administrator's approval.
+  repeated string proposed_exclude_export_ranges = 10
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // An existing VPC network.
@@ -1778,20 +1997,20 @@ message LinkedVpcNetwork {
   repeated string include_export_ranges = 3
       [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The proposed include export IP ranges waiting for hub
-  // administration's approval.
+  // Output only. The proposed include export IP ranges waiting for hub
+  // administrator's approval.
   repeated string proposed_include_export_ranges = 5
-      [(google.api.field_behavior) = OPTIONAL];
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The proposed exclude export IP ranges waiting for hub
-  // administration's approval.
+  // administrator's approval.
   repeated string proposed_exclude_export_ranges = 6
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The list of Producer VPC spokes that this VPC spoke is a
   // service consumer VPC spoke for. These producer VPCs are connected through
   // VPC peering to this spoke's backing VPC network. Because they are directly
-  // connected throuh VPC peering, NCC export filters do not apply between the
+  // connected through VPC peering, NCC export filters do not apply between the
   // service consumer VPC spoke and any of its producer VPC spokes. This VPC
   // spoke cannot be deleted as long as any of these producer VPC spokes are
   // connected to the NCC Hub.
@@ -1800,6 +2019,289 @@ message LinkedVpcNetwork {
     (google.api.resource_reference) = {
       type: "networkconnectivity.googleapis.com/Spoke"
     }
+  ];
+}
+
+// A gateway that can apply specialized traffic processing.
+message Gateway {
+  // A list of IP ranges that are reserved for this gateway's internal
+  // intfrastructure.
+  message IpRangeReservation {
+    // Required. A block of IP addresses used to allocate supporting
+    // infrastructure for this gateway. This block must not overlap with subnets
+    // in any spokes or peer VPC networks that the gateway can communicate with.
+    // Example: "10.1.2.0/24"
+    string ip_range = 1 [(google.api.field_behavior) = REQUIRED];
+  }
+
+  // The aggregate processing capacity of this gateway.
+  enum GatewayCapacity {
+    // The gateway capacity is unspecified.
+    GATEWAY_CAPACITY_UNSPECIFIED = 0;
+
+    // The gateway has 1 Gbps of aggregate processing capacity
+    CAPACITY_1_GBPS = 5;
+
+    // The gateway has 10 Gbps of aggregate processing capacity
+    CAPACITY_10_GBPS = 1;
+  }
+
+  // Optional. A list of IP ranges that are reserved for this gateway's internal
+  // intfrastructure.
+  repeated IpRangeReservation ip_range_reservations = 7
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The aggregate processing capacity of this gateway.
+  GatewayCapacity capacity = 10 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The list of Cloud Routers that are connected to this gateway.
+  // Should be in the form:
+  // https://www.googleapis.com/compute/v1/projects/{project}/regions/{region}/routers/{router}
+  repeated string cloud_routers = 13
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The URI of the connected SACAttachment.
+  // Should be in the form:
+  // projects/{project}/locations/{location}/sacAttachments/{sac_attachment}
+  string sac_attachment = 14 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "networksecurity.googleapis.com/SACAttachment"
+    }
+  ];
+}
+
+// A gateway advertised route is a route that a gateway spoke advertises
+// somewhere.
+message GatewayAdvertisedRoute {
+  option (google.api.resource) = {
+    type: "networkconnectivity.googleapis.com/GatewayAdvertisedRoute"
+    pattern: "projects/{project}/locations/{location}/spokes/{spoke}/gatewayAdvertisedRoutes/{gateway_advertised_route}"
+    plural: "gatewayAdvertisedRoutes"
+    singular: "gatewayAdvertisedRoute"
+  };
+
+  // The recipient of an advertised route.
+  enum Recipient {
+    // No recipient specified. By default routes are advertised to the hub.
+    RECIPIENT_UNSPECIFIED = 0;
+
+    // Advertises a route toward the hub. Other spokes reachable from this spoke
+    // will receive the route.
+    ADVERTISE_TO_HUB = 1;
+  }
+
+  // Identifier. The name of the gateway advertised route. Route names must be
+  // unique and use the following form:
+  //      `projects/{project_number}/locations/{region}/spokes/{spoke}/gatewayAdvertisedRoutes/{gateway_advertised_route_id}`
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Output only. The time the gateway advertised route was created.
+  google.protobuf.Timestamp create_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time the gateway advertised route was last updated.
+  google.protobuf.Timestamp update_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional labels in key-value pair format. For more information about
+  // labels, see [Requirements for
+  // labels](https://cloud.google.com/resource-manager/docs/creating-managing-labels#requirements).
+  map<string, string> labels = 4;
+
+  // An optional description of the gateway advertised route.
+  string description = 5;
+
+  // Output only. The Google-generated UUID for the gateway advertised route.
+  // This value is unique across all gateway advertised route resources. If a
+  // gateway advertised route is deleted and another with the same name is
+  // created, the new route is assigned a different `unique_id`.
+  string unique_id = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The current lifecycle state of this gateway advertised route.
+  State state = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Immutable. This route's advertised IP address range. Must be a valid
+  // CIDR-formatted prefix. If an IP address is provided without a subnet mask,
+  // it is interpreted as, for IPv4, a `/32` singular IP address range, and, for
+  // IPv6,
+  // `/128`.
+  string ip_range = 8 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Optional. The priority of this advertised route. You can choose a value
+  // from `0` to `65335`. If you don't provide a value, Google Cloud assigns a
+  // priority of `100` to the ranges.
+  optional int32 priority = 9 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The recipient of this advertised route.
+  Recipient recipient = 10 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The request for
+// [HubService.CreateGatewayAdvertisedRoute][google.cloud.networkconnectivity.v1.HubService.CreateGatewayAdvertisedRoute].
+message CreateGatewayAdvertisedRouteRequest {
+  // Required. The parent resource.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/Spoke"
+    }
+  ];
+
+  // Required. Unique id for the route to create.
+  string gateway_advertised_route_id = 2
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Initial values for the new gateway advertised route.
+  GatewayAdvertisedRoute gateway_advertised_route = 3
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. A request ID to identify requests. Specify a unique request ID so
+  // that if you must retry your request, the server knows to ignore the request
+  // if it has already been completed. The server guarantees that a request
+  // doesn't result in creation of duplicate commitments for at least 60
+  // minutes.
+  //
+  // For example, consider a situation where you make an initial request and
+  // the request times out. If you make the request again with the same request
+  // ID, the server can check to see whether the original operation
+  // was received. If it was, the server ignores the second request. This
+  // behavior prevents clients from mistakenly creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID, with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 4 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
+// The request for
+// [HubService.GetGatewayAdvertisedRoute][google.cloud.networkconnectivity.v1.HubService.GetGatewayAdvertisedRoute].
+message GetGatewayAdvertisedRouteRequest {
+  // Required. The name of the gateway advertised route to get.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/GatewayAdvertisedRoute"
+    }
+  ];
+}
+
+// The request for
+// [HubService.ListGatewayAdvertisedRoutes][google.cloud.networkconnectivity.v1.HubService.ListGatewayAdvertisedRoutes].
+message ListGatewayAdvertisedRoutesRequest {
+  // Required. The parent resource's name.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/Spoke"
+    }
+  ];
+
+  // Optional. The maximum number of results per page that should be returned.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A page token, received from a previous
+  // `ListGatewayAdvertisedRoutes` call. Provide this to retrieve the subsequent
+  // page.
+  //
+  // When paginating, all other parameters provided to
+  // `ListGatewayAdvertisedRoutes` must match the call that provided the page
+  // token.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // An expression that filters the list of results.
+  string filter = 4;
+
+  // Sort the results by a certain order.
+  string order_by = 5;
+}
+
+// Response for
+// [HubService.ListGatewayAdvertisedRoutes][google.cloud.networkconnectivity.v1.HubService.ListGatewayAdvertisedRoutes]
+// method.
+message ListGatewayAdvertisedRoutesResponse {
+  // The requested gateway advertised routes.
+  repeated GatewayAdvertisedRoute gateway_advertised_routes = 1;
+
+  // The token for the next page of the response. To see more results,
+  // use this value as the page_token for your next request. If this value
+  // is empty, there are no more results.
+  string next_page_token = 2;
+
+  // Hubs that could not be reached.
+  repeated string unreachable = 3;
+}
+
+// The request for
+// [HubService.UpdateGatewayAdvertisedRoute][google.cloud.networkconnectivity.v1.HubService.UpdateGatewayAdvertisedRoute].
+message UpdateGatewayAdvertisedRouteRequest {
+  // Optional. In the case of an update to an existing group, field mask is used
+  // to specify the fields to be overwritten. The fields specified in the
+  // update_mask are relative to the resource, not the full request. A field is
+  // overwritten if it is in the mask. If the user does not provide a mask, then
+  // all fields are overwritten.
+  google.protobuf.FieldMask update_mask = 1
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Required. The gateway advertised route to update.
+  //
+  // The gateway advertised route's `name` field is used to identify the gateway
+  // advertised route to update. Format:
+  // `projects/{project}/locations/{location}/spokes/{spoke}/gatewayAdvertisedRoutes/{gatewayAdvertisedRoute}`
+  GatewayAdvertisedRoute gateway_advertised_route = 2
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. A request ID to identify requests. Specify a unique request ID so
+  // that if you must retry your request, the server knows to ignore the request
+  // if it has already been completed. The server guarantees that a request
+  // doesn't result in creation of duplicate commitments for at least 60
+  // minutes.
+  //
+  // For example, consider a situation where you make an initial request and
+  // the request times out. If you make the request again with the same request
+  // ID, the server can check to see whether the original operation
+  // was received. If it was, the server ignores the second request. This
+  // behavior prevents clients from mistakenly creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID, with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 3 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OPTIONAL
+  ];
+}
+
+// Request for
+// [HubService.DeleteGatewayAdvertisedRoute][google.cloud.networkconnectivity.v1.HubService.DeleteGatewayAdvertisedRoute]
+// method.
+message DeleteGatewayAdvertisedRouteRequest {
+  // Required. The name of the gateway advertised route to delete.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "networkconnectivity.googleapis.com/GatewayAdvertisedRoute"
+    }
+  ];
+
+  // Optional. A request ID to identify requests. Specify a unique request ID so
+  // that if you must retry your request, the server knows to ignore the request
+  // if it has already been completed. The server guarantees that a request
+  // doesn't result in creation of duplicate commitments for at least 60
+  // minutes.
+  //
+  // For example, consider a situation where you make an initial request and
+  // the request times out. If you make the request again with the same request
+  // ID, the server can check to see whether the original operation
+  // was received. If it was, the server ignores the second request. This
+  // behavior prevents clients from mistakenly creating duplicate commitments.
+  //
+  // The request ID must be a valid UUID, with the exception that zero UUID is
+  // not supported (00000000-0000-0000-0000-000000000000).
+  string request_id = 2 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = OPTIONAL
   ];
 }
 
@@ -1838,13 +2340,13 @@ message LinkedProducerVpcNetwork {
   repeated string include_export_ranges = 4
       [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The proposed include export IP ranges waiting for hub
-  // administration's approval.
+  // Output only. The proposed include export IP ranges waiting for hub
+  // administrator's approval.
   repeated string proposed_include_export_ranges = 7
-      [(google.api.field_behavior) = OPTIONAL];
+      [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Output only. The proposed exclude export IP ranges waiting for hub
-  // administration's approval.
+  // administrator's approval.
   repeated string proposed_exclude_export_ranges = 8
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
@@ -1929,6 +2431,23 @@ message NextHopInterconnectAttachment {
   // [supported
   // locations](https://cloud.google.com/network-connectivity/docs/network-connectivity-center/concepts/locations).
   bool site_to_site_data_transfer = 3;
+}
+
+// A route next hop that leads to a spoke resource.
+message NextHopSpoke {
+  // The URI of the spoke resource.
+  string uri = 1 [(google.api.resource_reference) = {
+    type: "networkconnectivity.googleapis.com/Spoke"
+  }];
+
+  // Indicates whether site-to-site data transfer is allowed for this
+  // spoke resource. Data transfer is available only in
+  // [supported
+  // locations](https://cloud.google.com/network-connectivity/docs/network-connectivity-center/concepts/locations).
+  // Whether this route is accessible to other hybrid spokes with site-to-site
+  // data transfer enabled. If this is false, the route is only accessible to
+  // VPC spokes of the connected Hub.
+  bool site_to_site_data_transfer = 2;
 }
 
 // Summarizes information about the spokes associated with a hub.
