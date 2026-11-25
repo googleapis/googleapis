@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -38,6 +38,8 @@ option ruby_package = "Google::Cloud::ApiHub::V1";
 service ApiHubPlugin {
   option (google.api.default_host) = "apihub.googleapis.com";
   option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/apihub.readonly,"
+      "https://www.googleapis.com/auth/apihub.readwrite,"
       "https://www.googleapis.com/auth/cloud-platform";
 
   // Get an API Hub plugin.
@@ -213,6 +215,17 @@ service ApiHubPlugin {
       metadata_type: "OperationMetadata"
     };
   }
+
+  // Manages data for a given plugin instance.
+  rpc ManagePluginInstanceSourceData(ManagePluginInstanceSourceDataRequest)
+      returns (ManagePluginInstanceSourceDataResponse) {
+    option (google.api.http) = {
+      post: "/v1/{name=projects/*/locations/*/plugins/*/instances/*}:manageSourceData"
+      body: "*"
+    };
+    option (google.api.method_signature) =
+        "name,data_type,action,relative_path,data";
+  }
 }
 
 // Enum for the action type.
@@ -252,6 +265,12 @@ enum GatewayType {
 
   // The gateway type for any other types of gateways.
   OTHERS = 7;
+
+  // The gateway type is AWS API Gateway.
+  AWS_API_GATEWAY = 8;
+
+  // The gateway type is Azure API Management.
+  AZURE_API_MANAGEMENT = 9;
 }
 
 // Enum for the curation type.
@@ -351,7 +370,7 @@ message Plugin {
   // Format: `projects/{project}/locations/{location}/plugins/{plugin}`
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
-  // Required. The display name of the plugin. Max length is 50 characters
+  // Required. The display name of the plugin. Max length is 500 characters
   // (Unicode code points).
   string display_name = 2 [(google.api.field_behavior) = REQUIRED];
 
@@ -366,7 +385,7 @@ message Plugin {
   // Note this field is not required for plugins developed via plugin framework.
   AttributeValues type = 3 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. The plugin description. Max length is 2000 characters (Unicode
+  // Optional. The plugin description. Max length is 500000 characters (Unicode
   // code points).
   string description = 4 [(google.api.field_behavior) = OPTIONAL];
 
@@ -575,12 +594,12 @@ message PluginInstanceAction {
   string schedule_time_zone = 7 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The service account used to publish data. Note, the service
-  // account will only be accepted for non GCP plugins like OPDK.
+  // account will only be accepted for non-Google Cloud plugins like OPDK.
   string service_account = 8 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. The configuration of resources created for a given plugin
-  // instance action. Note these will be returned only in case of Non-GCP
-  // plugins like OPDK.
+  // instance action. Note these will be returned only in case of non-Google
+  // Cloud plugins like OPDK.
   ResourceConfig resource_config = 9
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
@@ -640,7 +659,7 @@ message PluginInstance {
   // `projects/{project}/locations/{location}/plugins/{plugin}/instances/{instance}`
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
-  // Required. The display name for this plugin instance. Max length is 255
+  // Required. The display name for this plugin instance. Max length is 500
   // characters.
   string display_name = 2 [(google.api.field_behavior) = REQUIRED];
 
@@ -679,10 +698,36 @@ message PluginInstance {
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Optional. The source project id of the plugin instance. This will be the id
-  // of runtime project in case of gcp based plugins and org id in case of non
-  // gcp based plugins. This field will be a required field for Google provided
-  // on-ramp plugins.
+  // of runtime project in case of Google Cloud based plugins and org id in case
+  // of non-Google Cloud based plugins. This field will be a required field for
+  // Google provided on-ramp plugins.
   string source_project_id = 11 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The source environment's config present in the gateway instance
+  // linked to the plugin instance. The key is the `source_environment` name
+  // from the SourceEnvironment message.
+  map<string, SourceEnvironment> source_environments_config = 12
+      [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Message representing the source environment details.
+message SourceEnvironment {
+  // Required. The name of the environment at the source. This should map to
+  // [Deployment][google.cloud.apihub.v1.SourceEnvironment.source_environment].
+  string source_environment = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The location where additional information about source environments can be
+  // found. The location should be relative path of the environment manifest
+  // with respect to a plugin instance.
+  string source_environment_uri = 3;
+
+  // Optional. The time at which the environment was created at the source.
+  google.protobuf.Timestamp create_time = 4
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The time at which the environment was last updated at the source.
+  google.protobuf.Timestamp update_time = 5
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // The curation information for this plugin instance.
@@ -735,6 +780,11 @@ message ExecutionStatus {
     // Output only. The last execution end time of the plugin instance.
     google.protobuf.Timestamp end_time = 4
         [(google.api.field_behavior) = OUTPUT_ONLY];
+
+    // Output only. The result metadata of the last execution of the plugin
+    // instance. This will be a string representation of a JSON object and will
+    // be available on successful execution.
+    string result_metadata = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
   }
 
   // Enum for the current state of the execution.
@@ -959,6 +1009,8 @@ message ListPluginInstancesRequest {
   //
   //   * `state` - The state of the Plugin Instance. Allowed
   //   comparison operators: `=`.
+  //   * `source_project_id` - The source project id of the Plugin Instance.
+  //   Allowed comparison operators: `=`.
   //
   // A filter function is also supported in the filter string. The filter
   // function is `id(name)`. The `id(name)` function returns the id of the
@@ -1078,3 +1130,65 @@ message DeletePluginInstanceRequest {
     }
   ];
 }
+
+// The
+// [ManagePluginInstanceSourceData][google.cloud.apihub.v1.ApiHubPlugin.ManagePluginInstanceSourceData]
+// method's request.
+message ManagePluginInstanceSourceDataRequest {
+  // Type of data to be managed.
+  enum DataType {
+    // Default unspecified type.
+    DATA_TYPE_UNSPECIFIED = 0;
+
+    // Proxy deployment manifest.
+    PROXY_DEPLOYMENT_MANIFEST = 1;
+
+    // Environment manifest.
+    ENVIRONMENT_MANIFEST = 2;
+
+    // Proxy bundle.
+    PROXY_BUNDLE = 3;
+
+    // Shared flow bundle.
+    SHARED_FLOW_BUNDLE = 4;
+  }
+
+  // Action to be performed.
+  enum Action {
+    // Default unspecified action.
+    ACTION_UNSPECIFIED = 0;
+
+    // Upload or upsert data.
+    UPLOAD = 1;
+
+    // Delete data.
+    DELETE = 2;
+  }
+
+  // Required. The name of the plugin instance for which data needs to be
+  // managed. Format:
+  // `projects/{project}/locations/{location}/plugins/{plugin}/instances/{instance}`
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "apihub.googleapis.com/PluginInstance"
+    }
+  ];
+
+  // Required. Type of data to be managed.
+  DataType data_type = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Action to be performed.
+  Action action = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Relative path of data being managed for a given plugin instance.
+  string relative_path = 4 [(google.api.field_behavior) = REQUIRED];
+
+  // Required. Data to be managed.
+  bytes data = 5 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The
+// [ManagePluginInstanceSourceData][google.cloud.apihub.v1.ApiHubPlugin.ManagePluginInstanceSourceData]
+// method's response.
+message ManagePluginInstanceSourceDataResponse {}

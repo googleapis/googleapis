@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package google.cloud.apihub.v1;
 
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "Google.Cloud.ApiHub.V1";
@@ -99,6 +100,36 @@ enum AuthType {
   OAUTH2_CLIENT_CREDENTIALS = 5;
 }
 
+// The data source on which the addon operates.
+enum DataSource {
+  // The data source of the addon is not specified.
+  DATA_SOURCE_UNSPECIFIED = 0;
+
+  // Addon operates on data collected from specific plugin instances.
+  PLUGIN_INSTANCE = 1;
+
+  // Addon operates on all data in the API hub.
+  ALL_DATA = 2;
+}
+
+// The state of the addon.
+enum AddonState {
+  // The addon state is not specified.
+  ADDON_STATE_UNSPECIFIED = 0;
+
+  // The addon is active.
+  ACTIVE = 1;
+
+  // The addon is being updated.
+  UPDATING = 2;
+
+  // The addon is in error state.
+  ERROR = 3;
+
+  // The addon is inactive.
+  INACTIVE = 4;
+}
+
 // Enum for the plugin category.
 enum PluginCategory {
   // Default unspecified plugin type.
@@ -110,6 +141,21 @@ enum PluginCategory {
   // API_PRODUCER plugins represent plugins built for API Producers like
   // Cloud Run, Application Integration etc.
   API_PRODUCER = 2;
+}
+
+// Enumerations of the spec content types.
+// More values may be added in the future.
+enum SpecContentType {
+  // Unspecified spec content type.
+  // Defaults to spec content uploaded by the user.
+  SPEC_CONTENT_TYPE_UNSPECIFIED = 0;
+
+  // The spec content type for boosted spec.
+  BOOSTED_SPEC_CONTENT = 1;
+
+  // The spec content type for OpenAPI spec. This enum is used for OpenAPI specs
+  // ingested via APIGEE X Gateway.
+  GATEWAY_OPEN_API_SPEC = 2;
 }
 
 // An API resource in the API Hub.
@@ -223,7 +269,7 @@ message Api {
   ];
 
   // Optional. The api requirement doc associated with the API resource.
-  // Carinality is 1 for this attribute. This maps to the following system
+  // Cardinality is 1 for this attribute. This maps to the following system
   // defined attribute:
   // `projects/{project}/locations/{location}/attributes/system-api-requirements`
   // attribute. The value of the attribute should be a proper URI, and in case
@@ -232,7 +278,9 @@ message Api {
   AttributeValues api_requirements = 16
       [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. Fingerprint of the API resource.
+  // Optional. Fingerprint of the API resource. This must be unique for each API
+  // resource. It can neither be unset nor be updated to an existing fingerprint
+  // of another API resource.
   string fingerprint = 17 [(google.api.field_behavior) = OPTIONAL];
 
   // Output only. The list of sources and metadata from the sources of the API
@@ -241,7 +289,7 @@ message Api {
       [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // Optional. The api functional requirements associated with the API resource.
-  // Carinality is 1 for this attribute.
+  // Cardinality is 1 for this attribute.
   // This maps to the following system defined attribute:
   // `projects/{project}/locations/{location}/attributes/system-api-functional-requirements`
   // attribute. The value of the attribute should be a proper URI, and in case
@@ -251,7 +299,7 @@ message Api {
       [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The api technical requirements associated with the API resource.
-  // Carinality is 1 for this attribute. This maps to the following system
+  // Cardinality is 1 for this attribute. This maps to the following system
   // defined attribute:
   // `projects/{project}/locations/{location}/attributes/system-api-technical-requirements`
   // attribute. The value of the attribute should be a proper URI, and in case
@@ -259,6 +307,14 @@ message Api {
   // not a directory.
   AttributeValues api_technical_requirements = 20
       [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. The type of the service.
+  // This maps to the following system defined attribute:
+  // `projects/{project}/locations/{location}/attributes/system-service-type`
+  // attribute.
+  // The cardinality of this attribute is 1. All values should be from the list
+  // of allowed values defined for the attribute.
+  AttributeValues service_type = 21 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Represents a version of the API resource in API hub. This is also referred
@@ -317,10 +373,11 @@ message Version {
     }
   ];
 
-  // Optional. The deployments linked to this API version.
-  // Note: A particular API version could be deployed to multiple deployments
-  // (for dev deployment, UAT deployment, etc)
-  // Format is
+  // Optional. The deployments linked directly to this API version. Only
+  // directly-linked deployments are returned; deployments linked to this
+  // version's specs or operations are not included. Note: A particular API
+  // version could be deployed to multiple deployments (for dev deployment, UAT
+  // deployment, etc) Format is
   // `projects/{project}/locations/{location}/deployments/{deployment}`
   repeated string deployments = 8 [
     (google.api.field_behavior) = OPTIONAL,
@@ -490,6 +547,43 @@ message Spec {
   // Output only. The list of sources and metadata from the sources of the spec.
   repeated SourceMetadata source_metadata = 13
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The additional spec contents for the spec.
+  repeated AdditionalSpecContent additional_spec_contents = 14
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The deployments linked directly to this spec.
+  // Format is
+  // `projects/{project}/locations/{location}/deployments/{deployment}`
+  repeated string deployments = 15 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "apihub.googleapis.com/Deployment"
+    }
+  ];
+}
+
+// The additional spec content for the spec.
+// This contains the metadata and the last update time for the additional spec
+// content.
+message AdditionalSpecContent {
+  // Required. The type of the spec content.
+  SpecContentType spec_content_type = 1
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The additional spec contents.
+  SpecContents spec_contents = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The time at which the spec content was created.
+  google.protobuf.Timestamp create_time = 3
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Output only. The time at which the spec content was last updated.
+  google.protobuf.Timestamp update_time = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The labels of the spec content e.g. specboost addon version.
+  map<string, string> labels = 5 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Details of the deployment where APIs are hosted.
@@ -607,13 +701,35 @@ message Deployment {
   AttributeValues source_uri = 16 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The project to which the deployment belongs.
-  // For GCP gateways, this will refer to the project identifier.
+  // For Google Cloud gateways, this will refer to the project identifier.
   // For others like Edge/OPDK, this will refer to the org identifier.
   string source_project = 17 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The environment at source for the deployment.
   // For example: prod, dev, staging, etc.
   string source_environment = 18 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The specs linked directly to this deployment.
+  // Note: a deployment could serve multiple specs (e.g., across different
+  // revisions of the same underlying gateway configuration).
+  repeated string specs = 19 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = { type: "apihub.googleapis.com/Spec" }
+  ];
+
+  // Output only. The API operations linked directly to this deployment.
+  repeated string api_operations = 20 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {
+      type: "apihub.googleapis.com/ApiOperation"
+    }
+  ];
+
+  // Optional. A revision identifier for the underlying gateway configuration
+  // that this deployment serves. For Apigee gateway variants, this is typically
+  // the proxy revision number populated automatically when the deployment is
+  // discovered.
+  string source_revision = 21 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Represents an operation contained in an API version in the API Hub.
@@ -673,6 +789,18 @@ message ApiOperation {
   // operation.
   repeated SourceMetadata source_metadata = 7
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The deployments linked directly to this API operation. For
+  // operations parsed from a spec, `UpdateApiOperation` returns
+  // `FAILED_PRECONDITION`; link the parent spec to the deployment via
+  // `Spec.deployments` instead. Format is
+  // `projects/{project}/locations/{location}/deployments/{deployment}`
+  repeated string deployments = 8 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.resource_reference) = {
+      type: "apihub.googleapis.com/Deployment"
+    }
+  ];
 }
 
 // Represents a definition for example schema, request, response definitions
@@ -760,8 +888,8 @@ message Attribute {
     // will be used. In this case, the service will handle conflict resolution
     // by adding a system generated suffix in case of duplicates.
     //
-    // This value should be 4-63 characters, and valid characters
-    // are /[a-z][0-9]-/.
+    // This value should be 3-500 characters, and valid characters
+    // are /[a-z][A-Z][0-9]-_/.
     string id = 1 [(google.api.field_behavior) = REQUIRED];
 
     // Required. The display name of the allowed value.
@@ -892,7 +1020,8 @@ message Attribute {
 
 // The spec contents.
 message SpecContents {
-  // Required. The contents of the spec.
+  // Required. The contents of the spec. The contents should be base64 encoded
+  // when calling methods such as CreateSpec, UpdateSpec and CollectApiData.
   bytes contents = 1 [(google.api.field_behavior) = REQUIRED];
 
   // Required. The mime type of the content for example application/json,
@@ -953,6 +1082,9 @@ message OperationDetails {
   oneof operation {
     // The HTTP Operation.
     HttpOperation http_operation = 4;
+
+    // The MCP Tool Operation.
+    McpTool mcp_tool = 5;
   }
 
   // Optional. Description of the operation behavior.
@@ -967,6 +1099,64 @@ message OperationDetails {
   // Optional. For OpenAPI spec, this will be set if `operation.deprecated`is
   // marked as `true` in the spec.
   bool deprecated = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The operation schema needed for an operation.
+message OperationSchema {
+  // The value of the schema.
+  oneof value {
+    // The JSON schema. Only valid JSON is accepted but semantic validation of
+    // schema is not supported right now.
+    google.protobuf.Struct json_schema = 1;
+  }
+}
+
+// Details describing an MCP Tool.
+message McpTool {
+  // Required. The name of the tool, unique within its parent scope (version).
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. Optional title for the tool.
+  string title = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Description of what the tool does.
+  string description = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Optional annotations for the tool.
+  ToolAnnotations annotations = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Input schema for the operation. This can be parsed only from MCP
+  // schema type.
+  OperationSchema input_schema = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Output schema for the operation. This can be parsed only from MCP
+  // schema type.
+  OperationSchema output_schema = 6 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Annotations for a Tool.
+message ToolAnnotations {
+  // Optional. A human-readable title for the tool (if different from
+  // Tool.title).
+  string title = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Hint indicating if the tool is read-only.
+  optional bool read_only_hint = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Hint indicating if the tool may have destructive side effects.
+  optional bool destructive_hint = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Hint indicating if the tool is idempotent.
+  optional bool idempotent_hint = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Hint indicating if the tool interacts with the open world (e.g.,
+  // internet).
+  optional bool open_world_hint = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Additional hints which may help tools and not covered in
+  // defaults.
+  map<string, string> additional_hints = 6
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // The HTTP Operation.
@@ -1337,6 +1527,13 @@ message ApiHubInstance {
 
   // Available configurations to provision an ApiHub Instance.
   message Config {
+    // The configuration for Agent Registry sync.
+    message AgentRegistrySyncConfig {
+      // Optional. If true, the MCP data sync to the Agent Registry will be
+      // disabled. The default value is false.
+      bool disabled = 1 [(google.api.field_behavior) = OPTIONAL];
+    }
+
     // Types of data encryption.
     enum EncryptionType {
       // Encryption type unspecified.
@@ -1368,6 +1565,11 @@ message ApiHubInstance {
     // the cmek_key_name must be provided. If no encryption type is provided,
     // GMEK will be used.
     EncryptionType encryption_type = 4 [(google.api.field_behavior) = OPTIONAL];
+
+    // Optional. The configuration for syncing MCP data in the API Hub instance
+    // to the Agent Registry.
+    AgentRegistrySyncConfig agent_registry_sync_config = 5
+        [(google.api.field_behavior) = OPTIONAL];
   }
 
   // State of the ApiHub Instance.
@@ -1439,11 +1641,11 @@ message ExternalApi {
   // `projects/{project}/locations/{location}/externalApi/{externalApi}`.
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
-  // Required. Display name of the external API. Max length is 63 characters
+  // Required. Display name of the external API. Max length is 500 characters
   // (Unicode Code Points).
   string display_name = 2 [(google.api.field_behavior) = REQUIRED];
 
-  // Optional. Description of the external API. Max length is 2000 characters
+  // Optional. Description of the external API. Max length is 500000 characters
   // (Unicode Code Points).
   string description = 3 [(google.api.field_behavior) = OPTIONAL];
 
@@ -1796,10 +1998,10 @@ message DiscoveredApiObservation {
     // Source type not specified.
     SOURCE_TYPE_UNSPECIFIED = 0;
 
-    // GCP external load balancer.
+    // Google Cloud external load balancer.
     GCP_XLB = 1;
 
-    // GCP internal load balancer.
+    // Google Cloud internal load balancer.
     GCP_ILB = 2;
   }
 
@@ -1835,8 +2037,8 @@ message DiscoveredApiObservation {
   // Optional. The number of observed API Operations.
   int64 api_operation_count = 7 [(google.api.field_behavior) = OPTIONAL];
 
-  // Optional. For an observation pushed from a gcp resource, this would be the
-  // gcp project id.
+  // Optional. For an observation pushed from a Google Cloud resource, this
+  // would be the Google Cloud project id.
   string origin = 8 [(google.api.field_behavior) = OPTIONAL];
 
   // Optional. The type of the source from which the observation was collected.
